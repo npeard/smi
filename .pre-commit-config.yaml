@@ -40,18 +40,20 @@ repos:
 
 -   repo: local
     hooks:
-    # Use the Pixi dev-env binaries directly so the hooks work even when git
-    # invokes pre-commit outside an activated Pixi shell (bare `ty`/`python`
-    # would not be on PATH). Requires `pixi install -e dev`.
+    # Go through `pixi run -e dev` so the hooks work even when git invokes
+    # pre-commit outside an activated Pixi shell (bare `ty`/`python` would not
+    # be on PATH), and so they resolve on both supported platforms -- a
+    # hardcoded .pixi/envs/dev/bin/ path is Unix-only and breaks on win-64,
+    # where the interpreter lives under Scripts/. Requires `pixi install -e dev`.
     -   id: ty
         name: ty type check
-        entry: .pixi/envs/dev/bin/ty check
+        entry: pixi run -e dev ty check
         language: system
         types: [python]
         pass_filenames: false
     -   id: ascii-only
         name: ASCII-only source (no Unicode; use plain text or LaTeX)
-        entry: .pixi/envs/dev/bin/python scripts/check_ascii.py
+        entry: pixi run -e dev python scripts/check_ascii.py
         language: system
         types_or: [python, markdown]
 

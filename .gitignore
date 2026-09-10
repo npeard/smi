@@ -133,3 +133,8 @@ dmypy.json
 **/data/*
 **/checkpoints/*
 **/lightning_logs/*
+
+# Session-scoped agent scaffolding (specs, plans) -- durable rationale goes
+# in commit messages and code comments instead.
+docs/superpowers/
+scratch/

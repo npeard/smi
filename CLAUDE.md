@@ -1,6 +1,29 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with
+code in this repository.
+
+See `~/.claude/CLAUDE.md` (from `~/Documents/Projects/claude-config`) for
+cross-project workflow, verification, and design preferences -- the numbered
+workflow spine, the coding standards, and the agent-evolution rules all live
+there. This file covers only what is specific to smi and does not restate the
+master.
+
+For everything else, see:
+
+- **`README.md`** -- project intro, quickstart, install.
+- **`docs/data-storage-evaluation.md`** -- why HDF5, and the alternatives measured.
+- **`docs/hyperparameter-search-pipeline-design.md`** -- the two-level search design.
+- **`TASKS.md`** -- the live task list this project works from.
+
+## Core development principles
+
+See the master CLAUDE.md's "Core philosophy" for the general rule (every line
+carries maintenance cost; write the smallest clear amount; reuse before writing
+new). In this repo that means: add a feature to the existing `FeatureRegistry`,
+an architecture under `analysis/models/`, or a figure to `report/`, rather than
+building a parallel path beside one of them.
+
 
 ## Development Commands
 
@@ -35,10 +58,27 @@ Tasks are defined in `[tool.pixi.tasks]` in `pyproject.toml`; dependencies live
 in `[tool.pixi.*]` feature/environment tables. The lockfile `pixi.lock` is
 committed for reproducibility.
 
-**NumPy is pinned `<2`** (in `[project.dependencies]` and `[tool.pixi.dependencies]`)
-because this machine is locked to the torch 2.2 wheels (the last x86-64 macOS
-build), which use the NumPy 1.x C-ABI; NumPy 2.x breaks torch and segfaults the
-suite. If torch is ever upgraded to a NumPy-2 build, this pin can be relaxed.
+### Environment constraints (three live ones, all easy to break)
+
+**Platforms are `win-64` and `linux-64`.** macOS was dropped deliberately.
+The old `numpy<2` / `torch<2.3` pins existed only to keep an Intel Mac
+working and are gone; the stack is now `torch>=2.5` / `numpy>=2`.
+
+**One OpenMP runtime, so the numeric stack comes from PyPI.** `numpy`,
+`numba`, `matplotlib` and `h5py` resolve from PyPI (via
+`[project.dependencies]`), *not* conda. Conda-forge numpy links
+`libomp.dll` while the PyPI CUDA torch wheel bundles Intel's
+`libiomp5md.dll`; loading both aborts the process with "OMP: Error #15",
+which previously killed the test suite inside `np.corrcoef`. Do not move
+these to `[tool.pixi.dependencies]`, and do not reach for
+`KMP_DUPLICATE_LIB_OK=TRUE` -- that flag's own error text warns it can
+silently produce incorrect results, which is disqualifying here. Only
+`typst` and `polars` come from conda; typst is a self-contained Rust
+binary with no BLAS linkage.
+
+**Torch comes from the `cu124` PyPI index** because the default win-64
+wheel is CPU-only. Expect `torch.cuda.is_available()` to be true; if it is
+not, the index pin in `[tool.pixi.pypi-dependencies]` is the thing to check.
 
 **Important**: Always run `pixi run format` first when encountering linting/formatting issues before making manual edits. This auto-fixes most formatting problems and saves time.
 
@@ -102,6 +142,28 @@ Two-level search (design: `docs/hyperparameter-search-pipeline-design.md`):
 
 Deps live in the `tune` pixi feature (`ray[tune]`, `optuna`), included in all
 test-running envs so the search path is CPU-tested in CI as well as on the GPU rig.
+
+## Working preferences
+
+These override defaults; follow them unless explicitly told otherwise.
+
+### Verification policy
+
+- **Always run `pixi run format`** after code changes. It is the verification
+  entry point -- do not call `ruff check` separately as its own step.
+- **Run the full suite (`pixi run -e dev python -m pytest`) when you touch
+  `analysis/models/`, `analysis/features/`, or `synthetic/`** -- the
+  normalization stats, the TorchScript scriptability check and the model
+  forward tests are all coupled through those. It takes about 95 seconds.
+- **Otherwise** run the single most relevant test file. Scope tests to the
+  code you changed rather than surfacing unrelated pre-existing failures.
+- **GPU claims need GPU evidence.** `torch.cuda.synchronize()` around any
+  timed region, warm up before measuring, and report a median over repeats.
+  An unsynchronized CUDA timing is fiction. Pin the device explicitly: this
+  box has an RTX 3090 Ti (24 GB) and a Quadro RTX 4000 (8 GB), and which one
+  you land on changes the answer.
+- **Document builds are verified by building.** `pixi run report` from a
+  clean `build/`, then again to confirm the second run is a no-op.
 
 ## Code Quality
 
