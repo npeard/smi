@@ -60,6 +60,7 @@ def figure_pdfs(document):
 rule all:
     input:
         expand(f"{BUILD}/{{document}}.pdf", document=DOCUMENTS),
+        f"{BUILD}/.slides-pagecheck",
 
 
 rule figure:
@@ -83,6 +84,21 @@ rule document:
         f"{BUILD}/{{document}}.pdf",
     shell:
         "typst compile --root . {input.source} {output}"
+
+
+# Typst silently continues an overlong slide onto another page, so the deck
+# compiles clean while quietly gaining an orphaned figure. Only the slide
+# decks get this check; a flowing report is supposed to paginate.
+rule check_slides:
+    """Fail the build when a slide has overflowed its page."""
+    input:
+        script="scripts/check_slide_pages.py",
+        source="slides.typ",
+        pdf=f"{BUILD}/slides.pdf",
+    output:
+        touch(f"{BUILD}/.slides-pagecheck"),
+    shell:
+        "python {input.script} --source {input.source} --pdf {input.pdf}"
 
 
 rule clean:

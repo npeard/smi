@@ -52,9 +52,13 @@ $ s(t) = cos( (4 pi) / lambda d(t) + phi.alt ) $
 
 = Ground truth comes from the drive, not a reference interferometer
 
+// Width is load-bearing, not cosmetic: this figure is three stacked panels,
+// so it is tall for its width. At 58% it pushed the caption onto a second
+// page. `pixi run report` fails on that now (check_slide_pages.py), but the
+// fix if it recurs is to shrink the figure, not to raise the page budget.
 #fig(
   "drive_to_velocity",
-  width: 58%,
+  width: 46%,
   caption: [
     (a) Coil-driver gain: a damped resonator near 259 Hz with $Q approx 17$.
     (b) a real drive waveform and the displacement it implies. (c) the

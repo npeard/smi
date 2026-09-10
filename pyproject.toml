@@ -150,6 +150,11 @@ allow-dict-calls-with-keyword-arguments = true
 # shared helpers via a sys.path insert rather than a package-relative import
 # (E402 -- the insert must precede the import it enables).
 "report/figures/*.py" = ["INP001", "E402"]
+# Same shape as scripts/check_ascii.py above: a build gate whose entire
+# interface is an exit code plus a message on stdout/stderr, invoked by the
+# Snakefile rather than imported. Printing is the output contract (T201) and
+# it is not a package (INP001).
+"report/scripts/*.py" = ["INP001", "T201"]
 "tests/plot_waveforms.py" = ["PLR0915", "E501"]
 "smi/redpitaya/manager.py" = ["C901", "PLR0912", "PLR0915"]
 "smi/redpitaya/scpi.py" = ["C901", "PLR0912", "PLR0915", "E501"]
