@@ -15,14 +15,10 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    # This machine (old Intel Mac) is locked to the last x86-64 macOS PyTorch
-    # wheels (2.2.x), which are built against the NumPy 1.x C-ABI. NumPy 2.x
-    # therefore breaks torch ("Failed to initialize NumPy: _ARRAY_API not
-    # found") and segfaults the test suite -- so NumPy is held below 2.
-    "numpy>=1.26,<2",
+    "numpy>=2.0",
     "matplotlib",
     "numba",
-    "torch>=2.2,<2.3",
+    "torch>=2.5",
     "lightning",
     "h5py",
     "tqdm",
@@ -157,15 +153,13 @@ skip = ".git,*.ipynb"
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
-platforms = ["osx-64", "osx-arm64", "linux-64"]
+platforms = ["win-64", "linux-64"]
 
 [tool.pixi.dependencies]
 python = ">=3.12,<3.13"
 numba = "*"
 polars = ">=1.0"
-# Held below 2 to stay ABI-compatible with the torch 2.2 wheels (see the
-# dependencies note above); also keeps the conda solve from pulling NumPy 2.x.
-numpy = ">=1.26,<2"
+numpy = ">=2.0"
 # ruff/codespell live in the default env so the `format`/`lint`/`spell` tasks
 # (defined under [tool.pixi.tasks], which runs in the default env) use the
 # pinned, lockfile-backed tools instead of whatever happens to be on PATH.
@@ -174,6 +168,12 @@ codespell = "*"
 
 [tool.pixi.pypi-dependencies]
 smi = { path = ".", editable = true }
+
+# Torch arrives via the editable `smi` install, and PyPI's default win-64 torch
+# wheel is CPU-only -- which cannot answer the GPU-residency question this
+# project needs measured. Pin the CUDA 12.4 index explicitly on both supported
+# platforms so `torch.cuda.is_available()` is true out of the box.
+torch = { version = ">=2.5", index = "https://download.pytorch.org/whl/cu124" }
 
 [tool.pixi.feature.dev.pypi-dependencies]
 pre-commit = "*"
@@ -206,6 +206,7 @@ optuna = "*"
 default = { features = ["test", "tune"], solve-group = "default" }
 dev = { features = ["dev", "test", "tune"], solve-group = "default" }
 test = { features = ["test", "tune"], solve-group = "default" }
+report = { features = ["report"], solve-group = "default" }
 
 [tool.pixi.tasks]
 format = "ruff format . && ruff check --fix ."
@@ -255,3 +256,19 @@ exclude_lines = [
     "def __repr__",
     "raise NotImplementedError",
 ]
+
+# Typst report/slides build (report/). The whole document toolchain is
+# lockfile-reproducible with no manual install step -- unlike a LaTeX engine,
+# where no conda package ships a usable macro tree.
+[tool.pixi.feature.report.dependencies]
+typst = "*"
+matplotlib = "*"
+h5py = "*"
+
+# Snakemake has no conda-forge win-64 build at all (it is packaged only for
+# linux-64/osx), so it comes from PyPI, where the wheels are pure Python and
+# run fine here. Verified on win-64: a figure -> typst -> PDF DAG executes and
+# re-runs incrementally. Only *local* (--cores) execution is exercised; the
+# cluster and --use-conda executors are the parts with real Windows gaps.
+[tool.pixi.feature.report.pypi-dependencies]
+snakemake = ">=8"
