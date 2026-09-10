@@ -52,6 +52,7 @@ Run as a script to regenerate the results artifact::
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import logging
 import time
@@ -605,6 +606,8 @@ class DatasetBaseline:
         method1: Per-channel forward-model residual statistics (volts).
         method2: Inverse-fit displacement/velocity error statistics.
         signal_scale: Reference scales used to make the RMSE numbers readable.
+        decode_grid: Decode grid extent and speed band, derived per dataset at
+            run time and therefore not recoverable from the static config.
         runtime_s: Wall-clock seconds spent evaluating this dataset.
     """
 
@@ -616,6 +619,7 @@ class DatasetBaseline:
     method1: dict[str, Any] = field(default_factory=dict)
     method2: dict[str, Any] = field(default_factory=dict)
     signal_scale: dict[str, Any] = field(default_factory=dict)
+    decode_grid: dict[str, float] = field(default_factory=dict)
     runtime_s: float = 0.0
 
 
@@ -630,6 +634,35 @@ def _summary(values: np.ndarray) -> dict[str, float]:
         'min': float(values.min()),
         'max': float(values.max()),
     }
+
+
+# Bin edges in microns peak-to-peak. Fixed rather than quantile-derived so
+# the bins mean the same thing across datasets and across reruns with a
+# different --n-shots, which is the whole point of persisting them.
+_PTP_BIN_EDGES_UM = (0.0, 0.3, 1.0, 2.0, np.inf)
+
+
+def _binned_by_amplitude(
+    scores: np.ndarray, ptp_um: np.ndarray
+) -> list[dict[str, float | int | str]]:
+    """Per-shot ``scores`` grouped by drive peak-to-peak excursion.
+
+    Each bin reports its own ``n``: a bin holding two shots is not evidence
+    of a trend, and the reader needs to see that without recomputing it.
+    """
+    scores = np.asarray(scores, dtype=np.float64)
+    ptp_um = np.asarray(ptp_um, dtype=np.float64)
+    bins: list[dict[str, float | int | str]] = []
+    for low, high in itertools.pairwise(_PTP_BIN_EDGES_UM):
+        mask = (ptp_um >= low) & (ptp_um < high)
+        n = int(mask.sum())
+        label = f'{low:g}-{high:g}' if np.isfinite(high) else f'{low:g}+'
+        entry: dict[str, float | int | str] = {'ptp_um': label, 'n': n}
+        if n:
+            entry['median'] = float(np.median(scores[mask]))
+            entry['mean'] = float(scores[mask].mean())
+        bins.append(entry)
+    return bins
 
 
 def evaluate_dataset(
@@ -679,8 +712,12 @@ def evaluate_dataset(
     true_disp = np.empty((n_shots, n_time))
     true_vel = np.empty((n_shots, n_time))
     for i in range(n_shots):
-        true_disp[i], _, _ = coil.get_displacement(drive[i], sample_rate)
-        true_vel[i], _, _ = coil.get_velocity(drive[i], sample_rate)
+        # One shared spectrum: get_displacement and get_velocity each call
+        # get_displacement_spectrum internally, so calling both computes the
+        # same FFT twice.
+        true_vel[i], true_disp[i] = coil.get_velocity_and_displacement(
+            drive[i], sample_rate
+        )
     true_disp_centered = true_disp - true_disp.mean(axis=1, keepdims=True)
 
     # --- Method 1 ---------------------------------------------------------
@@ -700,6 +737,14 @@ def evaluate_dataset(
             'residual_rmse_volts': _summary(rmses),
             'residual_rmse_fraction_of_signal_rms': _summary(rel),
             'r_squared': _summary(r2s),
+            # Binned by drive excursion because the aggregate R2 hides the
+            # trend that matters: the forward model tracks small excursions
+            # far better than large ones. Persisted rather than left to an
+            # ad-hoc session, so the claim can be checked against the
+            # artifact instead of taken on trust.
+            'r_squared_by_drive_ptp': _binned_by_amplitude(
+                r2s, np.ptp(true_disp_centered, axis=1)
+            ),
         }
 
     # --- Method 2 ---------------------------------------------------------
@@ -767,6 +812,11 @@ def evaluate_dataset(
             'true_velocity_rms_um_per_s': _summary(np.std(true_vel, axis=1)),
             'true_displacement_ptp_um': _summary(np.ptp(true_disp_centered, axis=1)),
         },
+        # Derived from this subset's ground truth at run time, so they vary
+        # with --n-shots and with the file. They set the decode grid's extent
+        # and the Viterbi step band, which means a run cannot be reproduced
+        # from the static config block alone -- record them per dataset.
+        decode_grid={'displacement_limit_um': limit, 'max_speed_um_per_s': max_speed},
         runtime_s=time.perf_counter() - start,
     )
 

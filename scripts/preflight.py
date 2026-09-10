@@ -72,10 +72,10 @@ def _load_platform_paths():
     warning. The checks that need it now skip, which is the idiom every
     other optional sibling here already uses.
     """
-    path = Path(__file__).resolve().parent / "platform_paths.py"
+    path = Path(__file__).resolve().parent / 'platform_paths.py'
     if not path.is_file():
         return None
-    spec = importlib.util.spec_from_file_location("platform_paths", path)
+    spec = importlib.util.spec_from_file_location('platform_paths', path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -83,10 +83,10 @@ def _load_platform_paths():
 
 def _load_installation_contract():
     """The installer contract, or None when it was not copied along."""
-    path = Path(__file__).resolve().parent / "installation_contract.py"
+    path = Path(__file__).resolve().parent / 'installation_contract.py'
     if not path.is_file():
         return None
-    spec = importlib.util.spec_from_file_location("installation_contract", path)
+    spec = importlib.util.spec_from_file_location('installation_contract', path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -95,24 +95,24 @@ def _load_installation_contract():
 platform_paths = _load_platform_paths()
 installation_contract = _load_installation_contract()
 
-OK, WARN, FAIL = "ok", "warn", "fail"
+OK, WARN, FAIL = 'ok', 'warn', 'fail'
 
 
 class Report:
     def __init__(self) -> None:
         self.rows: list[tuple[str, str, str]] = []
 
-    def add(self, status: str, label: str, detail: str = "") -> None:
+    def add(self, status: str, label: str, detail: str = '') -> None:
         self.rows.append((status, label, detail))
 
     def render(self) -> int:
         width = max(len(s) for s, _, _ in self.rows)
         for status, label, detail in self.rows:
-            line = f"[{status:<{width}}] {label}"
-            print(f"{line}: {detail}" if detail else line)
+            line = f'[{status:<{width}}] {label}'
+            print(f'{line}: {detail}' if detail else line)
         counts = {s: sum(1 for r in self.rows if r[0] == s) for s in (OK, WARN, FAIL)}
         print(
-            f"\n{counts[OK]} ok, {counts[WARN]} warning(s), {counts[FAIL]} failure(s)"
+            f'\n{counts[OK]} ok, {counts[WARN]} warning(s), {counts[FAIL]} failure(s)'
         )
         return counts[FAIL] + counts[WARN]
 
@@ -121,7 +121,7 @@ def git(*args: str) -> str | None:
     """Run a git command, returning None rather than raising on failure."""
     try:
         out = subprocess.run(
-            ["git", *args], capture_output=True, text=True, check=True, timeout=20
+            ['git', *args], capture_output=True, text=True, check=True, timeout=20
         )
     except (
         subprocess.CalledProcessError,
@@ -135,10 +135,10 @@ def git(*args: str) -> str | None:
 
 
 def check_repo(report: Report) -> bool:
-    if git("rev-parse", "--is-inside-work-tree") != "true":
-        report.add(FAIL, "git repository", "not inside a work tree")
+    if git('rev-parse', '--is-inside-work-tree') != 'true':
+        report.add(FAIL, 'git repository', 'not inside a work tree')
         return False
-    report.add(OK, "git repository")
+    report.add(OK, 'git repository')
     return True
 
 
@@ -149,51 +149,49 @@ def default_branch(root: Path | None = None) -> str:
     that: resolved from the process cwd instead, it answered about whichever
     repo preflight was invoked from.
     """
-    at = ("-C", str(root)) if root else ()
-    head = git(*at, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    at = ('-C', str(root)) if root else ()
+    head = git(*at, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
     if head:
-        return head.split("/", 1)[-1]
-    for candidate in ("main", "master"):
-        if git(*at, "rev-parse", "--verify", "--quiet", f"refs/heads/{candidate}"):
+        return head.split('/', 1)[-1]
+    for candidate in ('main', 'master'):
+        if git(*at, 'rev-parse', '--verify', '--quiet', f'refs/heads/{candidate}'):
             return candidate
-    return "main"
+    return 'main'
 
 
 def check_branch(report: Report) -> None:
-    current, target = git("rev-parse", "--abbrev-ref", "HEAD"), default_branch()
+    current, target = git('rev-parse', '--abbrev-ref', 'HEAD'), default_branch()
     if current == target:
-        report.add(OK, "on default branch", current)
+        report.add(OK, 'on default branch', current)
     else:
         # A feature branch is normal mid-task, so this is informational --
         # it only matters when starting fresh work.
-        report.add(WARN, "on default branch", f"on '{current}', not '{target}'")
+        report.add(WARN, 'on default branch', f"on '{current}', not '{target}'")
 
 
 def check_clean_tree(report: Report) -> None:
-    dirty = git("status", "--porcelain")
+    dirty = git('status', '--porcelain')
     if dirty is None:
-        report.add(FAIL, "clean working tree", "could not read status")
+        report.add(FAIL, 'clean working tree', 'could not read status')
     elif dirty:
         n = len(dirty.splitlines())
-        report.add(WARN, "clean working tree", f"{n} uncommitted change(s)")
+        report.add(WARN, 'clean working tree', f'{n} uncommitted change(s)')
     else:
-        report.add(OK, "clean working tree")
+        report.add(OK, 'clean working tree')
 
 
 def declared_floor(root: Path) -> tuple[int, int] | None:
     """The project's minimum Python, from pixi.toml or pyproject.toml."""
-    for name, key in (("pixi.toml", "python"), ("pyproject.toml", "requires-python")):
+    for name, key in (('pixi.toml', 'python'), ('pyproject.toml', 'requires-python')):
         path = root / name
         if not path.is_file():
             continue
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = path.read_text(encoding='utf-8', errors='replace')
         # Anchored to a line start: unanchored, `python` matched the tail of
         # `ipython = ">=8.0"` and read as a floor of 8.0 -- and a failure here
         # short-circuits every later check.
         match = re.search(
-            rf'^\s*{key}\s*=\s*["\x27][^"\x27]*?(\d+)\.(\d+)',
-            text,
-            re.MULTILINE,
+            rf'^\s*{key}\s*=\s*["\x27][^"\x27]*?(\d+)\.(\d+)', text, re.MULTILINE
         )
         if match:
             return int(match.group(1)), int(match.group(2))
@@ -204,7 +202,7 @@ def declared_floor(root: Path) -> tuple[int, int] | None:
 # ~/.virtualenvs entry is deliberately absent: those live outside the
 # checkout by design, and the point below is to tell "not local" apart from
 # "this project does not work that way".
-LOCAL_ENV_DIRS = (".pixi", ".venv", "venv", "env")
+LOCAL_ENV_DIRS = ('.pixi', '.venv', 'venv', 'env')
 
 
 def is_local_env(prefix: Path, root: Path) -> bool:
@@ -240,62 +238,62 @@ def check_interpreter(report: Report, root: Path) -> bool:
     """
     running = sys.version_info[:2]
     prefix = Path(sys.prefix).resolve()
-    version = f"{running[0]}.{running[1]}"
+    version = f'{running[0]}.{running[1]}'
     floor = declared_floor(root)
     current = floor is None or running >= floor
 
     if not is_local_env(prefix, root):
         detail = (
-            f"{version} from {prefix} is not a project-local env "
+            f'{version} from {prefix} is not a project-local env '
             "(run via the project's task runner)"
         )
         if not current:
             # Named in the same row rather than a second one, so the reason
             # the remaining checks were skipped is visible.
-            detail += f"; also below the declared floor {floor[0]}.{floor[1]}"
+            detail += f'; also below the declared floor {floor[0]}.{floor[1]}'
         # A failure only where the project declares a pixi environment: there,
         # an inherited interpreter is how scripts end up contorted for
         # whatever version the machine ships. Elsewhere it is how the project
         # is built, and preflight is advertised as copyable verbatim.
         report.add(
-            FAIL if (root / "pixi.toml").is_file() else WARN, "interpreter", detail
+            FAIL if (root / 'pixi.toml').is_file() else WARN, 'interpreter', detail
         )
     elif floor is None:
-        report.add(WARN, "interpreter", f"{version}, but no floor is declared")
+        report.add(WARN, 'interpreter', f'{version}, but no floor is declared')
     elif not current:
         report.add(
             FAIL,
-            "interpreter",
-            f"{version} is below the declared floor {floor[0]}.{floor[1]}",
+            'interpreter',
+            f'{version} is below the declared floor {floor[0]}.{floor[1]}',
         )
     else:
         report.add(
-            OK, "interpreter", f"{version}, local env, floor {floor[0]}.{floor[1]}"
+            OK, 'interpreter', f'{version}, local env, floor {floor[0]}.{floor[1]}'
         )
     return current
 
 
 def check_precommit_installed(report: Report, root: Path) -> None:
-    if not (root / ".pre-commit-config.yaml").is_file():
-        report.add(WARN, "pre-commit configured", "no .pre-commit-config.yaml")
+    if not (root / '.pre-commit-config.yaml').is_file():
+        report.add(WARN, 'pre-commit configured', 'no .pre-commit-config.yaml')
         return
-    report.add(OK, "pre-commit configured")
+    report.add(OK, 'pre-commit configured')
 
     # Resolve via git rather than assuming root/".git" is a directory: in a
     # worktree or submodule it is a file pointing elsewhere, and the hooks
     # live in the parent repo.
     # Run with -C so the returned path is relative to root rather than to
     # wherever this process happens to have been invoked from.
-    hook_path = git("-C", str(root), "rev-parse", "--git-path", "hooks/pre-commit")
+    hook_path = git('-C', str(root), 'rev-parse', '--git-path', 'hooks/pre-commit')
     hook = (root / hook_path) if hook_path else None
     if (
         hook
         and hook.is_file()
-        and "pre-commit" in hook.read_text(encoding="utf-8", errors="replace")
+        and 'pre-commit' in hook.read_text(encoding='utf-8', errors='replace')
     ):
-        report.add(OK, "pre-commit hook installed")
+        report.add(OK, 'pre-commit hook installed')
     else:
-        report.add(FAIL, "pre-commit hook installed", "run: pre-commit install")
+        report.add(FAIL, 'pre-commit hook installed', 'run: pre-commit install')
 
 
 def configured_revs(config: Path) -> list[tuple[str, str]]:
@@ -312,19 +310,19 @@ def configured_revs(config: Path) -> list[tuple[str, str]]:
     """
     keys: list[tuple[int, str, str]] = []
     for lineno, line in enumerate(
-        config.read_text(encoding="utf-8", errors="replace").splitlines()
+        config.read_text(encoding='utf-8', errors='replace').splitlines()
     ):
-        stripped = line.strip().lstrip("-").strip()
-        for kind in ("repo", "rev"):
-            prefix = f"{kind}:"
+        stripped = line.strip().lstrip('-').strip()
+        for kind in ('repo', 'rev'):
+            prefix = f'{kind}:'
             if stripped.startswith(prefix):
-                value = stripped[len(prefix) :].strip().strip("'\"")
+                value = stripped[len(prefix) :].strip().strip('\'"')
                 if value:
                     keys.append((lineno, kind, value))
                 break
 
-    repos = [(i, v) for i, kind, v in keys if kind == "repo"]
-    revs = [(i, v) for i, kind, v in keys if kind == "rev"]
+    repos = [(i, v) for i, kind, v in keys if kind == 'repo']
+    revs = [(i, v) for i, kind, v in keys if kind == 'rev']
 
     pairs: list[tuple[str, str]] = []
     consumed: set[int] = set()
@@ -336,7 +334,7 @@ def configured_revs(config: Path) -> list[tuple[str, str]]:
         candidates = [
             (i, v) for i, v in revs if lower < i < upper and i not in consumed
         ]
-        if candidates and url.startswith("http"):
+        if candidates and url.startswith('http'):
             # Consume the match: without this, an entry whose rev precedes its
             # repo left that rev available to the *next* entry, which then
             # reported the wrong pin.
@@ -354,27 +352,27 @@ def latest_tag(url: str) -> tuple[str | None, str | None]:
     cannot compare and the rev must be checked by hand. Collapsing both to
     None diagnosed a repo tagged `v1.0` as a network problem.
     """
-    out = git("ls-remote", "--tags", "--refs", url)
+    out = git('ls-remote', '--tags', '--refs', url)
     if out is None:
-        return None, "unreachable"
+        return None, 'unreachable'
     if not out:
         # Reachable, exit 0, no tags at all. Not a network problem, and
         # reporting it as one sends the reader to the wrong place.
-        return None, "no-semver-tags"
-    tags = [line.rsplit("/", 1)[-1] for line in out.splitlines()]
+        return None, 'no-semver-tags'
+    tags = [line.rsplit('/', 1)[-1] for line in out.splitlines()]
 
     def key(tag: str) -> tuple[int, ...] | None:
-        m = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", tag)
+        m = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)', tag)
         return tuple(int(g) for g in m.groups()) if m else None
 
     ranked = sorted((k, t) for t in tags if (k := key(t)) is not None)
     if not ranked:
-        return None, "no-semver-tags"
+        return None, 'no-semver-tags'
     return ranked[-1][1], None
 
 
 def check_hook_revs(report: Report, root: Path) -> None:
-    config = root / ".pre-commit-config.yaml"
+    config = root / '.pre-commit-config.yaml'
     if not config.is_file():
         return
     configured = configured_revs(config)
@@ -382,37 +380,37 @@ def check_hook_revs(report: Report, root: Path) -> None:
         # The regex found nothing, so there is no basis for a clean answer.
         # Reporting "current" here would be a false pass on a config style
         # this parser does not recognize.
-        report.add(WARN, "hook revs current", "could not parse any repo/rev pairs")
+        report.add(WARN, 'hook revs current', 'could not parse any repo/rev pairs')
         return
 
     stale, unreachable, untagged = [], [], []
     for url, rev in configured:
-        name = url.rsplit("/", 1)[-1]
+        name = url.rsplit('/', 1)[-1]
         latest, problem = latest_tag(url)
-        if problem == "unreachable":
+        if problem == 'unreachable':
             # --check-updates is opt-in precisely because it needs network,
             # so a failed lookup is surfaced rather than folded into "ok".
             unreachable.append(name)
-        elif problem == "no-semver-tags":
+        elif problem == 'no-semver-tags':
             untagged.append(name)
-        elif latest and latest.lstrip("v") != rev.lstrip("v"):
-            stale.append(f"{name} {rev} -> {latest}")
+        elif latest and latest.lstrip('v') != rev.lstrip('v'):
+            stale.append(f'{name} {rev} -> {latest}')
     if stale:
         report.add(
-            WARN, "hook revs current", "; ".join(stale) + " (pre-commit autoupdate)"
+            WARN, 'hook revs current', '; '.join(stale) + ' (pre-commit autoupdate)'
         )
     elif unreachable:
         report.add(
-            WARN, "hook revs current", f"lookup failed: {', '.join(unreachable)}"
+            WARN, 'hook revs current', f'lookup failed: {", ".join(unreachable)}'
         )
     elif untagged:
         report.add(
             WARN,
-            "hook revs current",
-            f"no comparable tags, check by hand: {', '.join(untagged)}",
+            'hook revs current',
+            f'no comparable tags, check by hand: {", ".join(untagged)}',
         )
     else:
-        report.add(OK, "hook revs current")
+        report.add(OK, 'hook revs current')
 
 
 def _pixi_has_test_task(path: Path) -> bool:
@@ -427,34 +425,34 @@ def _pixi_has_test_task(path: Path) -> bool:
     import tomllib
 
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        data = tomllib.loads(path.read_text(encoding='utf-8'))
     except (tomllib.TOMLDecodeError, OSError):
         return False
-    tasks = dict(data.get("tasks", {}))
-    for feature in data.get("feature", {}).values():
-        tasks.update(feature.get("tasks", {}))
-    return "test" in tasks
+    tasks = dict(data.get('tasks', {}))
+    for feature in data.get('feature', {}).values():
+        tasks.update(feature.get('tasks', {}))
+    return 'test' in tasks
 
 
 def _npm_has_test_script(path: Path) -> bool:
     try:
-        return "test" in json.loads(path.read_text(encoding="utf-8")).get("scripts", {})
+        return 'test' in json.loads(path.read_text(encoding='utf-8')).get('scripts', {})
     except (ValueError, OSError):
         return False
 
 
 def _mentions_test(path: Path) -> bool:
     """Crude fallback for formats with no cheap stdlib parser (YAML)."""
-    return "test" in path.read_text(encoding="utf-8")
+    return 'test' in path.read_text(encoding='utf-8')
 
 
 # Priority order: a project's own task runner knows more than a bare pytest
 # invocation does (env activation, flags, coverage config). Each entry owns
 # its own detector, so adding a runner is one line here and nothing else.
 TEST_RUNNERS = (
-    ("pixi.toml", "pixi run test", _pixi_has_test_task),
-    ("Taskfile.yml", "task test", _mentions_test),
-    ("package.json", "npm test", _npm_has_test_script),
+    ('pixi.toml', 'pixi run test', _pixi_has_test_task),
+    ('Taskfile.yml', 'task test', _mentions_test),
+    ('package.json', 'npm test', _npm_has_test_script),
 )
 
 
@@ -465,12 +463,12 @@ def check_friction(report: Report, root: Path) -> None:
     projects that have no such script, and a missing optional companion is
     not a finding about the project.
     """
-    miner = Path(__file__).resolve().parent / "friction.py"
+    miner = Path(__file__).resolve().parent / 'friction.py'
     if not miner.is_file():
         return
     try:
         out = subprocess.run(
-            [sys.executable, str(miner), "--json"],
+            [sys.executable, str(miner), '--json'],
             cwd=root,
             capture_output=True,
             text=True,
@@ -479,36 +477,36 @@ def check_friction(report: Report, root: Path) -> None:
         )
         data = json.loads(out.stdout)
     except (OSError, ValueError, subprocess.SubprocessError):
-        report.add(WARN, "friction", "could not run friction.py")
+        report.add(WARN, 'friction', 'could not run friction.py')
         return
 
-    if warning := data.get("ledger_warning"):
-        report.add(WARN, "friction", warning)
+    if warning := data.get('ledger_warning'):
+        report.add(WARN, 'friction', warning)
     # Surface the denominator. A check that reports only actionable_count
     # hides its own coverage: while BENIGN_EXIT was mis-anchored, 45 of 61
     # errors were filed as benign, unclassified read a reassuring 5, and
     # preflight printed "nothing over the bar" over a classifier that could
     # not see three quarters of its input.
-    seen = data.get("errors_seen", 0)
-    unclassified = data.get("unclassified", 0)
+    seen = data.get('errors_seen', 0)
+    unclassified = data.get('unclassified', 0)
     if seen and unclassified * 4 >= seen:
         report.add(
             WARN,
-            "friction",
-            f"{unclassified}/{seen} errors match no class; the classifier is "
-            "behind its input (pixi run friction --all)",
+            'friction',
+            f'{unclassified}/{seen} errors match no class; the classifier is '
+            'behind its input (pixi run friction --all)',
         )
-    n = data.get("actionable_count", 0)
+    n = data.get('actionable_count', 0)
     if n:
-        classes = ", ".join(data.get("actionable", [])[:3])
-        more = "..." if n > 3 else ""
+        classes = ', '.join(data.get('actionable', [])[:3])
+        more = '...' if n > 3 else ''
         report.add(
             WARN,
-            "friction",
-            f"{n} class(es) over bar: {classes}{more} (pixi run friction)",
+            'friction',
+            f'{n} class(es) over bar: {classes}{more} (pixi run friction)',
         )
     else:
-        report.add(OK, "friction", "nothing over the bar")
+        report.add(OK, 'friction', 'nothing over the bar')
 
 
 def check_audit_owed(report: Report, root: Path) -> None:
@@ -533,12 +531,15 @@ def check_audit_owed(report: Report, root: Path) -> None:
     with no audit script, since preflight is copied into repos that have no
     such concept.
     """
-    if not (Path(__file__).resolve().parent / "audit_assets.py").is_file():
+    if not (Path(__file__).resolve().parent / 'audit_assets.py').is_file():
         return
-    if not (root / ".audit-owed").is_file():
+    if not (root / '.audit-owed').is_file():
         return
     try:
-        import audit_assets
+        # Only exists in claude-config, which is where the audit lives; this
+        # file is copied verbatim into projects that have no such script, and
+        # the is_file() check above plus this handler are what make that fine.
+        import audit_assets  # ty: ignore[unresolved-import]
     except ImportError:
         return
     # -C root, like check_precommit_installed. Reading the branch from the
@@ -546,7 +547,7 @@ def check_audit_owed(report: Report, root: Path) -> None:
     # invoked from, and made its own tests depend on the branch the checkout
     # was on -- two of them failed on `main`, which is precisely the state
     # step 0 requires to be green.
-    branch = git("-C", str(root), "rev-parse", "--abbrev-ref", "HEAD") or ""
+    branch = git('-C', str(root), 'rev-parse', '--abbrev-ref', 'HEAD') or ''
     # On the default branch, report every branch's entries, not just this
     # one's. An obligation recorded against feat/x whose work has been merged
     # is now an obligation about the default branch's contents, and reporting
@@ -560,9 +561,9 @@ def check_audit_owed(report: Report, root: Path) -> None:
         return
     report.add(
         WARN,
-        "audit",
-        f"{len(assets)} config asset(s) changed on this branch; "
-        "run `pixi run audit` and the config-audit skill before integrating",
+        'audit',
+        f'{len(assets)} config asset(s) changed on this branch; '
+        'run `pixi run audit` and the config-audit skill before integrating',
     )
 
 
@@ -575,12 +576,12 @@ def check_hooks(report: Report, root: Path) -> None:
     broken. Silent when the repo has no registrar, since preflight is copied
     into projects that have no hooks at all.
     """
-    registrar = Path(__file__).resolve().parent / "register_hooks.py"
+    registrar = Path(__file__).resolve().parent / 'register_hooks.py'
     if not registrar.is_file():
         return
     try:
         out = subprocess.run(
-            [sys.executable, str(registrar), "--check"],
+            [sys.executable, str(registrar), '--check'],
             cwd=root,
             capture_output=True,
             text=True,
@@ -588,65 +589,56 @@ def check_hooks(report: Report, root: Path) -> None:
             timeout=20,
         )
     except (OSError, subprocess.SubprocessError):
-        report.add(WARN, "hooks registered", "could not run register_hooks.py")
+        report.add(WARN, 'hooks registered', 'could not run register_hooks.py')
         return
 
     if out.returncode == 0:
         report.add(
             OK,
-            "hooks registered",
+            'hooks registered',
             out.stdout.strip().splitlines()[-1:][0]
             if out.stdout.strip()
-            else "all current",
+            else 'all current',
         )
         return
-    drift = [line.strip() for line in out.stdout.splitlines() if line.startswith("  ")]
+    drift = [line.strip() for line in out.stdout.splitlines() if line.startswith('  ')]
     report.add(
         WARN,
-        "hooks registered",
-        f"{len(drift)} out of date: {'; '.join(drift[:2])} ({_install_hint()})",
+        'hooks registered',
+        f'{len(drift)} out of date: {"; ".join(drift[:2])} ({_install_hint()})',
     )
 
 
 def check_codex_hooks(report: Report, root: Path) -> None:
     """Report Codex hook configuration and the separately persisted trust state."""
-    registrar = Path(__file__).resolve().parent / "register_codex_hooks.py"
+    registrar = Path(__file__).resolve().parent / 'register_codex_hooks.py'
     if not registrar.is_file():
         return
-    command = [sys.executable, str(registrar), "--check"]
+    command = [sys.executable, str(registrar), '--check']
     try:
         out = subprocess.run(
-            command,
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=20,
+            command, cwd=root, capture_output=True, text=True, check=False, timeout=20
         )
     except (OSError, subprocess.SubprocessError):
         report.add(
-            WARN,
-            "Codex hooks configured",
-            "could not run register_codex_hooks.py",
+            WARN, 'Codex hooks configured', 'could not run register_codex_hooks.py'
         )
     else:
         if out.returncode == 0:
             report.add(
                 OK,
-                "Codex hooks configured",
+                'Codex hooks configured',
                 out.stdout.strip().splitlines()[-1:][0]
                 if out.stdout.strip()
-                else "all current",
+                else 'all current',
             )
         else:
             report.add(
-                WARN,
-                "Codex hooks configured",
-                f"out of date ({' '.join(command)})",
+                WARN, 'Codex hooks configured', f'out of date ({" ".join(command)})'
             )
     report.add(
         WARN,
-        "Codex hooks trusted",
+        'Codex hooks trusted',
         "verify persisted host trust for this repository's /hooks directory",
     )
 
@@ -664,22 +656,22 @@ def _install_hint() -> str:
     platform_paths.WINDOWS is defined as -- and a remediation hint is worth
     more approximately right than absent.
     """
-    windows = platform_paths.WINDOWS if platform_paths else os.name == "nt"
-    return "./install.ps1" if windows else "./install.sh"
+    windows = platform_paths.WINDOWS if platform_paths else os.name == 'nt'
+    return './install.ps1' if windows else './install.sh'
 
 
 def installation_checkout(root: Path) -> Path:
     """Resolve the main checkout without assuming where Git stores its metadata."""
     root = root.resolve()
-    if not (root / ".git").is_file():
+    if not (root / '.git').is_file():
         return root
     # The first porcelain record is the main checkout. NUL delimiters preserve
     # spaces and avoid Git's quoting of unusual paths; a bare repo owns no install.
-    listing = git("-C", str(root), "worktree", "list", "--porcelain", "-z")
+    listing = git('-C', str(root), 'worktree', 'list', '--porcelain', '-z')
     if listing:
-        main = listing.split("\0\0", 1)[0].split("\0")
-        if main[0].startswith("worktree ") and "bare" not in main:
-            return Path(main[0].removeprefix("worktree ")).resolve()
+        main = listing.split('\0\0', 1)[0].split('\0')
+        if main[0].startswith('worktree ') and 'bare' not in main:
+            return Path(main[0].removeprefix('worktree ')).resolve()
     return root
 
 
@@ -689,12 +681,12 @@ def check_instructions(report: Report, root: Path, home: Path) -> None:
     if (
         installation_contract is None
         or platform_paths is None
-        or not (root / "install.py").is_file()
+        or not (root / 'install.py').is_file()
         or not (root / installation_contract.GUIDANCE_NAME).is_file()
     ):
         return
     for label, (dest, expected) in zip(
-        ("Claude instructions", "Codex instructions"),
+        ('Claude instructions', 'Codex instructions'),
         installation_contract.instruction_adapters(root, home),
         strict=True,
     ):
@@ -702,22 +694,18 @@ def check_instructions(report: Report, root: Path, home: Path) -> None:
             current = (
                 dest.is_file()
                 and not platform_paths.is_link(dest)
-                and dest.read_text(encoding="utf-8") == expected
+                and dest.read_text(encoding='utf-8') == expected
             )
         except (OSError, UnicodeError):
             current = False
         if current:
-            report.add(OK, label, f"{dest}: current")
+            report.add(OK, label, f'{dest}: current')
         else:
-            report.add(
-                WARN,
-                label,
-                f"{dest}: missing or stale ({_install_hint()})",
-            )
+            report.add(WARN, label, f'{dest}: missing or stale ({_install_hint()})')
 
 
 def check_skills(
-    report: Report, root: Path, installed: Path, label: str = "skills linked"
+    report: Report, root: Path, installed: Path, label: str = 'skills linked'
 ) -> None:
     """Report skills the repo carries that this machine cannot see.
 
@@ -734,8 +722,8 @@ def check_skills(
     sessions in linked worktrees still consume the main installation. Silent
     in projects with no installer, since preflight is copied into other repos.
     """
-    source = root / "skills"
-    if not source.is_dir() or not (root / "install.py").is_file():
+    source = root / 'skills'
+    if not source.is_dir() or not (root / 'install.py').is_file():
         return
     # The optional sibling owns symlink and Windows junction handling.
     if platform_paths is None:
@@ -751,7 +739,7 @@ def check_skills(
     )
     source_roots = {
         source.resolve(),
-        (installation_checkout(root) / "skills").resolve(),
+        (installation_checkout(root) / 'skills').resolve(),
     }
     wrong = sorted(
         name
@@ -767,22 +755,18 @@ def check_skills(
         if platform_paths.is_link(p) and not p.exists() and p.name not in carried
     )
     if not unlinked and not copies and not wrong and not dangling:
-        report.add(OK, label, f"{installed}: {len(carried)} linked")
+        report.add(OK, label, f'{installed}: {len(carried)} linked')
         return
     parts = []
     if unlinked:
-        parts.append(f"not linked: {', '.join(unlinked)}")
+        parts.append(f'not linked: {", ".join(unlinked)}')
     if copies:
-        parts.append(f"copy, not a link: {', '.join(copies)}")
+        parts.append(f'copy, not a link: {", ".join(copies)}')
     if wrong:
-        parts.append(f"wrong target: {', '.join(wrong)}")
+        parts.append(f'wrong target: {", ".join(wrong)}')
     if dangling:
-        parts.append(f"stale link: {', '.join(dangling)}")
-    report.add(
-        WARN,
-        label,
-        f"{installed}: {'; '.join(parts)} ({_install_hint()})",
-    )
+        parts.append(f'stale link: {", ".join(dangling)}')
+    report.add(WARN, label, f'{installed}: {"; ".join(parts)} ({_install_hint()})')
 
 
 def detect_test_command(root: Path) -> str | None:
@@ -790,43 +774,43 @@ def detect_test_command(root: Path) -> str | None:
         path = root / filename
         if path.is_file() and defines_test(path):
             return command
-    if (root / "tests").is_dir() or list(root.glob("test_*.py")):
-        return "pytest"
+    if (root / 'tests').is_dir() or list(root.glob('test_*.py')):
+        return 'pytest'
     return None
 
 
 def check_tests(report: Report, root: Path, run: bool) -> None:
     command = detect_test_command(root)
     if command is None:
-        report.add(WARN, "tests", "no test suite configured")
+        report.add(WARN, 'tests', 'no test suite configured')
         return
     if not run:
-        report.add(OK, "tests", f"'{command}' detected (use --with-tests to run)")
+        report.add(OK, 'tests', f"'{command}' detected (use --with-tests to run)")
         return
     try:
         result = subprocess.run(command.split(), cwd=root, check=False)
     except FileNotFoundError:
-        report.add(FAIL, "tests", f"'{command}' not found on PATH")
+        report.add(FAIL, 'tests', f"'{command}' not found on PATH")
         return
     if result.returncode == 0:
-        report.add(OK, "tests", f"'{command}' passed")
+        report.add(OK, 'tests', f"'{command}' passed")
     else:
-        report.add(FAIL, "tests", f"'{command}' failed (exit {result.returncode})")
+        report.add(FAIL, 'tests', f"'{command}' failed (exit {result.returncode})")
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--with-tests", action="store_true", help="run the suite")
+    parser.add_argument('--with-tests', action='store_true', help='run the suite')
     parser.add_argument(
-        "--check-updates", action="store_true", help="query upstream hook revs"
+        '--check-updates', action='store_true', help='query upstream hook revs'
     )
     parser.add_argument(
-        "--strict", action="store_true", help="exit nonzero on any warning or failure"
+        '--strict', action='store_true', help='exit nonzero on any warning or failure'
     )
     parser.add_argument(
-        "--no-friction",
-        action="store_true",
-        help="skip the friction report (on by default: local and fast)",
+        '--no-friction',
+        action='store_true',
+        help='skip the friction report (on by default: local and fast)',
     )
     args = parser.parse_args(argv)
 
@@ -835,7 +819,7 @@ def main(argv: list[str]) -> int:
         report.render()
         return 1 if args.strict else 0
 
-    root = Path(git("rev-parse", "--show-toplevel") or ".")
+    root = Path(git('rev-parse', '--show-toplevel') or '.')
     if not check_interpreter(report, root):
         # An interpreter below the project's floor makes later checks
         # unrunnable, not merely untrustworthy: detect_test_command imports
@@ -854,7 +838,7 @@ def main(argv: list[str]) -> int:
     check_instructions(report, root, Path.home())
     if installation_contract is not None:
         for label, installed in zip(
-            ("Claude skills linked", "Portable skills linked"),
+            ('Claude skills linked', 'Portable skills linked'),
             installation_contract.skill_destinations(Path.home()),
             strict=True,
         ):
@@ -867,5 +851,5 @@ def main(argv: list[str]) -> int:
     return 1 if (args.strict and problems) else 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))

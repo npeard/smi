@@ -16,7 +16,7 @@ import os
 import subprocess
 from pathlib import Path
 
-WINDOWS = os.name == "nt"
+WINDOWS = os.name == 'nt'
 
 
 def interpreter(repo: Path) -> Path:
@@ -26,8 +26,8 @@ def interpreter(repo: Path) -> Path:
     everywhere else. Hardcoding the POSIX form made `register_hooks.py`
     abort on every Windows run.
     """
-    env = Path(repo) / ".pixi" / "envs" / "dev"
-    return env / "python.exe" if WINDOWS else env / "bin" / "python"
+    env = Path(repo) / '.pixi' / 'envs' / 'dev'
+    return env / 'python.exe' if WINDOWS else env / 'bin' / 'python'
 
 
 def link_dir(src: Path, dest: Path) -> None:
@@ -44,17 +44,17 @@ def link_dir(src: Path, dest: Path) -> None:
         # /J is the unprivileged form. mklink is a cmd builtin, so it cannot
         # be exec'd directly.
         result = subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(dest), str(src)],
+            ['cmd', '/c', 'mklink', '/J', str(dest), str(src)],
             capture_output=True,
             text=True,
             check=False,
         )
         if result.returncode != 0:
-            raise OSError(f"mklink failed for {dest} -> {src}: {result.stderr.strip()}")
+            raise OSError(f'mklink failed for {dest} -> {src}: {result.stderr.strip()}')
         if not is_link(dest):
             raise OSError(
-                f"mklink reported success but {dest} is not a junction "
-                f"(produced a non-link, e.g. a plain directory, for {dest} -> {src})"
+                f'mklink reported success but {dest} is not a junction '
+                f'(produced a non-link, e.g. a plain directory, for {dest} -> {src})'
             )
         return
     dest.symlink_to(src, target_is_directory=True)
@@ -88,7 +88,7 @@ def link_target(p: Path) -> Path | None:
         raw = os.readlink(p)
     except OSError:
         return None
-    target = Path(raw.removeprefix("\\\\?\\"))
+    target = Path(raw.removeprefix('\\\\?\\'))
     return (target if target.is_absolute() else p.parent / target).resolve()
 
 

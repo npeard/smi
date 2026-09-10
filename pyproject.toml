@@ -145,6 +145,13 @@ allow-dict-calls-with-keyword-arguments = true
 "notebooks/**.py" = ["T201", "ANN", "INP001", "E501", "B018", "PLR0915", "PTH123", "F841", "PLC0415"]
 "*.ipynb" = ["ALL"]
 "scripts/check_ascii.py" = ["S603", "S607", "T201"]
+# preflight.py and platform_paths.py are copied verbatim from
+# ~/Documents/Projects/claude-config, which is where they are maintained and
+# linted. Reformatting them to this project's stricter rules would fork them
+# from upstream and make the next copy a merge, so the local rules they trip
+# are disabled rather than the files edited.
+"scripts/preflight.py" = ["ANN202", "B007", "D301", "PLC0415", "PTH115", "S603", "S607", "T201"]
+"scripts/platform_paths.py" = ["ANN202", "D301", "INP001", "PLC0415", "PTH115", "S603", "S607", "T201"]
 # report/figures/*.py are standalone scripts run by the Snakefile, not an
 # importable package, so they have no __init__.py (INP001) and import their
 # shared helpers via a sys.path insert rather than a package-relative import

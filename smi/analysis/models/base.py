@@ -49,6 +49,21 @@ class Model(nn.Module):
         output_std: Scalar std of the target feature.
     """
 
+    # Buffers are reached through nn.Module.__getattr__, whose return type is
+    # Tensor | Module, so a type checker rejects arithmetic on them. Declaring
+    # them here is the annotation PyTorch documents for this case.
+    #
+    # `inner` is deliberately NOT annotated alongside them: a bare
+    # `inner: nn.Module` class annotation makes torch.jit.script fail with
+    # "Unknown type annotation: <class 'torch.nn.modules.module.Module'>",
+    # because TorchScript cannot compile the abstract Module type. The
+    # submodule is registered by assignment in __init__ and TorchScript infers
+    # its concrete type from there; see the ignore at its one call site.
+    input_mean: Tensor
+    input_std: Tensor
+    output_mean: Tensor
+    output_std: Tensor
+
     def __init__(
         self,
         inner: nn.Module,
@@ -137,7 +152,13 @@ class Model(nn.Module):
         """
         x = self.feature_map(x)
         x = (x - self.input_mean) / self.input_std
-        return self.inner.encode(x)
+        # `encode` is a duck-typed extension, not part of nn.Module: only the
+        # TCAN models define it, and only the VICReg path calls this. Typing
+        # `inner` as a Protocol would force every architecture to satisfy it
+        # for the sake of one caller, so the narrow ignore is the honest cost
+        # of the delegation. AttributeError here means an inner model without
+        # `encode` was used with a VICReg loss weight.
+        return self.inner.encode(x)  # ty: ignore[call-non-callable]
 
     @torch.jit.unused
     def to_torchscript(self) -> torch.jit.ScriptModule:
