@@ -19,17 +19,19 @@ repos:
 
     # Use the pixi-managed ruff (same binary/version/config as `pixi run lint`)
     # rather than a separately pinned ruff-pre-commit, so the hook and the task
-    # never diverge. Requires `pixi install`.
+    # never diverge. Invoked via `pixi run -e dev` rather than a hardcoded
+    # .pixi/envs/dev/bin/ path, which is Unix-only and silently breaks every
+    # commit on win-64. Requires `pixi install -e dev`.
 -   repo: local
     hooks:
     -   id: ruff
         name: ruff
-        entry: .pixi/envs/dev/bin/ruff check --fix --exit-non-zero-on-fix
+        entry: pixi run -e dev ruff check --fix --exit-non-zero-on-fix
         language: system
         types: [python]
     -   id: ruff-format
         name: ruff-format
-        entry: .pixi/envs/dev/bin/ruff format
+        entry: pixi run -e dev ruff format
         language: system
         types: [python]
 
