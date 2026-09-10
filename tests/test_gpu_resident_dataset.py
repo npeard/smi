@@ -139,6 +139,31 @@ def test_datamodule_falls_back_when_the_data_does_not_fit():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason='requires CUDA')
+def test_device_mismatch_warns_instead_of_silently_copying(caplog):
+    """Preloading to a device the trainer is not on must not pass unremarked.
+
+    It still works, but every batch pays a copy, which makes the resident mode
+    slower than the DataLoader it replaced -- with no visible symptom.
+    """
+    dm = VelocityDataModule(
+        dataset_path=str(DATASET),
+        batch_size=2,
+        num_workers=0,
+        preload_device='cuda:0',
+        num_pd_channels=3,
+    )
+    dm.setup()
+    if not dm.preloaded:
+        pytest.skip('GPU does not have room for the dataset plus headroom')
+
+    batch = next(iter(dm.train_dataloader()))
+    with caplog.at_level('WARNING'):
+        moved = dm.transfer_batch_to_device(batch, torch.device('cpu'), 0)
+    assert 'being copied between devices' in caplog.text
+    assert moved[0].device.type == 'cpu'
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason='requires CUDA')
 def test_datamodule_preload_serves_device_resident_batches():
     """With preload_device set, batches arrive already on the device."""
     dm = VelocityDataModule(

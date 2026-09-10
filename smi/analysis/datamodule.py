@@ -174,3 +174,28 @@ class VelocityDataModule(lightning_module.LightningDataModule):
     def test_dataloader(self) -> DataLoader:
         """Test dataloader (unshuffled)."""
         return self._loader(self.test_dataset, shuffle=False)
+
+    def transfer_batch_to_device(
+        self, batch: object, device: torch.device, dataloader_idx: int
+    ) -> object:
+        """Move a batch to ``device``, warning if that undoes the preload.
+
+        Lightning's default is a ``.to(device)`` per tensor, which is free when
+        the tensor is already there. But if the Trainer ends up on a different
+        device than ``preload_device``, every batch silently pays a
+        device-to-device copy and the resident mode is strictly worse than the
+        DataLoader it replaced. That is invisible from the outside, so say so.
+        """
+        if (
+            self.preloaded
+            and self.preload_device is not None
+            and device != self.preload_device
+        ):
+            logger.warning(
+                'Data was preloaded onto %s but the trainer is on %s, so every '
+                'batch is being copied between devices. Set preload_device to '
+                'the trainer device, or leave it None.',
+                self.preload_device,
+                device,
+            )
+        return super().transfer_batch_to_device(batch, device, dataloader_idx)
