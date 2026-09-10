@@ -132,8 +132,10 @@ class VelocityDataset(Dataset):
 
             # Load voltage and compute velocity
             voltage = self.voltage_data[idx]
-            velocity, _, _ = self.coil_driver.get_velocity(voltage, self.sample_rate)
-            displacement, _, _ = self.coil_driver.get_displacement(
+            # One shared displacement spectrum feeds both outputs. Calling
+            # get_velocity and get_displacement separately would compute the
+            # same forward FFT and transfer-function product twice per sample.
+            velocity, displacement = self.coil_driver.get_velocity_and_displacement(
                 voltage, self.sample_rate
             )
 
