@@ -48,6 +48,14 @@ measured for ``model-only``). What is stable, and what the conclusion rests
 on, is the *ratio* within a single run -- so compare configurations only
 against others from the same invocation, never across runs.
 
+The ``w0`` configurations are the noisy ones: with no worker processes the
+loader runs inline on the training thread, so it competes with the same
+Python process that is driving the GPU and picks up whatever else the desktop
+is doing. Run-to-run spread there has been ~20%, against under 1.5% for
+every ``w4``/``w8`` configuration. They are kept because they show what the
+duplicate-FFT fix was worth when the loader is on the critical path, but no
+conclusion should rest on a ``w0`` number.
+
 Run with::
 
     pixi run -e dev python -m smi.analysis.benchmark_loading --shots 2000
@@ -406,6 +414,7 @@ def _run_loader_only(
     dataset_cls: type[VelocityDataset],
     num_workers: int,
     *,
+    device: torch.device,
     file_path: Path,
     shots: int,
     batch_size: int,
@@ -415,6 +424,13 @@ def _run_loader_only(
 
     This is the upper bound on what the loader can deliver. Compared against
     the end-to-end numbers it says whether the loader has headroom.
+
+    The host-to-device copy is included even though no model consumes the
+    result. Supplying a batch means supplying it *on the device* -- that copy
+    is work the production path pays every iteration, and leaving it out
+    would measure the delivery of pinned host tensors and call it the
+    loader's ceiling, overstating the headroom against configurations that
+    do pay it.
     """
     result = BenchmarkResult(name=name, shots=shots, batch_size=batch_size)
     setup_start = time.perf_counter()
@@ -430,9 +446,12 @@ def _run_loader_only(
     result.setup_s = time.perf_counter() - setup_start
 
     def one_epoch() -> float:
+        torch.cuda.synchronize(device)
         start = time.perf_counter()
-        for _batch in loader:
-            pass
+        for cpu_signals, cpu_velocity, _displacement in loader:
+            cpu_signals.to(device, non_blocking=True)
+            cpu_velocity.to(device, non_blocking=True)
+        torch.cuda.synchronize(device)
         return time.perf_counter() - start
 
     one_epoch()
@@ -506,6 +525,7 @@ def run_configuration(
             name,
             DuplicateSpectrumDataset if '-dup-' in name else VelocityDataset,
             int(name.rsplit('w', 1)[1]),
+            device=device,
             file_path=file_path,
             shots=shots,
             batch_size=batch_size,
