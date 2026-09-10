@@ -240,6 +240,10 @@ precommit = "pre-commit run --all-files"
 [tool.pixi.feature.dev.tasks]
 typecheck = "ty check"
 all = { depends-on = ["format", "lint", "ascii", "typecheck", "test"] }
+# Data-loading throughput measurement (smi/analysis/benchmark_loading.py).
+# Deliberately not part of `all`: it needs a CUDA GPU and takes minutes, and
+# its answer only changes when the model or the loader path changes.
+benchmark-loading = "python -m smi.analysis.benchmark_loading"
 
 [tool.ty.environment]
 python-version = "3.12"

@@ -59,6 +59,37 @@ def test_resident_samples_match_the_lazy_dataset():
         )
 
 
+def test_chunked_physics_crosses_a_chunk_boundary_cleanly():
+    """Loading more than one PHYSICS_CHUNK gives the same answer as one chunk.
+
+    Construction runs the transform in chunks to bound the complex128
+    workspace. Chunking is an allocation detail, so it must not be visible in
+    the numbers -- an off-by-one in the slice assignment would be.
+    """
+    n = GPUResidentDataset.PHYSICS_CHUNK + 3
+    chunked = GPUResidentDataset(
+        DATASET, device='cpu', num_pd_channels=NUM_PD_CHANNELS, max_shots=n
+    )
+    assert len(chunked) == n
+
+    lazy = VelocityDataset(DATASET, num_pd_channels=NUM_PD_CHANNELS)
+    # One index inside the first chunk, one straddling the boundary, one after.
+    for idx in (
+        0,
+        GPUResidentDataset.PHYSICS_CHUNK - 1,
+        GPUResidentDataset.PHYSICS_CHUNK,
+        n - 1,
+    ):
+        _lazy_signals, lazy_velocity, lazy_displacement = lazy[idx]
+        _signals, velocity, displacement = chunked[idx]
+        scale = float(lazy_velocity.abs().max())
+        torch.testing.assert_close(velocity, lazy_velocity, rtol=0, atol=1e-5 * scale)
+        scale_d = float(lazy_displacement.abs().max())
+        torch.testing.assert_close(
+            displacement, lazy_displacement, rtol=0, atol=1e-5 * scale_d
+        )
+
+
 def test_required_bytes_matches_what_is_allocated():
     """The pre-flight size estimate is the size actually held."""
     expected = GPUResidentDataset.required_bytes(

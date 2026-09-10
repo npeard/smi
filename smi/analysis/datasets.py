@@ -197,6 +197,9 @@ class GPUResidentDataset(Dataset):
         max_shots: If set, load only the first ``max_shots`` shots.
     """
 
+    #: Shots per batched physics call during construction. See __init__.
+    PHYSICS_CHUNK = 512
+
     def __init__(
         self,
         file_path: str | Path,
@@ -230,14 +233,25 @@ class GPUResidentDataset(Dataset):
         # than once per sample per epoch. On a CUDA device this runs on-device
         # via torch.fft; on CPU the same torch code path is used, so the two
         # agree bit-for-bit within a run.
-        voltage_tensor = torch.from_numpy(voltage).to(self.device)
-        velocity, displacement = coil_driver.get_velocity_and_displacement_torch(
-            voltage_tensor, self.sample_rate
-        )
-
+        #
+        # Chunked, because the transform's intermediates are complex128: a
+        # single 10000 x 16384 call would transiently need ~10 GB of workspace
+        # on top of the 3.3 GB it is producing, and would OOM on anything but
+        # an empty 24 GB card. The chunk size is a workspace/launch-overhead
+        # tradeoff, not a correctness knob -- the result is identical.
         self.signals = torch.from_numpy(signals).to(self.device)
-        self.velocity = velocity
-        self.displacement = displacement
+        self.velocity = torch.empty(
+            (n, signals.shape[-1]), dtype=torch.float32, device=self.device
+        )
+        self.displacement = torch.empty_like(self.velocity)
+        for start in range(0, n, self.PHYSICS_CHUNK):
+            stop = min(start + self.PHYSICS_CHUNK, n)
+            chunk = torch.from_numpy(voltage[start:stop]).to(self.device)
+            velocity, displacement = coil_driver.get_velocity_and_displacement_torch(
+                chunk, self.sample_rate
+            )
+            self.velocity[start:stop] = velocity
+            self.displacement[start:stop] = displacement
         self.length = n
         logger.info(
             'GPUResidentDataset: %d shots resident on %s (%.2f GB)',
