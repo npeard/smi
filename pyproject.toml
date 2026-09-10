@@ -157,9 +157,14 @@ platforms = ["win-64", "linux-64"]
 
 [tool.pixi.dependencies]
 python = ">=3.12,<3.13"
-numba = "*"
 polars = ">=1.0"
-numpy = ">=2.0"
+# numpy and numba deliberately come from PyPI (via [project.dependencies]),
+# NOT conda. Conda-forge numpy links libomp.dll while the PyPI CUDA torch
+# wheel bundles Intel's libiomp5md.dll; loading both in one process makes
+# OpenMP abort ("OMP: Error #15"), which killed np.corrcoef mid-test-suite.
+# The documented KMP_DUPLICATE_LIB_OK escape hatch is explicitly unsafe and
+# can silently corrupt results, so instead keep a single OpenMP runtime by
+# sourcing the whole numeric stack from one place.
 # ruff/codespell live in the default env so the `format`/`lint`/`spell` tasks
 # (defined under [tool.pixi.tasks], which runs in the default env) use the
 # pinned, lockfile-backed tools instead of whatever happens to be on PATH.
@@ -261,9 +266,10 @@ exclude_lines = [
 # lockfile-reproducible with no manual install step -- unlike a LaTeX engine,
 # where no conda package ships a usable macro tree.
 [tool.pixi.feature.report.dependencies]
+# typst only: it is a self-contained Rust binary with no OpenMP/BLAS linkage,
+# so it cannot collide with the PyPI numeric stack. matplotlib and h5py come
+# from PyPI with everything else -- see the OpenMP note above.
 typst = "*"
-matplotlib = "*"
-h5py = "*"
 
 # Snakemake has no conda-forge win-64 build at all (it is packaged only for
 # linux-64/osx), so it comes from PyPI, where the wheels are pure Python and
@@ -272,3 +278,5 @@ h5py = "*"
 # cluster and --use-conda executors are the parts with real Windows gaps.
 [tool.pixi.feature.report.pypi-dependencies]
 snakemake = ">=8"
+matplotlib = "*"
+h5py = "*"
