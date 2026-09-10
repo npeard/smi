@@ -27,6 +27,16 @@ Configurations (see ``CONFIG_NAMES``):
   velocity/displacement are recomputed on-device each epoch with
   ``get_velocity_and_displacement_torch``. Trades compute for ~1.3 GB of VRAM.
 
+Two isolation runs bracket those, so the regime can be named rather than
+inferred:
+
+- ``loader-only-*``  -- the loader with no model: its supply ceiling.
+- ``model-only``     -- the model on synthetic in-VRAM tensors with no data
+  path at all: the GPU ceiling.
+
+If the end-to-end numbers sit at ``model-only`` while ``loader-only`` is far
+above them, the workload is GPU bound and no loader change can help.
+
 Timing rules: warm up before measuring, ``torch.cuda.synchronize()`` around any
 GPU timing, report the median of ``--repeats`` (>= 3) epochs, and pin to one
 explicit device. Peak GPU memory is reported for the resident modes.
@@ -74,6 +84,15 @@ CONFIG_NAMES = (
     'dataloader-w8',
     'gpu-resident',
     'gpu-resident-torch-physics',
+    # Isolation runs. These are not candidate training paths; they bracket the
+    # end-to-end numbers so the regime can be named rather than guessed. If
+    # 'model-only' is close to the end-to-end configurations and
+    # 'loader-only-*' is far above them, the workload is GPU bound.
+    'loader-only-dup-w0',
+    'loader-only-dup-w8',
+    'loader-only-w0',
+    'loader-only-w8',
+    'model-only',
 )
 
 
@@ -375,6 +394,86 @@ def _run_gpu_resident(
     return result
 
 
+def _run_loader_only(
+    name: str,
+    dataset_cls: type[VelocityDataset],
+    num_workers: int,
+    *,
+    file_path: Path,
+    shots: int,
+    batch_size: int,
+    repeats: int,
+) -> BenchmarkResult:
+    """Time the loader alone, with no model, to find its supply ceiling.
+
+    This is the upper bound on what the loader can deliver. Compared against
+    the end-to-end numbers it says whether the loader has headroom.
+    """
+    result = BenchmarkResult(name=name, shots=shots, batch_size=batch_size)
+    setup_start = time.perf_counter()
+    base = dataset_cls(file_path, num_pd_channels=3, cache_size=0)
+    loader = DataLoader(
+        _SubsetDataset(base, shots),
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0,
+        pin_memory=True,
+    )
+    result.setup_s = time.perf_counter() - setup_start
+
+    def one_epoch() -> float:
+        start = time.perf_counter()
+        for _batch in loader:
+            pass
+        return time.perf_counter() - start
+
+    one_epoch()
+    for _ in range(repeats):
+        result.epoch_times_s.append(one_epoch())
+    return result
+
+
+def _run_model_only(
+    name: str,
+    *,
+    shots: int,
+    batch_size: int,
+    repeats: int,
+    device: torch.device,
+    sequence_length: int,
+) -> BenchmarkResult:
+    """Time the model alone on synthetic in-VRAM tensors: the GPU ceiling.
+
+    No data path of any kind is involved, so this is the fastest an epoch of
+    ``shots`` samples can possibly be. Any end-to-end configuration close to
+    this number is GPU bound and cannot be improved by touching the loader.
+    """
+    result = BenchmarkResult(name=name, shots=shots, batch_size=batch_size)
+    setup_start = time.perf_counter()
+    model = build_model(sequence_length).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    signals = torch.randn(batch_size, 3, sequence_length, device=device)
+    velocity = torch.randn(batch_size, sequence_length, device=device)
+    n_batches = -(-shots // batch_size)
+    result.setup_s = time.perf_counter() - setup_start
+
+    def one_epoch() -> float:
+        torch.cuda.synchronize(device)
+        start = time.perf_counter()
+        for _ in range(n_batches):
+            _train_step(model, optimizer, signals, velocity)
+        torch.cuda.synchronize(device)
+        return time.perf_counter() - start
+
+    one_epoch()
+    torch.cuda.reset_peak_memory_stats(device)
+    for _ in range(repeats):
+        result.epoch_times_s.append(one_epoch())
+    result.peak_gpu_bytes = torch.cuda.max_memory_allocated(device)
+    return result
+
+
 def run_configuration(
     name: str,
     *,
@@ -386,6 +485,25 @@ def run_configuration(
     sequence_length: int,
 ) -> BenchmarkResult:
     """Dispatch one named configuration."""
+    if name == 'model-only':
+        return _run_model_only(
+            name,
+            shots=shots,
+            batch_size=batch_size,
+            repeats=repeats,
+            device=device,
+            sequence_length=sequence_length,
+        )
+    if name.startswith('loader-only'):
+        return _run_loader_only(
+            name,
+            DuplicateSpectrumDataset if '-dup-' in name else VelocityDataset,
+            int(name.rsplit('w', 1)[1]),
+            file_path=file_path,
+            shots=shots,
+            batch_size=batch_size,
+            repeats=repeats,
+        )
     if name.startswith('dataloader'):
         num_workers = int(name.rsplit('w', 1)[1])
         dataset_cls = DuplicateSpectrumDataset if '-dup-' in name else VelocityDataset
@@ -463,6 +581,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help='Explicit device. Pin to the 24 GB card, not whichever is first.',
     )
     parser.add_argument(
+        '--require-device-name',
+        type=str,
+        default='3090',
+        help=(
+            'Substring the chosen device name must contain, so a run cannot '
+            'silently land on the wrong card. torch and nvidia-smi do not '
+            'agree on GPU ordering on this machine. Pass an empty string to '
+            'skip the check.'
+        ),
+    )
+    parser.add_argument(
         '--configs',
         nargs='+',
         default=list(CONFIG_NAMES),
@@ -483,12 +612,36 @@ def main(argv: list[str] | None = None) -> int:
     device = torch.device(args.device)
     torch.cuda.set_device(device)
 
+    # torch orders CUDA devices by compute capability by default, while
+    # nvidia-smi orders them by PCI bus id -- on this machine those disagree,
+    # so 'cuda:0' and 'GPU 0' are different cards. Fail loudly rather than
+    # publish numbers from the 8 GB Quadro thinking they came from the 3090 Ti.
+    device_name = torch.cuda.get_device_name(device)
+    if args.require_device_name and args.require_device_name not in device_name:
+        raise RuntimeError(
+            f'{args.device} is "{device_name}", which does not contain '
+            f'"{args.require_device_name}". Pick the right --device or pass '
+            f'--require-device-name "" to override.'
+        )
+
+    # Another process sharing the GPU makes every number below meaningless.
+    other = torch.cuda.memory_reserved(device)
+    free, total = torch.cuda.mem_get_info(device)
+    in_use = total - free - other
+    if in_use > (1 << 30):
+        logger.warning(
+            'Another process is holding %.2f GB on %s. Throughput numbers '
+            'from a shared GPU are not comparable; wait for it to be idle.',
+            in_use / 1e9,
+            device_name,
+        )
+
     with h5py.File(args.data_file, 'r') as f:
         sequence_length = int(f[VOLTAGE_KEY].shape[1])
         available = int(f[VOLTAGE_KEY].shape[0])
     shots = min(args.shots, available)
 
-    print(f'device        : {torch.cuda.get_device_name(device)} ({args.device})')  # noqa: T201
+    print(f'device        : {device_name} ({args.device})')  # noqa: T201
     print(f'data file     : {args.data_file}')  # noqa: T201
     print(f'shots (N)     : {shots} of {available}')  # noqa: T201
     print(f'sequence len  : {sequence_length}')  # noqa: T201
