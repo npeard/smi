@@ -178,8 +178,17 @@ def test_waveform_statistics():
     end_freq = 500
     num_samples = 20  # Reduced for test efficiency
 
+    # Seeded: this compares an empirical variance over only 20 samples against
+    # the analytic one at rtol=0.3, which is a wide enough tolerance to pass
+    # most of the time and a narrow enough one to fail occasionally. Unseeded
+    # it did exactly that, and an intermittently red suite is one people learn
+    # to re-run rather than read.
     waveform = Waveform(
-        start_freq=start_freq, end_freq=end_freq, gen_dec=8192, acq_dec=256
+        start_freq=start_freq,
+        end_freq=end_freq,
+        gen_dec=8192,
+        acq_dec=256,
+        seed=20250910,
     )
 
     # Initialize arrays to store all voltage samples and reconstructed complex signals
