@@ -137,6 +137,12 @@ dmypy.json
 **/checkpoints/*
 **/lightning_logs/*
 
+# ...but the baseline results are a few KB of computed numbers, not data. A
+# report figure has to read them, and recomputing takes ~25 minutes on a GPU,
+# so they are version-controlled deliberately. Regenerate with
+# `python -m smi.analysis.baseline_fit`.
+!smi/analysis/data/baseline_results.json
+
 # Session-scoped agent scaffolding (specs, plans) -- durable rationale goes
 # in commit messages and code comments instead.
 docs/superpowers/
