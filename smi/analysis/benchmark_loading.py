@@ -41,6 +41,13 @@ Timing rules: warm up before measuring, ``torch.cuda.synchronize()`` around any
 GPU timing, report the median of ``--repeats`` (>= 3) epochs, and pin to one
 explicit device. Peak GPU memory is reported for the resident modes.
 
+Caveat for this machine: the 3090 Ti is also the display GPU, so the desktop
+compositor holds a few GB and takes a variable slice of the SMs. The absolute
+samples/s therefore shifts between sessions (212 and 393 have both been
+measured for ``model-only``). What is stable, and what the conclusion rests
+on, is the *ratio* within a single run -- so compare configurations only
+against others from the same invocation, never across runs.
+
 Run with::
 
     pixi run -e dev python -m smi.analysis.benchmark_loading --shots 2000
