@@ -30,8 +30,8 @@ class VelocityDataset(Dataset):
 
     The dataset returns:
     - signals: Raw photodiode signals (1-3 channels based on num_pd_channels)
-    - velocity: Velocity computed from speaker drive voltage
-    - displacement: Displacement computed by integrating velocity
+    - velocity: Velocity (um/ms) computed from speaker drive voltage
+    - displacement: Displacement (um) computed by integrating velocity
 
     For standard models that only need velocity, the displacement can be ignored in the
     training loop.
@@ -117,8 +117,9 @@ class VelocityDataset(Dataset):
             - signals: Tensor of shape (num_pd_channels, signal_length) containing
               photodiode signals
             - velocity: Tensor of shape (signal_length,) containing velocity
+              in microns per millisecond (um/ms)
             - displacement: Tensor of shape (signal_length,) containing displacement
-              computed by integrating velocity
+              in microns (um), computed by integrating velocity
         """
         # Check cache first
         if idx in self._cache:

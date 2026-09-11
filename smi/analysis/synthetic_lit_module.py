@@ -159,7 +159,7 @@ class SyntheticLitModule(LitModule):
         Returns:
             Tuple of ``(signals, velocity, displacement)`` where:
             - signals: ``[batch_size, num_channels, seq_len]`` interferometer signals
-            - velocity: ``[batch_size, seq_len]`` displacement velocity
+            - velocity: ``[batch_size, seq_len]`` velocity in um/ms
             - displacement: ``[batch_size, seq_len]`` mirror displacement in microns
         """
         # 1. Generate random displacement waveforms [B, L]
@@ -216,7 +216,7 @@ class SyntheticLitModule(LitModule):
         Returns:
             Tuple of (signals, velocity, displacement) where:
             - signals: [batch_size, num_channels, seq_len] interferometer signals
-            - velocity: [batch_size, seq_len] displacement velocity
+            - velocity: [batch_size, seq_len] velocity in um/ms
             - displacement: [batch_size, seq_len] mirror displacement in microns
         """
         return self.generate_synthetic_batch(

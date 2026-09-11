@@ -69,7 +69,8 @@ def generate_synthetic_test_data(
         seed: Random seed for reproducibility
 
     Returns:
-        DataLoader yielding (signals, velocity, displacement) tuples
+        DataLoader yielding (signals, velocity, displacement) tuples, with
+        velocity in um/ms and displacement in um
     """
     torch.manual_seed(42)
 
@@ -107,7 +108,7 @@ def generate_synthetic_test_data(
     signals_std = signals.std(dim=-1, keepdim=True).clamp(min=1e-8)
     signals = (signals - signals_mean) / signals_std
 
-    # Compute velocity from displacement
+    # Compute velocity (um/ms) from displacement (um)
     velocity = CoilDriver.derivative_displacement(displacement, acq_sample_rate)
 
     dataset = TensorDataset(signals, velocity, displacement)

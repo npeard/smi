@@ -169,7 +169,7 @@ def plot_waveforms(
     # ax3.plot(t, displacement, 'b-', label='Standard')
     ax3.plot(t_eq, displacement_eq, 'r--', label='Equalized Gain')
     ax3.set_title('Displacement Waveform')
-    ax3.set_ylabel('Displacement (umm)')
+    ax3.set_ylabel('Displacement (um)')
     ax3.grid(True)
     ax3.legend()
 
@@ -238,7 +238,7 @@ def plot_waveforms(
     ax5.plot(t_eq, velocity_eq, 'r--', label='Equalized Gain')
     ax5.set_title('Velocity Waveform')
     ax5.set_xlabel('Time (s)')
-    ax5.set_ylabel('Velocity (umm/s)')
+    ax5.set_ylabel('Velocity (um/ms)')
     ax5.grid(True)
     ax5.legend()
 
