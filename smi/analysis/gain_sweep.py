@@ -344,6 +344,10 @@ class GainSweep:
         curves: Per-channel median-R^2 curves, keyed by channel name.
         nyquist_hz: Half the sample rate, or ``None`` if no sample rate was
             supplied and so the bandwidth check did not run.
+        per_shot: Upper bound from giving each shot its own optimal gain, or
+            ``None`` if it was not computed. Carried here rather than returned
+            separately so the caveat cannot be quoted apart from the claim it
+            qualifies.
         runtime_s: Wall-clock seconds spent on the sweep.
     """
 
@@ -355,6 +359,7 @@ class GainSweep:
     gains: np.ndarray
     curves: dict[str, ChannelGainCurve] = field(default_factory=dict)
     nyquist_hz: float | None = None
+    per_shot: PerShotGainSweep | None = None
     runtime_s: float = 0.0
 
     @property
@@ -524,6 +529,13 @@ class GainSweep:
             'nyquist_hz': self.nyquist_hz,
             'gains': [float(g) for g in self.gains],
             'channels': channels,
+            # Sits inside the same dataset block as the best-global-gain
+            # numbers it qualifies: a per-shot gain is the most generous
+            # scalar correction possible, so where it still fails, no
+            # recalibration of k can succeed.
+            'per_shot_gain': (
+                self.per_shot.to_dict() if self.per_shot is not None else None
+            ),
             'runtime_s': self.runtime_s,
         }
 
@@ -762,6 +774,167 @@ def sweep_gain(
     )
 
 
+@dataclass
+class PerShotChannelGains:
+    """Per-shot optimal gains and the R^2 they buy, for one channel.
+
+    Attributes:
+        wavelength_um: Laser wavelength for this channel (microns).
+        best_gains: The gain maximizing R^2 for each shot, in shot order.
+        r_squared: The R^2 achieved at each shot's own best gain.
+        binned_r_squared: Those R^2 values grouped by excursion, each shot
+            binned at its own fitted gain.
+    """
+
+    wavelength_um: float
+    best_gains: list[float] = field(default_factory=list)
+    r_squared: list[float] = field(default_factory=list)
+    binned_r_squared: list[dict[str, float | int | str]] = field(default_factory=list)
+
+
+@dataclass
+class PerShotGainSweep:
+    """Upper bound on what any scalar gain correction can achieve.
+
+    This exists to answer one question the global sweep cannot: is the
+    residual amplitude dependence a *scale* error at all? Giving every shot
+    its own optimal gain is the most generous scale correction possible -- far
+    more freedom than a recalibrated constant would have. If the
+    large-excursion cohort still collapses under that, the leftover error is
+    not a scale error, which is what points at unmodeled within-shot drift.
+
+    Attributes:
+        dataset: Short dataset label.
+        n_shots: Shots fitted.
+        gains: The candidate gains each shot chose from.
+        curves: Per-channel results, keyed by channel name.
+        runtime_s: Wall-clock seconds spent fitting.
+    """
+
+    dataset: str
+    n_shots: int
+    gains: np.ndarray
+    curves: dict[str, PerShotChannelGains] = field(default_factory=dict)
+    runtime_s: float = 0.0
+
+    @property
+    def channels(self) -> list[str]:
+        """Channel names in the order they were fitted."""
+        return list(self.curves)
+
+    def best_gains(self, channel: str) -> list[float]:
+        """Each shot's own optimal gain, in shot order."""
+        return self.curves[channel].best_gains
+
+    def median_r_squared(self, channel: str) -> float:
+        """Median over shots of the R^2 at each shot's own best gain."""
+        return float(np.median(self.curves[channel].r_squared))
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-serializable summary.
+
+        Returns:
+            Nested plain-Python dictionary ready for :func:`json.dumps`.
+        """
+        return {
+            'dataset': self.dataset,
+            'n_shots': self.n_shots,
+            'gain_low': float(self.gains[0]),
+            'gain_high': float(self.gains[-1]),
+            'live_k': LIVE_K,
+            'channels': {
+                name: {
+                    'wavelength_um': curve.wavelength_um,
+                    'best_gains': list(curve.best_gains),
+                    'median_best_gain': float(np.median(curve.best_gains)),
+                    'p25_best_gain': float(np.percentile(curve.best_gains, 25)),
+                    'p75_best_gain': float(np.percentile(curve.best_gains, 75)),
+                    'median_r_squared': self.median_r_squared(name),
+                    'binned_r_squared': curve.binned_r_squared,
+                }
+                for name, curve in self.curves.items()
+            },
+            'runtime_s': self.runtime_s,
+        }
+
+
+def per_shot_best_gain(
+    pd_signals: np.ndarray,
+    unit_displacement: np.ndarray,
+    wavelengths_um: Sequence[float],
+    gains: np.ndarray,
+    channel_names: Sequence[str] | None = None,
+    dataset: str = 'in-memory',
+) -> PerShotGainSweep:
+    """Give every shot its own optimal gain and report what that buys.
+
+    The result is an upper bound, not a proposal: nobody could deploy a
+    per-shot gain, since it requires knowing the answer. Its purpose is
+    falsification. If the >3 um cohort stays low even here, then no scalar
+    recalibration of ``k`` -- however carefully fitted -- can explain the
+    residual, and the remaining error must be something a scale cannot reach.
+
+    Args:
+        pd_signals: Photodiode signals, shape ``(n_shots, n_channels, n_time)``.
+        unit_displacement: Displacement per unit gain (microns), shape
+            ``(n_shots, n_time)``.
+        wavelengths_um: Channel wavelengths (microns), length ``n_channels``.
+        gains: Candidate gains each shot may choose from.
+        channel_names: Names to key the result by. Defaults to the photodiode
+            channel names in :data:`PD_WAVELENGTHS_UM` order.
+        dataset: Label recorded in the result.
+
+    Returns:
+        Each shot's fitted gain and the R^2 it achieves, per channel.
+
+    Raises:
+        ValueError: If the shot counts disagree, or the channel count does not
+            match the wavelength list.
+    """
+    start = time.perf_counter()
+    signals = np.asarray(pd_signals, dtype=np.float64)
+    unit = np.asarray(unit_displacement, dtype=np.float64)
+    wavelengths = np.asarray(wavelengths_um, dtype=np.float64)
+    gains = np.asarray(gains, dtype=np.float64)
+    _check_sweep_shapes(signals, unit, wavelengths)
+
+    names = (
+        list(channel_names)
+        if channel_names
+        else list(PD_WAVELENGTHS_UM)[: signals.shape[1]]
+    )
+    n_shots = signals.shape[0]
+    unit_ptp = np.ptp(unit - unit.mean(axis=1, keepdims=True), axis=1)
+
+    curves: dict[str, PerShotChannelGains] = {}
+    for k, name in enumerate(names):
+        scores = np.empty((n_shots, gains.size))
+        for j, gain in enumerate(gains):
+            for i in range(n_shots):
+                scores[i, j] = forward_model_residual(
+                    signals[i, k], gain * unit[i], wavelengths[k]
+                ).r_squared
+        pick = np.argmax(scores, axis=1)
+        best = gains[pick]
+        r2 = scores[np.arange(n_shots), pick]
+        curves[name] = PerShotChannelGains(
+            wavelength_um=float(wavelengths[k]),
+            best_gains=[float(g) for g in best],
+            r_squared=[float(v) for v in r2],
+            # Each shot is binned at its own fitted gain, since that is the
+            # excursion its reported R^2 was achieved at.
+            binned_r_squared=binned_by_amplitude(r2, best * unit_ptp),
+        )
+
+    return PerShotGainSweep(
+        dataset=dataset,
+        n_shots=int(n_shots),
+        gains=gains,
+        curves=curves,
+        runtime_s=time.perf_counter() - start,
+    )
+
+
 def sweep_dataset(
     file_path: Path,
     label: str,
@@ -769,6 +942,7 @@ def sweep_dataset(
     gains: np.ndarray | None = None,
     window_samples: int | None = DEFAULT_WINDOW_SAMPLES,
     delay_max_shift: int = 8,
+    include_per_shot: bool = True,
 ) -> GainSweep:
     """Sweep the gain over a leading slice of one acquisition HDF5 file.
 
@@ -790,10 +964,14 @@ def sweep_dataset(
             for the global fit only.
         delay_max_shift: Half-width of the delay check in samples, swept at
             the winning gain. Pass 0 to skip it.
+        include_per_shot: Also fit a separate optimal gain per shot, which
+            bounds what any scalar correction could achieve. Roughly doubles
+            the global-fit work; see :func:`per_shot_best_gain`.
 
     Returns:
         The per-channel gain curves for this acquisition, plus the aliasing
-        and time-delay checks that rule those two candidates out.
+        and time-delay checks that rule those two candidates out, and the
+        per-shot upper bound when requested.
     """
     if gains is None:
         gains = gain_grid(DEFAULT_GAIN_LOW, DEFAULT_GAIN_HIGH, DEFAULT_GAIN_STEP)
@@ -817,7 +995,7 @@ def sweep_dataset(
     for i in range(n_shots):
         unit_vel[i], unit[i] = unit_gain_displacement(drive[i], sample_rate)
 
-    return sweep_gain(
+    sweep = sweep_gain(
         pd_raw,
         unit,
         wavelengths,
@@ -830,6 +1008,11 @@ def sweep_dataset(
         sample_rate=sample_rate,
         delay_max_shift=delay_max_shift,
     )
+    if include_per_shot:
+        sweep.per_shot = per_shot_best_gain(
+            pd_raw, unit, wavelengths, gains, channel_names=channels, dataset=label
+        )
+    return sweep
 
 
 def run_gain_sweep(
@@ -839,6 +1022,8 @@ def run_gain_sweep(
     output: Path | None = None,
     datasets: dict[str, str] | None = None,
     delay_max_shift: int = 8,
+    include_per_shot: bool = True,
+    data_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Sweep every configured acquisition and write the JSON artifact.
 
@@ -848,14 +1033,19 @@ def run_gain_sweep(
         window_samples: Window length for the windowed measure.
         output: Destination JSON path. Defaults to
             ``smi/analysis/data/gain_sweep_results.json``.
-        datasets: Mapping of label to file name under ``smi/analysis/data``.
+        datasets: Mapping of label to file name under ``data_dir``.
         delay_max_shift: Half-width of the delay check in samples.
+        include_per_shot: Also fit an optimal gain per shot, bounding what any
+            scalar correction could achieve.
+        data_dir: Directory the dataset file names are relative to. Defaults
+            to ``smi/analysis/data``.
 
     Returns:
         The results dictionary that was written to disk.
     """
     datasets = datasets or DEFAULT_DATASETS
     output = output or DEFAULT_RESULTS_PATH
+    data_dir = data_dir or DATA_DIR
     if gains is None:
         gains = gain_grid(DEFAULT_GAIN_LOW, DEFAULT_GAIN_HIGH, DEFAULT_GAIN_STEP)
 
@@ -872,12 +1062,13 @@ def run_gain_sweep(
             'live_k': LIVE_K,
             'legacy_k': LEGACY_K,
             'delay_max_shift': delay_max_shift,
+            'include_per_shot': include_per_shot,
             'pd_wavelengths_um': dict(PD_WAVELENGTHS_UM),
         },
         'datasets': {},
     }
     for label, name in datasets.items():
-        path = DATA_DIR / name
+        path = data_dir / name
         if not path.exists():
             logger.warning('skipping %s: %s not found', label, path)
             continue
@@ -889,6 +1080,7 @@ def run_gain_sweep(
             gains=gains,
             window_samples=window_samples,
             delay_max_shift=delay_max_shift,
+            include_per_shot=include_per_shot,
         )
         results['datasets'][label] = sweep.to_dict()
         for channel in sweep.channels:
@@ -926,6 +1118,18 @@ def run_gain_sweep(
                     best_shift,
                     max(curve.delay_median_r_squared),
                     curve.delay_median_r_squared[curve.delay_shifts.index(0)],
+                )
+            if sweep.per_shot is not None:
+                # Logged next to the best-global-gain line, because the point
+                # of this number is that it is an upper bound on that one.
+                per_shot_gains = sweep.per_shot.best_gains(channel)
+                logger.info(
+                    '    caveat: per-shot gains median %.2f (IQR %.2f-%.2f), '
+                    'median R^2 %.3f -- the ceiling for any scalar gain fix',
+                    float(np.median(per_shot_gains)),
+                    float(np.percentile(per_shot_gains, 25)),
+                    float(np.percentile(per_shot_gains, 75)),
+                    sweep.per_shot.median_r_squared(channel),
                 )
         logger.info('  %s: %.1f s', label, sweep.runtime_s)
 
@@ -975,6 +1179,13 @@ def main(argv: list[str] | None = None) -> None:
         help='Half-width in samples of the drive-to-photodiode delay check, '
         'swept at the winning gain. Pass 0 to skip it.',
     )
+    parser.add_argument(
+        '--no-per-shot',
+        action='store_true',
+        help='Skip the per-shot optimal-gain fit. That fit is the evidence '
+        'that the residual is not a scale error, so the artifact is weaker '
+        'without it.',
+    )
     parser.add_argument('--output', type=Path, default=None)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -985,6 +1196,7 @@ def main(argv: list[str] | None = None) -> None:
         window_samples=args.window_samples or None,
         output=args.output,
         delay_max_shift=args.delay_max_shift,
+        include_per_shot=not args.no_per_shot,
     )
 
 

@@ -24,6 +24,8 @@ from smi.analysis.gain_sweep import (
     fringe_rate_headroom,
     gain_grid,
     peak_fringe_rate_hz,
+    per_shot_best_gain,
+    run_gain_sweep,
     sweep_dataset,
     sweep_gain,
     unit_gain_displacement,
@@ -566,3 +568,112 @@ class TestRuledOutChecksLandInTheArtifact:
             assert len(delay['median_r_squared']) == len(delay['shifts'])
             # The synthetic file has no delay, so zero must win.
             assert delay['best_shift'] == 0
+
+
+class TestPerShotBestGain:
+    """The caveat that proves the residual is drift, not a scale error."""
+
+    def test_per_shot_gain_beats_the_global_best_on_mixed_gains(self) -> None:
+        """Per-shot fitting must actually be per shot.
+
+        Half the shots are generated at one gain and half at another, so no
+        single global gain can fit both. A per-shot optimum must beat the best
+        global one here -- otherwise the "even a per-shot gain does not rescue
+        the >3 um collapse" finding would be reporting a broken estimator
+        rather than a property of the data.
+        """
+        low, high = 10.0, 14.0
+        signals_a, unit_a = _synthetic_sweep_inputs(low, n_shots=4, n_samples=2048)
+        signals_b, unit_b = _synthetic_sweep_inputs(high, n_shots=4, n_samples=2048)
+        signals = np.concatenate([signals_a, signals_b])
+        unit = np.concatenate([unit_a, unit_b])
+        gains = gain_grid(8.0, 16.0, 0.25)
+
+        per_shot = per_shot_best_gain(signals, unit, WAVELENGTHS, gains)
+        global_sweep = sweep_gain(
+            signals, unit, WAVELENGTHS, gains, window_samples=None
+        )
+
+        channel = per_shot.channels[0]
+        assert per_shot.median_r_squared(channel) > global_sweep.best_r_squared(channel)
+
+    def test_per_shot_gains_land_on_the_gain_each_shot_was_built_at(self) -> None:
+        low, high = 10.0, 14.0
+        signals_a, unit_a = _synthetic_sweep_inputs(low, n_shots=3, n_samples=2048)
+        signals_b, unit_b = _synthetic_sweep_inputs(high, n_shots=3, n_samples=2048)
+        signals = np.concatenate([signals_a, signals_b])
+        unit = np.concatenate([unit_a, unit_b])
+
+        per_shot = per_shot_best_gain(
+            signals, unit, WAVELENGTHS, gain_grid(8.0, 16.0, 0.25)
+        )
+
+        fitted = np.asarray(per_shot.best_gains(per_shot.channels[0]))
+        np.testing.assert_allclose(fitted[:3], low, atol=0.25)
+        np.testing.assert_allclose(fitted[3:], high, atol=0.25)
+
+    def test_per_shot_result_is_binned_and_serializable(self) -> None:
+        signals, unit = _synthetic_sweep_inputs(12.0, n_shots=6, n_samples=2048)
+
+        per_shot = per_shot_best_gain(
+            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5)
+        )
+        payload = json.loads(json.dumps(per_shot.to_dict()))
+
+        for channel in PD_WAVELENGTHS_UM:
+            entry = payload['channels'][channel]
+            assert len(entry['best_gains']) == 6
+            assert sum(int(b['n']) for b in entry['binned_r_squared']) == 6
+
+
+class TestPerShotLandsInTheArtifact:
+    """The caveat must be in the file, not only reachable from the API."""
+
+    def test_run_writes_per_shot_gains_beside_the_global_sweep(
+        self, tmp_path: Path
+    ) -> None:
+        """A caveat a reader cannot find is not a caveat.
+
+        "A per-shot fitted gain does not rescue the collapse" has to sit in
+        the same artifact as the best-global-gain claim it qualifies, or the
+        two will be quoted apart.
+        """
+        rng = np.random.default_rng(9)
+        n_shots, n_samples = 4, 1024
+        drive = np.empty((n_shots, n_samples))
+        signals = np.empty((n_shots, len(WAVELENGTHS), n_samples))
+        for i in range(n_shots):
+            tone = _band_limited_displacement(n_samples, seed=500 + i, amplitude_um=1.0)
+            drive[i] = tone
+            _, unit = unit_gain_displacement(tone, SAMPLE_RATE)
+            for k, wavelength in enumerate(WAVELENGTHS):
+                signals[i, k] = _fringes(11.0 * unit, wavelength, rng.uniform(0, 6.28))
+        data_dir = tmp_path / 'data'
+        data_dir.mkdir()
+        with h5py.File(data_dir / 'known.h5', 'w') as handle:
+            handle.attrs['sample_rate'] = SAMPLE_RATE
+            handle.create_dataset(DRIVE_KEY, data=drive)
+            for k, channel in enumerate(PD_WAVELENGTHS_UM):
+                handle.create_dataset(channel, data=signals[:, k])
+
+        output = tmp_path / 'out.json'
+        results = run_gain_sweep(
+            n_shots=n_shots,
+            gains=gain_grid(10.0, 12.0, 0.5),
+            window_samples=None,
+            output=output,
+            datasets={'known': 'known.h5'},
+            data_dir=data_dir,
+            delay_max_shift=2,
+        )
+
+        on_disk = json.loads(output.read_text(encoding='utf-8'))
+        assert on_disk == results
+        entry = on_disk['datasets']['known']
+        assert entry['n_shots'] == n_shots
+        per_shot = entry['per_shot_gain']
+        assert per_shot['n_shots'] == n_shots
+        for channel in PD_WAVELENGTHS_UM:
+            gains = per_shot['channels'][channel]['best_gains']
+            assert len(gains) == n_shots
+            assert all(10.0 <= g <= 12.0 for g in gains)
