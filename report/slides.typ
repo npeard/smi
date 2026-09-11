@@ -11,7 +11,7 @@
 // ASCII only, per the repo convention. Write "um", "->", "<=" rather than the
 // Unicode glyphs.
 
-#import "lib/theme.typ": fig, slides-theme, takeaway, todo
+#import "lib/theme.typ": fig, slides-theme, takeaway
 
 #show: slides-theme.with(
   title: "Self-mixing interferometry for rapid vibration spectrograms",
@@ -106,13 +106,25 @@ no inverse -- learned or not -- will do better.
 = Throughput: where the time actually goes
 
 Three regimes the loading benchmark has to separate: disk-bound, CPU-bound on
-the per-sample FFT physics, or already hidden behind the GPU.
+the per-sample FFT physics, or already hidden behind the GPU. Every
+configuration runs a real forward and backward pass.
 
-#todo[
-  Samples/s for the current DataLoader at several worker counts, the same with
-  the duplicated spectrum computation removed, and fully GPU-resident
-  batching. Every configuration runs a real forward and backward pass, so the
-  comparison reflects training rather than a microbenchmark.
+#takeaway[
+  *It is GPU bound.* Every configuration with `num_workers >= 4` lands within
+  3% of the model-only ceiling of about 212 samples/s, while the loader on
+  its own supplies about 1573-1600 samples/s -- roughly 7.5-9x more than the
+  model can consume.
+]
+
+- *Full GPU residency buys 1.7%*, which is inside the run-to-run noise. It is
+  implemented as an opt-in mode, not a default, because the measurement does
+  not justify one.
+- The duplicate-FFT fix matters only at `num_workers = 0`, where the loader is
+  on the critical path. With workers, it is hidden.
+
+#text(size: 11pt, fill: rgb("#6a6a6a"))[
+  Caveat: the 3090 Ti is also the display GPU, so absolute samples/s shifts
+  between sessions. Only within-run ratios are meaningful.
 ]
 
 = Baselines: what a non-learned method achieves
@@ -126,18 +138,44 @@ beside it from a method that does not learn.
   across three wavelengths, then differentiate. This is the number that goes
   next to the network's RMSE.
 
-#todo[
-  Measured RMSE for both methods, free space and mm fiber, N stated. The
-  standalone report (`baseline.pdf`) carries the full argument.
+Scoring a shot by its likelihood and fitting it and reporting MSE are the same
+computation: under Gaussian residuals the negative log-likelihood *is* the
+summed squared residual, up to an additive constant and a positive scale. So
+fit in closed form, report MSE, and the likelihood reading comes free.
+
+= Results: the baseline, and what it exposes
+
+// 78% orphaned the takeaway onto a second page. Three panels side by side
+// stay legible well below that, so shrinking the figure is the fix rather
+// than dropping the takeaway, which is the point of the slide.
+#fig(
+  "baseline_summary",
+  width: 62%,
+  caption: [
+    Medians over N = 200 shots per acquisition, interquartile range as
+    whiskers.
+  ],
+)
+
+#takeaway[
+  The inverse reaches 0.433 / 0.462 um displacement RMSE (488 / 550 um/s
+  velocity) -- but NRMSE 1.10 / 1.18, i.e. just *worse than predicting zero*.
 ]
 
-= Results
+= Why the baseline is bad, and what that means
 
-#todo[
-  Network results against the baselines: velocity RMSE on free space and on mm
-  fiber, the gap between them, and a representative predicted-versus-true
-  velocity trace.
-]
+The forward-model residual says the problem is not the inverse. With
+displacement *known*, the Michelson model still explains only 9-38% of the
+variance, and the residual is 0.79-0.95x the signal RMS in every channel.
+
+#fig(
+  "baseline_amplitude_trend",
+  width: 62%,
+  caption: [
+    Method-1 median $R^2$ by drive peak-to-peak excursion. Every channel in
+    both acquisitions collapses to $R^2 <= 0.11$ above 2 um.
+  ],
+)
 
 = What is settled and what is not
 
@@ -145,10 +183,15 @@ beside it from a method that does not learn.
 - Acquisition and the supervision path work end to end on real hardware.
 - Resident working set is 3.05 GiB per acquisition, so GPU residency is an
   option rather than a wish.
-- The fiber acquisition is measurably band-limited relative to free space.
+- Data loading was never the bottleneck. Training is GPU bound; the loader has
+  7.5-9x headroom.
+- The baseline: 488 / 550 um/s velocity RMSE, N = 200 per acquisition.
+- The Michelson model does not explain this data, even given the true
+  displacement. That is now the limiting problem.
 
 *Open.*
-- Whether data loading was ever the training bottleneck.
-- What the non-learned baseline achieves, and so whether the network earns its
-  complexity.
-- Whether the fiber gap closes with features, receptive field, or neither.
+- Why the forward model fails, and why it fails worse with excursion. The
+  drive-to-displacement calibration is the first suspect, untested.
+- Whether the network earns its complexity against a floor this low.
+- The fiber gap is invisible in the baseline, so it remains unmeasured rather
+  than absent.
