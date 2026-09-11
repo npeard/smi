@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-GPLv3-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.8-orange.svg)](https://pytorch.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.6%2Bcu124-orange.svg)](https://pytorch.org/)
 
 ## Overview
 
@@ -20,7 +20,11 @@ The importable package is `smi/`:
   `lit_module.py`, `training_interface.py`.
 - `smi/synthetic/` - physics simulation (coil driver, interferometers, waveform).
 - `smi/redpitaya/` - Red Pitaya hardware control and acquisition.
+- `report/` - Typst slides and reports, built from matplotlib figures through a
+  Snakemake DAG (`pixi run report`). See the `report/` section in `CLAUDE.md`.
 - `tests/`, `notebooks/` (marimo apps), `scripts/`, `docs/`.
+
+Supported platforms are `win-64` and `linux-64`.
 
 ## Quick Start for Contributors
 
@@ -56,6 +60,7 @@ Python -- always go through `pixi`.
    pixi run test       # pytest
    pixi run precommit  # all pre-commit hooks
    pixi run all        # format, lint, ascii, typecheck, test in sequence
+   pixi run report     # build the Typst slides and reports
    ```
 
 6. Commit, push, and open a Pull Request on GitHub.
