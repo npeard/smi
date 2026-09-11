@@ -18,7 +18,7 @@
 - [ ] **Investigate whether using Ray Tune fractional device allocation** can help with synthetic data parameter sweeps. Generating synthetic data on GPU is fast and we can generate small amounts of data at the same time, so we could use Ray to train many models at once with different hyperparameters and select the best one.
 - [ ] **Check for signal delay offset between velocity and PD channels** -- if large enough, offset corrupts supervision signal and degrades prediction quality
 - [ ] **Continuous data acquisition via Julia / Red Pitaya DAQ Server** -- evaluate whether continuous acquisition is worth porting to Julia: [RedPitayaDAQServer docs](https://tknopp.github.io/RedPitayaDAQServer/dev/scpi.html)
-- [ ] **GPU data loading** Have we been bottlenecked this entire time using dataloaders on a dataset that we could have loaded directly into GPU memory and sliced?
+- [x] **GPU data loading** Have we been bottlenecked this entire time using dataloaders on a dataset that we could have loaded directly into GPU memory and sliced? **Answered: no.** Training is GPU bound. Every config with `num_workers >= 4` sits within 3% of the model-only ceiling (~212 samples/s) while the loader alone supplies ~1573-1600 samples/s, roughly 7.5-9x headroom; full GPU residency buys 1.7%, inside the noise. The per-sample duplicate FFT was real and is fixed (53% faster loader in isolation, no end-to-end change). `GPUResidentDataset` exists as an opt-in mode for determinism and worker-free debugging, not for speed. See `smi/analysis/benchmark_loading.py`; if throughput matters later the lever is the model side (AMP, channels_last, torch.compile, batch size).
 
 ---
 
@@ -26,7 +26,7 @@
 
 - [ ] **Remove conditional downsampling in `TemporalBlock`** -- always route through MLP; also evaluate whether stacking two same-channel temporal blocks in a row is useful or whether every block should vary channel count
 - [ ] **Correct `receptive_field` calculation** -- current formula does not account for the fact that each `TemporalBlock` contains TWO convolutional layers
-- [ ] **Model baselines** Compare TCNs to simpler models to justify the expense of the modeling approach. How well do an MLP and LightGBM tree perform?
+- [ ] **Model baselines** Compare TCNs to simpler models to justify the expense of the modeling approach. How well do an MLP and LightGBM tree perform? (The *non-learned* baseline is done -- see "Establishing baselines" below. This item is the learned-but-simpler comparison, still open.)
 
 ---
 
@@ -43,7 +43,8 @@
 
 ## Analysis & Presentation
 
-- [ ] **Establishing baselines** You DO actually need to check how accurate you would get just fitting the data with least squares or some other simple parametric method. You can do this via an MSE on the data given the model (likelihood of the data).
+- [x] **Establishing baselines** You DO actually need to check how accurate you would get just fitting the data with least squares or some other simple parametric method. You can do this via an MSE on the data given the model (likelihood of the data). **Done** -- `smi/analysis/baseline_fit.py`, report at `report/baseline.typ`. Likelihood and MSE turn out to be the same computation under Gaussian residuals, so the closed-form fit is both the simple and the rigorous option. Baseline (N=200): displacement RMSE 0.433 um free space / 0.462 um fiber, velocity RMSE 488 / 550 um/s. But the forward-model residual says the Michelson model explains only 9-38% of the variance *with displacement known*, so the baseline's error is model/data mismatch rather than a weak estimator -- the same decoder handles synthetic Michelson fringes ~20x better. Follow-up below.
+    - [ ] **Why does the Michelson model fit this data so badly?** Model fit collapses at large drive excursion: R^2 falls to 0.03-0.11 above 2 um peak-to-peak in every channel, against 0.44-0.85 in the smallest bin. Bandwidth was informally ruled out (max fringe rate ~7.4 kHz, well inside band) but that check is not committed. Speaker nonlinearity, coil-driver calibration error at large drive, or fringe-rate-dependent detector response are the candidates. This bounds every method, learned or not, so it is worth more than tuning the inverse.
 - [ ] **Cavity reflectance notebook: Fisher information** -- enhance notebook to compute Fisher information and characterize the dynamic range / FI tradeoff
 - [ ] **Block diagram visualization of network** -- set up a clean block diagram rendering of the model architecture
 
