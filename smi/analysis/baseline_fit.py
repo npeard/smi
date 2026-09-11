@@ -209,6 +209,167 @@ def forward_model_residual(
     return fit_phase_amplitude(signal, theta)
 
 
+DEFAULT_WINDOW_SAMPLES = 1024
+
+# cos, sin and a constant: the parameter count per window, which the
+# scrambled-theta control has to match for the comparison to be fair.
+_N_FIT_PARAMS = 3
+
+
+@dataclass
+class WindowedFit:
+    """Pooled result of refitting ``(cos, sin, 1)`` per window of one shot.
+
+    Attributes:
+        r_squared: One R^2 for the whole shot, formed by pooling the residual
+            and total sums of squares over all windows. Pooled rather than
+            averaged over per-window R^2 values so the number stays directly
+            comparable to the global single-window fit.
+        rmse: Root-mean-square residual over the whole shot (V).
+        n_windows: Number of windows the record was split into.
+        window_samples: Window length actually used (samples).
+    """
+
+    r_squared: float
+    rmse: float
+    n_windows: int
+    window_samples: int
+
+
+def _window_bounds(n: int, window_samples: int | None) -> list[tuple[int, int]]:
+    """Split ``n`` samples into consecutive windows of ``window_samples``.
+
+    A record length that is not a multiple of the window leaves a short tail.
+    The tail is kept as its own window rather than dropped: dropping it would
+    silently score a different span than the global fit does, and the two
+    numbers are meant to be compared. A tail shorter than the three fitted
+    parameters is merged into the previous window instead, because a window
+    with fewer samples than parameters fits exactly and would inflate R^2.
+
+    Args:
+        n: Record length in samples.
+        window_samples: Target window length, or ``None`` for a single window
+            spanning the whole record.
+
+    Returns:
+        ``(begin, end)`` index pairs covering ``[0, n)`` exactly once.
+
+    Raises:
+        ValueError: If ``window_samples`` is not positive.
+    """
+    if window_samples is None:
+        return [(0, n)]
+    if window_samples <= 0:
+        raise ValueError(f'window_samples must be positive, got {window_samples}')
+    bounds = [(b, min(b + window_samples, n)) for b in range(0, n, window_samples)]
+    if len(bounds) > 1 and bounds[-1][1] - bounds[-1][0] < _N_FIT_PARAMS + 1:
+        begin, _ = bounds.pop(-2)
+        bounds[-1] = (begin, bounds[-1][1])
+    return bounds
+
+
+def windowed_forward_model_residual(
+    pd_signal: np.ndarray,
+    displacement: np.ndarray,
+    wavelength_um: float,
+    window_samples: int | None = DEFAULT_WINDOW_SAMPLES,
+) -> WindowedFit:
+    """Method 1 with the fringe amplitude and phase refitted per window.
+
+    The global fit in :func:`forward_model_residual` forces one amplitude,
+    phase and offset across the whole 33.6 ms record. Real shots drift by
+    1-2.7 fringes within a record (speckle and path drift), which a single
+    phase cannot absorb, so the global R^2 measures the estimator's rigidity
+    as much as the model's agreement with the data. Refitting in windows
+    removes that limitation while keeping the displacement fixed and given.
+
+    The per-window residual and total sums of squares are **pooled** into one
+    R^2 for the shot. Averaging per-window R^2 values would not be comparable
+    to the global fit, because a window whose signal barely varies would
+    contribute a near-meaningless ratio with the same weight as a window that
+    swings over several fringes.
+
+    Interpreting the result requires the scrambled-theta control: short
+    windows can fit almost anything, so run this again with ``displacement``
+    taken from a *different shot* and report the two side by side. See
+    :func:`scrambled_theta_control`.
+
+    Args:
+        pd_signal: Photodiode samples for one shot (V), shape ``(n,)``.
+        displacement: Mirror displacement for the same shot (microns), shape
+            ``(n,)``. For the control, pass another shot's displacement.
+        wavelength_um: Laser wavelength for this channel (microns).
+        window_samples: Window length in samples. ``None`` reproduces the
+            global fit exactly, so the pre-windowing number stays available.
+
+    Returns:
+        The pooled fit statistics for this shot.
+
+    Raises:
+        ValueError: If the inputs do not have matching one-dimensional shapes.
+    """
+    signal = _as_float64_zero_mean(pd_signal)
+    theta = 4.0 * np.pi / wavelength_um * np.asarray(displacement, dtype=np.float64)
+    if signal.ndim != 1 or theta.ndim != 1 or signal.shape != theta.shape:
+        raise ValueError(
+            f'signal and displacement must be 1-D with matching shape, '
+            f'got {signal.shape} and {theta.shape}'
+        )
+
+    bounds = _window_bounds(signal.size, window_samples)
+    design = np.stack([np.cos(theta), np.sin(theta), np.ones_like(theta)], axis=1)
+
+    # The global fit measures variance about the whole record's mean, so the
+    # pooled total sum of squares must use that same mean. Using each window's
+    # own mean instead would make a full-length window disagree with the
+    # global fit only when the offset column is degenerate -- and would quietly
+    # credit the windowing for removing between-window offset variance twice.
+    residual_ss = 0.0
+    grand_mean = float(signal.mean())
+    total_ss = float(np.sum((signal - grand_mean) ** 2))
+    for begin, end in bounds:
+        block = signal[begin:end]
+        coeffs, *_ = np.linalg.lstsq(design[begin:end], block, rcond=None)
+        residual_ss += float(np.sum((block - design[begin:end] @ coeffs) ** 2))
+
+    r_squared = 1.0 - residual_ss / total_ss if total_ss > 0 else 0.0
+    return WindowedFit(
+        r_squared=float(r_squared),
+        rmse=float(np.sqrt(residual_ss / signal.size)),
+        n_windows=len(bounds),
+        window_samples=int(window_samples) if window_samples else int(signal.size),
+    )
+
+
+def scrambled_theta_control(
+    pd_signal: np.ndarray,
+    other_displacement: np.ndarray,
+    wavelength_um: float,
+    window_samples: int | None = DEFAULT_WINDOW_SAMPLES,
+) -> WindowedFit:
+    """Windowed fit against a *different* shot's displacement.
+
+    This is the mandatory control for every windowed R^2. It has the identical
+    window count and per-window parameter count, so whatever variance it
+    explains is the fitting capacity of the windowing itself rather than
+    agreement between the model and the data. A windowed R^2 reported without
+    this number beside it is not evidence.
+
+    Args:
+        pd_signal: Photodiode samples for one shot (V), shape ``(n,)``.
+        other_displacement: Displacement from a different shot (microns),
+            shape ``(n,)``.
+        wavelength_um: Laser wavelength for this channel (microns).
+        window_samples: Window length in samples, matching the real fit.
+
+    Returns:
+        The pooled control statistics.
+    """
+    return windowed_forward_model_residual(
+        pd_signal, other_displacement, wavelength_um, window_samples=window_samples
+    )
+
+
 # ---------------------------------------------------------------------------
 # Method 2: inverse fit by multi-wavelength decoding
 # ---------------------------------------------------------------------------

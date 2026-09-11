@@ -15,6 +15,7 @@ from smi.analysis.baseline_fit import (
     fit_phase_amplitude,
     forward_model_residual,
     inverse_fit,
+    windowed_forward_model_residual,
 )
 from smi.synthetic.coil_driver import MS_PER_S
 from smi.synthetic.interferometers import MichelsonInterferometer
@@ -149,6 +150,140 @@ class TestForwardModelResidual:
 
         assert good.r_squared > 0.999
         assert bad.r_squared < 0.5
+
+
+def _drifting_fringes(
+    displacement: np.ndarray, wavelength_um: float, drift_radians: float
+) -> np.ndarray:
+    """Michelson fringes with a slow phase ramp added across the record.
+
+    The ramp stands in for the within-shot phase drift measured in the real
+    acquisitions (1-2.7 fringes of speckle and path drift). It is the term a
+    single global ``(cos, sin, 1)`` fit cannot absorb and a windowed refit can.
+
+    Args:
+        displacement: Mirror displacement (microns), shape ``(n,)``.
+        wavelength_um: Laser wavelength (microns).
+        drift_radians: Total phase ramp accumulated over the record.
+
+    Returns:
+        Zero-mean fringe signal, shape ``(n,)``.
+    """
+    ramp = np.linspace(0.0, drift_radians, displacement.size)
+    signal = np.cos(4.0 * np.pi / wavelength_um * displacement + ramp)
+    return signal - signal.mean()
+
+
+class TestWindowedForwardModelResidual:
+    """The windowed refit must measure agreement, not absorb everything."""
+
+    WAVELENGTH = 0.635
+    DRIFT_RADIANS = 2.0 * np.pi * 2.0
+    AMPLITUDE_UM = 3.0
+    N_SAMPLES = 16384
+
+    def _signal(self, seed: int, drift: float) -> tuple[np.ndarray, np.ndarray]:
+        """Drifting fringes and the displacement that generated them."""
+        disp = _band_limited_displacement(
+            self.N_SAMPLES, seed=seed, amplitude_um=self.AMPLITUDE_UM
+        )
+        return _drifting_fringes(disp, self.WAVELENGTH, drift), disp
+
+    def test_windowing_recovers_variance_lost_to_phase_drift(self) -> None:
+        signal, disp = self._signal(seed=11, drift=self.DRIFT_RADIANS)
+
+        global_fit = forward_model_residual(signal, disp, self.WAVELENGTH)
+        windowed = windowed_forward_model_residual(
+            signal, disp, self.WAVELENGTH, window_samples=1024
+        )
+
+        assert global_fit.r_squared < 0.6
+        assert windowed.r_squared > global_fit.r_squared + 0.25
+
+    def test_without_drift_both_fits_are_high(self) -> None:
+        """Windowing must not be a blanket R^2 inflator.
+
+        Without this companion assertion the drift test above would pass even
+        if short windows simply fit anything handed to them.
+        """
+        signal, disp = self._signal(seed=11, drift=0.0)
+
+        global_fit = forward_model_residual(signal, disp, self.WAVELENGTH)
+        windowed = windowed_forward_model_residual(
+            signal, disp, self.WAVELENGTH, window_samples=1024
+        )
+
+        assert global_fit.r_squared > 0.99
+        assert windowed.r_squared > 0.99
+
+    def test_scrambled_theta_control_stays_low(self) -> None:
+        """A windowed R^2 is only evidence beside its control.
+
+        The control has the identical window count and parameter count but
+        takes ``theta`` from a different shot, so whatever it scores is the
+        overfitting capacity of the windowing alone.
+        """
+        signal, disp = self._signal(seed=11, drift=self.DRIFT_RADIANS)
+        other = _band_limited_displacement(
+            self.N_SAMPLES, seed=12, amplitude_um=self.AMPLITUDE_UM
+        )
+
+        real = windowed_forward_model_residual(
+            signal, disp, self.WAVELENGTH, window_samples=1024
+        )
+        control = windowed_forward_model_residual(
+            signal, other, self.WAVELENGTH, window_samples=1024
+        )
+
+        assert control.r_squared < real.r_squared - 0.25
+        assert control.r_squared < 0.35
+
+    def test_full_length_window_equals_global_fit(self) -> None:
+        """Pooling must be exact, or the two columns are not comparable."""
+        signal, disp = self._signal(seed=7, drift=self.DRIFT_RADIANS)
+
+        global_fit = forward_model_residual(signal, disp, self.WAVELENGTH)
+        windowed = windowed_forward_model_residual(
+            signal, disp, self.WAVELENGTH, window_samples=self.N_SAMPLES
+        )
+
+        assert windowed.r_squared == pytest.approx(global_fit.r_squared, abs=1e-12)
+        assert windowed.rmse == pytest.approx(global_fit.rmse, rel=1e-12)
+
+    def test_window_none_is_the_global_fit(self) -> None:
+        signal, disp = self._signal(seed=7, drift=self.DRIFT_RADIANS)
+
+        global_fit = forward_model_residual(signal, disp, self.WAVELENGTH)
+        windowed = windowed_forward_model_residual(
+            signal, disp, self.WAVELENGTH, window_samples=None
+        )
+
+        assert windowed.r_squared == pytest.approx(global_fit.r_squared, abs=1e-12)
+        assert windowed.n_windows == 1
+
+    def test_record_length_not_a_multiple_of_the_window(self) -> None:
+        """A ragged tail must be scored, not silently dropped."""
+        n = 1024 * 3 + 500
+        disp = _band_limited_displacement(n, seed=13, amplitude_um=self.AMPLITUDE_UM)
+        signal = _drifting_fringes(disp, self.WAVELENGTH, self.DRIFT_RADIANS)
+
+        windowed = windowed_forward_model_residual(
+            signal, disp, self.WAVELENGTH, window_samples=1024
+        )
+
+        assert windowed.n_windows == 4
+        assert 0.0 < windowed.r_squared <= 1.0
+
+    def test_window_longer_than_record_falls_back_to_one_window(self) -> None:
+        signal, disp = self._signal(seed=7, drift=self.DRIFT_RADIANS)
+
+        global_fit = forward_model_residual(signal, disp, self.WAVELENGTH)
+        windowed = windowed_forward_model_residual(
+            signal, disp, self.WAVELENGTH, window_samples=self.N_SAMPLES * 4
+        )
+
+        assert windowed.n_windows == 1
+        assert windowed.r_squared == pytest.approx(global_fit.r_squared, abs=1e-12)
 
 
 class TestInverseFit:
