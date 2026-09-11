@@ -60,9 +60,12 @@ class Waveform:
         self.t = np.linspace(0, self.burst_time, self.BUFFER_SIZE, endpoint=False)
         self.freq = fftfreq(self.BUFFER_SIZE, d=1 / self.gen_sample_rate)
 
-        # Initialize spectrum and phases to None (will be randomized on first sample)
-        self.spectrum = None
-        self.phase = None
+        # Initialize spectrum and phases to None (will be randomized on first
+        # sample). Annotated because the assignment alone infers `None`, and
+        # then every later use -- ifft(self.spectrum), np.abs(self.spectrum) --
+        # looks like a call against None to a type checker.
+        self.spectrum: np.ndarray | None = None
+        self.phase: np.ndarray | None = None
 
         # Initialize random number generator
         self.rng = default_rng(seed)
@@ -377,6 +380,12 @@ class Waveform:
             # phases. But, if self.spectrum is None, we need to call
             # _randomize_spectrum() to initialize it.
             self._randomize_spectrum()
+
+        # Every branch above either sets self.spectrum or, in the
+        # skip_randomization case, has already checked it is not None. The
+        # assertion states that invariant for a reader and for the type
+        # checker, which cannot follow it across the helper calls.
+        assert self.spectrum is not None
 
         # Convert to time domain
         y = np.real(ifft(self.spectrum, norm='ortho'))

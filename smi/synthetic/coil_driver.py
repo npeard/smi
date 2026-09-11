@@ -294,6 +294,138 @@ class CoilDriver:
 
         return velocity_waveform, velocity_spectrum, freq
 
+    def get_velocity_and_displacement(
+        self,
+        voltage_waveform: np.ndarray,
+        sample_rate: float,
+        max_freq: float | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Compute velocity and displacement from one shared displacement spectrum.
+
+        ``get_velocity`` and ``get_displacement`` each call
+        ``get_displacement_spectrum`` internally, so calling both -- as the
+        dataset does for every sample -- computes the same forward FFT and
+        transfer-function product twice. This method computes it once.
+
+        Args:
+            voltage_waveform: Voltage waveform in time domain (V)
+            sample_rate: Sample rate of the waveform (Hz)
+            max_freq: Maximum frequency to include in the calculation (Hz).
+                If None, all frequencies are included.
+
+        Returns:
+            Tuple of (velocity in microns/s, displacement in microns), both in
+            the time domain and the same shape as ``voltage_waveform``.
+        """
+        displacement_spectrum, freq = self.get_displacement_spectrum(
+            voltage_waveform, sample_rate, max_freq
+        )
+        velocity_spectrum = displacement_spectrum * 1j * 2 * np.pi * freq
+
+        displacement = np.real(ifft(displacement_spectrum, norm='ortho'))
+        velocity = np.real(ifft(velocity_spectrum, norm='ortho'))
+
+        return velocity, displacement
+
+    def get_transfer_function_torch(
+        self, freq: torch.Tensor, max_freq: float | None = None
+    ) -> torch.Tensor:
+        """Torch port of :meth:`get_transfer_function`.
+
+        Args:
+            freq: 1-D real tensor of frequencies (Hz).
+            max_freq: Maximum frequency to include (Hz). If None, all are kept.
+
+        Returns:
+            Complex transfer function with the same shape as ``freq``.
+        """
+        abs_freq = torch.abs(freq)
+        f0 = self.params.f0
+        q = self.params.Q
+
+        amplitude = (self.params.k * f0**2) / torch.sqrt(
+            (f0**2 - abs_freq**2) ** 2 + f0**2 * abs_freq**2 / q**2
+        )
+        if max_freq is not None:
+            amplitude = torch.where(
+                abs_freq <= max_freq, amplitude, torch.zeros_like(amplitude)
+            )
+
+        # Phase is evaluated at |f| and conjugated for negative frequencies,
+        # matching the numpy branch exactly.
+        phase = torch.atan2(f0 / q * abs_freq, abs_freq**2 - f0**2) + self.params.c
+        signed_phase = torch.where(freq < 0, -phase, phase)
+
+        return torch.polar(amplitude, signed_phase)
+
+    def get_displacement_spectrum_torch(
+        self,
+        voltage_waveform: torch.Tensor,
+        sample_rate: float,
+        max_freq: float | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Batched torch port of :meth:`get_displacement_spectrum`.
+
+        Args:
+            voltage_waveform: Real tensor of shape ``(batch, time)`` (or
+                ``(time,)``) on any device.
+            sample_rate: Sample rate of the waveform (Hz)
+            max_freq: Maximum frequency to include (Hz). If None, all are kept.
+
+        Returns:
+            Tuple of (complex displacement spectrum with the same shape as the
+            input, 1-D frequency tensor in Hz).
+        """
+        n = voltage_waveform.shape[-1]
+        # Do the physics in float64/complex128 so the result matches the numpy
+        # path to float32 tolerance even for float32 inputs.
+        work = voltage_waveform.to(torch.float64)
+        spectrum = torch.fft.fft(work, dim=-1, norm='ortho')
+        freq = torch.fft.fftfreq(
+            n, d=1.0 / sample_rate, device=voltage_waveform.device, dtype=torch.float64
+        )
+        transfer = self.get_transfer_function_torch(freq, max_freq)
+
+        return spectrum * transfer / 2, freq
+
+    def get_velocity_and_displacement_torch(
+        self,
+        voltage_waveform: torch.Tensor,
+        sample_rate: float,
+        max_freq: float | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Batched torch port of the velocity/displacement physics.
+
+        Numerically equivalent to :meth:`get_velocity_and_displacement` (and
+        hence to ``get_velocity``/``get_displacement``) to float32 tolerance,
+        but operates on a whole ``(batch, time)`` tensor on-device via
+        ``torch.fft``.
+
+        Args:
+            voltage_waveform: Real tensor of shape ``(batch, time)`` (or
+                ``(time,)``) on any device.
+            sample_rate: Sample rate of the waveform (Hz)
+            max_freq: Maximum frequency to include (Hz). If None, all are kept.
+
+        Returns:
+            Tuple of (velocity in microns/s, displacement in microns), both real
+            tensors with the input's shape, dtype and device.
+        """
+        displacement_spectrum, freq = self.get_displacement_spectrum_torch(
+            voltage_waveform, sample_rate, max_freq
+        )
+        velocity_spectrum = displacement_spectrum * (2j * np.pi * freq)
+
+        displacement = torch.fft.ifft(displacement_spectrum, dim=-1, norm='ortho').real
+        velocity = torch.fft.ifft(velocity_spectrum, dim=-1, norm='ortho').real
+
+        out_dtype = (
+            voltage_waveform.dtype
+            if voltage_waveform.is_floating_point()
+            else torch.float32
+        )
+        return velocity.to(out_dtype), displacement.to(out_dtype)
+
     @staticmethod
     def integrate_velocity(
         velocity_waveform: np.ndarray | torch.Tensor, sample_rate: float
