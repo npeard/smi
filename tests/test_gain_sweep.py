@@ -566,8 +566,10 @@ class TestRuledOutChecksLandInTheArtifact:
             delay = payload['channels'][channel]['delay_sweep']
             assert delay['shifts'][0] == -delay['shifts'][-1]
             assert len(delay['median_r_squared']) == len(delay['shifts'])
-            # The synthetic file has no delay, so zero must win.
+            # The synthetic file has no delay, so zero must win -- and the
+            # verdict must say "not a delay", not merely report the argmax.
             assert delay['best_shift'] == 0
+            assert delay['peak_is_interior'] is False
 
 
 class TestPerShotBestGain:
@@ -677,3 +679,49 @@ class TestPerShotLandsInTheArtifact:
             gains = per_shot['channels'][channel]['best_gains']
             assert len(gains) == n_shots
             assert all(10.0 <= g <= 12.0 for g in gains)
+
+
+class TestDelayCurveDistinguishesEdgeFromInterior:
+    """A peak at the window edge is not a delay; an interior one is.
+
+    The real acquisitions peak at the sweep's own boundary with almost no R^2
+    gain, which is the signature of a slow monotone trend rather than a
+    trigger offset. Reporting only "peaks at -8 samples" would read as a
+    detected delay and invert the conclusion, so the distinction is part of
+    the API rather than left to whoever reads the log.
+    """
+
+    def test_an_injected_delay_is_reported_as_interior(self) -> None:
+        shift = 4
+        disp = _band_limited_displacement(8192, seed=41, amplitude_um=4.0)
+        signal = np.roll(_fringes(disp, 0.635, 0.2), shift)
+
+        curve = delay_sweep(signal, disp, 0.635, max_shift=8)
+
+        assert curve.best_shift == shift
+        assert curve.peak_is_interior
+
+    def test_a_peak_at_the_window_edge_is_not_interior(self) -> None:
+        """A monotone trend pins the argmax to the boundary.
+
+        Built by shifting further than the window can reach, so the curve is
+        still climbing when it runs out of window -- exactly the shape the
+        acquisitions show.
+        """
+        disp = _band_limited_displacement(8192, seed=41, amplitude_um=4.0)
+        signal = np.roll(_fringes(disp, 0.635, 0.2), 40)
+
+        curve = delay_sweep(signal, disp, 0.635, max_shift=8)
+
+        assert curve.best_shift == 8
+        assert not curve.peak_is_interior
+
+    def test_zero_is_not_an_interior_peak(self) -> None:
+        """No delay means no delay, not a delay of zero samples."""
+        disp = _band_limited_displacement(8192, seed=41, amplitude_um=4.0)
+        signal = _fringes(disp, 0.635, 0.2)
+
+        curve = delay_sweep(signal, disp, 0.635, max_shift=8)
+
+        assert curve.best_shift == 0
+        assert not curve.peak_is_interior

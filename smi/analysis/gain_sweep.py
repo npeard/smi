@@ -203,6 +203,25 @@ class DelayCurve:
         """Shift maximizing R^2."""
         return int(self.shifts[int(np.argmax(self.r_squared))])
 
+    @property
+    def peak_is_interior(self) -> bool:
+        """Whether the peak is a genuine delay signature.
+
+        A real time delay puts the maximum strictly inside the swept window
+        and away from zero. A maximum pinned to the window's own boundary
+        means the curve was still climbing when the sweep ran out of window --
+        a slow monotone trend, not an alignment error -- and a maximum at zero
+        means no delay at all. Distinguishing these matters because "peaks at
+        -8 samples" reads as a detected delay while being the opposite.
+
+        Returns:
+            True only if the argmax is nonzero and not at either endpoint.
+        """
+        best = self.best_shift
+        return bool(
+            best != 0 and best != int(self.shifts[0]) and best != int(self.shifts[-1])
+        )
+
     def r_squared_at(self, shift: int) -> float:
         """R^2 at one specific shift.
 
@@ -509,13 +528,19 @@ class GainSweep:
                 # The whole curve, not just its argmax. "No interior peak" is
                 # the evidence that rules a delay out, and a reader can only
                 # see that from the shape.
-                best = int(
-                    curve.delay_shifts[int(np.argmax(curve.delay_median_r_squared))]
+                pooled = DelayCurve(
+                    shifts=np.asarray(curve.delay_shifts),
+                    r_squared=np.asarray(curve.delay_median_r_squared),
                 )
                 entry['delay_sweep'] = {
                     'shifts': list(curve.delay_shifts),
                     'median_r_squared': list(curve.delay_median_r_squared),
-                    'best_shift': best,
+                    'best_shift': pooled.best_shift,
+                    # The verdict, not just the argmax. An argmax pinned to
+                    # the window edge is a monotone trend, and recording only
+                    # "best_shift: -8" would read as a detected delay.
+                    'peak_is_interior': pooled.peak_is_interior,
+                    'r_squared_at_zero': pooled.r_squared_at(0),
                 }
             channels[name] = entry
         return {
@@ -1109,15 +1134,19 @@ def run_gain_sweep(
                 )
             if curve.delay_median_r_squared is not None:
                 assert curve.delay_shifts is not None
-                best_shift = curve.delay_shifts[
-                    int(np.argmax(curve.delay_median_r_squared))
-                ]
+                pooled = DelayCurve(
+                    shifts=np.asarray(curve.delay_shifts),
+                    r_squared=np.asarray(curve.delay_median_r_squared),
+                )
                 logger.info(
-                    '    ruled out: delay curve peaks at %+d samples '
-                    '(R^2 %.3f there vs %.3f at zero)',
-                    best_shift,
-                    max(curve.delay_median_r_squared),
-                    curve.delay_median_r_squared[curve.delay_shifts.index(0)],
+                    '    delay: peak at %+d samples, %s (R^2 %.3f there vs '
+                    '%.3f at zero)',
+                    pooled.best_shift,
+                    'INTERIOR -- a real delay'
+                    if pooled.peak_is_interior
+                    else 'not interior, so no delay',
+                    float(pooled.r_squared.max()),
+                    pooled.r_squared_at(0),
                 )
             if sweep.per_shot is not None:
                 # Logged next to the best-global-gain line, because the point
