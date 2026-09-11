@@ -211,9 +211,10 @@ def forward_model_residual(
 
     Of those, the calibration term has been measured:
     :mod:`smi.analysis.gain_sweep` repeats this fit over a grid of
-    coil-driver gains and finds the live ``k`` is 7-12% low. It also shows
-    that correcting the gain does not close the gap at large excursion, so
-    calibration is a real but secondary term here.
+    coil-driver gains and finds the live ``k`` is 5-13% low across the six
+    acquisition/channel pairs (N = 1000). It also shows that correcting the
+    gain does not close the gap above 3 um of excursion, so calibration is a
+    real but secondary term here.
 
     Args:
         pd_signal: Photodiode samples for one shot (V), shape ``(n,)``.

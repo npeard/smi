@@ -21,8 +21,9 @@ Two structural facts make the sweep cheap, and both are load-bearing:
 
 1. **The transfer function is linear in ``k``.** So the displacement is
    computed once with ``k = 1.0`` and simply scaled per gain. Rebuilding a
-   :class:`CoilDriver` and recomputing the FFT for each of ~30 gains would
-   cost ~30x more for an identical answer.
+   :class:`CoilDriver` and recomputing the FFT for each of the 101 default
+   gains would repeat the same 2.7 s of transfer-function work 101 times for
+   an identical answer.
 2. **The per-shot least-squares solve is already fast.** A batched
    normal-equations rewrite was measured at 0.77 ms per fit against 0.64 ms
    for the loop over :func:`~smi.analysis.baseline_fit.fit_phase_amplitude`,
@@ -42,6 +43,59 @@ the baseline artifact, because the aggregate median hides the trend that
 matters: the gain correction recovers much of the 1-3 um cohort and little of
 the >3 um cohort, which is what separates "scale error" from "unmodeled
 within-shot drift".
+
+What it found, at N = 1000 on both acquisitions (the numbers in
+``gain_sweep_results.json``, global fit):
+
+- The curve is sharply peaked. Best ``k`` is **16.00-16.50** free space and
+  **15.25-15.75** mm fiber, against the live 14.553 -- so the live gain is
+  **5-13% low**. The three wavelengths within one acquisition agree to ~3%,
+  which is what a real mechanical displacement error looks like: the speaker
+  does not know which laser is watching it.
+- The 2024 calibration's ``k = 33.42``, still commented out in
+  ``calib_params.py``, is **refuted**: R^2 0.012-0.029, i.e. noise. The
+  file's "Incorrect fringe counts in 2024 calibration?" was right to doubt it.
+- Fixing the gain does not fix the large-excursion collapse. On the 635 nm
+  channel, live -> best ``k`` moves the 1-2 um bin 0.19 -> 0.56 (free space)
+  and 0.54 -> 0.71 (fiber), but the >3 um bin only 0.03 -> 0.12 and
+  0.05 -> 0.23.
+- **A per-shot optimal gain does not rescue it either**, and this is the
+  strongest single result here. Given its own gain, every free-space shot
+  above 3 um still scores 0.143 / 0.094 / 0.052 (635 / 675 / 515 nm), against
+  0.122 / 0.076 / 0.020 at the best global gain. Since a per-shot gain is
+  strictly more freedom than any recalibrated constant could have, the
+  leftover error is not a scale error at all -- which is what points at
+  unmodeled within-shot phase drift.
+
+One artifact of the per-shot fit worth knowing before reading its numbers:
+the mm-fiber 675 nm channel has a per-shot gain IQR of 15.50-30.50, i.e. a
+large minority of shots prefer a gain near the refuted legacy value. Those
+are spurious fringe-order aliases that a per-shot fit is free to chase and a
+single global gain is not, so that channel's per-shot R^2 (0.336 vs 0.230
+global) is inflated rather than informative. The median gain, 15.75, is the
+trustworthy number there.
+
+Two candidates are ruled out by the same run:
+
+- **Aliasing.** Peak fringe rate over all 1000 shots is 9.9-13.6 kHz
+  (evaluated at each channel's best gain; 8.8-13.0 kHz at the live gain)
+  against a 244 kHz Nyquist -- 18-25x headroom. The 515 nm channel is the
+  binding case, as expected: it crosses the most fringes per micron.
+- **A drive-to-photodiode time delay.** Every channel's R^2-versus-shift
+  curve declines monotonically across tau in [-8, +8] samples, with no peak:
+  the maximum sits at or beside the window's own boundary and stands only
+  0.008-0.034 above the value at zero shift. A real delay would rise to an
+  interior maximum, so there is none. See :attr:`DelayCurve.peak_is_interior`
+  for why "the argmax is not an endpoint" is the wrong test.
+
+Two caveats that must travel with those numbers:
+
+1. **The two acquisitions disagree on the best ``k``** by ~6% (16.50 vs 15.50
+   at 635 nm). Drive-to-displacement gain is a property of the speaker, not
+   the optical path, so a scalar ``k`` is absorbing something else.
+2. So ``k`` is deliberately **left alone** in ``calib_params.py``. Changing it
+   would shift every training target, and a constant the two acquisitions
+   disagree about has not earned that.
 
 Units follow the package: displacement in microns, velocity in microns per
 millisecond, wavelengths in microns, sample rates in Hz. ``k`` is in the same
@@ -94,8 +148,9 @@ LIVE_K = CalibrationParameters().k
 
 # Sweep range and step. The range brackets the live 14.553 generously on both
 # sides and reaches the 2024 calibration's 33.42, so that value is refuted by
-# the same curve rather than by a separate run. A 0.25 step resolves a peak to
-# well inside the ~5% the two acquisitions disagree by.
+# the same curve rather than by a separate run. A 0.25 step is 1.7% of the
+# live gain, so it resolves a peak to well inside the ~6% the two acquisitions
+# disagree by -- a coarser step could not have shown that disagreement is real.
 DEFAULT_GAIN_LOW = 10.0
 DEFAULT_GAIN_HIGH = 35.0
 DEFAULT_GAIN_STEP = 0.25
@@ -203,24 +258,44 @@ class DelayCurve:
         """Shift maximizing R^2."""
         return int(self.shifts[int(np.argmax(self.r_squared))])
 
+    # Smallest R^2 rise on both sides of the argmax that counts as a peak
+    # rather than a ripple. The measured curves ripple by ~3e-4 at their flat
+    # end, and their whole-window span is ~0.03, so 2e-3 sits an order of
+    # magnitude above the noise and an order below any effect worth acting on.
+    _MIN_PEAK_PROMINENCE = 2e-3
+
     @property
     def peak_is_interior(self) -> bool:
-        """Whether the peak is a genuine delay signature.
+        """Whether the curve actually peaks, which is the delay signature.
 
-        A real time delay puts the maximum strictly inside the swept window
-        and away from zero. A maximum pinned to the window's own boundary
-        means the curve was still climbing when the sweep ran out of window --
-        a slow monotone trend, not an alignment error -- and a maximum at zero
-        means no delay at all. Distinguishing these matters because "peaks at
-        -8 samples" reads as a detected delay while being the opposite.
+        A real time delay makes R^2 *rise* to a maximum at some nonzero shift
+        and fall away on both sides. Everything else is not a delay:
+
+        - an argmax at zero means no misalignment;
+        - an argmax pinned to the window's boundary means the curve was still
+          trending when the sweep ran out of window;
+        - an argmax one index in from a nearly-flat edge is that same trend
+          with a ripple on it.
+
+        The third case is why this is not simply "the argmax is not an
+        endpoint". The measured curves are flat to ~3e-4 at their left edge
+        and decline monotonically after; on two of six channels the ripple
+        alone moved the argmax off the boundary, which an endpoint test then
+        reported as a real delay on a curve that never rises. So the test is
+        prominence: the maximum must exceed both of the curve's own endpoints
+        by :data:`_MIN_PEAK_PROMINENCE`.
 
         Returns:
-            True only if the argmax is nonzero and not at either endpoint.
+            True only if the maximum is at a nonzero shift and stands clear of
+            both endpoints by more than the prominence floor.
         """
         best = self.best_shift
-        return bool(
-            best != 0 and best != int(self.shifts[0]) and best != int(self.shifts[-1])
-        )
+        if best == 0:
+            return False
+        peak = float(self.r_squared.max())
+        rise_from_left = peak - float(self.r_squared[0])
+        rise_from_right = peak - float(self.r_squared[-1])
+        return bool(min(rise_from_left, rise_from_right) > self._MIN_PEAK_PROMINENCE)
 
     def r_squared_at(self, shift: int) -> float:
         """R^2 at one specific shift.
@@ -971,12 +1046,14 @@ def sweep_dataset(
 ) -> GainSweep:
     """Sweep the gain over a leading slice of one acquisition HDF5 file.
 
-    N = 1000 by default. This is a method-1 measurement -- a few least-squares
-    solves per shot -- so 10% of a 10k acquisition costs about a minute, while
-    N = 200 left the extreme excursion bins at n = 14-72, too thin to carry
-    the trend that separates a scale error from unmodeled drift. Method 2's
-    N = 200 in :mod:`smi.analysis.baseline_fit` is a different budget for a
-    different cost and must not be conflated with this one.
+    N = 1000 by default, which is worth the cost: N = 200 left the extreme
+    excursion bins at n = 14-72, too thin to carry the trend that separates a
+    scale error from unmodeled drift, while N = 1000 gives n = 84-310 per bin.
+    Measured cost with every option on (101 gains, windowed measure, delay
+    check, per-shot fit) is ~9.3 min per acquisition on CPU; the global fit
+    alone is ~3 min. Method 2's N = 200 in :mod:`smi.analysis.baseline_fit` is
+    a different budget for a ~5.85 s/shot GPU decode and must not be
+    conflated with this one.
 
     Args:
         file_path: Path to the acquisition HDF5 file.
@@ -1014,7 +1091,7 @@ def sweep_dataset(
         )
 
     # One k=1 evaluation per shot, reused for every gain in the grid. This is
-    # the whole reason the sweep is a minute rather than half an hour.
+    # the whole reason a 101-gain sweep costs minutes rather than hours.
     unit = np.empty_like(drive)
     unit_vel = np.empty_like(drive)
     for i in range(n_shots):
@@ -1182,8 +1259,9 @@ def main(argv: list[str] | None = None) -> None:
         '--n-shots',
         type=int,
         default=1000,
-        help='Shots per dataset. This is method 1, about a millisecond per '
-        "fit, so 1000 costs roughly a minute -- do not copy method 2's 200.",
+        help='Shots per dataset. This is method 1, sub-millisecond per fit, '
+        "so 1000 costs ~9 min per acquisition -- do not copy method 2's 200, "
+        'which exists for a 5.85 s/shot GPU decode.',
     )
     parser.add_argument('--gain-low', type=float, default=DEFAULT_GAIN_LOW)
     parser.add_argument(

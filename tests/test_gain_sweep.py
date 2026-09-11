@@ -19,6 +19,7 @@ import pytest
 
 from smi.analysis.baseline_fit import DRIVE_KEY, PD_WAVELENGTHS_UM
 from smi.analysis.gain_sweep import (
+    DelayCurve,
     GainSweep,
     delay_sweep,
     fringe_rate_headroom,
@@ -33,6 +34,13 @@ from smi.analysis.gain_sweep import (
 from smi.synthetic.calib_params import CalibrationParameters
 from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
 
+ARTIFACT_PATH = (
+    Path(__file__).resolve().parents[1]
+    / 'smi'
+    / 'analysis'
+    / 'data'
+    / 'gain_sweep_results.json'
+)
 SAMPLE_RATE = 488281.25
 WAVELENGTHS = tuple(PD_WAVELENGTHS_UM.values())
 
@@ -725,3 +733,201 @@ class TestDelayCurveDistinguishesEdgeFromInterior:
 
         assert curve.best_shift == 0
         assert not curve.peak_is_interior
+
+
+class TestInteriorPeakSurvivesAPlateau:
+    """A flat left edge must not be mistaken for a peak.
+
+    The N=1000 run exposed this: four of six channels give a monotone
+    decreasing curve and correctly report "no delay", but two give curves like
+    0.470 0.470 0.470 0.470 0.469 ... where float ties put the argmax one
+    index in from the edge. Judging interior-ness by "is the argmax an
+    endpoint" then flips the verdict to "a real delay" on a curve that never
+    rises at all, with a 0.008 R^2 gain over zero shift. The verdict has to
+    come from the curve's shape, not from where the argmax happens to land
+    among equal values.
+    """
+
+    def _curve(self, values: list[float]) -> DelayCurve:
+        """A DelayCurve over shifts centered on zero, from given R^2 values."""
+        half = (len(values) - 1) // 2
+        return DelayCurve(
+            shifts=np.arange(-half, half + 1),
+            r_squared=np.asarray(values, dtype=np.float64),
+        )
+
+    def test_a_plateau_at_the_edge_is_not_a_peak(self) -> None:
+        """The free-space 635 nm curve, at the precision that broke it.
+
+        Rounded to three decimals these values tie exactly and ``argmax``
+        happens to return the endpoint, so a rounded copy would pass under the
+        old definition and hide the defect. The real curve ripples by 3e-4 at
+        the left edge, which is what moved the argmax one index in and flipped
+        the verdict to "a real delay".
+        """
+        curve = self._curve(
+            [
+                0.46995735259489074,
+                0.47028417582879123,
+                0.47000404922303096,
+                0.4696888819653154,
+                0.46914108327438214,
+                0.46816561371922566,
+                0.4660379501518808,
+                0.46418435407554615,
+                0.4617951099371859,
+                0.4613095607509343,
+                0.4585310054710999,
+                0.45633333313545166,
+                0.45295448886004225,
+                0.45066075980616777,
+                0.44607440745867954,
+                0.4436968263457772,
+                0.4392683443092289,
+            ]
+        )
+
+        assert curve.best_shift == -7
+        assert not curve.peak_is_interior
+
+    def test_a_monotone_decreasing_curve_is_not_a_peak(self) -> None:
+        curve = self._curve([0.37 - 0.003 * i for i in range(17)])
+
+        assert not curve.peak_is_interior
+
+    def test_a_genuine_rise_then_fall_is_a_peak(self) -> None:
+        """A real delay rises into its peak from both sides."""
+        shifts = np.arange(-8, 9)
+        curve = DelayCurve(shifts=shifts, r_squared=0.6 - 0.02 * np.abs(shifts - 4.0))
+
+        assert curve.peak_is_interior
+        assert curve.best_shift == 4
+
+    def test_a_tiny_bump_on_a_falling_curve_is_not_a_peak(self) -> None:
+        """Rise must be material, not float noise on a trend.
+
+        Without a magnitude floor, any curve whose descent stutters by 1e-4
+        would be reported as a delay.
+        """
+        shifts = np.arange(-8, 9)
+        values = 0.5 - 0.004 * (shifts + 8.0)
+        values[7] += 2e-4
+        curve = DelayCurve(shifts=shifts, r_squared=values)
+
+        assert not curve.peak_is_interior
+
+    def test_the_real_acquisitions_report_no_delay(self) -> None:
+        """Every committed curve must agree that there is no delay.
+
+        This reads the version-controlled artifact rather than a remembered
+        log line, which is the whole point of the phase: "time delay ruled
+        out" is a claim about the real acquisitions, so it has to be checked
+        against them. The artifact is a few KB and allowlisted in
+        ``.gitignore``, so it is present wherever the tests run; if it is ever
+        removed, this should fail loudly rather than skip.
+        """
+        assert ARTIFACT_PATH.exists(), (
+            f'{ARTIFACT_PATH} is missing -- it is version-controlled evidence, '
+            f'regenerate with `python -m smi.analysis.gain_sweep`'
+        )
+        payload = json.loads(ARTIFACT_PATH.read_text(encoding='utf-8'))
+        seen = 0
+        for entry in payload['datasets'].values():
+            for channel in entry['channels'].values():
+                delay = channel['delay_sweep']
+                assert delay['peak_is_interior'] is False, (
+                    f'{entry["dataset"]} reports a delay at '
+                    f'{delay["best_shift"]} samples'
+                )
+                seen += 1
+        assert seen == 6
+
+
+class TestTheCommittedArtifactSaysWhatTheDocstringClaims:
+    """The module docstring quotes numbers; these pin them to the artifact.
+
+    Without this, the prose and the evidence can drift apart silently -- and
+    the prose is what a reader and the report will actually quote.
+    """
+
+    @staticmethod
+    def _payload() -> dict:
+        """The committed gain-sweep artifact."""
+        assert ARTIFACT_PATH.exists(), f'{ARTIFACT_PATH} is missing'
+        return json.loads(ARTIFACT_PATH.read_text(encoding='utf-8'))
+
+    def test_it_was_produced_at_n_1000(self) -> None:
+        payload = self._payload()
+
+        assert payload['config']['n_shots'] == 1000
+        for entry in payload['datasets'].values():
+            assert entry['n_shots'] == 1000
+
+    def test_best_gain_is_above_the_live_constant_on_every_channel(self) -> None:
+        """The direction of the finding: the live gain is low, not high."""
+        payload = self._payload()
+
+        ratios = [
+            channel['best_gain_ratio_vs_live']
+            for entry in payload['datasets'].values()
+            for channel in entry['channels'].values()
+        ]
+        assert len(ratios) == 6
+        # The docstring says 5-13% low; allow a little slack so a rerun with a
+        # different N does not fail on the third digit.
+        assert all(1.03 < r < 1.16 for r in ratios), ratios
+
+    def test_the_legacy_gain_is_refuted(self) -> None:
+        """k=33.42 must score as noise, or the refutation is not supported."""
+        payload = self._payload()
+
+        for entry in payload['datasets'].values():
+            for name, channel in entry['channels'].items():
+                legacy = channel['r_squared_at_legacy_k']
+                assert legacy < 0.05, f'{entry["dataset"]} {name}: {legacy}'
+                assert legacy < 0.25 * channel['best_r_squared']
+
+    def test_the_two_acquisitions_disagree_on_the_best_gain(self) -> None:
+        """The caveat that stops k being changed in this branch.
+
+        Asserted as a real disagreement so that if a future rerun makes the
+        two agree, this fails and the caveat gets revisited rather than
+        repeated out of habit.
+        """
+        payload = self._payload()
+        by_dataset = {
+            entry['dataset']: entry['channels']['RP1_CH2']['best_gain']
+            for entry in payload['datasets'].values()
+        }
+
+        free_space, fiber = by_dataset['free-space'], by_dataset['mmfiber']
+        assert abs(free_space - fiber) / fiber > 0.03
+
+    def test_aliasing_has_at_least_an_order_of_magnitude_of_headroom(self) -> None:
+        payload = self._payload()
+
+        for entry in payload['datasets'].values():
+            for name, channel in entry['channels'].items():
+                headroom = channel['fringe_rate_headroom']
+                assert headroom > 10.0, f'{entry["dataset"]} {name}: {headroom}'
+
+    def test_a_per_shot_gain_does_not_rescue_the_largest_excursion_bin(self) -> None:
+        """The result that rules out a scale error as the remaining cause.
+
+        Given each shot its own optimal gain -- more freedom than any
+        recalibrated constant could have -- the >3 um cohort must still be
+        far below the small-excursion cohort.
+        """
+        payload = self._payload()
+
+        for entry in payload['datasets'].values():
+            per_shot = entry['per_shot_gain']['channels']
+            for name, channel in per_shot.items():
+                bins = {b['ptp_um']: b for b in channel['binned_r_squared']}
+                top, small = bins['3+'], bins['0.3-1']
+                assert top['n'] > 50, f'{entry["dataset"]} {name}: thin top bin'
+                assert top['median'] < 0.4, (
+                    f'{entry["dataset"]} {name}: >3 um bin at {top["median"]}, '
+                    f'which would mean a per-shot gain did rescue it'
+                )
+                assert top['median'] < small['median']
