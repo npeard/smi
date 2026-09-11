@@ -83,10 +83,14 @@ def main() -> None:
         )
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
-    ax.set_ylim(0, 1.0)
+    # Headroom above 1.0 so the legend does not sit on the topmost tick label.
+    # The axis still runs to 1.0 in ticks, which is what makes the bars
+    # readable as "fraction of variance explained".
+    ax.set_ylim(0, 1.18)
+    ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
     ax.set_ylabel('median $R^2$, displacement known')
     ax.set_title('Method 1: does the model fit?')
-    ax.legend(loc='upper center', ncol=3, columnspacing=0.9)
+    ax.legend(loc='upper center', ncol=3, columnspacing=0.9, frameon=False)
 
     # (b) Method 2 displacement error against the signal it has to resolve.
     ax = axes[1]
