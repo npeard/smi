@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from .coil_driver import CoilDriver
+from .coil_driver import MS_PER_S, CoilDriver
 from .waveform import Waveform
 
 
@@ -101,9 +101,15 @@ class MichelsonInterferometer:
         """
         signal = self.get_interferometer_output(displacement)
 
+        # `time` is in seconds, but the declared convention for velocity is
+        # um/ms, so the time step is converted before dividing. Without this the
+        # returned value is um/s while every docstring and axis label here says
+        # um/ms -- a silent 1000x, which is the exact hazard the single
+        # conversion boundary in CoilDriver exists to remove.
+        dt_ms = (time[1] - time[0]) * MS_PER_S
         velocity = np.diff(displacement)
         velocity = np.insert(velocity, 0, velocity[0])
-        velocity /= time[1] - time[0]
+        velocity /= dt_ms
 
         # Remove DC offset
         signal = signal - np.mean(signal)

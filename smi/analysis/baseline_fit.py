@@ -19,6 +19,16 @@ is a residual RMSE on the photodiode signal, in volts. This is the honest
 floor: no inverse method can beat the forward model's own ability to describe
 the measurement.
 
+One global ``(cos, sin, 1)`` fit over the whole 33.6 ms record is however a
+*rigid* estimator: real shots drift by 1-2.7 fringes within a record from
+speckle and path drift, and a single phase cannot absorb that, so the global
+R^2 understates the model's agreement with the data.
+:func:`windowed_forward_model_residual` refits per window of W samples and
+pools the variances into one comparable R^2 per shot. Both are reported. A
+windowed R^2 must always be quoted beside :func:`scrambled_theta_control`,
+which does the identical fit against a *different* shot's displacement and so
+measures the windowing's fitting capacity on its own.
+
 **Method 2 -- inverse fit** (:func:`inverse_fit`).
 Question answered: *how well can a classical estimator recover displacement
 and velocity from the photodiode signals alone?* Only the three PD channels
@@ -46,9 +56,15 @@ photodiode signals in volts. Velocity is um/ms because that is what
 :class:`~smi.synthetic.coil_driver.CoilDriver` emits and what the network is
 trained and scored on; sample rates remain in Hz.
 
-Run as a script to regenerate the results artifact::
+The two methods deliberately run at different shot counts: method 1 is
+milliseconds per shot and runs at N = 1000, while method 2's GPU Viterbi
+decode is ~5.85 s per shot and stays at N = 200. Both are recorded in the
+artifact's ``config`` block; never quote one N over the other's table.
 
-    pixi run -e dev python -m smi.analysis.baseline_fit --n-shots 200
+Run as a script to regenerate the results artifact -- the defaults are the
+settings it was produced with::
+
+    pixi run -e dev python -m smi.analysis.baseline_fit
 """
 
 from __future__ import annotations
@@ -776,7 +792,9 @@ class DatasetBaseline:
     Attributes:
         dataset: Short dataset label, e.g. ``'free-space'``.
         file: File name the numbers came from.
-        n_shots: Number of shots evaluated.
+        n_shots: Number of shots method 1 evaluated.
+        n_shots_method2: Number of shots method 2 evaluated. Lower than
+            ``n_shots`` on purpose -- see :func:`evaluate_dataset`.
         n_samples_per_shot: Time samples per shot.
         sample_rate_hz: Acquisition sample rate (Hz).
         method1: Per-channel forward-model residual statistics (volts).
@@ -790,6 +808,7 @@ class DatasetBaseline:
     dataset: str
     file: str
     n_shots: int
+    n_shots_method2: int
     n_samples_per_shot: int
     sample_rate_hz: float
     method1: dict[str, Any] = field(default_factory=dict)
@@ -815,7 +834,10 @@ def _summary(values: np.ndarray) -> dict[str, float]:
 # Bin edges in microns peak-to-peak. Fixed rather than quantile-derived so
 # the bins mean the same thing across datasets and across reruns with a
 # different --n-shots, which is the whole point of persisting them.
-_PTP_BIN_EDGES_UM = (0.0, 0.3, 1.0, 2.0, np.inf)
+# The 2-3 um and >3 um ends behave differently -- a gain correction
+# recovers much of the former and little of the latter -- so a single
+# '2+' top bin hid the distinction that matters.
+_PTP_BIN_EDGES_UM = (0.0, 0.3, 1.0, 2.0, 3.0, np.inf)
 
 
 def _binned_by_amplitude(
@@ -844,27 +866,41 @@ def _binned_by_amplitude(
 def evaluate_dataset(
     file_path: Path,
     label: str,
-    n_shots: int = 200,
+    n_shots: int = 1000,
+    n_shots_method2: int = 200,
     batch_size: int = 16,
     device: str = 'cpu',
     grid_points: int = 1201,
     phase_grid_points: int = 16,
+    window_samples: int | None = DEFAULT_WINDOW_SAMPLES,
 ) -> DatasetBaseline:
     """Run both baseline methods over a subset of one acquired HDF5 file.
 
     Shots are read as a contiguous leading slice; the files are 0.66 GB per
     channel, so the whole array is never materialized.
 
+    **The two methods run at different shot counts on purpose.** Method 1 is a
+    handful of least-squares solves per shot, about a millisecond each, so it
+    can afford N = 1000 -- and it needs it, because that is where the
+    large-excursion claims live and the extreme bins are otherwise too thin to
+    carry a trend. Method 2 is a sequential GPU Viterbi decode at ~5.85 s per
+    shot; N = 1000 would cost ~3.3 hours across both acquisitions to put a
+    tighter error bar on displacement and velocity RMSE numbers that nobody
+    disputes. Both counts are recorded so a reader can tell which N produced
+    which table.
+
     Args:
         file_path: Path to the acquisition HDF5 file.
         label: Short label recorded in the result.
-        n_shots: Number of shots to evaluate.
+        n_shots: Number of shots for method 1.
+        n_shots_method2: Number of shots for method 2, capped at ``n_shots``.
         batch_size: Shots decoded per Viterbi batch. Larger amortizes GPU
             kernel launch overhead; memory scales with
             ``batch_size * grid_points * n_time``.
         device: Torch device for the method-2 decode.
         grid_points: Displacement grid resolution for method 2.
         phase_grid_points: Phase search resolution for method 2.
+        window_samples: Window length for method 1's windowed refit.
 
     Returns:
         Aggregated statistics for this dataset.
@@ -877,6 +913,7 @@ def evaluate_dataset(
     with h5py.File(file_path, 'r') as handle:
         sample_rate = float(handle.attrs['sample_rate'])
         n_shots = min(n_shots, handle[DRIVE_KEY].shape[0])
+        n_shots_method2 = min(n_shots_method2, n_shots)
         n_time = int(handle[DRIVE_KEY].shape[1])
         drive = np.asarray(handle[DRIVE_KEY][:n_shots], dtype=np.float64)
         pd_raw = np.stack(
@@ -897,22 +934,51 @@ def evaluate_dataset(
     true_disp_centered = true_disp - true_disp.mean(axis=1, keepdims=True)
 
     # --- Method 1 ---------------------------------------------------------
+    # The scrambled-theta control pairs each shot's signal with the next
+    # shot's displacement (the last wraps to the first). A fixed rotation
+    # rather than a random pairing keeps the artifact reproducible, and a
+    # neighbouring shot comes from the same acquisition conditions, which is
+    # what makes it the right control: it differs from the real pairing only
+    # in that the displacement no longer belongs to this signal.
+    scramble = np.roll(np.arange(n_shots), -1)
+
     m1: dict[str, Any] = {}
     for k, channel in enumerate(channels):
         rmses = np.empty(n_shots)
         r2s = np.empty(n_shots)
         rel = np.empty(n_shots)
+        windowed_r2s = np.empty(n_shots)
+        control_r2s = np.empty(n_shots)
         for i in range(n_shots):
             fit = forward_model_residual(pd_raw[i, k], true_disp[i], wavelengths[k])
             rmses[i] = fit.rmse
             r2s[i] = fit.r_squared
             signal_rms = float(np.std(pd_raw[i, k]))
             rel[i] = fit.rmse / signal_rms if signal_rms > 0 else np.nan
+            windowed_r2s[i] = windowed_forward_model_residual(
+                pd_raw[i, k],
+                true_disp[i],
+                wavelengths[k],
+                window_samples=window_samples,
+            ).r_squared
+            control_r2s[i] = scrambled_theta_control(
+                pd_raw[i, k],
+                true_disp[scramble[i]],
+                wavelengths[k],
+                window_samples=window_samples,
+            ).r_squared
         m1[channel] = {
             'wavelength_um': float(wavelengths[k]),
             'residual_rmse_volts': _summary(rmses),
             'residual_rmse_fraction_of_signal_rms': _summary(rel),
             'r_squared': _summary(r2s),
+            # The windowed refit is the corrected measure of model/data
+            # agreement and the global fit is what it replaces, so both are
+            # reported side by side: the contrast is the finding. The control
+            # is not optional -- short windows can fit almost anything, so a
+            # windowed R^2 reported without it is not evidence.
+            'r_squared_windowed': _summary(windowed_r2s),
+            'r_squared_windowed_scrambled': _summary(control_r2s),
             # Binned by drive excursion because the aggregate R2 hides the
             # trend that matters: the forward model tracks small excursions
             # far better than large ones. Persisted rather than left to an
@@ -921,19 +987,31 @@ def evaluate_dataset(
             'r_squared_by_drive_ptp': _binned_by_amplitude(
                 r2s, np.ptp(true_disp_centered, axis=1)
             ),
+            'r_squared_windowed_by_drive_ptp': _binned_by_amplitude(
+                windowed_r2s, np.ptp(true_disp_centered, axis=1)
+            ),
+            'r_squared_windowed_scrambled_by_drive_ptp': _binned_by_amplitude(
+                control_r2s, np.ptp(true_disp_centered, axis=1)
+            ),
         }
 
     # --- Method 2 ---------------------------------------------------------
     # The search grid must cover the true excursion with margin; use the
     # observed ground-truth range for this subset.
-    limit = float(np.abs(true_disp_centered).max()) * 1.15
-    max_speed = float(np.abs(true_vel).max()) * 1.25
+    # Derived from the shots method 2 actually scores, not from method 1's
+    # larger subset: a grid wider than this subset needs would waste decode
+    # time, and a speed band set by shots outside the subset could not be
+    # reproduced from the numbers the artifact records.
+    m2_disp = true_disp_centered[:n_shots_method2]
+    m2_vel = true_vel[:n_shots_method2]
+    limit = float(np.abs(m2_disp).max()) * 1.15
+    max_speed = float(np.abs(m2_vel).max()) * 1.25
 
-    disp_rmse = np.empty(n_shots)
-    vel_rmse = np.empty(n_shots)
-    disp_corr = np.empty(n_shots)
-    for begin in range(0, n_shots, batch_size):
-        end = min(begin + batch_size, n_shots)
+    disp_rmse = np.empty(n_shots_method2)
+    vel_rmse = np.empty(n_shots_method2)
+    disp_corr = np.empty(n_shots_method2)
+    for begin in range(0, n_shots_method2, batch_size):
+        end = min(begin + batch_size, n_shots_method2)
         result = inverse_fit(
             pd_raw[begin:end],
             sample_rate=sample_rate,
@@ -971,6 +1049,7 @@ def evaluate_dataset(
         dataset=label,
         file=file_path.name,
         n_shots=int(n_shots),
+        n_shots_method2=int(n_shots_method2),
         n_samples_per_shot=n_time,
         sample_rate_hz=sample_rate,
         method1=m1,
@@ -978,12 +1057,12 @@ def evaluate_dataset(
             'displacement_rmse_um': _summary(disp_rmse),
             'velocity_rmse_um_per_ms': _summary(vel_rmse),
             'displacement_correlation': _summary(disp_corr),
-            'displacement_nrmse': _summary(
-                disp_rmse / np.std(true_disp_centered, axis=1)
-            ),
-            'velocity_nrmse': _summary(vel_rmse / np.std(true_vel, axis=1)),
+            'displacement_nrmse': _summary(disp_rmse / np.std(m2_disp, axis=1)),
+            'velocity_nrmse': _summary(vel_rmse / np.std(m2_vel, axis=1)),
         },
         signal_scale={
+            # Over method 1's N, which is the larger subset, so these scales
+            # describe the cohort the R^2 tables are computed on.
             'true_displacement_rms_um': _summary(np.std(true_disp_centered, axis=1)),
             'true_velocity_rms_um_per_ms': _summary(np.std(true_vel, axis=1)),
             'true_displacement_ptp_um': _summary(np.ptp(true_disp_centered, axis=1)),
@@ -998,18 +1077,23 @@ def evaluate_dataset(
 
 
 def run_baselines(
-    n_shots: int = 200,
+    n_shots: int = 1000,
+    n_shots_method2: int = 200,
     device: str = 'cpu',
     batch_size: int = 16,
     output: Path | None = None,
     datasets: dict[str, str] | None = None,
     grid_points: int = 1201,
     phase_grid_points: int = 16,
+    window_samples: int | None = DEFAULT_WINDOW_SAMPLES,
 ) -> dict[str, Any]:
     """Evaluate both baselines on every configured dataset and write JSON.
 
     Args:
-        n_shots: Shots per dataset.
+        n_shots: Shots per dataset for method 1.
+        n_shots_method2: Shots per dataset for method 2, which is ~5.85 s per
+            shot and so runs on a smaller subset (see
+            :func:`evaluate_dataset`).
         device: Torch device for the method-2 decode.
         batch_size: Shots per decode batch.
         output: Destination JSON path. Defaults to
@@ -1017,6 +1101,7 @@ def run_baselines(
         datasets: Mapping of label to file name under ``smi/analysis/data``.
         grid_points: Displacement grid resolution.
         phase_grid_points: Phase search resolution.
+        window_samples: Window length for method 1's windowed refit.
 
     Returns:
         The results dictionary that was written to disk.
@@ -1025,9 +1110,14 @@ def run_baselines(
     output = output or DEFAULT_RESULTS_PATH
 
     results: dict[str, Any] = {
-        'schema_version': 2,
+        # 3: method 1 gained the windowed refit and its scrambled-theta
+        # control, the excursion bins split 2+ into 2-3 and 3+, and the two
+        # methods no longer share one shot count.
+        'schema_version': 3,
         'config': {
             'n_shots': n_shots,
+            'n_shots_method2': n_shots_method2,
+            'window_samples': window_samples,
             'device': device,
             'batch_size': batch_size,
             'grid_points': grid_points,
@@ -1046,13 +1136,27 @@ def run_baselines(
             path,
             label,
             n_shots=n_shots,
+            n_shots_method2=n_shots_method2,
             batch_size=batch_size,
             device=device,
             grid_points=grid_points,
             phase_grid_points=phase_grid_points,
+            window_samples=window_samples,
         )
         results['datasets'][label] = asdict(baseline)
         m2 = baseline.method2
+        for channel, stats in baseline.method1.items():
+            # Log the windowed number with its control attached, so even the
+            # console output cannot quote one without the other.
+            logger.info(
+                '  %s %s: method-1 median R^2 global %.3f -> windowed %.3f '
+                '(scrambled control %.3f)',
+                label,
+                channel,
+                stats['r_squared']['median'],
+                stats['r_squared_windowed']['median'],
+                stats['r_squared_windowed_scrambled']['median'],
+            )
         logger.info(
             '  %s: method-2 median displacement RMSE %.4f um, '
             'median velocity RMSE %.4f um/ms (%.1f s)',
@@ -1077,7 +1181,26 @@ def main(argv: list[str] | None = None) -> None:
     # than the ones in the file it overwrote -- the config block records
     # them, but only a reader who compared would have noticed.
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--n-shots', type=int, default=200)
+    parser.add_argument(
+        '--n-shots',
+        type=int,
+        default=1000,
+        help='Shots for method 1, which costs about a millisecond per shot.',
+    )
+    parser.add_argument(
+        '--n-shots-method2',
+        type=int,
+        default=200,
+        help='Shots for method 2. Kept well below --n-shots because the '
+        'Viterbi decode is ~5.85 s per shot on cuda:0.',
+    )
+    parser.add_argument(
+        '--window-samples',
+        type=int,
+        default=DEFAULT_WINDOW_SAMPLES,
+        help="Window length for method 1's windowed refit. Pass 0 to report "
+        'only the global fit.',
+    )
     parser.add_argument(
         '--device',
         type=str,
@@ -1094,11 +1217,13 @@ def main(argv: list[str] | None = None) -> None:
 
     run_baselines(
         n_shots=args.n_shots,
+        n_shots_method2=args.n_shots_method2,
         device=args.device,
         batch_size=args.batch_size,
         output=args.output,
         grid_points=args.grid_points,
         phase_grid_points=args.phase_grid_points,
+        window_samples=args.window_samples or None,
     )
 
 

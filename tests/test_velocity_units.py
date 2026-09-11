@@ -21,7 +21,8 @@ import torch
 from smi.analysis.features import default_registry
 from smi.analysis.features.normalization import NORMALIZATION_STATS
 from smi.analysis.lit_module import LitModule
-from smi.synthetic.coil_driver import CoilDriver
+from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
+from smi.synthetic.interferometers import MichelsonInterferometer
 from smi.synthetic.waveform import Waveform
 
 # Velocity RMS on the real acquisitions is ~0.35 um/ms. Anything above this
@@ -219,4 +220,32 @@ def test_integrate_velocity_round_trips_um_per_ms():
         displacement - displacement[0],
         atol=0.05 * float(np.ptp(displacement)),
         rtol=0.0,
+    )
+
+
+def test_interferometer_simulated_buffer_velocity_is_um_per_ms():
+    """``get_simulated_buffer`` returns velocity in um/ms, not um/s.
+
+    This method differentiates displacement itself rather than routing through
+    ``CoilDriver``, so it is a second place the unit can drift. Its own
+    docstrings and plot axes declare um/ms; this pins the value to match.
+
+    The existing interferometer tests cannot catch a scale error here:
+    ``test_velocity_displacement_consistency`` exercises the
+    ``sample_simulated`` path (which does go through ``CoilDriver``), and its
+    other checks compare by correlation, which is scale-invariant.
+    """
+    sample_rate = 100_000.0
+    n = 512
+    time = np.arange(n) / sample_rate
+    # Constant 1 um/ms ramp: displacement in um must advance by dt_ms per step.
+    dt_ms = MS_PER_S / sample_rate
+    displacement = np.arange(n) * dt_ms
+
+    interferometer = MichelsonInterferometer(wavelength=0.635, phase=0.0)
+    _, _, _, velocity = interferometer.get_simulated_buffer(displacement, time)
+
+    assert np.allclose(velocity, 1.0, rtol=1e-9), (
+        f'expected 1 um/ms, got {velocity[1]:.6g} -- a factor of '
+        f'{velocity[1]:.6g} suggests the time step is still in seconds'
     )
