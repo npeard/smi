@@ -20,13 +20,16 @@ import pytest
 from smi.analysis.baseline_fit import DRIVE_KEY, PD_WAVELENGTHS_UM
 from smi.analysis.gain_sweep import (
     GainSweep,
+    delay_sweep,
+    fringe_rate_headroom,
     gain_grid,
+    peak_fringe_rate_hz,
     sweep_dataset,
     sweep_gain,
     unit_gain_displacement,
 )
 from smi.synthetic.calib_params import CalibrationParameters
-from smi.synthetic.coil_driver import CoilDriver
+from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
 
 SAMPLE_RATE = 488281.25
 WAVELENGTHS = tuple(PD_WAVELENGTHS_UM.values())
@@ -381,3 +384,185 @@ class TestSweepOverAnHdf5File:
             assert entry['best_gain_ratio_vs_live'] == pytest.approx(
                 sweep.best_gain(channel) / CalibrationParameters().k
             )
+
+
+class TestPeakFringeRate:
+    """The aliasing check, which TASKS.md flags as informal and uncommitted."""
+
+    def test_pure_tone_fringe_rate_matches_the_analytic_value(self) -> None:
+        """A sinusoid's fringe rate is known in closed form.
+
+        For ``d(t) = A sin(2 pi f t)`` the peak speed is ``2 pi A f`` and the
+        Michelson phase is ``4*pi*d/lambda``, so the instantaneous fringe
+        frequency peaks at ``2 * (2 pi A f) / lambda = 4 pi A f / lambda``.
+        Anchoring against that makes the measured 7.8 / 9.7 kHz figures a
+        measurement rather than a number read off a plot -- and it catches the
+        two mistakes that matter, a dropped factor of 2 from the round trip
+        and a um/s-versus-um/ms slip worth 1000x.
+        """
+        n = 16384
+        freq_hz = 300.0
+        amplitude_um = 1.5
+        wavelength_um = 0.635
+        t = np.arange(n) / SAMPLE_RATE
+        # Velocity of the same tone, in um/ms to match the package convention.
+        velocity = (
+            amplitude_um
+            * 2
+            * np.pi
+            * freq_hz
+            * np.cos(2 * np.pi * freq_hz * t)
+            / MS_PER_S
+        )
+
+        rate = peak_fringe_rate_hz(velocity, wavelength_um)
+
+        expected = 4.0 * np.pi * amplitude_um * freq_hz / wavelength_um
+        assert rate == pytest.approx(expected, rel=1e-3)
+
+    def test_doubling_the_speed_doubles_the_fringe_rate(self) -> None:
+        velocity = np.array([0.0, 0.5, -0.25])
+
+        slow = peak_fringe_rate_hz(velocity, 0.635)
+        fast = peak_fringe_rate_hz(2.0 * velocity, 0.635)
+
+        assert fast == pytest.approx(2.0 * slow)
+
+    def test_a_shorter_wavelength_crosses_more_fringes(self) -> None:
+        """515 nm must report a higher rate than 635 nm for the same motion."""
+        velocity = np.array([0.0, 0.4, -0.4])
+
+        assert peak_fringe_rate_hz(velocity, 0.515) > peak_fringe_rate_hz(
+            velocity, 0.635
+        )
+
+    def test_headroom_is_the_nyquist_ratio(self) -> None:
+        headroom = fringe_rate_headroom(
+            np.array([0.0, 0.5]), 0.635, sample_rate=488281.25
+        )
+
+        rate = peak_fringe_rate_hz(np.array([0.0, 0.5]), 0.635)
+        assert headroom == pytest.approx(488281.25 / 2.0 / rate)
+
+
+class TestDelaySweep:
+    """The time-delay check, ruled out but not previously committed."""
+
+    def test_an_injected_delay_shows_up_as_an_interior_peak(self) -> None:
+        """The check only means something if it can detect a real delay.
+
+        Ruling out a delay because the R^2-vs-tau curve has no interior peak
+        is evidence only if an actual delay would produce one. Injecting a
+        known shift and recovering it is that guarantee.
+        """
+        shift = 5
+        # A large excursion is what makes 5 samples matter: the phase error a
+        # misalignment produces is 4*pi*(d(t) - d(t - tau))/lambda, which
+        # scales with the mirror speed. At the 0.35 um default the fringes are
+        # slow enough that a 5-sample slip is nearly invisible, so a test
+        # there would pass whether or not the sweep worked.
+        disp = _band_limited_displacement(8192, seed=31, amplitude_um=4.0)
+        signal = np.roll(_fringes(disp, 0.635, 0.4), shift)
+
+        curve = delay_sweep(signal, disp, 0.635, max_shift=8)
+
+        assert curve.best_shift == shift
+        assert curve.r_squared_at(shift) > curve.r_squared_at(0) + 0.2
+
+    def test_no_delay_leaves_the_peak_at_zero(self) -> None:
+        disp = _band_limited_displacement(8192, seed=31, amplitude_um=1.2)
+        signal = _fringes(disp, 0.635, 0.4)
+
+        curve = delay_sweep(signal, disp, 0.635, max_shift=8)
+
+        assert curve.best_shift == 0
+
+    def test_shifts_span_the_requested_window(self) -> None:
+        disp = _band_limited_displacement(2048, seed=31, amplitude_um=0.5)
+        signal = _fringes(disp, 0.635, 0.0)
+
+        curve = delay_sweep(signal, disp, 0.635, max_shift=3)
+
+        assert list(curve.shifts) == [-3, -2, -1, 0, 1, 2, 3]
+
+    def test_rejects_a_negative_window(self) -> None:
+        disp = _band_limited_displacement(512, seed=1, amplitude_um=0.5)
+
+        with pytest.raises(ValueError, match='max_shift'):
+            delay_sweep(_fringes(disp, 0.635, 0.0), disp, 0.635, max_shift=-1)
+
+
+class TestRuledOutChecksLandInTheArtifact:
+    """A candidate is only "ruled out" if the artifact says so, with numbers."""
+
+    def _write_dataset(self, path: Path, true_gain: float, n_shots: int = 4) -> None:
+        """Write a small acquisition whose fringes use a known gain."""
+        rng = np.random.default_rng(5)
+        n_samples = 2048
+        drive = np.empty((n_shots, n_samples))
+        signals = np.empty((n_shots, len(WAVELENGTHS), n_samples))
+        for i in range(n_shots):
+            tone = _band_limited_displacement(n_samples, seed=400 + i, amplitude_um=1.0)
+            drive[i] = tone
+            _, unit = unit_gain_displacement(tone, SAMPLE_RATE)
+            for k, wavelength in enumerate(WAVELENGTHS):
+                signals[i, k] = _fringes(
+                    true_gain * unit, wavelength, rng.uniform(0, 2 * np.pi)
+                )
+        with h5py.File(path, 'w') as handle:
+            handle.attrs['sample_rate'] = SAMPLE_RATE
+            handle.create_dataset(DRIVE_KEY, data=drive)
+            for k, channel in enumerate(PD_WAVELENGTHS_UM):
+                handle.create_dataset(channel, data=signals[:, k])
+
+    def test_artifact_records_bandwidth_headroom_per_channel(
+        self, tmp_path: Path
+    ) -> None:
+        """The aliasing check TASKS.md flags as uncommitted.
+
+        Recorded per channel because the shortest wavelength crosses the most
+        fringes per micron, so a single number would hide the binding case.
+        """
+        path = tmp_path / 'known.h5'
+        self._write_dataset(path, true_gain=11.0)
+
+        sweep = sweep_dataset(
+            path, 'known', n_shots=4, gains=np.array([11.0]), window_samples=None
+        )
+        payload = json.loads(json.dumps(sweep.to_dict()))
+
+        assert payload['nyquist_hz'] == pytest.approx(SAMPLE_RATE / 2.0)
+        for channel in PD_WAVELENGTHS_UM:
+            entry = payload['channels'][channel]
+            assert entry['peak_fringe_rate_hz'] > 0.0
+            assert entry['fringe_rate_headroom'] == pytest.approx(
+                (SAMPLE_RATE / 2.0) / entry['peak_fringe_rate_hz']
+            )
+        # 515 nm crosses the most fringes, so it must have the least headroom.
+        assert (
+            payload['channels']['RP2_CH2']['fringe_rate_headroom']
+            < payload['channels']['RP1_CH2']['fringe_rate_headroom']
+        )
+
+    def test_artifact_records_the_delay_curve_with_its_peak(
+        self, tmp_path: Path
+    ) -> None:
+        """No interior peak is the evidence, so the whole curve is stored.
+
+        Storing only "best shift = 0" would be an assertion; storing the curve
+        lets a reader see it is flat rather than trust that it was.
+        """
+        path = tmp_path / 'known.h5'
+        self._write_dataset(path, true_gain=11.0)
+
+        sweep = sweep_dataset(
+            path, 'known', n_shots=4, gains=np.array([11.0]), window_samples=None
+        )
+        payload = json.loads(json.dumps(sweep.to_dict()))
+
+        for channel in PD_WAVELENGTHS_UM:
+            delay = payload['channels'][channel]['delay_sweep']
+            assert delay['shifts'][0] == -delay['shifts'][-1]
+            assert len(delay['median_r_squared']) == len(delay['shifts'])
+            # The synthetic file has no delay, so zero must win.
+            assert delay['best_shift'] == 0
