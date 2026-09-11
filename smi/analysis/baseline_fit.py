@@ -395,6 +395,90 @@ def scrambled_theta_control(
     )
 
 
+@dataclass(frozen=True)
+class PhaseDrift:
+    """How far a shot's fringe phase and amplitude wander within one record.
+
+    Attributes:
+        drift_fringes: Peak-to-peak excursion of the unwrapped per-window
+            fitted phase, in fringes (1 fringe = 2*pi radians).
+        amplitude_cv: Standard deviation of the per-window fitted amplitude
+            divided by its mean. Zero means a constant fringe visibility.
+        n_windows: Number of windows the record was split into.
+    """
+
+    drift_fringes: float
+    amplitude_cv: float
+    n_windows: int
+
+
+def measure_phase_drift(
+    pd_signal: np.ndarray,
+    displacement: np.ndarray,
+    wavelength_um: float,
+    window_samples: int = 512,
+) -> PhaseDrift:
+    """Measure within-shot phase and amplitude wander directly.
+
+    This is the *mechanism* behind the windowed refit, measured on its own
+    rather than inferred from the fact that windowing raises R^2. The global
+    fit assumes one amplitude and one phase describe the whole 33.6 ms record;
+    this quantifies how badly that assumption fails by fitting each window
+    independently and tracking how the fitted values move.
+
+    The phase is unwrapped across windows before its excursion is taken, so a
+    drift that crosses the atan2 branch cut is not reported as a jump. A window
+    of 512 samples (1.05 ms) is short enough that the phase is near-constant
+    within it and long enough to sweep roughly a fringe, which is what makes
+    the per-window fit well conditioned.
+
+    Args:
+        pd_signal: Photodiode samples for one shot (V), shape ``(n,)``.
+        displacement: Mirror displacement for the same shot (microns), shape
+            ``(n,)``.
+        wavelength_um: Laser wavelength for this channel (microns).
+        window_samples: Window length in samples.
+
+    Returns:
+        The drift in fringes and the amplitude coefficient of variation.
+
+    Raises:
+        ValueError: If fewer than two windows fit in the record, since a single
+            window cannot exhibit drift and reporting 0.0 would be misleading.
+    """
+    signal = _as_float64_zero_mean(pd_signal)
+    theta = 4.0 * np.pi / wavelength_um * np.asarray(displacement, dtype=np.float64)
+    n_windows = signal.size // int(window_samples)
+    if n_windows < 2:
+        raise ValueError(
+            f'need at least 2 windows to measure drift, got {n_windows} for '
+            f'{signal.size} samples at window_samples={window_samples}'
+        )
+
+    usable = n_windows * int(window_samples)
+    blocks = signal[:usable].reshape(n_windows, -1)
+    thetas = theta[:usable].reshape(n_windows, -1)
+    blocks = blocks - blocks.mean(axis=1, keepdims=True)
+
+    design = np.stack([np.cos(thetas), np.sin(thetas), np.ones_like(thetas)], axis=2)
+    gram = design.transpose(0, 2, 1) @ design
+    rhs = design.transpose(0, 2, 1) @ blocks[:, :, None]
+    coeffs = np.linalg.solve(gram, rhs)[:, :, 0]
+
+    # Same (a, b) -> phase convention as fit_phase_amplitude.
+    phase = np.unwrap(np.arctan2(-coeffs[:, 1], coeffs[:, 0]))
+    amplitude = np.hypot(coeffs[:, 0], coeffs[:, 1])
+    mean_amplitude = float(amplitude.mean())
+
+    return PhaseDrift(
+        drift_fringes=float(np.ptp(phase) / (2.0 * np.pi)),
+        amplitude_cv=(
+            float(amplitude.std() / mean_amplitude) if mean_amplitude > 0 else 0.0
+        ),
+        n_windows=int(n_windows),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Method 2: inverse fit by multi-wavelength decoding
 # ---------------------------------------------------------------------------

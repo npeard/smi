@@ -20,6 +20,7 @@ from smi.analysis.baseline_fit import (
     fit_phase_amplitude,
     forward_model_residual,
     inverse_fit,
+    measure_phase_drift,
     windowed_forward_model_residual,
 )
 from smi.synthetic.coil_driver import MS_PER_S
@@ -565,3 +566,58 @@ class TestInverseFit:
                 displacement_limit_um=1.0,
                 grid_points=101,
             )
+
+
+@pytest.mark.parametrize('injected_fringes', [0.0, 1.5, 3.0])
+def test_measure_phase_drift_recovers_an_injected_drift(injected_fringes):
+    """A known phase ramp is recovered in fringes.
+
+    This is the mechanism behind the windowed refit, so it needs its own
+    known-answer check rather than resting on the R^2 improvement it explains.
+    Three values including zero: a measurement that cannot report "no drift"
+    would be useless for distinguishing a drifting record from a steady one.
+    """
+    n = 16384
+    wavelength_um = 0.635
+    displacement = _band_limited_displacement(n, seed=11, amplitude_um=1.2)
+    ramp = np.linspace(0.0, injected_fringes * 2.0 * np.pi, n)
+    signal = np.cos(4.0 * np.pi / wavelength_um * displacement + ramp)
+
+    drift = measure_phase_drift(signal, displacement, wavelength_um)
+
+    assert drift.n_windows == n // 512
+    assert drift.drift_fringes == pytest.approx(injected_fringes, abs=0.15)
+    # A pure phase ramp leaves the fringe amplitude alone.
+    assert drift.amplitude_cv < 0.1
+
+
+def test_measure_phase_drift_sees_amplitude_wander():
+    """A record whose fringe visibility decays reports a nonzero amplitude CV.
+
+    Phase drift and visibility drift are separate failures of the global fit's
+    "one amplitude, one phase" assumption, so the two must be reported
+    separately rather than collapsed into one number.
+    """
+    n = 16384
+    wavelength_um = 0.635
+    displacement = _band_limited_displacement(n, seed=12, amplitude_um=1.2)
+    envelope = np.linspace(1.0, 0.25, n)
+    signal = envelope * np.cos(4.0 * np.pi / wavelength_um * displacement)
+
+    drift = measure_phase_drift(signal, displacement, wavelength_um)
+
+    assert drift.amplitude_cv > 0.2
+    assert drift.drift_fringes < 0.2
+
+
+def test_measure_phase_drift_refuses_a_single_window():
+    """Fewer than two windows cannot show drift, so it raises instead of 0.0.
+
+    Returning zero would read as "this shot is steady" when the truth is that
+    the record was too short to tell.
+    """
+    displacement = _band_limited_displacement(512, seed=13)
+    signal = np.cos(4.0 * np.pi / 0.635 * displacement)
+
+    with pytest.raises(ValueError, match='at least 2 windows'):
+        measure_phase_drift(signal, displacement, 0.635, window_samples=512)
