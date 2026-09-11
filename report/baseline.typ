@@ -267,19 +267,19 @@ that top bin, against controls of 0.186-0.280. Nothing about the model or the
 displacement changed between those two curves; only the interval over which
 amplitude and phase were held fixed.
 
-The mechanism is a within-shot wander of exactly the quantities the global fit
-pins down: fringe phase and fringe contrast. The relevant scale is how many
-fringes a shot crosses. At the median true velocity RMS of 0.373 and
-0.377 um/ms a 1024-sample window sweeps 2.3 to 3.1 fringes depending on
-wavelength, and the whole 33.6 ms record sweeps 33 times as many. Within-shot
-drift of 1 to 2.7 fringes has been measured on this data and is recorded in
-`smi/analysis/baseline_fit.py`; that magnitude is documented there rather than
-in the results artifacts, so this document cites it and does not tabulate it.
-A single phase cannot describe a record whose fringe phase wanders by a fringe
-or more, and the fringe amplitude is not constant either, which is why a
-three-parameter global fit leaves most of the variance unexplained. It also
-explains the excursion dependence directly: a longer sweep gives the wander
-more time to accumulate.
+The fringe phase and the fringe contrast both wander within a shot, and those
+are the two quantities the global fit holds constant. Within-shot drift of 1
+to 2.7 fringes has been measured on this data and is recorded in
+`smi/analysis/baseline_fit.py`; that magnitude lives there rather than in the
+results artifacts, so this document cites it and does not tabulate it. For
+scale, at the median true velocity RMS of 0.373 and 0.377 um/ms a
+1024-sample window sweeps 2.3 to 3.1 fringes depending on wavelength, and the
+whole 33.6 ms record sweeps 33 times as many. A single phase cannot describe a
+record whose fringe phase wanders by a fringe or more, and a single amplitude
+cannot describe one whose contrast varies, so a three-parameter global fit
+leaves most of the variance unexplained. That also accounts for the excursion
+dependence without any extra assumption: a longer sweep gives the drift more
+time to accumulate.
 
 == A real gain error in the drive-to-displacement conversion, secondary
 
@@ -361,8 +361,9 @@ interquartile range from 15.50 to 30.50 on that channel, against a clean
 
 == What this section rules out
 
-Four candidate explanations were checked and none survives. They are recorded
-here so they do not get re-litigated.
+Four other candidates could explain an excursion-dependent residual. Each was
+checked against the data and none survives. They are listed with the check
+that killed them, so the next reader finds evidence rather than a claim.
 
 - *A time-delay misalignment between drive and photodiode.* Shifting the
   predicted signal against the recorded one over $plus.minus 8$ samples
