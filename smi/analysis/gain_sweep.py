@@ -68,12 +68,15 @@ What it found, at N = 1000 on both acquisitions (the numbers in
   unmodeled within-shot phase drift.
 
 One artifact of the per-shot fit worth knowing before reading its numbers:
-the mm-fiber 675 nm channel has a per-shot gain IQR of 15.50-30.50, i.e. a
-large minority of shots prefer a gain near the refuted legacy value. Those
-are spurious fringe-order aliases that a per-shot fit is free to chase and a
-single global gain is not, so that channel's per-shot R^2 (0.336 vs 0.230
-global) is inflated rather than informative. The median gain, 15.75, is the
-trustworthy number there.
+on the mm-fiber 675 nm channel the fitted gains are bimodal. The main mode
+sits at 15.50-15.75 as expected, but ~15% of shots land near 31 -- almost
+exactly twice the true gain, which is the signature of a fringe-order alias
+(double the displacement and the fringe count doubles, which a single
+amplitude and phase can partly absorb). A per-shot fit is free to chase that;
+a single global gain is not. So that channel's per-shot R^2 (0.336 against
+0.230 global) is inflated rather than informative, and its median gain of
+15.75 is the trustworthy number. The ``best_gain_counts`` histogram in the
+artifact is what makes the second mode visible.
 
 Two candidates are ruled out by the same run:
 
@@ -552,8 +555,35 @@ class GainSweep:
         Raises:
             ValueError: If ``windowed`` is requested but was not computed.
         """
-        index = int(np.argmin(np.abs(np.asarray(self.gains) - gain)))
-        return float(self._curve(channel, windowed)[index])
+        return float(self._curve(channel, windowed)[self._gain_index(gain)])
+
+    def _gain_index(self, gain: float) -> int:
+        """Index of the swept gain nearest ``gain``."""
+        return int(np.argmin(np.abs(np.asarray(self.gains) - gain)))
+
+    def _bins_at_the_two_gains_that_matter(
+        self, channel: str, windowed: bool
+    ) -> dict[str, list[dict[str, float | int | str]]]:
+        """Excursion bins at the live constant and at the curve's peak.
+
+        Bins exist at every swept gain internally, but serializing all 101 of
+        them produced a 1.4 MB artifact whose bulk described gains nobody
+        quotes. Every claim here is a live -> best comparison, so those are
+        the two that get persisted. The full median-R^2 curve is kept, since
+        that is what shows the peak is sharp rather than a plateau.
+
+        Args:
+            channel: Channel name.
+            windowed: Use the windowed measure instead of the global fit.
+
+        Returns:
+            Mapping of ``'at_live_k'`` and ``'at_best_gain'`` to bin lists.
+        """
+        binned = self.binned_r_squared(channel, windowed=windowed)
+        return {
+            'at_live_k': binned[self._gain_index(LIVE_K)],
+            'at_best_gain': binned[self._gain_index(self.best_gain(channel, windowed))],
+        }
 
     def to_dict(self) -> dict[str, Any]:
         """JSON-serializable summary, including the derived headline numbers.
@@ -576,8 +606,11 @@ class GainSweep:
                     if curve.median_r_squared_windowed is not None
                     else None
                 ),
-                'binned_r_squared': curve.binned_r_squared,
-                'binned_r_squared_windowed': curve.binned_r_squared_windowed,
+                # Bins at the live constant and at the peak, not at all 101
+                # gains -- see _bins_at_the_two_gains_that_matter.
+                'binned_r_squared': self._bins_at_the_two_gains_that_matter(
+                    name, windowed=False
+                ),
                 'best_gain': self.best_gain(name),
                 'best_gain_ratio_vs_live': self.best_gain(name) / LIVE_K,
                 'best_r_squared': self.best_r_squared(name),
@@ -594,6 +627,9 @@ class GainSweep:
                 )
                 entry['r_squared_windowed_at_live_k'] = self.r_squared_at(
                     name, LIVE_K, windowed=True
+                )
+                entry['binned_r_squared_windowed'] = (
+                    self._bins_at_the_two_gains_that_matter(name, windowed=True)
                 )
             if curve.peak_fringe_rate_hz is not None:
                 entry['peak_fringe_rate_hz'] = curve.peak_fringe_rate_hz
@@ -930,8 +966,33 @@ class PerShotGainSweep:
         """Median over shots of the R^2 at each shot's own best gain."""
         return float(np.median(self.curves[channel].r_squared))
 
+    def gain_histogram(self, channel: str) -> dict[str, int]:
+        """How many shots chose each gain, keyed by gain as a string.
+
+        Fitted gains are grid values, and at N = 1000 only ~63 of the 101
+        grid points are ever chosen, so the raw per-shot list is mostly
+        repetition. The histogram is also the more useful form: it makes a
+        second cluster visible at a glance, which is how the mm-fiber 675 nm
+        channel's alias near the refuted legacy gain shows up. String keys
+        because JSON object keys cannot be floats.
+
+        Args:
+            channel: Channel name.
+
+        Returns:
+            Mapping of gain (as a string) to shot count, in gain order.
+        """
+        gains, counts = np.unique(
+            np.asarray(self.curves[channel].best_gains), return_counts=True
+        )
+        return {f'{g:g}': int(c) for g, c in zip(gains, counts, strict=True)}
+
     def to_dict(self) -> dict[str, Any]:
         """JSON-serializable summary.
+
+        The raw per-shot gain list is deliberately *not* included -- see
+        :meth:`gain_histogram`. The quartile summary is, because that is what
+        gets quoted.
 
         Returns:
             Nested plain-Python dictionary ready for :func:`json.dumps`.
@@ -945,7 +1006,7 @@ class PerShotGainSweep:
             'channels': {
                 name: {
                     'wavelength_um': curve.wavelength_um,
-                    'best_gains': list(curve.best_gains),
+                    'best_gain_counts': self.gain_histogram(name),
                     'median_best_gain': float(np.median(curve.best_gains)),
                     'p25_best_gain': float(np.percentile(curve.best_gains, 25)),
                     'p75_best_gain': float(np.percentile(curve.best_gains, 75)),

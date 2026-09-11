@@ -11,6 +11,7 @@ nothing.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 import h5py
@@ -632,7 +633,7 @@ class TestPerShotBestGain:
 
         for channel in PD_WAVELENGTHS_UM:
             entry = payload['channels'][channel]
-            assert len(entry['best_gains']) == 6
+            assert sum(entry['best_gain_counts'].values()) == 6
             assert sum(int(b['n']) for b in entry['binned_r_squared']) == 6
 
 
@@ -684,9 +685,9 @@ class TestPerShotLandsInTheArtifact:
         per_shot = entry['per_shot_gain']
         assert per_shot['n_shots'] == n_shots
         for channel in PD_WAVELENGTHS_UM:
-            gains = per_shot['channels'][channel]['best_gains']
-            assert len(gains) == n_shots
-            assert all(10.0 <= g <= 12.0 for g in gains)
+            counts = per_shot['channels'][channel]['best_gain_counts']
+            assert sum(counts.values()) == n_shots
+            assert all(10.0 <= float(g) <= 12.0 for g in counts)
 
 
 class TestDelayCurveDistinguishesEdgeFromInterior:
@@ -931,3 +932,101 @@ class TestTheCommittedArtifactSaysWhatTheDocstringClaims:
                     f'which would mean a per-shot gain did rescue it'
                 )
                 assert top['median'] < small['median']
+
+
+class TestArtifactSizeStaysReviewable:
+    """A version-controlled artifact has to be readable in a diff.
+
+    Binning at all 101 gains produced a 1.4 MB file, 95% of which was bins at
+    gains nobody quotes. The claims only ever compare two gains -- the live
+    constant and the peak -- so those are the ones stored.
+    """
+
+    def test_bins_are_stored_only_at_the_live_and_best_gains(self) -> None:
+        signals, unit = _synthetic_sweep_inputs(12.0, n_shots=4, n_samples=1024)
+
+        sweep = sweep_gain(
+            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5), window_samples=None
+        )
+        payload = sweep.to_dict()
+
+        entry = payload['channels'][sweep.channels[0]]
+        # The full median-R^2 curve stays: it is what shows the peak is sharp.
+        assert len(entry['median_r_squared']) == len(sweep.gains)
+        # The bins do not.
+        assert set(entry['binned_r_squared']) == {'at_live_k', 'at_best_gain'}
+        for at in entry['binned_r_squared'].values():
+            assert [b['ptp_um'] for b in at] == ['0-0.3', '0.3-1', '1-2', '2-3', '3+']
+
+    def test_the_committed_artifact_is_small_enough_to_review(self) -> None:
+        """Guards the regression directly, since only a rerun would show it."""
+        assert ARTIFACT_PATH.exists(), f'{ARTIFACT_PATH} is missing'
+
+        assert ARTIFACT_PATH.stat().st_size < 200_000, (
+            f'{ARTIFACT_PATH.stat().st_size} bytes -- too large to review in a '
+            f'diff; check whether per-gain detail crept back in'
+        )
+
+
+class TestPerShotGainsAreStoredAsAHistogram:
+    """1000 grid-valued floats compress to a count per grid point.
+
+    Only 63 of the 101 grid points are ever chosen across 1000 shots, so the
+    raw list is mostly repetition. A histogram over the same grid carries
+    strictly more of what a reader needs -- it shows the mm-fiber 675 nm
+    channel's second cluster near the refuted legacy gain at a glance, which
+    scanning 1000 numbers does not.
+    """
+
+    def test_the_histogram_counts_every_shot_exactly_once(self) -> None:
+        signals, unit = _synthetic_sweep_inputs(12.0, n_shots=6, n_samples=1024)
+
+        per_shot = per_shot_best_gain(
+            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5)
+        )
+        payload = json.loads(json.dumps(per_shot.to_dict()))
+
+        for channel in PD_WAVELENGTHS_UM:
+            counts = payload['channels'][channel]['best_gain_counts']
+            assert sum(counts.values()) == 6
+            # Keys are gains from the grid, as strings for JSON.
+            assert all(float(k) in set(per_shot.gains) for k in counts)
+
+    def test_the_histogram_agrees_with_the_in_memory_gains(self) -> None:
+        """The compressed form must not lose or move a shot."""
+        signals, unit = _synthetic_sweep_inputs(12.0, n_shots=6, n_samples=1024)
+
+        per_shot = per_shot_best_gain(
+            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5)
+        )
+        payload = per_shot.to_dict()
+
+        for channel in per_shot.channels:
+            counts = payload['channels'][channel]['best_gain_counts']
+            expected = Counter(per_shot.best_gains(channel))
+            assert {float(k): v for k, v in counts.items()} == dict(expected)
+
+    def test_the_raw_per_shot_list_is_not_serialized(self) -> None:
+        signals, unit = _synthetic_sweep_inputs(12.0, n_shots=4, n_samples=1024)
+
+        per_shot = per_shot_best_gain(
+            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5)
+        )
+        payload = per_shot.to_dict()
+
+        entry = payload['channels'][per_shot.channels[0]]
+        assert 'best_gains' not in entry
+        # The distribution summary stays, since that is what gets quoted.
+        assert 'median_best_gain' in entry
+        assert 'p25_best_gain' in entry
+        assert 'p75_best_gain' in entry
+
+    def test_the_in_memory_accessor_still_returns_one_gain_per_shot(self) -> None:
+        """Compressing the artifact must not change the API the tests use."""
+        signals, unit = _synthetic_sweep_inputs(12.0, n_shots=5, n_samples=1024)
+
+        per_shot = per_shot_best_gain(
+            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5)
+        )
+
+        assert len(per_shot.best_gains(per_shot.channels[0])) == 5
