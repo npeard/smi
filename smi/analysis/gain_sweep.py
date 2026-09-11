@@ -93,9 +93,12 @@ Two candidates are ruled out by the same run:
 
 Two caveats that must travel with those numbers:
 
-1. **The two acquisitions disagree on the best ``k``** by ~6% (16.50 vs 15.50
-   at 635 nm). Drive-to-displacement gain is a property of the speaker, not
-   the optical path, so a scalar ``k`` is absorbing something else.
+1. **The two acquisitions disagree on the best ``k``** by 3.2-6.5% depending
+   on the channel (635 nm: 16.50 vs 15.50, the largest gap). At N = 1000 that
+   is not a small-sample artifact, though the 675 nm gap is only two grid
+   steps wide and so is the weakest of the three. Drive-to-displacement gain
+   is a property of the speaker, not the optical path, so a scalar ``k`` is
+   absorbing something else.
 2. So ``k`` is deliberately **left alone** in ``calib_params.py``. Changing it
    would shift every training target, and a constant the two acquisitions
    disagree about has not earned that.
@@ -152,8 +155,9 @@ LIVE_K = CalibrationParameters().k
 # Sweep range and step. The range brackets the live 14.553 generously on both
 # sides and reaches the 2024 calibration's 33.42, so that value is refuted by
 # the same curve rather than by a separate run. A 0.25 step is 1.7% of the
-# live gain, so it resolves a peak to well inside the ~6% the two acquisitions
-# disagree by -- a coarser step could not have shown that disagreement is real.
+# live gain, so it resolves a peak to well inside the 3.2-6.5% the two
+# acquisitions disagree by -- a coarser step could not have shown that
+# disagreement is real rather than quantization.
 DEFAULT_GAIN_LOW = 10.0
 DEFAULT_GAIN_HIGH = 35.0
 DEFAULT_GAIN_STEP = 0.25
