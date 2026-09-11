@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from smi.analysis.datamodule import VelocityDataModule
+from smi.analysis.datamodule import VelocityDataModule, _same_device
 from smi.analysis.datasets import GPUResidentDataset, VelocityDataset
 
 DATASET = (
@@ -184,3 +184,33 @@ def test_datamodule_preload_serves_device_resident_batches():
     assert signals.shape == (2, 3, SIGNAL_LENGTH)
     # num_workers is forced to 0: workers cannot fork CUDA tensors.
     assert dm.train_dataloader().num_workers == 0
+
+
+def test_same_device_treats_bare_cuda_as_the_current_device():
+    """A Trainer on 'cuda' must not be reported as a device mismatch.
+
+    torch.device('cuda') != torch.device('cuda:0') even though tensors sent
+    to the former land on the latter. Comparing them naively fires the
+    "every batch is being copied" warning on every batch of a correctly
+    configured run, which is the false alarm the warning exists to avoid.
+    """
+    assert _same_device(torch.device('cuda'), torch.device('cuda:0'))
+    assert _same_device(torch.device('cuda:0'), torch.device('cuda'))
+    assert _same_device(torch.device('cpu'), torch.device('cpu'))
+    assert not _same_device(torch.device('cpu'), torch.device('cuda:0'))
+    assert not _same_device(torch.device('cuda:0'), torch.device('cuda:1'))
+
+
+def test_resident_path_rejects_kwargs_it_would_otherwise_drop():
+    """An unsupported dataset kwarg must raise, not be silently ignored.
+
+    The two dataset classes take different arguments, so **dataset_kwargs
+    cannot simply be forwarded. Dropping the difference would let a caller
+    pass an argument that changes nothing, while the same call on the
+    DataLoader path raises -- the two paths must agree about what was asked.
+    """
+    dm = VelocityDataModule(
+        dataset_path=str(DATASET), preload_device='cpu', not_a_real_dataset_kwarg=1
+    )
+    with pytest.raises(TypeError, match='not_a_real_dataset_kwarg'):
+        dm._build_full_dataset()

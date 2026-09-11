@@ -37,6 +37,11 @@ PDF_PAGE = re.compile(rb'/Type\s*/Page(?!s)')
 TITLE_ARG = re.compile(r'^\s*title:\s*"[^"]', re.MULTILINE)
 
 
+def has_title_page(source: Path) -> bool:
+    """Whether the theme will render a title page for this document."""
+    return bool(TITLE_ARG.search(source.read_text(encoding='utf-8')))
+
+
 def count_slides(source: Path) -> int:
     """Expected page count: the title page, if any, plus one per slide."""
     text = source.read_text(encoding='utf-8')
@@ -66,11 +71,20 @@ def main() -> int:
         return 1
 
     if expected != actual:
+        # Spell out the arithmetic rather than assuming a title page: a deck
+        # built without one makes "1 title + N slides" send the reader looking
+        # for an overflow in the wrong place, and this message is the whole
+        # diagnostic the build gate emits.
+        headings = expected - (1 if has_title_page(args.source) else 0)
+        breakdown = (
+            f'1 title + {headings} slides'
+            if headings != expected
+            else f'{headings} slides'
+        )
         print(
-            f'{args.source.name}: expected {expected} pages (1 title + '
-            f'{expected - 1} slides) but {args.pdf.name} has {actual}. '
-            f'{actual - expected} slide(s) overflowed -- trim content or '
-            f'adjust the theme, then rebuild.',
+            f'{args.source.name}: expected {expected} pages ({breakdown}) but '
+            f'{args.pdf.name} has {actual}. {actual - expected} slide(s) '
+            f'overflowed -- trim content or shrink a figure, then rebuild.',
             file=sys.stderr,
         )
         return 1

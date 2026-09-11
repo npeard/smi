@@ -17,6 +17,24 @@ from smi.analysis.datasets import GPUResidentDataset, VelocityDataset
 logger = logging.getLogger(__name__)
 
 
+def _same_device(a: torch.device, b: torch.device) -> bool:
+    """Whether two devices refer to the same physical device.
+
+    ``torch.device('cuda') != torch.device('cuda:0')`` even though tensors
+    placed on the former land on the latter, so a bare equality check reports
+    a mismatch for a Trainer configured with ``accelerator='gpu'`` and no
+    index. Compare the type, and treat an unset index as the current device.
+    """
+    if a.type != b.type:
+        return False
+    if a.type != 'cuda':
+        return True
+    current = torch.cuda.current_device() if torch.cuda.is_available() else 0
+    return (a.index if a.index is not None else current) == (
+        b.index if b.index is not None else current
+    )
+
+
 class VelocityDataModule(lightning_module.LightningDataModule):
     """DataModule wrapping a single HDF5 file.
 
@@ -87,7 +105,24 @@ class VelocityDataModule(lightning_module.LightningDataModule):
         if self.preload_device is None:
             return VelocityDataset(self.dataset_path, **self.dataset_kwargs)
 
+        # Forwarded explicitly rather than by **dataset_kwargs, because the two
+        # dataset classes do not take the same arguments: cache_size is
+        # meaningless once the data is resident. Anything else is rejected
+        # rather than dropped -- silently ignoring max_shots here while the
+        # DataLoader path raises TypeError for it would make the two paths
+        # disagree about what the caller asked for.
         num_pd_channels = int(self.dataset_kwargs.get('num_pd_channels', 3))
+        max_shots = self.dataset_kwargs.get('max_shots')
+        unsupported = set(self.dataset_kwargs) - {
+            'num_pd_channels',
+            'max_shots',
+            'cache_size',
+        }
+        if unsupported:
+            raise TypeError(
+                f'preload_device is set, but {sorted(unsupported)} '
+                f'is not supported by GPUResidentDataset'
+            )
         if not GPUResidentDataset.fits_on_device(
             self.dataset_path,
             self.preload_device,
@@ -112,6 +147,7 @@ class VelocityDataModule(lightning_module.LightningDataModule):
             self.dataset_path,
             device=self.preload_device,
             num_pd_channels=num_pd_channels,
+            max_shots=max_shots,
         )
 
     def setup(self, stage: str | None = None) -> None:  # noqa: ARG002
@@ -189,7 +225,7 @@ class VelocityDataModule(lightning_module.LightningDataModule):
         if (
             self.preloaded
             and self.preload_device is not None
-            and device != self.preload_device
+            and not _same_device(device, self.preload_device)
         ):
             logger.warning(
                 'Data was preloaded onto %s but the trainer is on %s, so every '

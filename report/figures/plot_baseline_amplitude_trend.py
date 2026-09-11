@@ -6,9 +6,10 @@ whatever it fails to explain is the model's fault rather than an estimator's.
 Binning those per-shot R^2 values by the drive's peak-to-peak excursion shows
 the failure is not uniform: every channel in both acquisitions explains
 small-excursion shots several times better than large-excursion ones, and all
-six collapse above 2 um. Free space is monotone across all four bins; two of
-the fiber channels peak in the 0.3-1 um bin instead. The shared direction is
-the most actionable thing in the baseline, so it gets its own figure.
+six collapse above 2 um. From the 0.3-1 um bin onward every channel decreases
+at every step; three of the six rise into that bin from the smallest one,
+which is also the thinnest. The shared direction is the most actionable thing
+in the baseline, so it gets its own figure.
 
 Reads the committed results artifact. It does not recompute anything -- the
 fits took ~20 minutes per acquisition on a GPU and are not something a
@@ -73,7 +74,12 @@ def main() -> None:
             zip(PD_CHANNELS, CHANNEL_COLORS, strict=True)
         ):
             bins = {b['ptp_um']: b for b in method1[channel]['r_squared_by_drive_ptp']}
-            medians = [bins[b]['median'] for b in bin_keys]
+            # An empty bin carries no 'median' key (see _binned_by_amplitude):
+            # the bin edges are absolute, so regenerating with a smaller
+            # --n-shots, or on a quieter dataset, can leave one unpopulated.
+            # NaN draws as a gap, which is the honest rendering of "no shots
+            # here"; raising KeyError would fail the document build over it.
+            medians = [bins[b].get('median', float('nan')) for b in bin_keys]
             if not counts:
                 counts = [bins[b]['n'] for b in bin_keys]
             ax.bar(

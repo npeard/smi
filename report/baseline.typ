@@ -204,26 +204,29 @@ data.
   caption: [
     Method-1 median $R^2$ binned by the drive's peak-to-peak displacement
     excursion, per channel, N = 200 shots per acquisition. Bin populations are
-    marked. Every channel in both acquisitions collapses above 2 um; the free
-    space panel falls monotonically across all four bins, while the two fiber
-    channels that peak in the 0.3-1 um bin do not.
+    marked. Every channel in both acquisitions collapses above 2 um, and every
+    channel decreases at every step from the 0.3-1 um bin onward. Three of the
+    six rise into that bin from the thinly populated smallest one.
   ],
 )
 
 Splitting the method-1 fits by how far the speaker actually moved shows the
-failure is strongly amplitude dependent. In free space the trend is monotone
-across all four bins in every channel: 635 nm falls 0.567, 0.569, 0.203,
-0.032 from the smallest bin to the largest; 675 nm falls 0.849, 0.712, 0.236,
-0.030; 515 nm falls 0.443, 0.322, 0.089, 0.013.
+failure is strongly amplitude dependent, and in the same way in both
+acquisitions.
 
-The fiber acquisition is not monotone across all four bins -- 635 nm and
-515 nm both peak in the 0.3-1 um bin rather than the smallest one (0.440 then
-0.628, and 0.361 then 0.707) -- but the large-excursion collapse is
-identical: every channel in both acquisitions drops to $R^2$ between 0.03 and
-0.11 above 2 um, from several times that below 1 um. The smallest bin is also
-the thinnest (n = 20 and 23 against 66 to 72 in the largest), so the
-non-monotonicity at the low end rests on fewer shots than the collapse at the
-high end does.
+Above the smallest bin the picture is uniform: from the 0.3-1 um bin onward
+every one of the six channel/acquisition combinations decreases with every
+step, ending between $R^2$ 0.03 and 0.11 above 2 um -- several times below
+where it sat under 1 um.
+
+The only departures are at the first step, and they are not a property of
+the fiber. Three channels rise from the smallest bin into the second rather
+than falling: free space 635 nm (0.567 then 0.569, which is flat to within
+any reasonable reading), fiber 635 nm (0.440 then 0.628) and fiber 515 nm
+(0.361 then 0.707). The other three fall throughout. Since the smallest bin
+is also much the thinnest -- n = 20 and 23, against 66 to 72 in the largest
+-- the low-end behaviour rests on far fewer shots than the collapse does,
+and is the part of this figure to trust least.
 
 What is consistent across all six combinations is the direction: the model
 describes small excursions and fails on large ones. That is the shape of an

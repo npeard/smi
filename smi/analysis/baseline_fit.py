@@ -573,7 +573,12 @@ def inverse_fit(
     # and differentiates that instead. The window is long in samples but
     # short in time (see velocity_smooth_window), and the speaker is driven
     # only to 1 kHz, so this removes quantization noise rather than signal.
+    # savgol_filter requires an odd window. The min() bounds the length
+    # against short shots, but an even velocity_smooth_window would survive it
+    # and raise inside scipy, so force parity on the result rather than only
+    # on the bound.
     window = min(velocity_smooth_window, n_time - (1 - n_time % 2))
+    window -= 1 - window % 2
     if window >= 5:
         velocity_np = savgol_filter(
             disp_np, window, polyorder=3, deriv=1, delta=1.0 / sample_rate, axis=1
