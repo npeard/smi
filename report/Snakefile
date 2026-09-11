@@ -30,14 +30,27 @@ FIGURES = [
     "drive_to_velocity",
     "freespace_vs_fiber",
     "working_set",
+    "baseline_summary",
+    "baseline_amplitude_trend",
 ]
 
 # Which figures each document includes. Kept explicit rather than "all
 # figures" so a document only rebuilds when something it actually shows
 # changes.
 DOCUMENT_FIGURES = {
-    "slides": ["pd_traces", "drive_to_velocity", "freespace_vs_fiber", "working_set"],
-    "baseline": ["freespace_vs_fiber"],
+    "slides": [
+        "pd_traces",
+        "drive_to_velocity",
+        "freespace_vs_fiber",
+        "working_set",
+        "baseline_summary",
+        "baseline_amplitude_trend",
+    ],
+    "baseline": [
+        "baseline_summary",
+        "baseline_amplitude_trend",
+        "freespace_vs_fiber",
+    ],
 }
 
 DOCUMENTS = sorted(DOCUMENT_FIGURES)
