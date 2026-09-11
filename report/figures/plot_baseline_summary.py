@@ -53,7 +53,10 @@ def main() -> None:
     args = parse_args(__doc__ or '')
     results = json.loads(RESULTS_JSON.read_text(encoding='utf-8'))
     datasets = results['datasets']
+    # The two methods run at different shot counts (method 2's Viterbi decode
+    # is ~5.85 s per shot), so one N cannot label all three panels.
     n_shots = results['config']['n_shots']
+    n_shots_method2 = results['config'].get('n_shots_method2', n_shots)
 
     fig, axes = plt.subplots(1, 3, figsize=FIGSIZE_WIDE, constrained_layout=True)
 
@@ -156,7 +159,8 @@ def main() -> None:
     ax.set_title('Method 2: normalized')
 
     fig.suptitle(
-        f'Bars are medians over N = {n_shots} shots per acquisition; '
+        f'Bars are medians per acquisition -- N = {n_shots} shots for method 1, '
+        f'N = {n_shots_method2} for method 2; '
         'whiskers span the interquartile range',
         fontsize=8,
         color=COLORS['muted'],
