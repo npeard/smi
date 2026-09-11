@@ -71,7 +71,9 @@ $ s(t) = cos( (4 pi) / lambda d(t) + phi.alt ) $
 #takeaway[
   Targets are *derived* from the drive voltage through a calibrated transfer
   function, not measured independently. Everything downstream inherits that
-  calibration's accuracy.
+  calibration's accuracy -- and that accuracy is now measured: the gain
+  constant `k = 14.553` is 5-13% too small, so the displacement targets are
+  systematically small by about that much.
 ]
 
 That is the case for a *forward-model residual* baseline: fit the Michelson
@@ -152,47 +154,90 @@ fit in closed form, report MSE, and the likelihood reading comes free.
   "baseline_summary",
   width: 62%,
   caption: [
-    Medians over N = 200 shots per acquisition, interquartile range as
-    whiskers.
+    Medians, interquartile range as whiskers. N = 1000 for method 1, N = 200
+    for method 2. Left: bars are the windowed refit, dashes the scrambled
+    control, hollow markers the global fit.
   ],
 )
 
 #takeaway[
-  The inverse reaches 0.433 / 0.462 um displacement RMSE (488 / 550 um/s, or
-  0.488 / 0.550 um/ms, the unit the training loss is logged in) -- but NRMSE
-  1.10 / 1.18, i.e. just *worse than predicting zero*.
+  The inverse reaches 0.433 / 0.462 um displacement RMSE and 0.488 /
+  0.550 um/ms velocity RMSE, N = 200 -- but NRMSE 1.10 / 1.18, i.e. just
+  *worse than predicting zero*.
 ]
 
-= Why the baseline is bad, and what that means
+= Retraction: the model was not the problem, the fit was
 
-The forward-model residual says the problem is not the inverse. With
-displacement *known*, the Michelson model still explains only 9-38% of the
-variance, and the residual is 0.79-0.95x the signal RMS in every channel.
+A previous version of this deck said the Michelson model explains only 9-38%
+of the variance with displacement known. That was one amplitude, phase and
+offset fit across the whole 33.6 ms record -- and a shot's fringe phase drifts
+1-2.7 fringes within a record, which no single phase can absorb.
+
+Refit the same three parameters every 1024 samples (2.1 ms) and pool the
+variances, N = 1000 per acquisition:
+
+#align(center, table(
+  columns: 4,
+  align: (left, right, right, right),
+  stroke: 0.5pt + rgb("#d0d0d0"),
+  table.header([channel], [global], [windowed], [control]),
+  [free space 635 / 675 / 515 nm], [0.171 / 0.176 / 0.080],
+  [0.715 / 0.629 / 0.422], [0.298 / 0.330 / 0.238],
+  [mm fiber 635 / 675 / 515 nm], [0.479 / 0.166 / 0.303],
+  [0.863 / 0.602 / 0.730], [0.332 / 0.315 / 0.252],
+))
+
+#takeaway[
+  *Read the gap, never the windowed number alone.* A short window fits
+  anything, so the control refits with *another shot's* displacement. The gap
+  is 0.18-0.53. Free-space 515 nm's 0.18 is the weak case and gets named as
+  one; averaging channels would hide it.
+]
+
+= The collapse is in the estimator, not the model
 
 #fig(
   "baseline_amplitude_trend",
-  width: 62%,
+  width: 58%,
   caption: [
-    Method-1 median $R^2$ by drive peak-to-peak excursion. Every channel in
-    both acquisitions collapses to $R^2 <= 0.11$ above 2 um.
+    Method-1 median $R^2$ by drive peak-to-peak excursion, per channel,
+    N = 1000. Global fit (dotted) collapses above 2 um; the windowed refit
+    (solid) does not. Shading is the gap over the scrambled control (dashed).
+    A longer sweep gives the phase more time to drift, which is the whole
+    excursion trend.
   ],
 )
+
+= What is left, once the estimator is fixed
+
+- *Real gain error, secondary.* Best `k` is 16.50 / 16.25 / 16.00 (free space)
+  and 15.50 / 15.75 / 15.25 (fiber) against the live 14.553, so the targets
+  are 5-13% small. Windowed $R^2$ moves only 0.712 -> 0.767 at best `k`, which
+  is why this is secondary. Deliberately not re-tuned: the two acquisitions
+  disagree by 3.2-6.5%, so a scalar `k` is absorbing something else. The 2024
+  value 33.42 is refuted at $R^2$ 0.012-0.029.
+- *Residual amplitude dependence, and it is not a scale error.* A per-shot
+  fitted gain -- more freedom than any recalibration -- still leaves free-space
+  above-3 um at $R^2$ 0.143 / 0.094 / 0.052.
+- *Ruled out:* time delay (no interior peak in any of the six channels),
+  aliasing (peak fringe rate 9.9-13.6 kHz against a 244 kHz Nyquist, 18-25x
+  headroom), a missing DC term, and the $4 pi d \/ lambda$ factor.
 
 = What is settled and what is not
 
 *Settled.*
 - Acquisition and the supervision path work end to end on real hardware.
-- Resident working set is 3.05 GiB per acquisition, so GPU residency is an
-  option rather than a wish.
-- Data loading was never the bottleneck. Training is GPU bound; the loader has
-  7.5-9x headroom.
+- Resident working set is 3.05 GiB, so GPU residency is an option, not a wish.
+- Data loading was never the bottleneck. Training is GPU bound; 7.5-9x
+  headroom in the loader.
 - The baseline: 0.488 / 0.550 um/ms velocity RMSE, N = 200 per acquisition.
-- The Michelson model does not explain this data, even given the true
-  displacement. That is now the limiting problem.
+- The Michelson model *does* describe this data, fit over short enough
+  intervals: windowed $R^2$ 0.42-0.86 against controls of 0.24-0.33, N = 1000.
+- The gain is 5-13% too small. Real, and secondary.
 
 *Open.*
-- Why the forward model fails, and why it fails worse with excursion. The
-  drive-to-displacement calibration is the first suspect, untested.
-- Whether the network earns its complexity against a floor this low.
-- The fiber gap is invisible in the baseline, so it remains unmeasured rather
-  than absent.
+- The residual amplitude dependence a per-shot gain does not remove.
+- One value of `k`: the two acquisitions prefer gains 3.2-6.5% apart.
+- Whether the network earns its complexity. The inverse is now the binding
+  number, not the model.
+- The fiber gap is invisible in the baseline: unmeasured, not absent.

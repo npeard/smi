@@ -64,32 +64,64 @@ def main() -> None:
     labels = [label for _, label in BASELINE_DATASETS]
 
     # (a) Method 1: per-channel explained variance, the model's own ceiling.
+    #
+    # Three numbers per channel, because the windowed R^2 alone overstates the
+    # fit and the global one understates it. Bars are the windowed refit; the
+    # tick below each bar is the scrambled-theta control it has to clear, and
+    # the hollow marker is the global single-window fit -- the measurement an
+    # earlier draft of the report quoted on its own. The bar above its control
+    # tick is the claim.
     ax = axes[0]
     width = 0.26
     for offset, ((channel, wavelength_um), color) in enumerate(
         zip(PD_CHANNELS, CHANNEL_COLORS, strict=True)
     ):
-        medians = [
-            datasets[key]['method1'][channel]['r_squared']['median']
-            for key, _ in BASELINE_DATASETS
-        ]
+        positions = x + (offset - 1) * width
+
+        def _medians(stat: str, channel: str = channel) -> list[float]:
+            return [
+                datasets[key]['method1'][channel][stat]['median']
+                for key, _ in BASELINE_DATASETS
+            ]
+
         ax.bar(
-            x + (offset - 1) * width,
-            medians,
+            positions,
+            _medians('r_squared_windowed'),
             width=width,
             color=color,
             label=f'{wavelength_um * 1e3:.0f} nm',
+        )
+        ax.scatter(
+            positions,
+            _medians('r_squared_windowed_scrambled'),
+            marker='_',
+            s=90,
+            linewidths=1.4,
+            color=COLORS['drive'],
+            zorder=3,
+            label='control' if offset == 0 else None,
+        )
+        ax.scatter(
+            positions,
+            _medians('r_squared'),
+            marker='o',
+            s=12,
+            facecolors='none',
+            edgecolors=COLORS['drive'],
+            linewidths=1.0,
+            zorder=3,
+            label='global fit' if offset == 0 else None,
         )
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     # Headroom above 1.0 so the legend does not sit on the topmost tick label.
     # The axis still runs to 1.0 in ticks, which is what makes the bars
     # readable as "fraction of variance explained".
-    ax.set_ylim(0, 1.18)
+    ax.set_ylim(0, 1.30)
     ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
     ax.set_ylabel('median $R^2$, displacement known')
     ax.set_title('Method 1: does the model fit?')
-    ax.legend(loc='upper center', ncol=3, columnspacing=0.9, frameon=False)
+    ax.legend(loc='upper center', ncol=3, columnspacing=0.7, frameon=False)
 
     # (b) Method 2 displacement error against the signal it has to resolve.
     ax = axes[1]
