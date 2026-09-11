@@ -1,0 +1,19 @@
+# Line-ending policy.
+#
+# This repo is developed on win-64 and linux-64, and core.autocrlf=true on
+# Windows converts text files to CRLF on checkout. That is fine for files
+# people edit, but not for one a tool rewrites in place: pixi writes
+# pixi.lock with LF on every platform, so after any `pixi install` the
+# working tree held LF where Git expected CRLF and reported the lockfile as
+# modified with zero changed lines. A phantom diff trains you to stop
+# reading `git status`, which is worse than the cosmetic problem it looks
+# like.
+#
+# Scoped to pixi.lock deliberately. Other generated files here are written
+# through Python's text mode, which already produces CRLF on Windows, so
+# they round-trip correctly and pinning them would force a needless rewrite.
+
+pixi.lock text eol=lf
+
+# Everything else: let Git detect text and apply the platform default.
+* text=auto
