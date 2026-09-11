@@ -839,10 +839,10 @@ def _summary(values: np.ndarray) -> dict[str, float]:
 # The 2-3 um and >3 um ends behave differently -- a gain correction
 # recovers much of the former and little of the latter -- so a single
 # '2+' top bin hid the distinction that matters.
-_PTP_BIN_EDGES_UM = (0.0, 0.3, 1.0, 2.0, 3.0, np.inf)
+PTP_BIN_EDGES_UM = (0.0, 0.3, 1.0, 2.0, 3.0, np.inf)
 
 
-def _binned_by_amplitude(
+def binned_by_amplitude(
     scores: np.ndarray, ptp_um: np.ndarray
 ) -> list[dict[str, float | int | str]]:
     """Per-shot ``scores`` grouped by drive peak-to-peak excursion.
@@ -853,7 +853,7 @@ def _binned_by_amplitude(
     scores = np.asarray(scores, dtype=np.float64)
     ptp_um = np.asarray(ptp_um, dtype=np.float64)
     bins: list[dict[str, float | int | str]] = []
-    for low, high in itertools.pairwise(_PTP_BIN_EDGES_UM):
+    for low, high in itertools.pairwise(PTP_BIN_EDGES_UM):
         mask = (ptp_um >= low) & (ptp_um < high)
         n = int(mask.sum())
         label = f'{low:g}-{high:g}' if np.isfinite(high) else f'{low:g}+'
@@ -1001,13 +1001,13 @@ def evaluate_dataset(
             # far better than large ones. Persisted rather than left to an
             # ad-hoc session, so the claim can be checked against the
             # artifact instead of taken on trust.
-            'r_squared_by_drive_ptp': _binned_by_amplitude(
+            'r_squared_by_drive_ptp': binned_by_amplitude(
                 r2s, np.ptp(true_disp_centered, axis=1)
             ),
-            'r_squared_windowed_by_drive_ptp': _binned_by_amplitude(
+            'r_squared_windowed_by_drive_ptp': binned_by_amplitude(
                 windowed_r2s, np.ptp(true_disp_centered, axis=1)
             ),
-            'r_squared_windowed_scrambled_by_drive_ptp': _binned_by_amplitude(
+            'r_squared_windowed_scrambled_by_drive_ptp': binned_by_amplitude(
                 control_r2s, np.ptp(true_disp_centered, axis=1)
             ),
         }

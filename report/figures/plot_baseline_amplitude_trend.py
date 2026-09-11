@@ -76,7 +76,7 @@ def main() -> None:
             zip(PD_CHANNELS, CHANNEL_COLORS, strict=True)
         ):
             bins = {b['ptp_um']: b for b in method1[channel]['r_squared_by_drive_ptp']}
-            # An empty bin carries no 'median' key (see _binned_by_amplitude):
+            # An empty bin carries no 'median' key (see binned_by_amplitude):
             # the bin edges are absolute, so regenerating with a smaller
             # --n-shots, or on a quieter dataset, can leave one unpopulated.
             # NaN draws as a gap, which is the honest rendering of "no shots
