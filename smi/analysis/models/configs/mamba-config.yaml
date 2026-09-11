@@ -1,0 +1,39 @@
+model:
+  type: "Mamba"
+  sequence_length: 16384
+  in_channels: 3
+  d_model: 32        # internal feature dimension per Mamba block
+  d_state: 16        # SSM state dimension (N in the paper)
+  d_conv: 4          # causal depthwise conv kernel size inside each block
+  expand: 1          # inner dim = d_model * expand (128 here)
+  num_layers: 3      # number of stacked Mamba blocks
+  use_layer_norm: true
+
+training:
+  max_epochs: 200
+  warmup_epochs: 0
+  T_0: 200  # Initial restart period (epochs for first cosine cycle)
+  T_mult: 1  # Factor to increase T_i after each restart (1 = constant period, 2 = doubling)
+  batch_size: 32
+  optimizer: "Adam"  # Options: "Adam", "SGD", "Muon"
+  weight_decay: 1e-6
+  momentum: 0.9  # Unused if optimizer is not SGD
+  learning_rate: 1e-3
+  eta_min: 1e-6
+  accelerator: "gpu"
+  devices: 1
+  use_logging: true
+  wandb_project: "smi"
+  experiment_name: "mamba_baseline"
+  target: "velocity"  # "velocity" or "displacement" - what the model predicts
+
+loss:
+  dynamic: false  # enable dynamic loss weighting, overrides weights below
+  velocity_loss_weight: 1.0
+  displacement_loss_weight: 0.0
+
+data:
+  data_dir: "./analysis/data"
+  dataset_file: ["free-space-synchro_10k.h5", "mmfiber-synchro_10k.h5"]
+  split_ratios: [[80, 10, 10]]  # train, val, test percentages
+  num_workers: 7

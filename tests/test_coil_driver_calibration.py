@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 from plot_waveforms import calculate_fft
 
-from self_interferometry.acquisition.simulations.coil_driver import CoilDriver
-from self_interferometry.acquisition.simulations.waveform import Waveform
+from smi.synthetic.coil_driver import CoilDriver
+from smi.synthetic.waveform import Waveform
 
 
 def test_spectra_consistency():
@@ -26,7 +26,7 @@ def test_spectra_consistency():
     coil_driver = CoilDriver()
 
     # Generate a random waveform
-    t, voltage, voltage_spectrum = waveform.sample()
+    t, voltage, _voltage_spectrum = waveform.sample()
 
     # Calculate sample rate from time array
     sample_rate = 1 / (t[1] - t[0])
@@ -64,16 +64,16 @@ def test_reconstructed_waveforms():
     coil_driver = CoilDriver()
 
     # Generate a random waveform
-    t, voltage, voltage_spectrum = waveform.sample()
+    t, voltage, _voltage_spectrum = waveform.sample()
 
     # Calculate sample rate from time array
     sample_rate = 1 / (t[1] - t[0])
 
     # Get displacement and velocity using CoilDriver
-    displacement, displacement_spectrum, displacement_freqs = (
+    displacement, displacement_spectrum, _displacement_freqs = (
         coil_driver.get_displacement(voltage, sample_rate)
     )
-    velocity, velocity_spectrum, velocity_freqs = coil_driver.get_velocity(
+    velocity, velocity_spectrum, _velocity_freqs = coil_driver.get_velocity(
         voltage, sample_rate
     )
 
@@ -159,16 +159,16 @@ def test_displacement_velocity_relationship():
     coil_driver = CoilDriver()
 
     # Generate a random waveform
-    t, voltage, voltage_spectrum = waveform.sample()
+    t, voltage, _voltage_spectrum = waveform.sample()
 
     # Calculate sample rate from time array
     sample_rate = 1 / (t[1] - t[0])
 
     # Get displacement and velocity using CoilDriver
-    displacement, displacement_spectrum, displacement_freqs = (
+    _displacement, displacement_spectrum, displacement_freqs = (
         coil_driver.get_displacement(voltage, sample_rate)
     )
-    velocity, velocity_spectrum, velocity_freqs = coil_driver.get_velocity(
+    _velocity, velocity_spectrum, _velocity_freqs = coil_driver.get_velocity(
         voltage, sample_rate
     )
 
@@ -197,16 +197,16 @@ def test_integrated_velocity_and_derivative_displacement():
     coil_driver = CoilDriver()
 
     # Generate a random waveform
-    t, voltage, voltage_spectrum = waveform.sample()
+    t, voltage, _voltage_spectrum = waveform.sample()
 
     # Calculate sample rate from time array
     sample_rate = 1 / (t[1] - t[0])
 
     # Get displacement and velocity using CoilDriver
-    displacement, displacement_spectrum, displacement_freqs = (
+    displacement, _displacement_spectrum, _displacement_freqs = (
         coil_driver.get_displacement(voltage, sample_rate)
     )
-    velocity, velocity_spectrum, velocity_freqs = coil_driver.get_velocity(
+    velocity, _velocity_spectrum, _velocity_freqs = coil_driver.get_velocity(
         voltage, sample_rate
     )
 
@@ -263,7 +263,7 @@ def test_coil_driver_sample_spectrum_hermitian():
     num_samples = 5
     for i in range(num_samples):
         # Generate a waveform with equalize_gain=True
-        t, voltage, spectrum = coil_driver.sample(waveform, normalize_gain=True)
+        t, _voltage, spectrum = coil_driver.sample(waveform, normalize_gain=True)
 
         # Calculate sample rate from time array
         sample_rate = 1 / (t[1] - t[0])
@@ -323,7 +323,7 @@ def test_gain_normalization():
     t_std, voltage_std, voltage_spectrum_std = waveform.sample()
 
     # Generate an equalized waveform
-    t_eq, voltage_eq, voltage_spectrum_eq = coil_driver.sample(
+    _t_eq, voltage_eq, _voltage_spectrum_eq = coil_driver.sample(
         waveform, normalize_gain=True, skip_randomization=True
     )
 

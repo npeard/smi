@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from plot_waveforms import calculate_fft
 
-from self_interferometry.acquisition.simulations.waveform import Waveform
+from smi.synthetic.waveform import Waveform
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def test_waveform_sample_spectrum_consistency():
         sample_rate = 1 / (t[1] - t[0])
 
         # Calculate FFT of the voltage waveform using the calculate_fft function
-        freqs_fft, spectrum_fft = calculate_fft(voltage, sample_rate)
+        _freqs_fft, spectrum_fft = calculate_fft(voltage, sample_rate)
 
         # Extract magnitude and phase from the complex spectrum
         voltage_mag_fft = np.abs(spectrum_fft)
@@ -93,7 +93,7 @@ def test_waveform_frequency_range():
     sample_rate = 1 / (waveform.t[1] - waveform.t[0])
 
     # Calculate FFT of the voltage waveform using the calculate_fft function
-    freqs_fft, spectrum_fft = calculate_fft(voltage, sample_rate)
+    freqs_fft, _spectrum_fft = calculate_fft(voltage, sample_rate)
 
     # Check that significant spectral content is within the specified range
     # (allowing for some leakage)
@@ -134,7 +134,7 @@ def test_waveform_length_consistency():
 
     # Generate multiple waveforms and check their lengths
     for i in range(5):
-        t, voltage, voltage_spectrum = waveform.sample()
+        t, voltage, _voltage_spectrum = waveform.sample()
         assert len(t) == len(voltage), (
             f'Test {i + 1}: Time and voltage arrays have different lengths'
         )
@@ -178,8 +178,17 @@ def test_waveform_statistics():
     end_freq = 500
     num_samples = 20  # Reduced for test efficiency
 
+    # Seeded: this compares an empirical variance over only 20 samples against
+    # the analytic one at rtol=0.3, which is a wide enough tolerance to pass
+    # most of the time and a narrow enough one to fail occasionally. Unseeded
+    # it did exactly that, and an intermittently red suite is one people learn
+    # to re-run rather than read.
     waveform = Waveform(
-        start_freq=start_freq, end_freq=end_freq, gen_dec=8192, acq_dec=256
+        start_freq=start_freq,
+        end_freq=end_freq,
+        gen_dec=8192,
+        acq_dec=256,
+        seed=20250910,
     )
 
     # Initialize arrays to store all voltage samples and reconstructed complex signals
@@ -218,6 +227,7 @@ def test_waveform_statistics():
 
     # Compute variance for the noise distribution using the same formula as in
     # plot_waveform_histograms
+    assert last_t is not None
     last_voltage_spectral_amp = np.abs(voltage_spectrum)
     noise_variance = (
         np.sum(last_voltage_spectral_amp**2)

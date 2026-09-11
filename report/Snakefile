@@ -1,0 +1,120 @@
+# Build DAG for the smi report documents: figure scripts -> PDFs -> documents.
+#
+# Run from this directory:
+#     pixi run -e report snakemake --cores all
+# or, from anywhere in the repo, via the pixi tasks:
+#     pixi run report / report-dry / report-clean / report-slides / report-baseline
+#
+# Design notes
+#
+# - FIGURES is the single registry. Adding a figure means dropping
+#   report/figures/plot_<name>.py on disk and adding <name> here.
+#   tests/test_report_build.py checks those two stay in sync in both
+#   directions, because a file-per-figure layout invites exactly that drift.
+# - Documents depend on the figure PDFs they include, so editing one figure
+#   script rebuilds that figure and the documents that use it, and nothing
+#   else.
+# - Everything generated lands in build/, which is gitignored.
+# - Commands are kept to plain `python` / `typst` invocations with no shell
+#   builtins, so the same rules run under cmd.exe, PowerShell and bash.
+
+from pathlib import Path
+
+REPORT_DIR = Path(workflow.basedir)
+BUILD = "build"
+FIGDIR = f"{BUILD}/figures"
+
+# Which figures each document includes. Kept explicit rather than "all
+# figures" so a document only rebuilds when something it actually shows
+# changes.
+DOCUMENT_FIGURES = {
+    "slides": [
+        "pd_traces",
+        "drive_to_velocity",
+        "freespace_vs_fiber",
+        "working_set",
+        "baseline_summary",
+        "baseline_amplitude_trend",
+    ],
+    "baseline": [
+        "baseline_summary",
+        "baseline_amplitude_trend",
+        "freespace_vs_fiber",
+    ],
+}
+
+# The figure registry: stem <name> maps to figures/plot_<name>.py ->
+# build/figures/<name>.pdf. Derived rather than written out, because a figure
+# that no document includes should not be built, and a figure a document
+# includes must be. Maintaining both lists by hand made those two invariants
+# something to remember and then test for; deriving makes them true by
+# construction.
+FIGURES = sorted({name for names in DOCUMENT_FIGURES.values() for name in names})
+
+DOCUMENTS = sorted(DOCUMENT_FIGURES)
+
+THEME = "lib/theme.typ"
+
+# Without this, the unconstrained {document} wildcard in `rule document` also
+# matches "figures/<name>", so Snakemake evaluates a figure PDF as a candidate
+# document output and its input function raises KeyError on every run. Pinning
+# both wildcards to their registries keeps the DAG unambiguous.
+wildcard_constraints:
+    document="|".join(DOCUMENTS),
+    name="|".join(FIGURES),
+
+
+def figure_pdfs(document):
+    return [f"{FIGDIR}/{name}.pdf" for name in DOCUMENT_FIGURES[document]]
+
+
+rule all:
+    input:
+        expand(f"{BUILD}/{{document}}.pdf", document=DOCUMENTS),
+        f"{BUILD}/.slides-pagecheck",
+
+
+rule figure:
+    """Render one figure. The script writes exactly the path it is handed."""
+    input:
+        script="figures/plot_{name}.py",
+        common="figures/_figcommon.py",
+    output:
+        f"{FIGDIR}/{{name}}.pdf",
+    shell:
+        "python {input.script} --output {output}"
+
+
+rule document:
+    """Compile a Typst document against its figures."""
+    input:
+        source="{document}.typ",
+        theme=THEME,
+        figures=lambda wildcards: figure_pdfs(wildcards.document),
+    output:
+        f"{BUILD}/{{document}}.pdf",
+    shell:
+        "typst compile --root . {input.source} {output}"
+
+
+# Typst silently continues an overlong slide onto another page, so the deck
+# compiles clean while quietly gaining an orphaned figure. Only the slide
+# decks get this check; a flowing report is supposed to paginate.
+rule check_slides:
+    """Fail the build when a slide has overflowed its page."""
+    input:
+        script="scripts/check_slide_pages.py",
+        source="slides.typ",
+        pdf=f"{BUILD}/slides.pdf",
+    output:
+        touch(f"{BUILD}/.slides-pagecheck"),
+    shell:
+        "python {input.script} --source {input.source} --pdf {input.pdf}"
+
+
+rule clean:
+    """Remove every generated artifact."""
+    run:
+        import shutil
+
+        shutil.rmtree(REPORT_DIR / BUILD, ignore_errors=True)

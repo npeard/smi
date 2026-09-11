@@ -11,18 +11,19 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import gridspec
+from matplotlib.figure import Figure
 from numpy.fft import fft, fftfreq
 from scipy import stats
 
-from self_interferometry.acquisition.simulations.coil_driver import CoilDriver
-from self_interferometry.acquisition.simulations.waveform import Waveform
+from smi.synthetic.coil_driver import CoilDriver
+from smi.synthetic.waveform import Waveform
 
 logger = logging.getLogger(__name__)
 
 
 def calculate_fft(
     signal: np.ndarray, sample_rate: float
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Calculate the FFT of a signal.
 
     Args:
@@ -31,9 +32,8 @@ def calculate_fft(
 
     Returns:
         Tuple containing:
-        - Frequencies
-        - Magnitude of FFT
-        - Phase of FFT
+        - Frequencies (positive half)
+        - Amplitude spectrum (positive half)
     """
     n = len(signal)
     fft_result = fft(signal, norm='ortho')
@@ -50,7 +50,7 @@ def calculate_fft(
 
 def plot_waveforms(
     waveform: Waveform, coil_driver: CoilDriver, figsize: tuple[int, int] = (15, 10)
-) -> None:
+) -> Figure:
     """Generate and plot waveforms and their FFTs.
 
     Args:
@@ -68,10 +68,10 @@ def plot_waveforms(
     freqs_fft, voltage_fft = calculate_fft(voltage, sample_rate)
 
     # Get the displacement and velocity waveforms using the coil driver
-    displacement, displacement_spectrum, displacement_freqs = (
+    displacement, displacement_spectrum, _displacement_freqs = (
         coil_driver.get_displacement(voltage, sample_rate)
     )
-    velocity, velocity_spectrum, velocity_freqs = coil_driver.get_velocity(
+    velocity, velocity_spectrum, _velocity_freqs = coil_driver.get_velocity(
         voltage, sample_rate
     )
 
@@ -88,10 +88,10 @@ def plot_waveforms(
     freqs_fft_eq, voltage_fft_eq = calculate_fft(voltage_eq, sample_rate)
 
     # Get the displacement and velocity waveforms for the equalized voltage
-    displacement_eq, displacement_spectrum_eq, displacement_freqs_eq = (
+    displacement_eq, displacement_spectrum_eq, _displacement_freqs_eq = (
         coil_driver.get_displacement(voltage_eq, sample_rate)
     )
-    velocity_eq, velocity_spectrum_eq, velocity_freqs_eq = coil_driver.get_velocity(
+    velocity_eq, velocity_spectrum_eq, _velocity_freqs_eq = coil_driver.get_velocity(
         voltage_eq, sample_rate
     )
 
@@ -315,7 +315,7 @@ def plot_waveforms(
 
 def plot_waveform_histograms(
     waveform: Waveform, num_samples: int = 100, figsize: tuple[int, int] = (10, 8)
-) -> None:
+) -> Figure:
     """Generate multiple waveform samples and plot a histogram of the time-domain values.
 
     Args:
@@ -354,7 +354,7 @@ def plot_waveform_histograms(
     fig, ax = plt.subplots(figsize=figsize)
 
     # Plot histogram of time-domain voltage values with proper normalization
-    hist_values, bin_edges, _ = ax.hist(
+    _hist_values, _bin_edges, _ = ax.hist(
         all_voltages, bins=500, alpha=0.7, color='blue', density=True
     )
     ax.set_title('Histogram of Time-Domain Voltage Values')
@@ -366,7 +366,11 @@ def plot_waveform_histograms(
     x = np.linspace(min(all_voltages), max(all_voltages), 1000)
     gaussian = stats.norm.pdf(x, loc=0, scale=np.sqrt(noise_variance))
     ax.plot(
-        x, gaussian, 'r-', linewidth=2, label=f'Gaussian (um=0, sigma^2={noise_variance:.4f})'
+        x,
+        gaussian,
+        'r-',
+        linewidth=2,
+        label=f'Gaussian (um=0, sigma^2={noise_variance:.4f})',
     )
     ax.legend()
 

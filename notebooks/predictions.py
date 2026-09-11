@@ -18,13 +18,11 @@ def _():
 
 @app.cell
 def _():
-    from self_interferometry.acquisition.redpitaya.redpitaya_config import (
-        RedPitayaConfig,
-    )
-    from self_interferometry.analysis.datasets import get_data_loaders
-    from self_interferometry.analysis.generate_data import generate_synthetic_test_data
-    from self_interferometry.analysis.lit_module import LitModule
-    from self_interferometry.analysis.synthetic_lit_module import DEFAULT_WAVELENGTHS_NM
+    from smi.analysis.datasets import get_data_loaders
+    from smi.analysis.generate_data import generate_synthetic_test_data
+    from smi.analysis.lit_module import LitModule
+    from smi.analysis.synthetic_lit_module import DEFAULT_WAVELENGTHS_NM
+    from smi.redpitaya.redpitaya_config import RedPitayaConfig
 
     ACQ_SAMPLE_RATE = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
     CHANNEL_NAMES = ['PD1 (635 nm)', 'PD2 (675 nm)', 'PD3 (515 nm)']
@@ -50,11 +48,11 @@ def _(mo):
 
 @app.cell
 def _():
-    freespace_datapath = '/Users/nolanpeard/Documents/Projects/self-interferometry/self_interferometry/analysis/data/free-space-synchro_10k.h5'
-    mmfiber_datapath = '/Users/nolanpeard/Documents/Projects/self-interferometry/self_interferometry/analysis/data/mmfiber-synchro_10k.h5'
+    freespace_datapath = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/data/free-space-synchro_10k.h5'
+    mmfiber_datapath = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/data/mmfiber-synchro_10k.h5'
 
-    best_freespace_model = '/Users/nolanpeard/Documents/Projects/self-interferometry/self_interferometry/analysis/models/checkpoints/4puqewmv_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
-    best_fiber_model = '/Users/nolanpeard/Documents/Projects/self-interferometry/self_interferometry/analysis/models/checkpoints/bfzctg24_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
+    best_freespace_model = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/models/checkpoints/4puqewmv_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
+    best_fiber_model = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/models/checkpoints/bfzctg24_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
     return best_fiber_model, mmfiber_datapath
 
 

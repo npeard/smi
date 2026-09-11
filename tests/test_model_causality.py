@@ -13,11 +13,11 @@ lookahead (i.e. it has causal violations).
 import pytest
 import torch
 
-from self_interferometry.analysis.models.lstm import LSTM, LSTMConfig
-from self_interferometry.analysis.models.mamba import Mamba, MambaConfig
-from self_interferometry.analysis.models.scnn import SCNN, SCNNConfig
-from self_interferometry.analysis.models.tcan import TCAN, TCANConfig
-from self_interferometry.analysis.models.tcn import TCN, TCNConfig
+from smi.analysis.models.lstm import LSTM, LSTMConfig
+from smi.analysis.models.mamba import Mamba, MambaConfig
+from smi.analysis.models.scnn import SCNN, SCNNConfig
+from smi.analysis.models.tcan import TCAN, TCANConfig
+from smi.analysis.models.tcn import TCN, TCNConfig
 
 SEQUENCE_LENGTH = 256
 IN_CHANNELS = 3
@@ -242,7 +242,7 @@ class TestLSTMBidirectionalNonCausality:
             IN_CHANNELS,
             BLOCK_SIZE,
         )
-        violation_rate, n_violations, _ = _causal_violation_rate(
+        violation_rate, _n_violations, _ = _causal_violation_rate(
             baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, VIOLATION_THRESHOLD
         )
         assert violation_rate > 0.0, (
@@ -259,7 +259,7 @@ class TestSCNNNonCausality:
         baseline, outputs = _get_step_outputs(
             scnn_model, STEP_POSITIONS, SEQUENCE_LENGTH, IN_CHANNELS, BLOCK_SIZE
         )
-        violation_rate, n_violations, _ = _causal_violation_rate(
+        violation_rate, _n_violations, _ = _causal_violation_rate(
             baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, VIOLATION_THRESHOLD
         )
         assert violation_rate > 0.0, (

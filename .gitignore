@@ -1,6 +1,3 @@
-# CLAUDE.md
-CLAUDE.md
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -11,18 +8,21 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+# Anchored to the repo root: these are setuptools/distutils build output, and
+# an unanchored pattern also swallows any nested directory of the same name --
+# `lib/` in particular was hiding report/lib/, which is source, not output.
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
 pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
@@ -136,3 +136,20 @@ dmypy.json
 **/data/*
 **/checkpoints/*
 **/lightning_logs/*
+
+# ...but the baseline results are a few KB of computed numbers, not data. A
+# report figure has to read them, and recomputing takes ~25 minutes on a GPU,
+# so they are version-controlled deliberately. Regenerate with
+# `python -m smi.analysis.baseline_fit`.
+!smi/analysis/data/baseline_results.json
+
+# Session-scoped agent scaffolding (specs, plans) -- durable rationale goes
+# in commit messages and code comments instead.
+docs/superpowers/
+scratch/
+
+# Generated report artifacts: figure PDFs and compiled documents. Snakemake's
+# own state lives here too. Everything under it is reproducible from
+# report/figures/*.py and the .typ sources via `pixi run report`.
+report/build/
+report/.snakemake/
