@@ -894,12 +894,24 @@ def run_baselines(
 
 def main(argv: list[str] | None = None) -> None:
     """Command-line entry point for regenerating the baseline artifact."""
+    # These defaults are the settings the committed artifact was produced
+    # with, so a bare `python -m smi.analysis.baseline_fit` reproduces it.
+    # They previously differed (cpu, 1201 grid points), which meant the
+    # documented regeneration command silently returned different numbers
+    # than the ones in the file it overwrote -- the config block records
+    # them, but only a reader who compared would have noticed.
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--n-shots', type=int, default=200)
-    parser.add_argument('--device', type=str, default='cpu')
-    parser.add_argument('--batch-size', type=int, default=16)
-    parser.add_argument('--grid-points', type=int, default=1201)
-    parser.add_argument('--phase-grid-points', type=int, default=16)
+    parser.add_argument(
+        '--device',
+        type=str,
+        default='cuda:0' if torch.cuda.is_available() else 'cpu',
+        help='Decode device. The Viterbi pass is a long sequential loop: '
+        'seconds per shot on a GPU, minutes on CPU.',
+    )
+    parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--grid-points', type=int, default=1601)
+    parser.add_argument('--phase-grid-points', type=int, default=8)
     parser.add_argument('--output', type=Path, default=None)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format='%(message)s')
