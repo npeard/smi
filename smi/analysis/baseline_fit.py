@@ -336,10 +336,12 @@ def windowed_forward_model_residual(
     design = np.stack([np.cos(theta), np.sin(theta), np.ones_like(theta)], axis=1)
 
     # The global fit measures variance about the whole record's mean, so the
-    # pooled total sum of squares must use that same mean. Using each window's
-    # own mean instead would make a full-length window disagree with the
-    # global fit only when the offset column is degenerate -- and would quietly
-    # credit the windowing for removing between-window offset variance twice.
+    # pooled total sum of squares must use that same mean. Summing each
+    # window's variance about its own mean instead would drop the
+    # between-window offset spread out of the denominator, inflating R^2 for
+    # variance the per-window offset column merely re-baselined rather than
+    # explained -- and the two columns would no longer be comparable, which is
+    # the only reason to report them together.
     residual_ss = 0.0
     grand_mean = float(signal.mean())
     total_ss = float(np.sum((signal - grand_mean) ** 2))
