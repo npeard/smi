@@ -162,6 +162,10 @@ allow-dict-calls-with-keyword-arguments = true
 # Snakefile rather than imported. Printing is the output contract (T201) and
 # it is not a package (INP001).
 "report/scripts/*.py" = ["INP001", "T201"]
+# Prints its results table to stdout; that table is the deliverable. Listed
+# here rather than as eleven inline noqa comments, to match how every other
+# print-interface script in this project is handled.
+"smi/analysis/benchmark_loading.py" = ["T201"]
 "tests/plot_waveforms.py" = ["PLR0915", "E501"]
 "smi/redpitaya/manager.py" = ["C901", "PLR0912", "PLR0915"]
 "smi/redpitaya/scpi.py" = ["C901", "PLR0912", "PLR0915", "E501"]

@@ -206,14 +206,3 @@
   width: 100%,
   body,
 )
-
-// Placeholder marker for content a later phase fills in. Deliberately loud,
-// so an unfinished section cannot be mistaken for a finished one.
-#let todo(body) = block(
-  fill: rgb("#fff4e0"),
-  stroke: (left: 3pt + rgb("#d99a1c")),
-  inset: (x: 12pt, y: 9pt),
-  radius: 2pt,
-  width: 100%,
-  [#text(weight: "bold")[Placeholder. ] #body],
-)

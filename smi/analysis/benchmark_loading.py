@@ -668,17 +668,17 @@ def main(argv: list[str] | None = None) -> int:
         available = int(f[VOLTAGE_KEY].shape[0])
     shots = min(args.shots, available)
 
-    print(f'device        : {device_name} ({args.device})')  # noqa: T201
-    print(f'data file     : {args.data_file}')  # noqa: T201
-    print(f'shots (N)     : {shots} of {available}')  # noqa: T201
-    print(f'sequence len  : {sequence_length}')  # noqa: T201
-    print(f'batch size    : {args.batch_size}')  # noqa: T201
-    print(f'timed epochs  : {args.repeats} (median reported), 1 warmup epoch')  # noqa: T201
-    print()  # noqa: T201
+    print(f'device        : {device_name} ({args.device})')
+    print(f'data file     : {args.data_file}')
+    print(f'shots (N)     : {shots} of {available}')
+    print(f'sequence len  : {sequence_length}')
+    print(f'batch size    : {args.batch_size}')
+    print(f'timed epochs  : {args.repeats} (median reported), 1 warmup epoch')
+    print()
 
     results: list[BenchmarkResult] = []
     for name in args.configs:
-        print(f'running {name} ...', flush=True)  # noqa: T201
+        print(f'running {name} ...', flush=True)
         result = run_configuration(
             name,
             file_path=args.data_file,
@@ -691,8 +691,8 @@ def main(argv: list[str] | None = None) -> int:
         results.append(result)
         torch.cuda.empty_cache()
 
-    print()  # noqa: T201
-    print(format_table(results))  # noqa: T201
+    print()
+    print(format_table(results))
 
     if args.json_out is not None:
         payload = {
@@ -706,7 +706,7 @@ def main(argv: list[str] | None = None) -> int:
         }
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(payload, indent=2), encoding='utf-8')
-        print(f'\nwrote {args.json_out}')  # noqa: T201
+        print(f'\nwrote {args.json_out}')
 
     return 0
 

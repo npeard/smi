@@ -158,8 +158,9 @@ fit in closed form, report MSE, and the likelihood reading comes free.
 )
 
 #takeaway[
-  The inverse reaches 0.433 / 0.462 um displacement RMSE (488 / 550 um/s
-  velocity) -- but NRMSE 1.10 / 1.18, i.e. just *worse than predicting zero*.
+  The inverse reaches 0.433 / 0.462 um displacement RMSE (488 / 550 um/s, or
+  0.488 / 0.550 um/ms, the unit the training loss is logged in) -- but NRMSE
+  1.10 / 1.18, i.e. just *worse than predicting zero*.
 ]
 
 = Why the baseline is bad, and what that means
@@ -185,7 +186,7 @@ variance, and the residual is 0.79-0.95x the signal RMS in every channel.
   option rather than a wish.
 - Data loading was never the bottleneck. Training is GPU bound; the loader has
   7.5-9x headroom.
-- The baseline: 488 / 550 um/s velocity RMSE, N = 200 per acquisition.
+- The baseline: 0.488 / 0.550 um/ms velocity RMSE, N = 200 per acquisition.
 - The Michelson model does not explain this data, even given the true
   displacement. That is now the limiting problem.
 

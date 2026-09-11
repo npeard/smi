@@ -22,8 +22,8 @@
 
 A velocity RMSE from a neural network is uninterpretable on its own. It needs
 a number beside it from a method that does not learn, computed on the same
-shots and reported in the same units. This document produces that number and
-says precisely what it does and does not establish.
+shots and in a unit the two can actually be compared in. This document
+produces that number and says precisely what it does and does not establish.
 
 The question it answers is a methodological one that came up while planning
 the baseline: should each shot be scored by its *likelihood* under a Michelson
@@ -99,8 +99,9 @@ answer.
 
 The actual baseline. Given only the three photodiode signals, resolve fringe
 ambiguity using the wavelength diversity across 635, 675 and 515 nm, decode
-displacement on a 1601-point grid, then differentiate for velocity. Scored in
-the same units the network is scored in.
+displacement on a 1601-point grid, then differentiate for velocity. Scored on
+the same quantity the network predicts, in physical units -- see section 4.2
+on which velocity unit to compare against a training log.
 
 The overall sign of the displacement is not scored. A cosine is even, so
 $d(t)$ and $-d(t)$ produce identical fringes; the sign is genuinely
@@ -147,18 +148,19 @@ account for most of what the photodiodes recorded.
 == Method 2: the baseline number
 
 #align(center, table(
-  columns: 5,
-  align: (left, right, right, right, right),
+  columns: 6,
+  align: (left, right, right, right, right, right),
   stroke: 0.5pt + rgb("#d0d0d0"),
   table.header(
     [acquisition],
     [disp. RMSE (um)],
     [vel. RMSE (um/s)],
+    [vel. RMSE (um/ms)],
     [disp. NRMSE],
     [corr.],
   ),
-  [free space], [0.433], [488.1], [1.10], [0.53],
-  [mm fiber], [0.462], [550.2], [1.18], [0.42],
+  [free space], [0.433], [488.1], [0.488], [1.10], [0.53],
+  [mm fiber], [0.462], [550.2], [0.550], [1.18], [0.42],
 ))
 
 Medians over N = 200. For scale, the true displacement RMS is 0.351 um (free
@@ -168,6 +170,13 @@ standard deviation of that shot's true displacement, so *NRMSE above 1 means
 the decode is worse than predicting zero* -- and both acquisitions sit just
 above 1. The displacement correlations, 0.53 and 0.42, say the decode is not
 noise: it tracks the real motion partway and then loses it.
+
+*Velocity is tabulated twice on purpose.* The results artifact stores um/s,
+but `LitModule.loss_function` multiplies both prediction and target by 1e-3
+before taking the MSE, so a velocity loss logged during training is in um/ms.
+Comparing this baseline to a logged network number without noticing that is a
+factor of 1000. The repository has an open task to settle on one convention;
+until it does, the um/ms column is the one to place beside a training log.
 
 #takeaway[
   Read the two together. Method 2's NRMSE near 1.1 could mean a weak inverse
@@ -283,8 +292,8 @@ it, and a comparison at this level should not be cited as evidence either way.
 
 *What this establishes.* A floor. Method 2's displacement RMSE of 0.433 um
 (free space) and 0.462 um (mm fiber), and velocity RMSE of 488 and 550 um/s
-over N = 200 shots, are what a closed-form classical inverse achieves with no
-training. A learned model has to beat these to justify its complexity, and
+-- equivalently 0.488 and 0.550 um/ms -- over N = 200 shots, are what a
+closed-form classical inverse achieves with no training. A learned model has to beat these to justify its complexity, and
 because the NRMSE sits just above 1, it has to beat predicting zero as well --
 a lower bar than it sounds, and one that should be checked rather than
 assumed. Method 1 further establishes that the Michelson forward model, as
