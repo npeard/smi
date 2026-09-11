@@ -25,9 +25,9 @@ and velocity from the photodiode signals alone?* Only the three PD channels
 are used; the drive voltage is held out and used purely as ground truth for
 scoring. Displacement is recovered by multi-wavelength decoding across the
 635 / 675 / 515 nm channels, then differentiated for velocity. The reported
-numbers are displacement RMSE in microns and velocity RMSE in microns/second
--- the same units the network is scored in. **This is the number that belongs
-beside the network's RMSE.**
+numbers are displacement RMSE in microns and velocity RMSE in microns per
+millisecond -- the same units the network is scored in. **This is the number
+that belongs beside the network's RMSE.**
 
 The pairing is the point. A bad method-2 number on its own is ambiguous
 between "the inverse algorithm is bad" and "the data does not obey the
@@ -41,8 +41,10 @@ Michelson model" and "fit each shot and report MSE" are the same measurement.
 That is why the simple thing here is also the rigorous thing.
 
 Unit conventions follow the rest of the package: wavelength and displacement
-in microns, velocity in microns/second, time in seconds, photodiode signals
-in volts.
+in microns, velocity in microns per millisecond (um/ms), time in seconds,
+photodiode signals in volts. Velocity is um/ms because that is what
+:class:`~smi.synthetic.coil_driver.CoilDriver` emits and what the network is
+trained and scored on; sample rates remain in Hz.
 
 Run as a script to regenerate the results artifact::
 
@@ -65,7 +67,7 @@ import numpy as np
 import torch
 from scipy.signal import savgol_filter
 
-from smi.synthetic.coil_driver import CoilDriver
+from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
 
 logger = logging.getLogger(__name__)
 
@@ -410,7 +412,7 @@ class InverseFitResult:
     Attributes:
         displacement: Estimated displacement (microns), shape ``(batch, n_time)``,
             zero-mean (the absolute offset is unobservable from fringes).
-        velocity: Estimated velocity (microns/second), same shape.
+        velocity: Estimated velocity (microns/ms), same shape.
         phases: Per-shot per-channel phase offsets chosen by the search
             (radians), shape ``(batch, n_channels)``.
     """
@@ -426,7 +428,7 @@ def inverse_fit(
     wavelengths_um: np.ndarray | list[float],
     displacement_limit_um: float,
     grid_points: int = 1201,
-    max_speed_um_per_s: float = 4000.0,
+    max_speed_um_per_ms: float = 4.0,
     smooth_scale: float = 0.5,
     phase_grid_points: int = 16,
     phase_search_samples: int = 1024,
@@ -468,8 +470,8 @@ def inverse_fit(
         displacement_limit_um: Half-width of the displacement search grid
             (microns); the grid spans ``[-limit, +limit]``.
         grid_points: Number of displacement grid points.
-        max_speed_um_per_s: Largest mirror speed the decoder will allow
-            (microns/second). Sets the Viterbi band width.
+        max_speed_um_per_ms: Largest mirror speed the decoder will allow
+            (microns per millisecond). Sets the Viterbi band width.
         smooth_scale: Dimensionless weight on the smoothness penalty relative
             to the maximum allowed per-sample step.
         phase_grid_points: Grid resolution per relative-phase dimension. The
@@ -519,6 +521,9 @@ def inverse_fit(
         device=torch_device,
     )
     grid_step = float(grid[1] - grid[0])
+    # sample_rate is in Hz, so the speed must be per-second to divide into it
+    # and yield microns per sample; max_speed is per-millisecond.
+    max_speed_um_per_s = max_speed_um_per_ms * MS_PER_S
     max_step = max(1, int(np.ceil(max_speed_um_per_s / sample_rate / grid_step)))
     smooth_weight = smooth_scale / (grid_step * max_step) ** 2
 
@@ -579,12 +584,17 @@ def inverse_fit(
     # on the bound.
     window = min(velocity_smooth_window, n_time - (1 - n_time % 2))
     window -= 1 - window % 2
+    # The time step is in milliseconds, so differentiating displacement in um
+    # yields um/ms -- the unit CoilDriver emits and the network is scored in.
+    # A per-second step here would make the returned velocity, and hence the
+    # RMSE against the ground truth, 1000x too large.
+    dt_ms = MS_PER_S / sample_rate
     if window >= 5:
         velocity_np = savgol_filter(
-            disp_np, window, polyorder=3, deriv=1, delta=1.0 / sample_rate, axis=1
+            disp_np, window, polyorder=3, deriv=1, delta=dt_ms, axis=1
         )
     else:
-        velocity_np = np.gradient(disp_np, 1.0 / sample_rate, axis=1)
+        velocity_np = np.gradient(disp_np, dt_ms, axis=1)
 
     return InverseFitResult(
         displacement=disp_np,
@@ -769,7 +779,7 @@ def evaluate_dataset(
             wavelengths_um=wavelengths,
             displacement_limit_um=limit,
             grid_points=grid_points,
-            max_speed_um_per_s=max_speed,
+            max_speed_um_per_ms=max_speed,
             phase_grid_points=phase_grid_points,
             device=device,
         )
@@ -805,7 +815,7 @@ def evaluate_dataset(
         method1=m1,
         method2={
             'displacement_rmse_um': _summary(disp_rmse),
-            'velocity_rmse_um_per_s': _summary(vel_rmse),
+            'velocity_rmse_um_per_ms': _summary(vel_rmse),
             'displacement_correlation': _summary(disp_corr),
             'displacement_nrmse': _summary(
                 disp_rmse / np.std(true_disp_centered, axis=1)
@@ -814,14 +824,14 @@ def evaluate_dataset(
         },
         signal_scale={
             'true_displacement_rms_um': _summary(np.std(true_disp_centered, axis=1)),
-            'true_velocity_rms_um_per_s': _summary(np.std(true_vel, axis=1)),
+            'true_velocity_rms_um_per_ms': _summary(np.std(true_vel, axis=1)),
             'true_displacement_ptp_um': _summary(np.ptp(true_disp_centered, axis=1)),
         },
         # Derived from this subset's ground truth at run time, so they vary
         # with --n-shots and with the file. They set the decode grid's extent
         # and the Viterbi step band, which means a run cannot be reproduced
         # from the static config block alone -- record them per dataset.
-        decode_grid={'displacement_limit_um': limit, 'max_speed_um_per_s': max_speed},
+        decode_grid={'displacement_limit_um': limit, 'max_speed_um_per_ms': max_speed},
         runtime_s=time.perf_counter() - start,
     )
 
@@ -854,7 +864,7 @@ def run_baselines(
     output = output or DEFAULT_RESULTS_PATH
 
     results: dict[str, Any] = {
-        'schema_version': 1,
+        'schema_version': 2,
         'config': {
             'n_shots': n_shots,
             'device': device,
@@ -884,10 +894,10 @@ def run_baselines(
         m2 = baseline.method2
         logger.info(
             '  %s: method-2 median displacement RMSE %.4f um, '
-            'median velocity RMSE %.1f um/s (%.1f s)',
+            'median velocity RMSE %.4f um/ms (%.1f s)',
             label,
             m2['displacement_rmse_um']['median'],
-            m2['velocity_rmse_um_per_s']['median'],
+            m2['velocity_rmse_um_per_ms']['median'],
             baseline.runtime_s,
         )
 

@@ -16,6 +16,7 @@ from smi.analysis.baseline_fit import (
     forward_model_residual,
     inverse_fit,
 )
+from smi.synthetic.coil_driver import MS_PER_S
 from smi.synthetic.interferometers import MichelsonInterferometer
 
 SAMPLE_RATE = 488281.25
@@ -170,7 +171,7 @@ class TestInverseFit:
             wavelengths_um=list(PD_WAVELENGTHS_UM.values()),
             displacement_limit_um=1.5,
             grid_points=GRID_POINTS,
-            max_speed_um_per_s=4000.0,
+            max_speed_um_per_ms=4.0,
             device=DEVICE,
         )
 
@@ -203,7 +204,7 @@ class TestInverseFit:
             wavelengths_um=list(PD_WAVELENGTHS_UM.values()),
             displacement_limit_um=1.5,
             grid_points=GRID_POINTS,
-            max_speed_um_per_s=4000.0,
+            max_speed_um_per_ms=4.0,
             device=DEVICE,
         )
 
@@ -224,7 +225,9 @@ class TestInverseFit:
         quantization step into nonsense.
         """
         disp = _band_limited_displacement(DECODE_SAMPLES, seed=17, amplitude_um=0.30)
-        true_velocity = np.gradient(disp, 1.0 / SAMPLE_RATE)
+        # um/ms, matching inverse_fit's output unit: displacement is um and
+        # the time step is in milliseconds.
+        true_velocity = np.gradient(disp, MS_PER_S / SAMPLE_RATE)
         signals = _synthesize(disp, phases=(1.0, 2.0, 3.0), amplitudes=(1.0, 1.0, 1.0))
 
         result = inverse_fit(
@@ -233,17 +236,22 @@ class TestInverseFit:
             wavelengths_um=list(PD_WAVELENGTHS_UM.values()),
             displacement_limit_um=1.5,
             grid_points=GRID_POINTS,
-            max_speed_um_per_s=4000.0,
+            max_speed_um_per_ms=4.0,
             device=DEVICE,
         )
 
         nrmse = _best_sign_rmse(result.velocity[0], true_velocity) / true_velocity.std()
         assert nrmse < 0.30
 
-    def test_velocity_derivative_beats_naive_difference(self) -> None:
-        """The smoothed derivative must actually help, not just exist."""
+    def test_velocity_is_um_per_ms(self) -> None:
+        """The decoded velocity is um/ms, not um/s.
+
+        The other velocity tests normalize by the true velocity's own standard
+        deviation, so they are blind to an overall scale error. This one is
+        not: it compares absolute magnitudes against a reference built with an
+        explicit millisecond time step.
+        """
         disp = _band_limited_displacement(DECODE_SAMPLES, seed=17, amplitude_um=0.30)
-        true_velocity = np.gradient(disp, 1.0 / SAMPLE_RATE)
         signals = _synthesize(disp, phases=(1.0, 2.0, 3.0), amplitudes=(1.0, 1.0, 1.0))
 
         result = inverse_fit(
@@ -252,10 +260,33 @@ class TestInverseFit:
             wavelengths_um=list(PD_WAVELENGTHS_UM.values()),
             displacement_limit_um=1.5,
             grid_points=GRID_POINTS,
-            max_speed_um_per_s=4000.0,
+            max_speed_um_per_ms=4.0,
             device=DEVICE,
         )
-        naive = np.gradient(result.displacement[0], 1.0 / SAMPLE_RATE)
+
+        expected_rms = float(np.std(np.gradient(disp, MS_PER_S / SAMPLE_RATE)))
+        actual_rms = float(np.std(result.velocity[0]))
+        # A um/s result would be 1000x this; 25% allows for decode error.
+        assert 0.75 * expected_rms < actual_rms < 1.25 * expected_rms
+
+    def test_velocity_derivative_beats_naive_difference(self) -> None:
+        """The smoothed derivative must actually help, not just exist."""
+        disp = _band_limited_displacement(DECODE_SAMPLES, seed=17, amplitude_um=0.30)
+        # um/ms, matching inverse_fit's output unit: displacement is um and
+        # the time step is in milliseconds.
+        true_velocity = np.gradient(disp, MS_PER_S / SAMPLE_RATE)
+        signals = _synthesize(disp, phases=(1.0, 2.0, 3.0), amplitudes=(1.0, 1.0, 1.0))
+
+        result = inverse_fit(
+            signals,
+            sample_rate=SAMPLE_RATE,
+            wavelengths_um=list(PD_WAVELENGTHS_UM.values()),
+            displacement_limit_um=1.5,
+            grid_points=GRID_POINTS,
+            max_speed_um_per_ms=4.0,
+            device=DEVICE,
+        )
+        naive = np.gradient(result.displacement[0], MS_PER_S / SAMPLE_RATE)
 
         smoothed_err = _best_sign_rmse(result.velocity[0], true_velocity)
         naive_err = _best_sign_rmse(naive, true_velocity)
@@ -276,7 +307,7 @@ class TestInverseFit:
             'wavelengths_um': list(PD_WAVELENGTHS_UM.values()),
             'displacement_limit_um': 1.2,
             'grid_points': 601,
-            'max_speed_um_per_s': 4000.0,
+            'max_speed_um_per_ms': 4.0,
             'phase_grid_points': 8,
             'phase_search_samples': 384,
             'device': DEVICE,
