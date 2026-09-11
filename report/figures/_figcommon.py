@@ -53,6 +53,13 @@ PD_CHANNELS: tuple[tuple[str, float], ...] = (
 )
 VOLTAGE_CHANNEL = 'RP1_CH1'
 
+# The two acquisitions, as (key in baseline_results.json, axis label). Shared
+# so that adding a third cannot leave one figure silently showing two.
+BASELINE_DATASETS: tuple[tuple[str, str], ...] = (
+    ('free-space', 'free space'),
+    ('mmfiber', 'mm fiber'),
+)
+
 # Fallback sample rate; every real file carries `sample_rate` in its attrs.
 DEFAULT_SAMPLE_RATE = 488281.25
 

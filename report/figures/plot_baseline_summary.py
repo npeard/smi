@@ -33,6 +33,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import (
+    BASELINE_DATASETS,
     CHANNEL_COLORS,
     COLORS,
     FIGSIZE_WIDE,
@@ -40,11 +41,6 @@ from _figcommon import (
     RESULTS_JSON,
     parse_args,
     save,
-)
-
-DATASETS: tuple[tuple[str, str], ...] = (
-    ('free-space', 'free space'),
-    ('mmfiber', 'mm fiber'),
 )
 
 
@@ -61,8 +57,8 @@ def main() -> None:
 
     fig, axes = plt.subplots(1, 3, figsize=FIGSIZE_WIDE, constrained_layout=True)
 
-    x = np.arange(len(DATASETS), dtype=float)
-    labels = [label for _, label in DATASETS]
+    x = np.arange(len(BASELINE_DATASETS), dtype=float)
+    labels = [label for _, label in BASELINE_DATASETS]
 
     # (a) Method 1: per-channel explained variance, the model's own ceiling.
     ax = axes[0]
@@ -72,7 +68,7 @@ def main() -> None:
     ):
         medians = [
             datasets[key]['method1'][channel]['r_squared']['median']
-            for key, _ in DATASETS
+            for key, _ in BASELINE_DATASETS
         ]
         ax.bar(
             x + (offset - 1) * width,
@@ -95,9 +91,12 @@ def main() -> None:
     # (b) Method 2 displacement error against the signal it has to resolve.
     ax = axes[1]
     width = 0.32
-    errors = [datasets[key]['method2']['displacement_rmse_um'] for key, _ in DATASETS]
+    errors = [
+        datasets[key]['method2']['displacement_rmse_um'] for key, _ in BASELINE_DATASETS
+    ]
     scales = [
-        datasets[key]['signal_scale']['true_displacement_rms_um'] for key, _ in DATASETS
+        datasets[key]['signal_scale']['true_displacement_rms_um']
+        for key, _ in BASELINE_DATASETS
     ]
     ax.bar(
         x - width / 2,
@@ -125,7 +124,9 @@ def main() -> None:
 
     # (c) The same error, normalized, against the do-nothing predictor.
     ax = axes[2]
-    nrmse = [datasets[key]['method2']['displacement_nrmse'] for key, _ in DATASETS]
+    nrmse = [
+        datasets[key]['method2']['displacement_nrmse'] for key, _ in BASELINE_DATASETS
+    ]
     ax.bar(
         x,
         [s['median'] for s in nrmse],

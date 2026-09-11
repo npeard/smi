@@ -144,28 +144,25 @@ allow-dict-calls-with-keyword-arguments = true
 # Marimo notebooks define imports inside reactive cells (PLC0415 is expected).
 "notebooks/**.py" = ["T201", "ANN", "INP001", "E501", "B018", "PLR0915", "PTH123", "F841", "PLC0415"]
 "*.ipynb" = ["ALL"]
+# Print-interface scripts. These are run, not imported: what they write to
+# stdout (and their exit code) is the deliverable, so T201 does not apply,
+# and they are not packages, so INP001 does not either. Grouped under one
+# rationale rather than repeated per file -- a new script of this shape
+# belongs in this block, not in a fresh entry with its own justification.
 "scripts/check_ascii.py" = ["S603", "S607", "T201"]
-# preflight.py and platform_paths.py are copied verbatim from
-# ~/Documents/Projects/claude-config, which is where they are maintained and
-# linted. Reformatting them to this project's stricter rules would fork them
-# from upstream and make the next copy a merge, so the local rules they trip
-# are disabled rather than the files edited.
+"report/scripts/*.py" = ["INP001", "T201"]
+"smi/analysis/benchmark_loading.py" = ["T201"]
+# report/figures/*.py are the same shape, and additionally import their shared
+# helpers through a sys.path insert, which must precede the import it enables
+# (E402).
+"report/figures/*.py" = ["INP001", "E402"]
+# A different reason, kept separate from the block above: these two are copied
+# verbatim from ~/Documents/Projects/claude-config, where they are maintained
+# and linted. Reformatting them to this project's stricter rules would fork
+# them from upstream and make the next copy a merge, so the rules they trip
+# here are disabled rather than the files edited.
 "scripts/preflight.py" = ["ANN202", "B007", "D301", "PLC0415", "PTH115", "S603", "S607", "T201"]
 "scripts/platform_paths.py" = ["ANN202", "D301", "INP001", "PLC0415", "PTH115", "S603", "S607", "T201"]
-# report/figures/*.py are standalone scripts run by the Snakefile, not an
-# importable package, so they have no __init__.py (INP001) and import their
-# shared helpers via a sys.path insert rather than a package-relative import
-# (E402 -- the insert must precede the import it enables).
-"report/figures/*.py" = ["INP001", "E402"]
-# Same shape as scripts/check_ascii.py above: a build gate whose entire
-# interface is an exit code plus a message on stdout/stderr, invoked by the
-# Snakefile rather than imported. Printing is the output contract (T201) and
-# it is not a package (INP001).
-"report/scripts/*.py" = ["INP001", "T201"]
-# Prints its results table to stdout; that table is the deliverable. Listed
-# here rather than as eleven inline noqa comments, to match how every other
-# print-interface script in this project is handled.
-"smi/analysis/benchmark_loading.py" = ["T201"]
 "tests/plot_waveforms.py" = ["PLR0915", "E501"]
 "smi/redpitaya/manager.py" = ["C901", "PLR0912", "PLR0915"]
 "smi/redpitaya/scpi.py" = ["C901", "PLR0912", "PLR0915", "E501"]

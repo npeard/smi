@@ -24,16 +24,6 @@ REPORT_DIR = Path(workflow.basedir)
 BUILD = "build"
 FIGDIR = f"{BUILD}/figures"
 
-# Figure registry: stem <name> maps to figures/plot_<name>.py -> build/figures/<name>.pdf
-FIGURES = [
-    "pd_traces",
-    "drive_to_velocity",
-    "freespace_vs_fiber",
-    "working_set",
-    "baseline_summary",
-    "baseline_amplitude_trend",
-]
-
 # Which figures each document includes. Kept explicit rather than "all
 # figures" so a document only rebuilds when something it actually shows
 # changes.
@@ -52,6 +42,14 @@ DOCUMENT_FIGURES = {
         "freespace_vs_fiber",
     ],
 }
+
+# The figure registry: stem <name> maps to figures/plot_<name>.py ->
+# build/figures/<name>.pdf. Derived rather than written out, because a figure
+# that no document includes should not be built, and a figure a document
+# includes must be. Maintaining both lists by hand made those two invariants
+# something to remember and then test for; deriving makes them true by
+# construction.
+FIGURES = sorted({name for names in DOCUMENT_FIGURES.values() for name in names})
 
 DOCUMENTS = sorted(DOCUMENT_FIGURES)
 

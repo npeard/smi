@@ -28,6 +28,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import (
+    BASELINE_DATASETS,
     CHANNEL_COLORS,
     FIGSIZE_WIDE,
     PD_CHANNELS,
@@ -35,12 +36,6 @@ from _figcommon import (
     panel_label,
     parse_args,
     save,
-)
-
-# Datasets in the order they are plotted, with the label to show.
-DATASETS: tuple[tuple[str, str], ...] = (
-    ('free-space', 'free space'),
-    ('mmfiber', 'mm fiber'),
 )
 
 # Bin keys as written by baseline_fit, mapped to an axis label. Kept explicit
@@ -59,14 +54,20 @@ def main() -> None:
     results = json.loads(RESULTS_JSON.read_text(encoding='utf-8'))
 
     fig, axes = plt.subplots(
-        1, len(DATASETS), figsize=FIGSIZE_WIDE, sharey=True, constrained_layout=True
+        1,
+        len(BASELINE_DATASETS),
+        figsize=FIGSIZE_WIDE,
+        sharey=True,
+        constrained_layout=True,
     )
 
     bin_keys = list(BIN_LABELS)
     x = np.arange(len(bin_keys), dtype=float)
     width = 0.26
 
-    for panel, (ax, (key, title)) in enumerate(zip(axes, DATASETS, strict=True)):
+    for panel, (ax, (key, title)) in enumerate(
+        zip(axes, BASELINE_DATASETS, strict=True)
+    ):
         method1 = results['datasets'][key]['method1']
         counts: list[int] = []
 

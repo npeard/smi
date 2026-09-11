@@ -10,10 +10,12 @@ Two failure modes these tests exist to catch:
 
 1. A figure script that no longer honors the ``--output PATH`` contract the
    Snakefile relies on to pass it a target.
-2. Registry drift: the Snakefile's FIGURES list and the ``plot_*.py`` files on
-   disk falling out of sync. A file-per-figure layout invites exactly this,
-   and the symptom otherwise is a confusing Snakemake error at build time
-   rather than a test failure.
+2. Registry drift between the Snakefile and the ``plot_*.py`` files on disk.
+   A file-per-figure layout invites exactly this, and the symptom otherwise
+   is a confusing Snakemake error at build time rather than a test failure.
+   Only the disk-versus-registry direction needs testing: the Snakefile
+   derives FIGURES from DOCUMENT_FIGURES, so a figure being declared by a
+   document but missing from the registry is no longer expressible.
 """
 
 from __future__ import annotations
@@ -46,21 +48,12 @@ requires_data = pytest.mark.skipif(
 )
 
 
-def _snakefile_list(name: str) -> list[str]:
-    """Read a top-level list-of-strings assignment out of the Snakefile.
+def _snakefile_document_figures() -> dict[str, list[str]]:
+    """Read the DOCUMENT_FIGURES mapping out of the Snakefile.
 
     Parsing the literal rather than importing keeps this test free of a
     snakemake dependency, which the test env does not have.
     """
-    source = SNAKEFILE.read_text(encoding='utf-8')
-    match = re.search(rf'^{name}\s*=\s*(\[.*?\])', source, re.MULTILINE | re.DOTALL)
-    if match is None:
-        pytest.fail(f'No top-level `{name} = [...]` assignment in {SNAKEFILE}')
-    return ast.literal_eval(match.group(1))
-
-
-def _snakefile_document_figures() -> dict[str, list[str]]:
-    """Read the DOCUMENT_FIGURES mapping out of the Snakefile."""
     source = SNAKEFILE.read_text(encoding='utf-8')
     match = re.search(
         r'^DOCUMENT_FIGURES\s*=\s*(\{.*?\n\})', source, re.MULTILINE | re.DOTALL
@@ -68,6 +61,17 @@ def _snakefile_document_figures() -> dict[str, list[str]]:
     if match is None:
         pytest.fail(f'No top-level `DOCUMENT_FIGURES = {{...}}` in {SNAKEFILE}')
     return ast.literal_eval(match.group(1))
+
+
+def _registered_figures() -> list[str]:
+    """The figure registry, derived exactly as the Snakefile derives it.
+
+    FIGURES is no longer a literal to parse: it is the union of what the
+    documents declare, so the two can no longer disagree.
+    """
+    return sorted(
+        {name for names in _snakefile_document_figures().values() for name in names}
+    )
 
 
 def _script_for(figure_name: str) -> Path:
@@ -135,9 +139,7 @@ def test_figure_script_requires_output(script: Path):
 
 def test_every_registered_figure_has_a_script():
     """Every name in the Snakefile's FIGURES maps to a script on disk."""
-    missing = [
-        name for name in _snakefile_list('FIGURES') if not _script_for(name).exists()
-    ]
+    missing = [name for name in _registered_figures() if not _script_for(name).exists()]
     assert not missing, (
         f'Snakefile FIGURES names with no plot_<name>.py in {FIGURE_DIR}: {missing}'
     )
@@ -149,24 +151,13 @@ def test_every_script_is_registered():
     The other direction of the same drift: an unregistered script is dead
     weight that never gets built and never gets noticed.
     """
-    registered = set(_snakefile_list('FIGURES'))
+    registered = set(_registered_figures())
     on_disk = {script.stem.removeprefix('plot_') for script in FIGURE_SCRIPTS}
     unregistered = sorted(on_disk - registered)
     assert not unregistered, (
         f'plot_*.py scripts absent from the Snakefile FIGURES list: {unregistered}. '
         f'Add them, or delete them.'
     )
-
-
-def test_document_figure_references_are_registered():
-    """Figures a document declares as inputs are all in the FIGURES registry."""
-    registered = set(_snakefile_list('FIGURES'))
-    unknown = {
-        document: sorted(set(names) - registered)
-        for document, names in _snakefile_document_figures().items()
-        if set(names) - registered
-    }
-    assert not unknown, f'DOCUMENT_FIGURES names not in FIGURES: {unknown}'
 
 
 def test_documents_declare_the_figures_they_include():
