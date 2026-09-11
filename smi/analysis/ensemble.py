@@ -91,9 +91,8 @@ def physics_loss(
     else:
         raise ValueError(f'Unknown target: {target}')
 
-    # Convert velocity to um/ms instead of um/s
-    velocity_hat = velocity_hat * 1e-3
-    velocity_target = velocity_target * 1e-3
+    # No unit conversion here: velocity is already um/ms as stored (converted
+    # once at the CoilDriver boundary), matching LitModule.loss_function.
 
     velocity_loss = nn.functional.mse_loss(velocity_hat, velocity_target)
     displacement_loss = nn.functional.mse_loss(displacement_hat, displacement_target)

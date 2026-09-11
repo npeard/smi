@@ -325,9 +325,11 @@ class LitModule(lightning_module.LightningModule):
         else:
             raise ValueError(f'Unknown target: {self.target}')
 
-        # Convert velocity to um/ms instead of um/s stored in Dataset
-        velocity_hat *= 1e-3
-        velocity_target *= 1e-3
+        # No unit conversion here. Velocity is um/ms and displacement is um as
+        # stored, converted once at the CoilDriver boundary, so the logged
+        # velocity loss is the MSE of exactly the quantities predict_step
+        # reports. A rescale at this site is what previously made the training
+        # log and the reported baseline differ by 1000x.
 
         # Velocity Loss
         velocity_loss = nn.MSELoss()(velocity_hat, velocity_target)

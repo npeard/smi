@@ -89,7 +89,7 @@ def main() -> None:
 
     ax = axes[2]
     ax.plot(t_ms, velocity[:WINDOW], color=COLORS['accent'])
-    ax.set_ylabel('velocity (um/s)')
+    ax.set_ylabel('velocity (um/ms)')
     ax.set_xlabel('time (ms)')
     panel_label(ax, '(c)')
 
