@@ -6,12 +6,17 @@ exactly and a failure means the estimator is wrong -- not that the hardware
 is noisy.
 """
 
+from pathlib import Path
+
+import h5py
 import numpy as np
 import pytest
 import torch
 
 from smi.analysis.baseline_fit import (
+    DRIVE_KEY,
     PD_WAVELENGTHS_UM,
+    evaluate_dataset,
     fit_phase_amplitude,
     forward_model_residual,
     inverse_fit,
@@ -356,6 +361,31 @@ class TestWindowedForwardModelResidual:
 
         assert windowed.n_windows == 1
         assert windowed.r_squared == pytest.approx(global_fit.r_squared, abs=1e-12)
+
+
+class TestScrambledThetaControlIsAlwaysAControl:
+    """The control must never silently become the real fit."""
+
+    def test_single_shot_dataset_refuses_to_fake_a_control(
+        self, tmp_path: Path
+    ) -> None:
+        """With one shot there is no other shot to borrow theta from.
+
+        Rotating the shot index by one maps a lone shot onto itself, which
+        would report the real fit as the control -- a reassuringly low number
+        that means nothing. Better to refuse than to publish that.
+        """
+        disp = _band_limited_displacement(512, seed=21, amplitude_um=2.0)
+        signal = _drifting_fringes(disp, 0.635, 4.0)
+        path = tmp_path / 'one_shot.h5'
+        with h5py.File(path, 'w') as handle:
+            handle.attrs['sample_rate'] = SAMPLE_RATE
+            handle.create_dataset(DRIVE_KEY, data=np.zeros((1, disp.size)))
+            for channel in PD_WAVELENGTHS_UM:
+                handle.create_dataset(channel, data=signal[None, :])
+
+        with pytest.raises(ValueError, match='at least 2 shots'):
+            evaluate_dataset(path, 'one-shot', n_shots=1, n_shots_method2=1)
 
 
 class TestInverseFit:

@@ -904,6 +904,11 @@ def evaluate_dataset(
 
     Returns:
         Aggregated statistics for this dataset.
+
+    Raises:
+        ValueError: If fewer than two shots are available, which leaves the
+            scrambled-theta control no other shot to borrow a displacement
+            from.
     """
     start = time.perf_counter()
     coil = CoilDriver()
@@ -940,6 +945,16 @@ def evaluate_dataset(
     # neighbouring shot comes from the same acquisition conditions, which is
     # what makes it the right control: it differs from the real pairing only
     # in that the displacement no longer belongs to this signal.
+    #
+    # With a single shot the rotation maps it onto itself, so the "control"
+    # would be the real fit under a different name -- a low number that looks
+    # like evidence of no overfitting and is nothing of the kind. Refuse
+    # rather than emit it.
+    if n_shots < 2:
+        raise ValueError(
+            f'the scrambled-theta control needs at least 2 shots to borrow a '
+            f'displacement from, got {n_shots}'
+        )
     scramble = np.roll(np.arange(n_shots), -1)
 
     m1: dict[str, Any] = {}
