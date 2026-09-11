@@ -274,6 +274,78 @@ class TestWindowedForwardModelResidual:
         assert windowed.n_windows == 4
         assert 0.0 < windowed.r_squared <= 1.0
 
+    def test_pooling_is_variance_weighted_not_an_average_of_ratios(self) -> None:
+        """Quiet windows must not vote as loudly as windows full of fringes.
+
+        One window carries all the motion and the model explains it; the rest
+        are near-silent noise the model cannot explain, so their per-window
+        R^2 is ~0. Averaging the per-window ratios would report ~1/8 and call
+        a near-perfect fit a failure. Pooling the sums of squares weights each
+        window by the variance it actually contains, which is also what keeps
+        the number comparable to the global fit.
+        """
+        window = 256
+        n = window * 8
+        wavelength = 0.635
+        rng = np.random.default_rng(0)
+
+        t = np.arange(n) / SAMPLE_RATE
+        disp = np.zeros(n)
+        disp[:window] = 2.0 * np.sin(2 * np.pi * 400.0 * t[:window])
+        signal = np.cos(4 * np.pi / wavelength * disp)
+        noise = rng.standard_normal(n) * 0.01
+        noise[:window] = 0.0
+
+        windowed = windowed_forward_model_residual(
+            signal + noise, disp, wavelength, window_samples=window
+        )
+
+        # Averaging per-window R^2 would land near 1 / 8 = 0.125.
+        assert windowed.r_squared > 0.9
+
+    def test_pooled_total_variance_uses_the_whole_record_mean(self) -> None:
+        """The denominator must be the variance the global fit measures.
+
+        Each window here sits at its own DC level. Taking the total sum of
+        squares about each window's own mean would delete that between-window
+        spread from the denominator, inflating R^2 for variance the fit merely
+        re-baselined away rather than explained.
+        """
+        window = 1024
+        n = window * 8
+        wavelength = 0.635
+        rng = np.random.default_rng(1)
+
+        t = np.arange(n) / SAMPLE_RATE
+        disp = 0.9 * np.sin(2 * np.pi * 300.0 * t)
+        fringes = np.cos(4 * np.pi / wavelength * disp)
+        signal = fringes + 0.7 * rng.standard_normal(n)
+        signal = signal + np.repeat(rng.standard_normal(8) * 4.0, window)
+
+        windowed = windowed_forward_model_residual(
+            signal, disp, wavelength, window_samples=window
+        )
+
+        # Per-window-mean pooling would report ~0.47 on this signal.
+        assert windowed.r_squared > 0.9
+
+    def test_rejects_non_positive_window(self) -> None:
+        """A zero or negative window is a caller mistake, not a global fit.
+
+        The CLI spells "global only" as ``None``; silently treating 0 the same
+        way would hide a mis-parsed argument.
+        """
+        signal, disp = self._signal(seed=7, drift=self.DRIFT_RADIANS)
+
+        with pytest.raises(ValueError, match='must be positive'):
+            windowed_forward_model_residual(
+                signal, disp, self.WAVELENGTH, window_samples=0
+            )
+
+    def test_rejects_mismatched_shapes(self) -> None:
+        with pytest.raises(ValueError, match='matching shape'):
+            windowed_forward_model_residual(np.zeros(10), np.zeros(11), 0.635)
+
     def test_window_longer_than_record_falls_back_to_one_window(self) -> None:
         signal, disp = self._signal(seed=7, drift=self.DRIFT_RADIANS)
 
