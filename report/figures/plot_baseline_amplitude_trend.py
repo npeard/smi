@@ -1,19 +1,27 @@
 #!/usr/bin/env python
 """Method-1 fit quality against how far the speaker actually moved.
 
-The forward-model residual is computed with the displacement already known, so
-whatever it fails to explain is the model's fault rather than an estimator's.
-Binning those per-shot R^2 values by the drive's peak-to-peak excursion shows
-the failure is not uniform: every channel in both acquisitions explains
-small-excursion shots several times better than large-excursion ones, and all
-six collapse above 2 um. From the 0.3-1 um bin onward every channel decreases
-at every step; three of the six rise into that bin from the smallest one,
-which is also the thinnest. The shared direction is the most actionable thing
-in the baseline, so it gets its own figure.
+The forward-model residual is computed with the displacement already known,
+so what it fails to explain is not an estimator's fault -- provided the
+estimator is the right one. It was not. The global fit forces a single
+amplitude, phase and offset across all 16384 samples, and that is what
+collapses with excursion: the longer the sweep, the more the fringe phase and
+contrast wander away from any one setting. Refitting in windows of 1024
+samples and pooling the variances recovers most of it.
 
-Reads the committed results artifact. It does not recompute anything -- the
-fits took ~20 minutes per acquisition on a GPU and are not something a
-document build should be doing.
+Three series per panel, because a windowed R^2 on its own is not evidence: a
+short window can fit anything, so the scrambled-theta control -- the same
+window count and the same three parameters, with the displacement taken from
+a different shot -- is what turns the windowed curve into a measurement. The
+*gap* between windowed and control is the claim; the shading draws it.
+
+Per channel and per acquisition, never averaged: free-space 515 nm has a gap
+narrow enough that averaging it with the other two would report agreement
+this figure does not support.
+
+Reads the committed results artifact. It recomputes nothing -- a document
+build should not be refitting 1000 shots x 3 channels x 2 acquisitions, and
+reading a fixed artifact is what keeps the figure deterministic.
 """
 
 from __future__ import annotations
@@ -29,11 +37,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import (
     BASELINE_DATASETS,
-    CHANNEL_COLORS,
-    FIGSIZE_WIDE,
+    COLORS,
+    FIGSIZE_TALL,
     PD_CHANNELS,
     RESULTS_JSON,
-    panel_label,
     parse_args,
     save,
 )
@@ -42,72 +49,127 @@ from _figcommon import (
 # rather than taken from the artifact so the axis reads in microns and the
 # script fails loudly if the binning ever changes underneath it.
 BIN_LABELS: dict[str, str] = {
-    '0-0.3': '< 0.3',
-    '0.3-1': '0.3 - 1',
-    '1-2': '1 - 2',
-    '2-3': '2 - 3',
-    '3+': '> 3',
+    '0-0.3': '<0.3',
+    '0.3-1': '0.3-1',
+    '1-2': '1-2',
+    '2-3': '2-3',
+    '3+': '>3',
 }
+
+# The three artifact keys this figure draws, with how each is styled. Order is
+# the reading order of the legend: what was reported, what the corrected
+# estimator gives, and the floor that corrected number has to clear.
+SERIES: tuple[tuple[str, str, str, str], ...] = (
+    ('r_squared_by_drive_ptp', 'global fit', COLORS['muted'], ':'),
+    ('r_squared_windowed_by_drive_ptp', 'windowed, W = 1024', COLORS['accent'], '-'),
+    (
+        'r_squared_windowed_scrambled_by_drive_ptp',
+        'scrambled control',
+        COLORS['ch635'],
+        '--',
+    ),
+)
+
+
+def _medians(channel_stats: dict, key: str, bin_keys: list[str]) -> np.ndarray:
+    """Median per excursion bin, NaN where the bin holds no shots.
+
+    An empty bin carries no 'median' key (see binned_by_amplitude): the bin
+    edges are absolute, so regenerating with a smaller --n-shots, or on a
+    quieter dataset, can leave one unpopulated. NaN draws as a gap, which is
+    the honest rendering of "no shots here"; raising KeyError would fail the
+    document build over it.
+    """
+    bins = {b['ptp_um']: b for b in channel_stats[key]}
+    return np.array([bins[b].get('median', float('nan')) for b in bin_keys])
 
 
 def main() -> None:
     args = parse_args(__doc__ or '')
     results = json.loads(RESULTS_JSON.read_text(encoding='utf-8'))
+    n_shots = results['config']['n_shots']
+
+    bin_keys = list(BIN_LABELS)
+    x = np.arange(len(bin_keys), dtype=float)
 
     fig, axes = plt.subplots(
-        1,
         len(BASELINE_DATASETS),
-        figsize=FIGSIZE_WIDE,
+        len(PD_CHANNELS),
+        figsize=FIGSIZE_TALL,
+        sharex=True,
         sharey=True,
         constrained_layout=True,
     )
 
-    bin_keys = list(BIN_LABELS)
-    x = np.arange(len(bin_keys), dtype=float)
-    width = 0.26
-
-    for panel, (ax, (key, title)) in enumerate(
-        zip(axes, BASELINE_DATASETS, strict=True)
-    ):
+    for row, (key, title) in enumerate(BASELINE_DATASETS):
         method1 = results['datasets'][key]['method1']
-        counts: list[int] = []
+        for col, (channel, wavelength_um) in enumerate(PD_CHANNELS):
+            ax = axes[row, col]
+            stats = method1[channel]
+            curves = {
+                artifact_key: _medians(stats, artifact_key, bin_keys)
+                for artifact_key, _, _, _ in SERIES
+            }
 
-        for offset, ((channel, wavelength_um), color) in enumerate(
-            zip(PD_CHANNELS, CHANNEL_COLORS, strict=True)
-        ):
-            bins = {b['ptp_um']: b for b in method1[channel]['r_squared_by_drive_ptp']}
-            # An empty bin carries no 'median' key (see binned_by_amplitude):
-            # the bin edges are absolute, so regenerating with a smaller
-            # --n-shots, or on a quieter dataset, can leave one unpopulated.
-            # NaN draws as a gap, which is the honest rendering of "no shots
-            # here"; raising KeyError would fail the document build over it.
-            medians = [bins[b].get('median', float('nan')) for b in bin_keys]
-            if not counts:
-                counts = [bins[b]['n'] for b in bin_keys]
-            ax.bar(
-                x + (offset - 1) * width,
-                medians,
-                width=width,
-                color=color,
-                label=f'{wavelength_um * 1e3:.0f} nm',
+            # Shade windowed-minus-control first, so the lines sit on top of
+            # it. This band is the finding; the absolute windowed height is
+            # not, since the control shows how much of it is fitting capacity.
+            ax.fill_between(
+                x,
+                curves['r_squared_windowed_scrambled_by_drive_ptp'],
+                curves['r_squared_windowed_by_drive_ptp'],
+                color=COLORS['accent'],
+                alpha=0.16,
+                linewidth=0,
+                label='gap over control',
             )
+            for artifact_key, label, color, style in SERIES:
+                ax.plot(
+                    x,
+                    curves[artifact_key],
+                    linestyle=style,
+                    color=color,
+                    marker='o',
+                    markersize=3,
+                    label=label,
+                )
 
-        # Shot count per bin, so a reader can see the small-excursion bins are
-        # the thinly populated ones without having to look it up.
-        for xi, n in zip(x, counts, strict=True):
-            ax.text(xi, 0.02, f'n = {n}', ha='center', va='bottom', fontsize=7)
+            ax.set_ylim(0, 1.0)
+            ax.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
+            if row == 0:
+                ax.set_title(f'{wavelength_um * 1e3:.0f} nm')
+            if col == 0:
+                ax.set_ylabel(f'{title}\nmedian $R^2$')
+            if row == len(BASELINE_DATASETS) - 1:
+                ax.set_xticks(x)
+                ax.set_xticklabels([BIN_LABELS[b] for b in bin_keys])
+                ax.set_xlabel('drive peak-to-peak (um)')
 
-        ax.set_xticks(x)
-        ax.set_xticklabels([BIN_LABELS[b] for b in bin_keys])
-        ax.set_xlabel('drive peak-to-peak displacement (um)')
-        ax.set_title(title)
-        ax.set_ylim(0, 0.95)
-        panel_label(ax, f'({"ab"[panel]})')
-
-    axes[0].set_ylabel('median $R^2$ of the forward-model fit')
-    axes[0].legend(loc='upper right', ncol=3, columnspacing=1.0)
+    # Bin populations, once rather than per panel: they are identical across
+    # channels of one acquisition (the same shots are fit in all three) and
+    # differ between acquisitions only by a few shots.
+    counts = {
+        label: _binned_counts(results['datasets'][key]['method1'], bin_keys)
+        for key, label in BASELINE_DATASETS
+    }
+    population = '; '.join(
+        f'{label} n = ' + '/'.join(str(n) for n in ns) for label, ns in counts.items()
+    )
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='outside lower center', ncol=4)
+    fig.supxlabel(
+        f'N = {n_shots} shots per acquisition (method 1). Shots per bin: {population}',
+        fontsize=7,
+    )
 
     save(fig, args.output)
+
+
+def _binned_counts(method1: dict, bin_keys: list[str]) -> list[int]:
+    """Shot count per excursion bin, read off the first channel."""
+    first = method1[PD_CHANNELS[0][0]]['r_squared_by_drive_ptp']
+    bins = {b['ptp_um']: b for b in first}
+    return [bins[b]['n'] for b in bin_keys]
 
 
 if __name__ == '__main__':

@@ -39,9 +39,11 @@ FREE_SPACE_H5 = DATA_DIR / 'free-space-synchro_10k.h5'
 MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
 
 # Baseline results, written by smi.analysis.baseline_fit and committed. Figures
-# read this rather than recomputing: the fits are a GPU job of ~20 minutes per
-# acquisition, which is not work a document build should be repeating, and
-# reading a fixed artifact is what makes the figures deterministic.
+# read this rather than recomputing: method 2's Viterbi decode is ~20 minutes
+# per acquisition on a GPU, which is not work a document build should be
+# repeating, and reading a fixed artifact is what makes the figures
+# deterministic. (Method 1's fits are ~1 minute on CPU at N = 1000; it is
+# method 2 that makes regeneration expensive.)
 RESULTS_JSON = DATA_DIR / 'baseline_results.json'
 
 # Photodiode channels, in the order the dataset feeds them to the model, with
