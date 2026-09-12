@@ -45,6 +45,31 @@ always invoke Python and tools through `pixi run` (or from inside `pixi shell`)
 - `pixi run report-dry` / `report-clean` / `report-slides` / `report-baseline`
 - `pixi run benchmark-loading` - Data-loading throughput benchmark (GPU; not in `all`)
 
+Workflow-spine tasks (see the master CLAUDE.md's numbered spine):
+
+- `pixi run preflight` - Step 0: is this project fit to start work in?
+  `--with-tests` when starting fresh work; `--check-updates` weekly, not per
+  session (one network round trip per hook repo). The script is a *copy* in
+  `scripts/`, by design: it checks the repo it sits in.
+- `pixi run friction` - Recurring-friction miner, for step 7 and the `reflect`
+  skill's detection half.
+- `pixi run toolgaps` - Missing standard tooling, plus an inventory of
+  claude-config assets available to adopt.
+
+`friction` and `toolgaps` are deliberately **not** copied into this repo: both
+are cross-project by construction (friction mines `~/.claude/projects`
+transcripts against one shared ledger, because global transcripts need global
+suppression; toolgaps inventories claude-config's assets). They therefore
+depend on the sibling checkout at `~/Documents/Projects/claude-config`, which
+is where both resolve it unconditionally. Without that layout these two tasks
+fail and nothing else is affected.
+
+CI (`.github/workflows/pytest.yml`) runs three jobs -- `test`, `lint`
+(lint + ascii) and `typecheck` -- because `pixi run all`'s other gates were
+previously enforced only by pre-commit hooks, which `--no-verify` bypasses and
+a fresh clone does not install. `format` is deliberately not a CI job: it
+rewrites files.
+
 Environments: `default` (library), `dev` (= dev + test features; tooling), `test`
 (CI-equivalent), `report` (typst + snakemake + figure deps). `ruff`/`codespell`
 live in the default env so the `format`/`lint`/`spell` tasks use the pinned,

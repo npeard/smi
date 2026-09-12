@@ -244,10 +244,33 @@ ascii = "python scripts/check_ascii.py"
 test = "python -m pytest"
 spell = "python -m codespell_lib ."
 precommit = "pre-commit run --all-files"
+# Step 0 of the workflow spine: is this project fit to start work in?
+# scripts/preflight.py is a *copy*, by design -- it checks the repo it sits in
+# (branch, clean tree, hook installation, interpreter) and is meant to travel
+# with the project rather than be shared. Add --with-tests when starting fresh
+# work, --check-updates weekly rather than per session (a network round trip
+# per hook repo).
+preflight = "python scripts/preflight.py"
 
 [tool.pixi.feature.dev.tasks]
 typecheck = "ty check"
 all = { depends-on = ["format", "lint", "ascii", "typecheck", "test"] }
+# Step 7 of the workflow spine, and the reflect skill's detection half.
+#
+# Unlike preflight above, these two are deliberately NOT copied here. They are
+# cross-project by construction: friction mines ~/.claude/projects transcripts
+# and reads one shared decision ledger, because transcripts are global so
+# suppression has to be global too -- a per-project ledger would re-propose
+# classes already decided elsewhere. toolgaps likewise inventories
+# claude-config's assets to answer "does a fix already exist?". Copying either
+# would fork a global tool and let the copies drift.
+#
+# The cost is a hard dependency on the sibling checkout living at
+# ~/Documents/Projects/claude-config, which is where both scripts resolve it
+# from unconditionally. On a machine without that layout these two tasks fail
+# and the rest of the project is unaffected.
+friction = "python ../Projects/claude-config/scripts/friction.py"
+toolgaps = "python ../Projects/claude-config/scripts/toolgaps.py"
 # Data-loading throughput measurement (smi/analysis/benchmark_loading.py).
 # Deliberately not part of `all`: it needs a CUDA GPU and takes minutes, and
 # its answer only changes when the model or the loader path changes.
