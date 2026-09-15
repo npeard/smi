@@ -224,6 +224,66 @@ it. 515 nm crosses the most fringes per micron of any of the three, which is
 the ordering one would expect if the residual is a phase effect, but this
 document does not have a measurement that pins that.
 
+== What the fits look like on real shots
+
+Every number above is a median. A median $R^2$ of 0.715 does not say whether
+the fit follows individual fringes or is only correlated with them, so
+@fig-traces draws three shots and the fits themselves.
+
+#fig(
+  "baseline_shot_traces",
+  width: 100%,
+  caption: [
+    Method 1 on three free-space 635 nm shots, chosen by a rule rather than by
+    eye: over the same N = 1000 shots the table above was computed on, these
+    are the shots nearest the 10th, 50th and 95th percentile of displacement
+    peak-to-peak, which resolves to shots 203, 90 and 365. *Left:* the
+    drive-implied displacement for the whole 33.6 ms record, with the zoom
+    window shaded. *Right:* the photodiode trace inside that window, with the
+    global fit and the $W = 1024$ refit over it. The boxed numbers are
+    whole-shot values from the same functions that produced the table, not
+    read off the slice shown. The control is a median over 16 partner shots.
+  ],
+) <fig-traces>
+
+The global fit is the dotted line, and the three panels are the collapse the
+old report described, one shot at a time. At 0.29 um peak-to-peak it holds a
+plausible amplitude and phase for the window shown and scores 0.69. At 1.51 um
+it is about half the measured amplitude and drifting out of step with it,
+at 0.15. At 3.74 um it has given up: 0.09, with an amplitude that no longer
+matches anything on the panel. What moves between the three is not the data's
+agreement with the model but how far the phase wanders inside one record --
+1.36, 1.81 and 2.73 fringes -- and a single fixed phase cannot follow any of
+that.
+
+The windowed refit is the solid line. At low and medium excursion it tracks
+the measured trace fringe for fringe: the medium panel has three full fringes
+in 1.5 ms and the refit finds all three, with peaks and zero crossings landing
+where the data puts them. That is what a windowed $R^2$ of 0.93 and 0.66 looks
+like, against controls of 0.55 and 0.29.
+
+The high-excursion panel is the weak one and is shown as such. The refit is
+still roughly in step near 11.6 and 12.7 ms, but through the middle of the
+window -- around 12.0 to 12.5 ms, where the mirror is moving fastest -- it
+runs nearly flat while the measured signal turns over three sharp fringes. The
+fitted phase has slipped against the real one within a single window. Its
+0.43, against a 0.26 control, is a gap of 0.17: still above the control, and
+well below what the same estimator achieves on the two smaller shots.
+
+This is the residual amplitude dependence of section 5, visible rather than
+inferred, and the panel also shows why a gain correction does not fix it:
+where the refit and the measurement are in step, their amplitudes agree.
+The mismatch is in phase, not in gain. The sharp flat-topped fringe
+peaks are a property of the fringe shape at high fringe rate, not detector
+clipping -- only 1 shot in 400 reaches the channel maximum, and the fraction
+of samples near a shot's extremes does not grow with excursion.
+
+Three shots out of a thousand cannot establish a trend, and none is claimed
+here; the binned trend in section 5 does that over all of them. What these
+panels settle is the narrower question the medians leave open, which is
+whether the windowed fit follows real fringes or merely correlates with
+them. At low and medium excursion it follows them.
+
 #takeaway[
   Method 1 no longer says "the model does not explain this data". It says the
   global fit was the wrong estimator, and that once refit per window the model
