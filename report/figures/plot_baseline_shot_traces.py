@@ -299,7 +299,12 @@ def main() -> None:
         # title: as one line of title text this overflows the axes width, and
         # these numbers belong beside the trace they describe anyway. Ink
         # color, not series colors, so it is not misread as a fourth series.
-        right.set_title('whole-shot $R^2$', fontsize=8)
+        #
+        # Titled on the top row only. The box below says which three numbers
+        # these are, so repeating the header over every row spends ink on
+        # nothing -- the reader learns it once and carries it down the column.
+        if row == 0:
+            right.set_title('whole-shot $R^2$', fontsize=8)
         right.annotate(
             f'global {global_r2:.2f}\n'
             f'windowed {windowed_r2:.2f}\n'
