@@ -39,6 +39,7 @@ DOCUMENT_FIGURES = {
     "baseline": [
         "baseline_summary",
         "baseline_amplitude_trend",
+        "baseline_shot_traces",
         "freespace_vs_fiber",
     ],
 }
