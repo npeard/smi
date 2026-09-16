@@ -167,73 +167,120 @@ unobservable and penalizing it would measure nothing.
   [mm fiber], [0.462], [0.550], [1.18], [0.42],
 ))
 
-Medians over N = 200. For scale, the true displacement RMS is 0.362 um (free
-space) and 0.379 um (mm fiber), and the true velocity RMS is 0.373 and
-0.377 um/ms. The NRMSE column divides each shot's displacement error by the
-standard deviation of that shot's true displacement, so NRMSE above 1 means
-the decode is worse than predicting zero -- and both acquisitions sit just
-above 1.
+Medians over N = 200. The error in either column is larger than the motion it
+is measuring:
 
-Two different statistics appear in this document and neither substitutes for
-the other. $R^2$ (used from section 4.2 onward) is the fraction of a signal's
-variance a fit explains, computed from a sum of squared residuals; it can go
-negative, and it says whether the *scale* of the fit matches the data.
-Pearson r, the last column above, is the linear correlation between the
-decoded and true displacement; it is scale-free and would score a decode that
-tracked the right shape at the wrong amplitude just as high as a perfect one.
-The Pearson r values here, 0.53 and 0.42, say the decode is not noise -- it
-tracks the real motion partway and then loses it -- but they say nothing
-about whether its amplitude is right. The disp. RMSE and NRMSE columns are
-what answer that.
+#align(center, table(
+  columns: 3,
+  align: (left, right, right),
+  stroke: 0.5pt + rgb("#d0d0d0"),
+  table.header(
+    [acquisition],
+    [true disp. RMS (um)],
+    [true vel. RMS (um/ms)],
+  ),
+  [free space], [0.362], [0.373],
+  [mm fiber], [0.379], [0.377],
+))
+
+The NRMSE column of the first table divides each shot's displacement error by
+the standard deviation of that shot's own true displacement. NRMSE above 1
+therefore means the decode is worse than predicting zero, and both
+acquisitions sit just above 1.
 
 *These numbers are not retracted.* They are a valid statement about this
 inverse on this data, and they are the floor a learned model has to beat. What
 has changed is the explanation of why the floor sits where it does.
 
+=== $R^2$ and Pearson r are not interchangeable
+
+Two statistics appear in this document and neither substitutes for the other.
+
+/ $R^2$: the fraction of a signal's variance a fit explains, computed from a
+  sum of squared residuals. It can go negative, and it is sensitive to *scale*:
+  a fit at the wrong amplitude scores badly. Used from section 4.2 onward.
+/ Pearson r: the linear correlation between the decoded and the true
+  displacement. It is scale-free, so it would score a decode that tracked the
+  right shape at the wrong amplitude as highly as a perfect one. Used only in
+  the last column of the table above.
+
+So the Pearson r values of 0.53 and 0.42 say the decode is not noise: it
+tracks the real motion partway and then loses it. They say nothing about
+whether its amplitude is right. The disp. RMSE and NRMSE columns answer that,
+and their answer is that the amplitude is not right.
+
 == Method 1: the fit was wrong, then the model is imperfect
 
-Median $R^2$ per channel over N = 1000 shots, with the true displacement
-supplied, at the live coil-driver gain. Global is one fit across 33.6 ms;
-windowed is refit per 1024 samples; control is the same windowed fit with
-another shot's displacement.
+The one number to read here is the *gap*: the windowed $R^2$ minus the
+scrambled-theta control it has to clear. The gap is what the model earns over
+its own fitting flexibility, and it runs 0.18 to 0.53 across the six
+channel/acquisition combinations. Medians over N = 1000 shots, with the true
+displacement supplied, at the live coil-driver gain:
 
 #align(center, table(
-  columns: 5,
-  align: (left, left, right, right, right),
+  columns: 6,
+  align: (left, left, right, right, right, right),
   stroke: 0.5pt + rgb("#d0d0d0"),
-  table.header([acquisition], [channel], [global], [windowed], [control]),
-  [free space], [635 nm], [0.171], [0.715], [0.298],
-  [free space], [675 nm], [0.176], [0.629], [0.330],
-  [free space], [515 nm], [0.080], [0.422], [0.238],
-  [mm fiber], [635 nm], [0.479], [0.863], [0.332],
-  [mm fiber], [675 nm], [0.166], [0.602], [0.315],
-  [mm fiber], [515 nm], [0.303], [0.730], [0.252],
+  table.header(
+    [acquisition],
+    [channel],
+    [global $R^2$],
+    [windowed $R^2$],
+    [control $R^2$],
+    [*gap*],
+  ),
+  [free space], [635 nm], [0.171], [0.715], [0.298], [*0.42*],
+  [free space], [675 nm], [0.176], [0.629], [0.330], [*0.30*],
+  [free space], [515 nm], [0.080], [0.422], [0.238], [*0.18*],
+  [mm fiber], [635 nm], [0.479], [0.863], [0.332], [*0.53*],
+  [mm fiber], [675 nm], [0.166], [0.602], [0.315], [*0.29*],
+  [mm fiber], [515 nm], [0.303], [0.730], [0.252], [*0.48*],
 ))
 
+Global is one fit across the whole 33.6 ms record. Windowed is the same three
+parameters refit every 1024 samples (2.1 ms). Control is that windowed fit run
+again with another shot's displacement, so it measures what the window count
+alone buys. Gap is windowed minus control.
+
+=== What the earlier draft claimed, and what is true
+
+The earlier draft read the global column as a statement about the Michelson
+model and concluded that the model and the data disagree badly.
+
 *The global column is retracted as a statement about the model.* It is a
-statement about a three-parameter fit held fixed for 33.6 ms. Refitting the
-same three parameters every 2.1 ms raises the same shots to 0.42-0.86 without
-giving the model any new freedom about the displacement, which was known
-throughout and identical in both columns.
+statement about a three-parameter fit held fixed for 33.6 ms. Refitting those
+same three parameters every 2.1 ms raises the same shots to 0.42-0.86. The
+model gained no new freedom about the displacement in between: it was known
+throughout and identical in both columns. Only the interval over which
+amplitude and phase were held constant changed.
 
-Read the windowed column against the control, never alone. The gaps, in the
-row order above, are 0.42, 0.30, 0.18, 0.53, 0.29 and 0.48. That is what the
-model earns over its own flexibility, and it is what supports the claim that
-the model describes this data at all. The windowed figures on their own would
-overstate agreement by 0.24 to 0.33.
+What is true is the gap column. It supports the claim that the model describes
+this data, and it is the version of that claim this document stands behind.
 
-$W = 1024$ is chosen by that gap rather than by taste. On the
+=== Why the control is mandatory, and why $W = 1024$
+
+A shorter window fits more of anything, so the windowed column read alone
+would credit the model with its own flexibility: it overstates agreement by
+0.24 to 0.33, the control values themselves. No windowed $R^2$ appears in this
+document without its control beside it.
+
+$W = 1024$ is chosen by the gap rather than by taste. On the
 largest-excursion cohort the control rises from 0.006-0.009 at $W = 16384$ to
 0.185-0.274 at $W = 1024$ to 0.569-0.681 at $W = 256$, while the real value
-rises more slowly; $W = 1024$ is where the difference is widest. A $W = 256$
-number is mostly fitting capacity and must never be quoted as agreement.
+rises more slowly. $W = 1024$ is where the difference between them is widest.
+A $W = 256$ number is mostly fitting capacity and must never be quoted as
+agreement.
 
-*Free-space 515 nm is the weak case and should be named as one.* Its gap is
-0.18, the narrowest of the six, and its global $R^2$ of 0.080 is the lowest.
-Averaging the three free-space channels would report a gap near 0.30 and hide
-it. 515 nm crosses the most fringes per micron of any of the three, which is
-the ordering one would expect if the residual is a phase effect, but this
-document does not have a measurement that pins that.
+=== Per-channel caveat: free-space 515 nm is the weak case
+
+Free-space 515 nm has the narrowest gap of the six, 0.18, and the lowest
+global $R^2$, 0.080. Averaging the three free-space channels would report a
+gap near 0.30 and hide it, so this document reports the channels separately
+throughout.
+
+515 nm crosses the most fringes per micron of the three wavelengths, which is
+the ordering to expect if the residual is a phase effect. This document does
+not have a measurement that pins that down.
 
 == What the fits look like on real shots
 
