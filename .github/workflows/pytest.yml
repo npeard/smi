@@ -33,3 +33,59 @@ jobs:
     # `python -m pytest` (not bare `pytest`) so it launches via the env interpreter.
     - name: Test with pytest
       run: pixi run -e test python -m pytest
+
+  # `pixi run all` gates on format, lint, ascii, typecheck and test locally, but
+  # CI ran only the last of those: lint, ascii and typecheck were enforced
+  # solely by the pre-commit hooks. Those are bypassable with --no-verify and
+  # are not installed on a fresh clone, so for anyone who has not run
+  # `pre-commit install` they were not enforced at all -- a tree that
+  # `pixi run all` rejects could still show a green CI.
+  #
+  # Separate jobs rather than one `pixi run all`: a failure then names the rule
+  # it broke instead of hiding behind whichever gate ran first, and `format`
+  # rewrites files, which does not belong in CI.
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # `default`, not `test`: ruff and codespell are pinned in the default
+    # environment precisely so these run against lockfile-backed versions
+    # rather than whatever is on PATH.
+    - name: Set up Pixi
+      uses: prefix-dev/setup-pixi@v0.9.6
+      with:
+        environments: default
+        cache: true
+
+    - name: Check style with ruff
+      run: pixi run lint
+
+    # The ASCII-only convention (see CLAUDE.md) is a house rule with no
+    # third-party enforcement, so CI is the only place it holds for everyone.
+    - name: Check for non-ASCII source characters
+      run: pixi run ascii
+
+  typecheck:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # `dev`, because that is the environment [tool.ty.environment] pins ty's
+    # import resolution to (`python = ".pixi/envs/dev"`); running it against
+    # any other environment resolves a different set of packages.
+    - name: Set up Pixi
+      uses: prefix-dev/setup-pixi@v0.9.6
+      with:
+        environments: dev
+        cache: true
+
+    # Torch arrives from the cu124 index and this is a CPU-only runner, so ty
+    # type-checks a tree where the CUDA wheels are present but no device is.
+    # That is fine: ty reads annotations and never executes, and `pixi run
+    # typecheck` reports "All checks passed!" on this tree, so the gate starts
+    # from a clean baseline rather than being decorative.
+    - name: Run ty
+      run: pixi run typecheck

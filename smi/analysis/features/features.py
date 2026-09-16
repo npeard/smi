@@ -46,7 +46,7 @@ for _feat_name, _channel in PD_FEATURE_TO_CHANNEL.items():
 
 @register_feature('velocity', 'target')
 def velocity(raw: RawShot) -> np.ndarray:
-    """Velocity waveform (microns/s) from the drive voltage RP1_CH1."""
+    """Velocity waveform (microns/ms) from the drive voltage RP1_CH1."""
     voltage = np.asarray(raw['RP1_CH1'])
     sample_rate = float(raw['sample_rate'])
     return _coil_driver.get_velocity(voltage, sample_rate)[0]

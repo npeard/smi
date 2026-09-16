@@ -4,6 +4,15 @@ from voltage waveforms.
 
 This module provides a class that encapsulates functionality for converting voltage
 waveforms to displacement and velocity waveforms using calibration data.
+
+Units. Displacement is microns (um) and velocity is microns per millisecond
+(um/ms). This is the single boundary at which the package's velocity unit is
+established: sample rates come in as Hz, and every method here that takes a
+time derivative or integral does so against a millisecond time base. Downstream
+code -- the dataset, the loss, ``predict_step``, the normalization stats -- then
+carries um/ms throughout with no further conversions. um/ms rather than um/s
+because it keeps velocity O(1) (RMS ~0.35), on the same numeric scale as
+displacement in um, so multi-task loss weights mean what they appear to mean.
 """
 
 import numpy as np
@@ -15,6 +24,10 @@ from .waveform import Waveform
 
 # Create a default RNG instance for the module
 _rng = np.random.default_rng()
+
+# Milliseconds per second. Sample rates enter this module in Hz, so a time
+# derivative is naturally per-second; dividing by this converts to per-ms.
+MS_PER_S = 1.0e3
 
 
 class CoilDriver:
@@ -278,16 +291,19 @@ class CoilDriver:
 
         Returns:
             Tuple containing:
-            - Velocity waveform in time domain (microns/s)
-            - Velocity waveform in frequency domain
+            - Velocity waveform in time domain (microns/ms)
+            - Velocity waveform in frequency domain (microns/ms)
             - Frequency array (Hz)
         """
         displacement_spectrum, freq = self.get_displacement_spectrum(
             voltage_waveform, sample_rate, max_freq
         )
 
-        # Calculate velocity spectrum by multiplying displacement spectrum by j*omega
-        velocity_spectrum = displacement_spectrum * 1j * 2 * np.pi * freq
+        # Calculate velocity spectrum by multiplying displacement spectrum by
+        # j*omega. ``freq`` is in Hz, so the raw derivative is um/s; dividing
+        # by MS_PER_S makes it um/ms, the package's stored velocity unit. The
+        # spectrum is scaled too, so it stays the FFT of the returned waveform.
+        velocity_spectrum = displacement_spectrum * 1j * 2 * np.pi * freq / MS_PER_S
 
         # Convert back to time domain
         velocity_waveform = np.real(ifft(velocity_spectrum, norm='ortho'))
@@ -314,13 +330,13 @@ class CoilDriver:
                 If None, all frequencies are included.
 
         Returns:
-            Tuple of (velocity in microns/s, displacement in microns), both in
+            Tuple of (velocity in microns/ms, displacement in microns), both in
             the time domain and the same shape as ``voltage_waveform``.
         """
         displacement_spectrum, freq = self.get_displacement_spectrum(
             voltage_waveform, sample_rate, max_freq
         )
-        velocity_spectrum = displacement_spectrum * 1j * 2 * np.pi * freq
+        velocity_spectrum = displacement_spectrum * 1j * 2 * np.pi * freq / MS_PER_S
 
         displacement = np.real(ifft(displacement_spectrum, norm='ortho'))
         velocity = np.real(ifft(velocity_spectrum, norm='ortho'))
@@ -408,13 +424,13 @@ class CoilDriver:
             max_freq: Maximum frequency to include (Hz). If None, all are kept.
 
         Returns:
-            Tuple of (velocity in microns/s, displacement in microns), both real
-            tensors with the input's shape, dtype and device.
+            Tuple of (velocity in microns/ms, displacement in microns), both
+            real tensors with the input's shape, dtype and device.
         """
         displacement_spectrum, freq = self.get_displacement_spectrum_torch(
             voltage_waveform, sample_rate, max_freq
         )
-        velocity_spectrum = displacement_spectrum * (2j * np.pi * freq)
+        velocity_spectrum = displacement_spectrum * (2j * np.pi * freq / MS_PER_S)
 
         displacement = torch.fft.ifft(displacement_spectrum, dim=-1, norm='ortho').real
         velocity = torch.fft.ifft(velocity_spectrum, dim=-1, norm='ortho').real
@@ -436,7 +452,7 @@ class CoilDriver:
         Compatible with both NumPy arrays and PyTorch tensors.
 
         Args:
-            velocity_waveform: Velocity waveform (microns/s)
+            velocity_waveform: Velocity waveform (microns/ms)
                               Can be a NumPy array or PyTorch tensor
                               For PyTorch tensors, supports batch dimensions
                               [batch_size, channels, signal_length]
@@ -448,8 +464,9 @@ class CoilDriver:
         # Check if input is a PyTorch tensor
         # More robust check using module name instead of attribute
         is_torch = 'torch' in str(type(velocity_waveform).__module__)
-        # Time step
-        dt = 1.0 / sample_rate
+        # Time step in milliseconds, because velocity is um/ms: the product
+        # velocity * dt is then um, matching the displacement unit.
+        dt = MS_PER_S / sample_rate
 
         if is_torch:
             # Handle batch dimensions if present
@@ -494,13 +511,14 @@ class CoilDriver:
             sample_rate: Sample rate of the displacement waveform (Hz)
 
         Returns:
-            Velocity waveform (microns/s) in the same format as input
+            Velocity waveform (microns/ms) in the same format as input
         """
         # Check if input is a PyTorch tensor
         is_torch = 'torch' in str(type(displacement_waveform).__module__)
 
-        # Time step
-        dt = 1.0 / sample_rate
+        # Time step in milliseconds, so d(um)/dt comes out as um/ms rather
+        # than um/s -- see the module docstring's units note.
+        dt = MS_PER_S / sample_rate
 
         if is_torch:
             # Handle batch dimensions if present

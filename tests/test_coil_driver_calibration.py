@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from plot_waveforms import calculate_fft
 
-from smi.synthetic.coil_driver import CoilDriver
+from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
 from smi.synthetic.waveform import Waveform
 
 
@@ -172,10 +172,12 @@ def test_displacement_velocity_relationship():
         voltage, sample_rate
     )
 
-    # Verify that velocity_spectrum = iomega * displacement_spectrum
-    # This is equivalent to velocity being the time derivative of displacement
+    # Verify that velocity_spectrum = iomega * displacement_spectrum / MS_PER_S.
+    # This is equivalent to velocity being the time derivative of displacement,
+    # with the MS_PER_S divisor because displacement_freqs is in Hz while
+    # velocity is returned in um/ms rather than um/s.
     expected_velocity_spectrum = (
-        1j * 2 * np.pi * displacement_freqs * displacement_spectrum
+        1j * 2 * np.pi * displacement_freqs * displacement_spectrum / MS_PER_S
     )
 
     # Check that the velocity spectrum matches the expected value
@@ -235,9 +237,17 @@ def test_integrated_velocity_and_derivative_displacement():
     # Don't compare the end elements, not accurately computed at the edges
     # TODO: why doesn't rtol alone seem to work here? These are consistent in
     # plotting...
-    assert np.allclose(derived_velocity[1:-1], velocity[1:-1], atol=10, rtol=0.05), (
-        'Derivative of displacement does not match velocity from transfer function'
-    )
+    # The spectral derivative and the central difference are different
+    # operators; they agree to a few percent except within a hair of a
+    # zero crossing, where the central difference's truncation error is large
+    # relative to a near-zero value. Hence an atol tied to the signal scale
+    # rather than an absolute constant -- an absolute atol either passes
+    # everything (the old atol=10, now 1000x the whole signal) or fails on the
+    # zero crossings alone.
+    velocity_scale = float(np.std(velocity))
+    assert np.allclose(
+        derived_velocity[1:-1], velocity[1:-1], atol=0.01 * velocity_scale, rtol=0.05
+    ), 'Derivative of displacement does not match velocity from transfer function'
 
 
 def test_coil_driver_sample_spectrum_hermitian():

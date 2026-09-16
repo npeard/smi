@@ -983,7 +983,7 @@ class RedPitayaManager:
                         alpha=0.7,
                         label='Derivative Displacement',
                     )
-                    ax_vel.set_ylabel('Velocity (Microns/s)', color='black')
+                    ax_vel.set_ylabel('Velocity (Microns/ms)', color='black')
                     ax_vel.tick_params(axis='y', labelcolor='black')
                     ax_vel.legend(loc='upper right', fontsize='small')
 
@@ -1356,7 +1356,7 @@ class RedPitayaManager:
                     self.hist_axes[0, 1].legend(loc='upper right')
 
             self.hist_axes[0, 1].set_title('Velocity')
-            self.hist_axes[0, 1].set_xlabel('Velocity (Microns/s)')
+            self.hist_axes[0, 1].set_xlabel('Velocity (Microns/ms)')
             self.hist_axes[0, 1].set_ylabel('Count')
             self.hist_axes[0, 1].grid(True, alpha=0.3)
 

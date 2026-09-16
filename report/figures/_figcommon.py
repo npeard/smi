@@ -1,7 +1,10 @@
-"""Shared matplotlib style and helpers for report figures.
+"""Shared matplotlib settings and helpers for report figures.
 
 Every ``plot_*.py`` in this directory imports from here rather than setting its
-own rcParams, so panels in the slides and the report read as one system.
+own rcParams, so figures share the same build-reproducibility settings and the
+same channel-color mapping. Everything else -- fonts, sizes, spines, grid,
+tick direction, legend frame -- is left at matplotlib's own defaults, the same
+as loading a figure into a LaTeX document: no house theme is imposed here.
 
 Contract each figure script honors (relied on by the Snakefile and by
 ``tests/test_report_build.py``):
@@ -39,9 +42,11 @@ FREE_SPACE_H5 = DATA_DIR / 'free-space-synchro_10k.h5'
 MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
 
 # Baseline results, written by smi.analysis.baseline_fit and committed. Figures
-# read this rather than recomputing: the fits are a GPU job of ~20 minutes per
-# acquisition, which is not work a document build should be repeating, and
-# reading a fixed artifact is what makes the figures deterministic.
+# read this rather than recomputing: method 2's Viterbi decode is ~20 minutes
+# per acquisition on a GPU, which is not work a document build should be
+# repeating, and reading a fixed artifact is what makes the figures
+# deterministic. (Method 1's fits are ~1 minute on CPU at N = 1000; it is
+# method 2 that makes regeneration expensive.)
 RESULTS_JSON = DATA_DIR / 'baseline_results.json'
 
 # Photodiode channels, in the order the dataset feeds them to the model, with
@@ -66,16 +71,20 @@ DEFAULT_SAMPLE_RATE = 488281.25
 # Seed used by any figure that needs randomness, so runs are reproducible.
 FIGURE_SEED = 20250910
 
-# One qualitative palette for the whole document set. Chosen to stay
-# distinguishable in grayscale and for the common red-green deficiencies.
+# Named colors for the whole document set, drawn from matplotlib's default
+# property cycle (`C0`, `C1`, ...) rather than a hand-picked palette -- see the
+# module docstring. The names are what make 635/675/515 nm stable and distinct
+# across figures: every figure that plots a channel looks it up by name here
+# instead of pulling the next color off its own axes' cycle, which would let
+# the same wavelength land on different colors in different figures.
 COLORS: dict[str, str] = {
-    'drive': '#4c4c4c',
-    'ch635': '#c1442b',
-    'ch675': '#d99a1c',
-    'ch515': '#2f7d4f',
-    'accent': '#2a5d9f',
-    'muted': '#8a8a8a',
-    'highlight': '#7b4ea8',
+    'drive': 'C5',
+    'ch635': 'C3',
+    'ch675': 'C1',
+    'ch515': 'C2',
+    'accent': 'C0',
+    'muted': 'C7',
+    'highlight': 'C4',
 }
 CHANNEL_COLORS: tuple[str, ...] = (COLORS['ch635'], COLORS['ch675'], COLORS['ch515'])
 
@@ -89,31 +98,16 @@ FIGSIZE_HALF = (3.5, 2.8)
 # typo in a key is a type error rather than a silently ignored setting. Values
 # are heterogeneous by key and matplotlib validates each one itself, so Any is
 # what its own stub declares.
+#
+# Deliberately short: these are build-reproducibility and layout settings, not
+# a look. Fonts, sizes, spines, grid, legend frame, tick direction and line
+# width are all left at matplotlib's own defaults -- see the module docstring.
 _RCPARAMS: dict[RcKeyType, Any] = {
     'figure.figsize': FIGSIZE_WIDE,
     'figure.dpi': 150,
     'savefig.dpi': 150,
     'savefig.bbox': 'tight',
     'savefig.pad_inches': 0.02,
-    'font.family': 'sans-serif',
-    'font.sans-serif': ['DejaVu Sans'],
-    'font.size': 9,
-    'axes.titlesize': 10,
-    'axes.labelsize': 9,
-    'axes.titleweight': 'bold',
-    'axes.spines.top': False,
-    'axes.spines.right': False,
-    'axes.grid': True,
-    'axes.axisbelow': True,
-    'grid.color': '#dcdcdc',
-    'grid.linewidth': 0.6,
-    'legend.frameon': False,
-    'legend.fontsize': 8,
-    'lines.linewidth': 1.2,
-    'xtick.labelsize': 8,
-    'ytick.labelsize': 8,
-    'xtick.direction': 'out',
-    'ytick.direction': 'out',
     # PDF text as real glyphs (Type 42) rather than paths, so the text stays
     # selectable and searchable in the compiled document.
     'pdf.fonttype': 42,

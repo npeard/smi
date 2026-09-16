@@ -91,14 +91,14 @@ def visualize_dataset(
             # Plot velocity on the primary y-axis
             axs[0].plot(time, velocity[i], label='Velocity', color='blue')
             axs[0].set_title('Velocity and Displacement')
-            axs[0].set_ylabel('Velocity (umm/s)', color='blue')
+            axs[0].set_ylabel('Velocity (um/ms)', color='blue')
             axs[0].tick_params(axis='y', labelcolor='blue')
             axs[0].grid(True, alpha=0.3)
 
             # Create a twin axis for displacement
             ax_twin = axs[0].twinx()
             ax_twin.plot(time, displacement[i], label='Displacement', color='green')
-            ax_twin.set_ylabel('Displacement (umm)', color='green')
+            ax_twin.set_ylabel('Displacement (um)', color='green')
             ax_twin.tick_params(axis='y', labelcolor='green')
 
             # Ensure both legends are visible
