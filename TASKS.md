@@ -59,6 +59,17 @@
 
 ---
 
+## Report Hygiene
+
+*Raised from `agent-config` on 2026-09-15, where the rules below were
+written; they are recorded here to be addressed in this repo.*
+
+- [ ] **Excise the retraction artifacts from the report deliverables** -- `report/slides.typ:169` is a whole slide titled "Retraction: the model was not the problem, the fit was", and `report/baseline.typ` carries the same framing in three more places (the "Why this document exists" preamble, the "Method 1: the fit was wrong, then the model is imperfect" heading, and "The global column is retracted as a statement about the model"). A reader of either artifact never held the 9-38% claim, so the retraction spends their attention teaching a wrong thing and then unteaching it. Replace each with the current understanding stated directly: the global fit was the wrong estimator, windowing fixes it, and the gain error is real but secondary. The superseded version stays in the commit message and the chat where it belongs. All of this is on the unmerged `michelson-units-audit` branch and not on `main`, so it is still cheap to fix.
+  - [ ] **This file does it too**: the "Establishing baselines" item under Analysis & Presentation uses `~~strikethrough~~ -- **retracted**` for the same claim. A task file is a deliverable a future reader meets cold, so the entry should simply state what the baseline is.
+  - [ ] **The spec asked for it, which is the actual root cause.** `docs/superpowers/michelson-units-audit-spec.md:424` has a section headed "Specific claims to retract or rewrite", so the agent that wrote the retraction slide was following its brief correctly. Future specs should say *replace claim X with Y*, never *add a retraction of X* -- now enforced by `agent-config`'s `CODING_STANDARDS.md` rule 11 and the `writing-orchestration` skill.
+
+- [ ] **Deduplicate the report scaffold shared with `triple-correlation`** -- `report/Snakefile` and `report/lib/theme.typ` were built by copying, and measured against `triple-correlation/report/` they still share 54 of 101 non-blank Snakefile lines and 55 of 190 theme lines, including a byte-identical `figpath` helper (`theme.typ:193` here, `:163` there). The divergent halves -- this repo's `slides-theme` and `takeaway`, that repo's `abstract`/`bmsection`/author marks -- are correctly per-project and should stay. The shared quartet (the Snakemake `figure`/`document`/`clean` rules, the `report` pixi tasks, `figpath`, and the ASCII test over `*.typ`) is the part that drifts silently when only one copy is fixed. Decide whether it becomes a small shared template or stays duplicated deliberately; either is defensible, but it should be a decision rather than an accident.
+
 ## Hardware
 
 - [ ] **Dichroic reflector for reference wavelength to deconvolve phase disruptions from fiber** Might be simpler passive approach to removing phase distortion from the fiber compared to modulation techniques. Test in simulation first.
