@@ -90,7 +90,7 @@ committed for reproducibility.
 
 **Platforms are `win-64` and `linux-64`.** macOS was dropped deliberately.
 The old `numpy<2` / `torch<2.3` pins existed only to keep an Intel Mac
-working and are gone; the stack is now `torch>=2.5` / `numpy>=2`.
+working and are gone; the stack is now `torch>=2.14` / `numpy>=2`.
 
 **One OpenMP runtime, so the numeric stack comes from PyPI.** `numpy`,
 `numba`, `matplotlib` and `h5py` resolve from PyPI (via
@@ -104,8 +104,11 @@ silently produce incorrect results, which is disqualifying here. Only
 `typst` and `polars` come from conda; typst is a self-contained Rust
 binary with no BLAS linkage.
 
-**Torch comes from the `cu124` PyPI index** because the default win-64
-wheel is CPU-only. Expect `torch.cuda.is_available()` to be true; if it is
+**Torch comes from the `cu130` PyPI index** because the default win-64
+wheel is CPU-only, and because cu124 publishes no cp312/win-64 wheel past
+torch 2.6.0 -- reaching 2.14 means CUDA 13.0. CUDA 13 drops Maxwell/Pascal/
+Volta but keeps sm_75, so both cards here (RTX 3090 Ti sm_86, Quadro RTX 4000
+sm_75) still run. Expect `torch.cuda.is_available()` to be true; if it is
 not, the index pin in `[tool.pixi.pypi-dependencies]` is the thing to check.
 
 **Important**: Always run `pixi run format` first when encountering linting/formatting issues before making manual edits. This auto-fixes most formatting problems and saves time.

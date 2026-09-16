@@ -199,9 +199,14 @@ smi = { path = ".", editable = true }
 
 # Torch arrives via the editable `smi` install, and PyPI's default win-64 torch
 # wheel is CPU-only -- which cannot answer the GPU-residency question this
-# project needs measured. Pin the CUDA 12.4 index explicitly on both supported
+# project needs measured. Pin the CUDA 13.0 index explicitly on both supported
 # platforms so `torch.cuda.is_available()` is true out of the box.
-torch = { version = ">=2.5", index = "https://download.pytorch.org/whl/cu124" }
+#
+# cu130 and not an older channel because the cu124 index stops publishing at
+# torch 2.6.0 for cp312/win-64; 2.14 exists only from cu130 onward. CUDA 13
+# drops Maxwell/Pascal/Volta but keeps sm_75, so both GPUs on this box (RTX
+# 3090 Ti sm_86, Quadro RTX 4000 sm_75) remain supported.
+torch = { version = ">=2.14", index = "https://download.pytorch.org/whl/cu130" }
 
 [tool.pixi.feature.dev.pypi-dependencies]
 pre-commit = "*"
