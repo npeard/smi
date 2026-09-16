@@ -107,10 +107,26 @@ BANDS: tuple[tuple[str, float], ...] = (('low', 10.0), ('medium', 50.0), ('high'
 # is stable to within 0.01-0.02 from 8 partners to 32.
 N_CONTROL_PARTNERS = 16
 
-# Width of the fringe zoom, in milliseconds. Wide enough to hold several
-# fringes at the low-excursion shot, narrow enough that individual fringes are
-# resolved at the high one.
-ZOOM_MS = 1.5
+# Fringes the zoom window should span, rather than a fixed duration.
+#
+# A fixed width cannot serve all nine panels. The window is placed at each
+# shot's fastest motion, which is the most fringes per millisecond, and the
+# three channels see different fringe counts over that same stretch: 515 nm
+# crosses 1.31x as many per micron as 675 nm. At a fixed 1.5 ms the 515 nm
+# high-excursion panel held so many fringes that neither the data nor the fit
+# was resolvable, which made the weakest channel also the least legible -- a
+# reader cannot judge a fit from a window where the fringes are a blur.
+#
+# Scaling the width by the panel's own fringe rate shows every panel about the
+# same number of cycles, so the three channels are compared on what the fit
+# does per fringe rather than on how many fringes got crammed in.
+ZOOM_FRINGES = 6.0
+
+# Bounds on the derived width (ms). The lower bound keeps enough samples for
+# the trace to read as a waveform; the upper stops a nearly-static shot from
+# zooming out to the whole record.
+ZOOM_MS_MIN = 0.35
+ZOOM_MS_MAX = 4.0
 
 # Ink, not theme. The measured trace and the two fits need to be
 # distinguishable from each other and from the per-channel colors, and these
@@ -232,24 +248,61 @@ def _control_r2(
     return float(np.median(scores))
 
 
-def _zoom_slice(displacement: np.ndarray, n_zoom: int) -> slice:
-    """Pick the zoom window at the shot's fastest motion.
+def _zoom_center(displacement: np.ndarray, n_probe: int) -> int:
+    """Sample index of the shot's fastest motion.
 
     Fastest motion is the most fringes per millisecond, which is where a phase
     error shows up as a visible slip rather than as a slow baseline wander.
-    Deterministic: it is an argmax over a boxcar-smoothed speed, with no
-    randomness and no manual nudging.
+    Deterministic: an argmax over a boxcar-smoothed speed, with no randomness
+    and no manual nudging. The center is a property of the shot, so all three
+    channels are drawn over the same stretch of time even though each gets its
+    own width.
 
     Args:
         displacement: Displacement for one shot (um).
-        n_zoom: Zoom width in samples.
+        n_probe: Boxcar width in samples used to smooth the speed.
+
+    Returns:
+        Index of the window center.
+    """
+    speed = np.abs(np.gradient(displacement))
+    smoothed = np.convolve(speed, np.ones(n_probe) / n_probe, mode='same')
+    return int(np.argmax(smoothed))
+
+
+def _zoom_slice(
+    displacement: np.ndarray, center: int, wavelength_um: float, sample_rate: float
+) -> slice:
+    """Window of about ``ZOOM_FRINGES`` cycles, centered on ``center``.
+
+    The fringe rate is ``2 * speed / wavelength`` (a lambda/2 displacement is
+    one fringe), so the width that holds a fixed number of fringes depends on
+    the channel as well as the shot. Measuring the speed locally rather than
+    over the whole record is what makes the width match the stretch actually
+    drawn.
+
+    Args:
+        displacement: Displacement for one shot (um).
+        center: Window center in samples, from :func:`_zoom_center`.
+        wavelength_um: Channel wavelength (microns).
+        sample_rate: Sample rate (Hz).
 
     Returns:
         The slice to draw.
     """
-    speed = np.abs(np.gradient(displacement))
-    smoothed = np.convolve(speed, np.ones(n_zoom) / n_zoom, mode='same')
-    center = int(np.argmax(smoothed))
+    # Local speed in um/s around the center, over a short fixed probe so the
+    # estimate does not depend on the width being solved for.
+    probe = max(1, int(0.2e-3 * sample_rate))
+    lo = max(0, center - probe)
+    hi = min(displacement.size, center + probe)
+    speed = float(np.abs(np.gradient(displacement[lo:hi])).mean()) * sample_rate
+
+    fringe_rate = 2.0 * speed / wavelength_um
+    width_ms = ZOOM_MS_MAX if fringe_rate <= 0 else ZOOM_FRINGES / fringe_rate * 1e3
+    width_ms = float(np.clip(width_ms, ZOOM_MS_MIN, ZOOM_MS_MAX))
+
+    n_zoom = max(2, int(width_ms * 1e-3 * sample_rate))
+    n_zoom = min(n_zoom, displacement.size)
     begin = max(0, min(center - n_zoom // 2, displacement.size - n_zoom))
     return slice(begin, begin + n_zoom)
 
@@ -285,8 +338,11 @@ def main() -> None:
 
     displacement, sample_rate = _displacements(N_SHOTS)
     selected = _select_shots(displacement)
-    n_zoom = int(ZOOM_MS * 1e-3 * sample_rate)
     wavelengths = tuple(wavelength for _, wavelength in PD_CHANNELS)
+    # Boxcar for locating the fastest motion. Fixed, and independent of the
+    # per-channel widths derived from it, so all three channels center on the
+    # same stretch of the record.
+    n_probe = int(1.5e-3 * sample_rate)
 
     # One row of displacement panels on top, then one row per channel.
     fig, axes = plt.subplots(
@@ -296,7 +352,15 @@ def main() -> None:
     for column, (band, percentile, index, ptp) in enumerate(selected):
         shot_disp = displacement[index]
         times = time_axis(shot_disp.size, sample_rate)
-        window = _zoom_slice(shot_disp, n_zoom)
+        center = _zoom_center(shot_disp, n_probe)
+        # Widths differ per channel, so the shaded span on the displacement
+        # panel shows the widest of the three: it is the envelope of what the
+        # column below it draws, not any single panel's window.
+        windows = [
+            _zoom_slice(shot_disp, center, wavelength, sample_rate)
+            for wavelength in wavelengths
+        ]
+        widest = max(windows, key=lambda s: s.stop - s.start)
 
         # All three channels of this shot, read once, so the joint fit sees
         # the same samples the panels draw.
@@ -314,17 +378,17 @@ def main() -> None:
 
         top = axes[0, column]
         top.plot(times, shot_disp, color=MEASURED_COLOR, linewidth=0.7)
-        # The zoom is 1.5 ms of a 33.6 ms record, so a shaded span alone is a
-        # sliver that reads as a plotting artifact. Edge lines make it legible
+        # The zoom is a fraction of a 33.6 ms record, so a shaded span alone is
+        # a sliver that reads as a plotting artifact. Edge lines make it legible
         # at the width this panel gets in the document.
         top.axvspan(
-            times[window.start],
-            times[window.stop - 1],
+            times[widest.start],
+            times[widest.stop - 1],
             color='tab:red',
             alpha=0.25,
             linewidth=0,
         )
-        for edge in (window.start, window.stop - 1):
+        for edge in (widest.start, widest.stop - 1):
             top.axvline(times[edge], color='tab:red', linewidth=0.6)
         top.set_title(
             f'{band}: shot {index} (p{percentile:.0f})\n'
@@ -338,6 +402,11 @@ def main() -> None:
             zip(PD_CHANNELS, CHANNEL_COLORS, strict=True), start=1
         ):
             signal = signals[row - 1]
+            # This channel's own zoom: same center, width set by its fringe
+            # rate (see ZOOM_FRINGES). 515 nm crosses 1.31x as many fringes
+            # per micron as 675 nm, so a shared width left the shortest
+            # wavelength the least readable panel in the figure.
+            window = windows[row - 1]
             # Fringe-matched: W scaled so each window spans about two
             # fringes, which is what keeps the fitted amplitude from
             # attenuating at high excursion. Both fit modes and the control
