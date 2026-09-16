@@ -167,8 +167,7 @@ unobservable and penalizing it would measure nothing.
   [mm fiber], [0.462], [0.550], [1.18], [0.42],
 ))
 
-Medians over N = 200. The error in either column is larger than the motion it
-is measuring:
+Medians over N = 200. Both RMSEs are larger than the motion they measure:
 
 #align(center, table(
   columns: 3,
@@ -205,9 +204,9 @@ Two statistics appear in this document and neither substitutes for the other.
   the last column of the table above.
 
 So the Pearson r values of 0.53 and 0.42 say the decode is not noise: it
-tracks the real motion partway and then loses it. They say nothing about
-whether its amplitude is right. The disp. RMSE and NRMSE columns answer that,
-and their answer is that the amplitude is not right.
+tracks the real motion partway and then loses it. Whether its amplitude is
+right is a separate question, and the disp. RMSE and NRMSE columns are what
+answer it.
 
 == Method 1: the fit was wrong, then the model is imperfect
 
@@ -242,20 +241,22 @@ parameters refit every 1024 samples (2.1 ms). Control is that windowed fit run
 again with another shot's displacement, so it measures what the window count
 alone buys. Gap is windowed minus control.
 
-=== What the earlier draft claimed, and what is true
+=== What the earlier draft claimed, and what replaces it
 
 The earlier draft read the global column as a statement about the Michelson
-model and concluded that the model and the data disagree badly.
+model, and concluded from its 0.080-0.479 that the model and the data
+disagree badly.
 
-*The global column is retracted as a statement about the model.* It is a
-statement about a three-parameter fit held fixed for 33.6 ms. Refitting those
-same three parameters every 2.1 ms raises the same shots to 0.42-0.86. The
-model gained no new freedom about the displacement in between: it was known
-throughout and identical in both columns. Only the interval over which
+*The global column is retracted as a statement about the model.* It measures a
+three-parameter fit held fixed for 33.6 ms. Refitting those same three
+parameters every 2.1 ms raises the same shots to 0.42-0.86, and the model
+gained no new freedom about the displacement in between: the displacement was
+known throughout and identical in both columns. Only the interval over which
 amplitude and phase were held constant changed.
 
-What is true is the gap column. It supports the claim that the model describes
-this data, and it is the version of that claim this document stands behind.
+The gap column replaces that claim. The model does describe this data, by 0.18
+to 0.53 over its own flexibility, and that is the strongest version of the
+claim this document supports.
 
 === Why the control is mandatory, and why $W = 1024$
 
