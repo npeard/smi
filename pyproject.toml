@@ -312,7 +312,7 @@ exclude_lines = [
     "raise NotImplementedError",
 ]
 
-# Typst report/slides build (report/). The whole document toolchain is
+# Typst report build (report/). The whole document toolchain is
 # lockfile-reproducible with no manual install step -- unlike a LaTeX engine,
 # where no conda package ships a usable macro tree.
 [tool.pixi.feature.report.dependencies]
@@ -340,5 +340,4 @@ h5py = "*"
 report = { cmd = "snakemake --cores all", cwd = "report" }
 report-dry = { cmd = "snakemake --cores all -n", cwd = "report" }
 report-clean = { cmd = "snakemake --cores 1 clean", cwd = "report" }
-report-slides = { cmd = "snakemake --cores all build/slides.pdf", cwd = "report" }
 report-baseline = { cmd = "snakemake --cores all build/baseline.pdf", cwd = "report" }

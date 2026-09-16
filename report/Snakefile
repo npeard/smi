@@ -3,7 +3,7 @@
 # Run from this directory:
 #     pixi run -e report snakemake --cores all
 # or, from anywhere in the repo, via the pixi tasks:
-#     pixi run report / report-dry / report-clean / report-slides / report-baseline
+#     pixi run report / report-dry / report-clean / report-baseline
 #
 # Design notes
 #
@@ -28,14 +28,6 @@ FIGDIR = f"{BUILD}/figures"
 # figures" so a document only rebuilds when something it actually shows
 # changes.
 DOCUMENT_FIGURES = {
-    "slides": [
-        "pd_traces",
-        "drive_to_velocity",
-        "freespace_vs_fiber",
-        "working_set",
-        "baseline_summary",
-        "baseline_amplitude_trend",
-    ],
     "baseline": [
         "baseline_summary",
         "baseline_amplitude_trend",
@@ -72,7 +64,6 @@ def figure_pdfs(document):
 rule all:
     input:
         expand(f"{BUILD}/{{document}}.pdf", document=DOCUMENTS),
-        f"{BUILD}/.slides-pagecheck",
 
 
 rule figure:
@@ -96,21 +87,6 @@ rule document:
         f"{BUILD}/{{document}}.pdf",
     shell:
         "typst compile --root . {input.source} {output}"
-
-
-# Typst silently continues an overlong slide onto another page, so the deck
-# compiles clean while quietly gaining an orphaned figure. Only the slide
-# decks get this check; a flowing report is supposed to paginate.
-rule check_slides:
-    """Fail the build when a slide has overflowed its page."""
-    input:
-        script="scripts/check_slide_pages.py",
-        source="slides.typ",
-        pdf=f"{BUILD}/slides.pdf",
-    output:
-        touch(f"{BUILD}/.slides-pagecheck"),
-    shell:
-        "python {input.script} --source {input.source} --pdf {input.pdf}"
 
 
 rule clean:

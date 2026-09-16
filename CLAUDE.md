@@ -42,7 +42,7 @@ always invoke Python and tools through `pixi run` (or from inside `pixi shell`)
 - `pixi run precommit` - Run all pre-commit hooks
 - `pixi run -e test pytest` - Run pytest in the minimal `test` environment (CI-equivalent)
 - `pixi run report` - Build the Typst documents (see `report/` below)
-- `pixi run report-dry` / `report-clean` / `report-slides` / `report-baseline`
+- `pixi run report-dry` / `report-clean` / `report-baseline`
 - `pixi run benchmark-loading` - Data-loading throughput benchmark (GPU; not in `all`)
 
 Workflow-spine tasks (see the master CLAUDE.md's numbered spine):
@@ -171,16 +171,15 @@ Two-level search (design: `docs/hyperparameter-search-pipeline-design.md`):
 Deps live in the `tune` pixi feature (`ray[tune]`, `optuna`), included in all
 test-running envs so the search path is CPU-tested in CI as well as on the GPU rig.
 
-## Reports and slides (`report/`)
+## Reports (`report/`)
 
 Typst documents built from matplotlib figures through a Snakemake DAG, in the
 spirit of the `dispersion-engineering` paper repo but with Typst in place of
 LaTeX. Typst is a conda package, so unlike a TeX engine the whole toolchain is
 lockfile-reproducible with no manual install.
 
-- `slides.typ` - research-presentation deck. `lib/theme.typ` makes each level-1
-  heading a new page.
-- `baseline.typ` - the standalone non-deep-learning baseline report.
+- `baseline.typ` - the standalone non-deep-learning baseline report. The only
+  document this repo builds; there is no slide deck.
 - `figures/plot_<name>.py` - one script per figure, each taking `--output
   <path>` and writing exactly that path. Shared style lives in
   `figures/_figcommon.py`; scripts import it rather than setting `rcParams`.
@@ -191,14 +190,10 @@ on disk, add `<name>` to `FIGURES` in the `Snakefile`, and list it under the
 documents that show it in `DOCUMENT_FIGURES`. `tests/test_report_build.py`
 fails if those drift apart in either direction.
 
-Two build-time invariants worth knowing, because neither is obvious:
+One build-time invariant worth knowing, because it is not obvious:
 
 - **Figures must be deterministic.** Seed any RNG. The DAG's caching is only
   trustworthy if a rebuild of unchanged inputs is a no-op.
-- **A slide must fit one page.** Typst silently continues an overlong slide
-  onto another page, so `scripts/check_slide_pages.py` compares headings to
-  PDF pages and fails the build. If it fires, shrink the content or the
-  figure -- do not raise the page budget.
 
 Snakemake comes from PyPI: it has no conda-forge win-64 build. Local
 `--cores` execution is what is exercised here; the cluster executors are the
