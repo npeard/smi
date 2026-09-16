@@ -16,10 +16,13 @@ import torch
 from smi.analysis.baseline_fit import (
     DRIVE_KEY,
     PD_WAVELENGTHS_UM,
+    envelope_forward_model_residual,
     evaluate_dataset,
     fit_phase_amplitude,
     forward_model_residual,
+    fringe_matched_window,
     inverse_fit,
+    joint_gain_fit,
     measure_phase_drift,
     windowed_forward_model_residual,
 )
@@ -621,3 +624,194 @@ def test_measure_phase_drift_refuses_a_single_window():
 
     with pytest.raises(ValueError, match='at least 2 windows'):
         measure_phase_drift(signal, displacement, 0.635, window_samples=512)
+
+
+class TestJointGainFit:
+    """The multi-wavelength joint fit: one shared gain, free amplitude/phase.
+
+    The mirror moves once. Three lasers watch that one motion at different
+    wavelengths, through different optics and detectors. So the displacement
+    scale is shared and the amplitude and phase are not, and a known-answer
+    test has to check the shared quantity is the one recovered.
+    """
+
+    def test_recovers_a_known_shared_gain(self) -> None:
+        """Synthesize three channels at one gain; the fit must find it."""
+        n = 8192
+        true_gain = 1.13
+        displacement = _band_limited_displacement(n, seed=21, amplitude_um=0.9)
+        wavelengths = tuple(PD_WAVELENGTHS_UM.values())
+        amplitudes = (0.40, 0.25, 0.60)
+        phases = (0.3, -1.9, 2.4)
+        signals = np.stack(
+            [
+                a * np.cos(4.0 * np.pi * true_gain / lam * displacement + p)
+                for lam, a, p in zip(wavelengths, amplitudes, phases, strict=True)
+            ]
+        )
+
+        fit = joint_gain_fit(signals, displacement, wavelengths)
+
+        assert fit.gain == pytest.approx(true_gain, abs=2e-3)
+        assert fit.r_squared > 0.999
+        for got, want in zip(fit.amplitudes, amplitudes, strict=True):
+            assert got == pytest.approx(want, rel=0.02)
+
+    def test_per_channel_phases_are_free(self) -> None:
+        """Three very different phases must all be recovered, not averaged."""
+        n = 8192
+        displacement = _band_limited_displacement(n, seed=22, amplitude_um=0.8)
+        wavelengths = (0.635, 0.675, 0.515)
+        phases = (0.0, 2.0, -2.5)
+        signals = np.stack(
+            [
+                np.cos(4.0 * np.pi / lam * displacement + p)
+                for lam, p in zip(wavelengths, phases, strict=True)
+            ]
+        )
+
+        fit = joint_gain_fit(signals, displacement, wavelengths)
+
+        for got, want in zip(fit.phases, phases, strict=True):
+            wrapped = float(np.angle(np.exp(1j * (got - want))))
+            assert abs(wrapped) < 0.02
+
+    def test_single_channel_agrees_with_the_closed_form_solve(self) -> None:
+        """At gain 1 and one channel, this must reduce to the existing fit.
+
+        The joint fit is built on top of ``fit_phase_amplitude``, so one
+        channel at the unit gain has to reproduce it rather than approximate
+        it. If the two disagree the search is doing something extra.
+        """
+        n = 4096
+        displacement = _band_limited_displacement(n, seed=23, amplitude_um=0.6)
+        theta = 4.0 * np.pi / 0.635 * displacement
+        rng = np.random.default_rng(23)
+        signal = 0.3 * np.cos(theta + 0.9) + 0.02 * rng.standard_normal(n)
+
+        reference = fit_phase_amplitude(signal - signal.mean(), theta)
+        joint = joint_gain_fit(
+            signal[None, :], displacement, (0.635,), gain_bounds=(1.0, 1.0)
+        )
+
+        assert joint.gain == pytest.approx(1.0)
+        assert joint.amplitudes[0] == pytest.approx(reference.amplitude, rel=1e-9)
+        assert joint.r_squared == pytest.approx(reference.r_squared, abs=1e-9)
+
+    def test_beats_a_wrong_gain(self) -> None:
+        """The fitted gain must explain more than the unit gain does."""
+        n = 8192
+        true_gain = 1.2
+        displacement = _band_limited_displacement(n, seed=24, amplitude_um=1.4)
+        wavelengths = (0.635, 0.675, 0.515)
+        signals = np.stack(
+            [
+                np.cos(4.0 * np.pi * true_gain / lam * displacement + 0.4 * i)
+                for i, lam in enumerate(wavelengths)
+            ]
+        )
+
+        best = joint_gain_fit(signals, displacement, wavelengths)
+        unit = joint_gain_fit(
+            signals, displacement, wavelengths, gain_bounds=(1.0, 1.0)
+        )
+
+        assert best.r_squared > unit.r_squared + 0.2
+
+    def test_rejects_a_channel_wavelength_mismatch(self) -> None:
+        displacement = _band_limited_displacement(1024, seed=25)
+        signals = np.zeros((3, 1024))
+
+        with pytest.raises(ValueError, match='one wavelength per channel'):
+            joint_gain_fit(signals, displacement, (0.635, 0.675))
+
+
+class TestFringeMatchedWindow:
+    """Window length chosen by fringe count rather than by time."""
+
+    def test_faster_motion_gets_a_shorter_window(self) -> None:
+        """Twice the excursion is twice the fringes, so half the window."""
+        n = 16384
+        slow = _band_limited_displacement(n, seed=31, amplitude_um=0.4)
+        fast = slow * 4.0
+
+        assert fringe_matched_window(fast, 0.635) < fringe_matched_window(slow, 0.635)
+
+    def test_clipped_to_the_allowed_range(self) -> None:
+        """A nearly static shot must not ask for a window past the record."""
+        n = 16384
+        almost_still = _band_limited_displacement(n, seed=32, amplitude_um=1e-4)
+        very_fast = _band_limited_displacement(n, seed=33, amplitude_um=200.0)
+
+        assert fringe_matched_window(almost_still, 0.635) == 4096
+        assert fringe_matched_window(very_fast, 0.635) == 256
+
+    def test_spans_about_the_requested_fringe_count(self) -> None:
+        """A pure ramp has a known fringe rate, so the answer is checkable."""
+        n = 16384
+        # 10 um of travel at 0.635 um is 2*10/0.635 = 31.5 fringes over the
+        # record, so ~2 fringes is about n * 2 / 31.5 = 1040 samples.
+        displacement = np.linspace(0.0, 10.0, n)
+
+        window = fringe_matched_window(displacement, 0.635, fringes_per_window=2.0)
+
+        assert 900 < window < 1200
+
+
+class TestEnvelopeFit:
+    """W = 1024 windows with amplitude and phase varying polynomially."""
+
+    def test_recovers_a_linearly_tapered_amplitude(self) -> None:
+        """A ramping envelope is what a fixed-amplitude fit cannot follow.
+
+        The envelope model has the extra freedom precisely here, so it must
+        explain more of this signal than the fixed-amplitude windowed fit.
+        """
+        n = 16384
+        wavelength_um = 0.635
+        displacement = _band_limited_displacement(n, seed=41, amplitude_um=1.2)
+        envelope = np.linspace(1.0, 0.2, n)
+        signal = envelope * np.cos(4.0 * np.pi / wavelength_um * displacement)
+
+        fixed = windowed_forward_model_residual(signal, displacement, wavelength_um)
+        envelope_fit = envelope_forward_model_residual(
+            signal, displacement, wavelength_um
+        )
+
+        assert envelope_fit.r_squared > fixed.r_squared
+        assert envelope_fit.r_squared > 0.99
+
+    def test_degree_zero_reproduces_the_fixed_window_fit(self) -> None:
+        """Degree 0 is a constant amplitude and phase: the existing fit."""
+        n = 8192
+        displacement = _band_limited_displacement(n, seed=42, amplitude_um=0.9)
+        rng = np.random.default_rng(42)
+        signal = np.cos(4.0 * np.pi / 0.635 * displacement) + (
+            0.05 * rng.standard_normal(n)
+        )
+
+        fixed = windowed_forward_model_residual(signal, displacement, 0.635)
+        deg0 = envelope_forward_model_residual(signal, displacement, 0.635, degree=0)
+
+        assert deg0.r_squared == pytest.approx(fixed.r_squared, abs=1e-9)
+
+    def test_more_freedom_never_explains_less(self) -> None:
+        """Nested models: degree 2 must not score below degree 1."""
+        n = 8192
+        displacement = _band_limited_displacement(n, seed=43, amplitude_um=1.0)
+        rng = np.random.default_rng(43)
+        signal = np.linspace(1.0, 0.5, n) * np.cos(
+            4.0 * np.pi / 0.635 * displacement
+        ) + 0.05 * rng.standard_normal(n)
+
+        deg1 = envelope_forward_model_residual(signal, displacement, 0.635, degree=1)
+        deg2 = envelope_forward_model_residual(signal, displacement, 0.635, degree=2)
+
+        assert deg2.r_squared >= deg1.r_squared - 1e-9
+
+    def test_rejects_a_negative_degree(self) -> None:
+        displacement = _band_limited_displacement(2048, seed=44)
+        signal = np.cos(4.0 * np.pi / 0.635 * displacement)
+
+        with pytest.raises(ValueError, match='degree must be'):
+            envelope_forward_model_residual(signal, displacement, 0.635, degree=-1)
