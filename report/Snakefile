@@ -48,6 +48,18 @@ DOCUMENTS = sorted(DOCUMENT_FIGURES)
 
 THEME = "lib/theme.typ"
 
+# The results artifacts every baseline figure reads. Declared as figure inputs
+# so regenerating them rebuilds the figures that quote them: without this the
+# DAG only watches the scripts, and a regenerated artifact leaves stale figure
+# PDFs beside a document whose tables have moved. Listed for all figures
+# rather than per figure because the set is small and a figure that ignores
+# them is only rebuilt spuriously, while one omitted from the list is wrong.
+DATA_DIR = REPORT_DIR.parent / "smi" / "analysis" / "data"
+RESULTS = [
+    str(DATA_DIR / "baseline_results.json"),
+    str(DATA_DIR / "gain_sweep_results.json"),
+]
+
 # Without this, the unconstrained {document} wildcard in `rule document` also
 # matches "figures/<name>", so Snakemake evaluates a figure PDF as a candidate
 # document output and its input function raises KeyError on every run. Pinning
@@ -71,6 +83,7 @@ rule figure:
     input:
         script="figures/plot_{name}.py",
         common="figures/_figcommon.py",
+        results=RESULTS,
     output:
         f"{FIGDIR}/{{name}}.pdf",
     shell:
