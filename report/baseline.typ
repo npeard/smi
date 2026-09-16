@@ -161,7 +161,7 @@ unobservable and penalizing it would measure nothing.
     [disp. RMSE (um)],
     [vel. RMSE (um/ms)],
     [disp. NRMSE],
-    [corr.],
+    [Pearson r (disp.)],
   ),
   [free space], [0.433], [0.488], [1.10], [0.53],
   [mm fiber], [0.462], [0.550], [1.18], [0.42],
@@ -172,8 +172,19 @@ space) and 0.379 um (mm fiber), and the true velocity RMS is 0.373 and
 0.377 um/ms. The NRMSE column divides each shot's displacement error by the
 standard deviation of that shot's true displacement, so NRMSE above 1 means
 the decode is worse than predicting zero -- and both acquisitions sit just
-above 1. The displacement correlations, 0.53 and 0.42, say the decode is not
-noise: it tracks the real motion partway and then loses it.
+above 1.
+
+Two different statistics appear in this document and neither substitutes for
+the other. $R^2$ (used from section 4.2 onward) is the fraction of a signal's
+variance a fit explains, computed from a sum of squared residuals; it can go
+negative, and it says whether the *scale* of the fit matches the data.
+Pearson r, the last column above, is the linear correlation between the
+decoded and true displacement; it is scale-free and would score a decode that
+tracked the right shape at the wrong amplitude just as high as a perfect one.
+The Pearson r values here, 0.53 and 0.42, say the decode is not noise -- it
+tracks the real motion partway and then loses it -- but they say nothing
+about whether its amplitude is right. The disp. RMSE and NRMSE columns are
+what answer that.
 
 *These numbers are not retracted.* They are a valid statement about this
 inverse on this data, and they are the floor a learned model has to beat. What
@@ -227,67 +238,162 @@ document does not have a measurement that pins that.
 == What the fits look like on real shots
 
 Every number above is a median. A median $R^2$ of 0.715 does not say whether
-the fit follows individual fringes or is only correlated with them, so
-@fig-traces draws three shots and the fits themselves.
+the fit follows individual fringes or merely happens to land close to them on
+average, so @fig-traces draws three shots and the fits themselves.
 
 #fig(
   "baseline_shot_traces",
   width: 100%,
   caption: [
-    Method 1 on three free-space 635 nm shots, chosen by a rule rather than by
-    eye: over the same N = 1000 shots the table above was computed on, these
-    are the shots nearest the 10th, 50th and 95th percentile of displacement
-    peak-to-peak, which resolves to shots 203, 90 and 365. *Left:* the
-    drive-implied displacement for the whole 33.6 ms record, with the zoom
-    window shaded. *Right:* the photodiode trace inside that window, with the
-    global fit and the $W = 1024$ refit over it. The boxed numbers are
+    Method 1 on all three free-space channels, for three shots chosen by a
+    rule rather than by eye: over the same N = 1000 shots the table above was
+    computed on, these are the shots nearest the 10th, 50th and 95th
+    percentile of displacement peak-to-peak, which resolves to shots 203, 90
+    and 365. *Top row:* the drive-implied displacement for the whole 33.6 ms
+    record, with the zoom window marked. *Lower rows:* one channel each, with
+    the photodiode trace inside that window, the per-channel fit, and the
+    joint fit at one shared displacement gain $g$. The panel titles carry
     whole-shot values from the same functions that produced the table, not
-    read off the slice shown. The control is a median over 16 partner shots.
+    numbers read off the slice shown; the control is a median over 16 partner
+    shots at the same window length as the fit beside it.
   ],
 ) <fig-traces>
 
-The global fit is the dotted line, and the three panels are the collapse the
-old report described, one shot at a time. At 0.29 um peak-to-peak it holds a
-plausible amplitude and phase for the window shown and scores 0.69. At 1.51 um
-it is about half the measured amplitude and drifting out of step with it,
-at 0.15. At 3.74 um it has given up: 0.09, with an amplitude that no longer
-matches anything on the panel. What moves between the three is not the data's
-agreement with the model but how far the phase wanders inside one record --
-1.36, 1.81 and 2.73 fringes -- and a single fixed phase cannot follow any of
-that.
+The window here is fringe-matched rather than fixed: $W$ is scaled by each
+shot's own fringe rate so that every window spans about two fringes. That
+choice is the subject of the next subsection, and the panel titles state the
+$W$ each shot resolved to -- 4096 at low excursion down to 519 at high, on
+515 nm.
 
-The windowed refit is the solid line. At low and medium excursion it tracks
-the measured trace fringe for fringe: the medium panel has three full fringes
-in 1.5 ms and the refit finds all three, with peaks and zero crossings landing
-where the data puts them. That is what a windowed $R^2$ of 0.93 and 0.66 looks
-like, against controls of 0.55 and 0.29.
+Read down a column and the three channels agree about what is happening, which
+is itself the point: they are three independent detectors watching one mirror.
+At 0.29 um peak-to-peak all three follow the single slow fringe in the zoom,
+scoring 0.79, 0.91 and 0.65 against controls of 0.11, 0.25 and 0.26. At 1.51 um
+the 635 nm and 675 nm panels turn over three full fringes in 1.5 ms and the fit
+finds all three, with peaks and zero crossings landing where the data puts
+them: 0.68 and 0.72 against 0.29 and 0.33.
 
-The high-excursion panel is the weak one and is shown as such. The refit is
-still roughly in step near 11.6 and 12.7 ms, but through the middle of the
-window -- around 12.0 to 12.5 ms, where the mirror is moving fastest -- it
-runs nearly flat while the measured signal turns over three sharp fringes. The
-fitted phase has slipped against the real one within a single window. Its
-0.43, against a 0.26 control, is a gap of 0.17: still above the control, and
-well below what the same estimator achieves on the two smaller shots.
+At 3.74 um the fits are still above their controls on every channel but the
+margin has narrowed, and the panels show where it goes. On 635 nm and 675 nm
+the fit tracks the fringes it finds but misses the tallest peaks, and on
+515 nm -- which crosses the most fringes per micron of the three -- it follows
+the envelope while the measured signal turns over fringes the fit does not
+reproduce at all. That is the 515 nm weakness of the table, drawn rather than
+tabulated.
 
-This is the residual amplitude dependence of section 5, visible rather than
-inferred, and the panel also shows why a gain correction does not fix it:
-where the refit and the measurement are in step, their amplitudes agree.
-The mismatch is in phase, not in gain. The sharp flat-topped fringe
-peaks are a property of the fringe shape at high fringe rate, not detector
-clipping -- only 1 shot in 400 reaches the channel maximum, and the fraction
-of samples near a shot's extremes does not grow with excursion.
+The joint fit is the dashed line, and its shared gain is printed above each
+column: $g = 1.028$, $1.095$ and $1.036$ for the three shots. Those bracket
+the 1.10 to 1.13 the independent gain sweep of section 5 found by refitting
+each channel separately over a grid, which is a real cross-check -- two
+different estimators of the same mechanical scale, one using three
+wavelengths at once and one using each alone. The joint fit gains little over
+the per-channel fits here (0.70 against 0.67 on high-band 635 nm, and within
+0.01 elsewhere), for a reason the panels make visible: with amplitude and
+phase free in every window there is already enough freedom to absorb a gain
+error, so constraining the gain buys less than it would if the phase were
+held.
+
+*The fitted amplitude is biased low, and that bias is a symptom rather than a
+separate defect.* At fixed $W = 1024$ the ratio of fitted amplitude to the
+window's own amplitude ($sqrt(2)$ times its standard deviation) has median
+0.586 on high-band 635 nm and sits below 1 in 94% of windows. A one-directional
+bias, not mistracking, which would scatter about 1. The cause is in the
+estimator's algebra rather than in the detector: a least-squares amplitude
+attenuates toward zero when the regressor is wrong, because projecting the
+data onto a cosine whose phase is off by $epsilon$ recovers $A cos epsilon$
+and not $A$. Average that over a window in which the phase error wanders and
+the fitted amplitude comes out small. So the low amplitude measures the phase
+error, and an earlier version of this report was wrong to say that the
+amplitudes agree where the fit and the measurement are in step -- they agree
+only locally, and the whole-window amplitude is low precisely because the
+phase does not stay in step. A gain correction cannot fix it, because there is
+no gain error to fix.
+
+The sharp flat-topped fringe peaks are a property of the fringe shape at high
+fringe rate, not detector clipping -- only 1 shot in 400 reaches the channel
+maximum, and the fraction of samples near a shot's extremes does not grow with
+excursion.
 
 Three shots out of a thousand cannot establish a trend, and none is claimed
 here; the binned trend in section 5 does that over all of them. What these
 panels settle is the narrower question the medians leave open, which is
-whether the windowed fit follows real fringes or merely correlates with
-them. At low and medium excursion it follows them.
+whether the windowed fit follows real fringes or only tracks their general
+shape without matching them fringe for fringe. At low and medium excursion,
+on 635 nm and 675 nm, it follows them.
+
+=== Two ways to give the fit more room, each against its own control
+
+If the low amplitude is a phase-error symptom, then anything that reduces the
+phase error inside one fit should recover amplitude. Two candidates, both
+tried:
+
+/ fringe-matched $W$: scale the window by the shot's own fringe rate so every
+  window spans about two fringes, clipped to $[256, 4096]$. At a fixed $W$ a
+  quiet shot's window holds a third of a fringe and a loud one's holds a
+  dozen, so the phase has wildly different room to wander in each.
+/ slowly-varying envelope: keep $W = 1024$ and let the amplitude and phase
+  vary as a low-order polynomial in $t$ within each window, instead of
+  stepping discontinuously at every window edge.
+
+Both add fitting freedom, so both are scored against a scrambled-theta control
+recomputed *under that same freedom*. This matters more than it sounds. A fit
+with more parameters compared against a control with fewer is not a
+comparison, and getting that wrong is the error this document already had to
+retract once.
+
+#figure(
+  table(
+    columns: 5,
+    align: (left, right, right, right, right),
+    table.header(
+      [variant],
+      [$W$],
+      [$R^2$],
+      [control $R^2$],
+      [gap],
+    ),
+    [fixed window], [1024], [0.431], [0.258], [0.174],
+    [fringe-matched], [640], [0.672], [0.376], [*0.296*],
+    [envelope, degree 2], [1024], [0.750], [0.474], [0.275],
+  ),
+  caption: [
+    The three variants on the high-excursion shot (365), free-space 635 nm,
+    each with its own scrambled-theta control at its own window length and
+    parameter count. The gap is the only column that compares across rows.
+  ],
+)
+
+The envelope has the highest raw $R^2$ and is the weaker variant anyway. Its
+control rises almost as fast as it does, which is what a freedom that fits
+anything looks like, and on the low-excursion shot the effect is stark: the
+envelope's $R^2$ goes from 0.927 to 0.964 while its control goes from 0.547 to
+0.838, so the gap *falls* from 0.380 to 0.125. Most of what the envelope adds
+is capacity, not agreement. It also does nothing about the phase error, since
+it only lets the estimator describe a varying amplitude rather than find the
+right phase.
+
+The fringe-matched window is the honest improvement, and it is where this
+report's headline numbers for @fig-traces come from. It widens the
+high-excursion gap from 0.174 to 0.296, and it recovers the amplitude the
+fixed window was losing: the median amplitude ratio on that shot goes from
+0.586 to 0.883, with the fraction of windows below 1 falling from 94% to 81%.
+Amplitude recovered by shortening a window is the mechanism confirming itself,
+since nothing in the shortening touches amplitude directly.
+
+It is not free either. On the low-excursion shot the fringe-matched rule asks
+for $W = 4096$, and four windows in a record is few enough that the phase
+drift the windowing exists to absorb starts coming back: $R^2$ falls from
+0.927 to 0.794, though the control falls much further (0.547 to 0.111) so the
+gap in fact widens. The tables of section 4.2 stay at $W = 1024$ throughout,
+so they remain comparable to the committed artifact and to each other.
 
 #takeaway[
   Method 1 no longer says "the model does not explain this data". It says the
   global fit was the wrong estimator, and that once refit per window the model
   clears its own scrambled control by 0.18 to 0.53 depending on channel. The
+  fitted amplitude running low at large excursion is a further consequence of
+  the same phase error, not a separate gain problem: matching the window to
+  the fringe rate recovers it from 0.586 to 0.883 of the local amplitude. The
   remaining question is what the gap *fails* to close at large excursion, which
   is section 5.
 ]
