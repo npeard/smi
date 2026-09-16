@@ -70,12 +70,12 @@ def main() -> None:
 
     # (a) Method 1: per-channel explained variance, the model's own ceiling.
     #
-    # Three numbers per channel, because the windowed R^2 alone overstates the
-    # fit and the global one understates it. Bars are the windowed refit; the
-    # tick below each bar is the scrambled-theta control it has to clear, and
-    # the hollow marker is the global single-window fit -- the measurement an
-    # earlier draft of the report quoted on its own. The bar above its control
-    # tick is the claim.
+    # Three numbers per channel, because the windowed R^2 alone credits the
+    # fit with its own flexibility and the global one holds amplitude and
+    # phase fixed for 33.6 ms. Bars are the windowed refit; the tick below
+    # each bar is the scrambled-theta control it has to clear, and the hollow
+    # marker is the global single-window fit. The bar above its control tick
+    # is the claim; neither the bar nor the marker is one on its own.
     ax = axes[0]
     width = 0.26
     for offset, ((channel, wavelength_um), color) in enumerate(

@@ -37,12 +37,12 @@ model, or should the model actually be *fit* to each shot? Section 2 argues
 these are the same computation, which is why the simple option is also the
 rigorous one.
 
-An earlier draft of this document reported that the Michelson model explains
-only 9 to 38% of the photodiode variance even when handed the true
-displacement, and concluded that the model and the data disagree badly. That
-conclusion was an artifact of how the model was fit, and section 4 retracts
-it. The baseline's own error numbers stand; the diagnosis of what limits them
-has changed.
+It also answers the question that decides what a fit means: over how long a
+stretch of the record may the fit's amplitude and phase be held constant? In
+this data those two quantities drift within a single shot, so the answer
+changes what the same model, on the same shots, appears to explain. Sections 4
+and 5 measure that and separate it from the parts of the residual no choice of
+window reaches.
 
 = Likelihood versus fit
 
@@ -80,8 +80,9 @@ The equivalence hides $sigma^2$, and it also hides the choice of *what
 $theta$ is*. Treating the noise as fixed and known is what makes MSE and
 likelihood interchangeable. Deciding how many parameters the fit gets, and
 over how long a stretch of the record, is a separate decision that the
-equivalence says nothing about -- and it is the decision the earlier draft got
-wrong.
+equivalence says nothing about. It is also the decision that moves the numbers
+most, which is why section 3.1 states the interval before section 4 reports
+anything fit over one.
 
 = The two measurements
 
@@ -103,22 +104,35 @@ three-parameter least-squares solve -- cosine, sine, constant -- with a closed
 form. No optimizer, no initial guess, no convergence to check, and a global
 optimum by construction.
 
-The question the earlier draft did not ask is *over what interval*. Fitting
-one amplitude, phase and offset across the whole 33.6 ms record assumes those
-three quantities are constant for 33.6 ms. In this data they are not, and
-section 5 shows what that assumption costs. The fit is therefore reported two
-ways: globally, and refit independently in windows of $W = 1024$ samples
-(2.1 ms) with the residual and total variance pooled across windows into one
-$R^2$ per shot. Variances are pooled rather than per-window $R^2$ values
-averaged, and the pooled denominator uses the whole record's mean, so the
-windowed number is directly comparable to the global one.
+What the solve does not settle is *over what interval*. Fitting one amplitude,
+phase and offset across the whole 33.6 ms record assumes those three
+quantities are constant for 33.6 ms. In this data they are not, and section 5
+shows what that assumption costs. The fit is therefore reported two ways:
+globally, and refit independently in windows of $W$ samples with the residual
+and total variance pooled across windows into one $R^2$ per shot. Variances
+are pooled rather than per-window $R^2$ values averaged, and the pooled
+denominator uses the whole record's mean, so the windowed number is directly
+comparable to the global one.
+
+$W$ is *fringe-matched*: it is resolved for each shot and each channel so that
+one window spans about two fringes, clipped to $[256, 4096]$ samples. A fixed
+$W$ cannot serve both ends of this data, because a window holding a third of a
+fringe on the quietest shots holds a dozen on the loudest, and a measure whose
+window means something different in each excursion bin cannot be read across
+bins. This is the estimator behind every headline table and figure here, and
+the window each one came from is recorded per channel in the results
+artifact. Where a number is instead taken at a fixed $W$ -- the window sweep
+of section 4.2, the amplitude diagnosis of section 4.3 and the gain sweep of
+section 5.2, each for a reason stated where it appears -- the text says so.
 
 A shorter window fits more of anything, so a windowed $R^2$ reported alone is
 not a measurement. Every windowed number below therefore appears with a
-*scrambled-theta control*: the same window count and the same three parameters
-per window, but with the displacement taken from a different shot. The control
-is how much $R^2$ the fit buys from its own flexibility. What the model earns
-is the gap between the two.
+*scrambled-theta control*: the same $W$, the same window count and the same
+three parameters per window, but with the displacement taken from a different
+shot. Matching $W$ between the fit and its control is what makes the pair a
+comparison -- a fit with more fitting freedom than its control would be
+scored on the freedom. The control is how much $R^2$ the fit buys from that
+flexibility, and what the model earns is the gap between the two.
 
 == Method 2: multi-wavelength inverse
 
@@ -140,9 +154,10 @@ unobservable and penalizing it would measure nothing.
   width: 100%,
   caption: [
     *Left:* method 1's explained variance per channel, with displacement
-    known, N = 1000 shots per acquisition. Bars are the windowed refit at
-    $W = 1024$, the dash below each bar is the scrambled-theta control it has
-    to clear, and the hollow marker is the global single-window fit. *Middle:*
+    known, N = 1000 shots per acquisition. Bars are the windowed refit at a
+    fringe-matched $W$, the dash below each bar is the scrambled-theta control
+    it has to clear at that same $W$, and the hollow marker is the global
+    single-window fit. Read the bar against its dash, not its height. *Middle:*
     method 2's displacement error beside the RMS of the displacement it is
     trying to recover, N = 200. *Right:* the same error normalized by that
     RMS; the dashed line is the error a predictor that always outputs zero
@@ -182,14 +197,14 @@ Medians over N = 200. Both RMSEs are larger than the motion they measure:
   [mm fiber], [0.379], [0.377],
 ))
 
-The NRMSE column of the first table divides each shot's displacement error by
-the standard deviation of that shot's own true displacement. NRMSE above 1
-therefore means the decode is worse than predicting zero, and both
-acquisitions sit just above 1.
-
-*These numbers are not retracted.* They are a valid statement about this
-inverse on this data, and they are the floor a learned model has to beat. What
-has changed is the explanation of why the floor sits where it does.
+The NRMSE column divides each shot's displacement error by the standard
+deviation of that shot's own true displacement, so it says what the error is
+worth against the motion that shot contained. At NRMSE 1 the decode is as
+accurate as a predictor that always outputs zero. Both acquisitions sit just
+above 1, so on these shots the zero predictor is the more accurate of the two
+by 10 to 18%. A learned model that merely beat the decode's RMSE would still
+be worse than a constant, which makes the constant, not the decode, the bar
+that has to be checked.
 
 === $R^2$ and Pearson r are not interchangeable
 
@@ -198,27 +213,50 @@ Two statistics appear in this document and neither substitutes for the other.
 / $R^2$: the fraction of a signal's variance a fit explains, computed from a
   sum of squared residuals. It can go negative, and it is sensitive to *scale*:
   a fit at the wrong amplitude scores badly. Used from section 4.2 onward.
-/ Pearson r: the linear correlation between the decoded and the true
-  displacement. It is scale-free, so it would score a decode that tracked the
-  right shape at the wrong amplitude as highly as a perfect one. Used only in
-  the last column of the table above.
+/ Pearson r (disp.): the linear correlation between the decoded and the true
+  displacement, the last column of the table above. It is scale-free, so it
+  would score a decode that tracked the right shape at the wrong amplitude as
+  highly as a perfect one.
 
-So the Pearson r values of 0.53 and 0.42 say the decode is not noise: it
-tracks the real motion partway and then loses it. Whether its amplitude is
-right is a separate question, and the disp. RMSE and NRMSE columns are what
-answer it.
+Together they say more than either does alone. Pearson r of 0.53 and 0.42 puts
+the decode well clear of noise: it follows the real motion partway before
+losing it. The NRMSE just above 1 says that what it follows is not yet worth
+more than a constant. Both readings are true of the same decode, and a decode
+that recovered the shape at the wrong amplitude would look exactly like this.
 
-== Method 1: the fit was wrong, then the model is imperfect
+=== The limits of this measurement
 
-The one number to read here is the *gap*: the windowed $R^2$ minus the
-scrambled-theta control it has to clear. The gap is what the model earns over
-its own fitting flexibility, and it runs 0.18 to 0.53 across the six
-channel/acquisition combinations. Medians over N = 1000 shots, with the true
-displacement supplied, at the live coil-driver gain:
+This is one inverse on these two acquisitions. The decode resolves fringe
+ambiguity across the three wavelengths on a 1601-point displacement grid and
+differentiates for velocity; a finer grid, a different fringe-ambiguity
+strategy, or a smoother velocity estimate would each give a different number.
+The RMSEs above are a floor a learned model must clear. They are not a bound
+on classical processing. The sign caveat of section 3.2 applies: the overall
+sign of $d(t)$ is unobservable and is not scored.
+
+The decoder itself is sound on fringes the Michelson model generated: run on
+synthetic signals it recovers displacement to a median NRMSE below 0.06, with
+at least 75% of shots under 0.10, roughly twenty times better than it manages
+here. That bound is asserted by the test suite (`tests/test_baseline_fit.py`)
+and so is rechecked on every run. Those synthetic fringes carry no measurement
+noise and no within-shot phase drift, so the check establishes that the
+decoder is correct, not that it is noise-robust; section 6 returns to what
+that leaves open.
+
+== Method 1: does the Michelson model describe this data
+
+Method 1 is handed the true displacement, so what it fails to explain is the
+model's own disagreement with the measurement rather than any inverse's error.
+The measurement is the *gap*: the windowed $R^2$ minus the scrambled-theta
+control run at the same $W$. That difference is what the model earns over its
+own fitting flexibility. It is the column to read, because the windowed column
+alone credits the model with whatever a short window can fit for free, and
+that amount varies by channel. Medians over N = 1000 shots, at the live
+coil-driver gain:
 
 #align(center, table(
-  columns: 6,
-  align: (left, left, right, right, right, right),
+  columns: 7,
+  align: (left, left, right, right, right, right, right),
   stroke: 0.5pt + rgb("#d0d0d0"),
   table.header(
     [acquisition],
@@ -227,67 +265,88 @@ displacement supplied, at the live coil-driver gain:
     [windowed $R^2$],
     [control $R^2$],
     [*gap*],
+    [median $W$],
   ),
-  [free space], [635 nm], [0.171], [0.715], [0.298], [*0.42*],
-  [free space], [675 nm], [0.176], [0.629], [0.330], [*0.30*],
-  [free space], [515 nm], [0.080], [0.422], [0.238], [*0.18*],
-  [mm fiber], [635 nm], [0.479], [0.863], [0.332], [*0.53*],
-  [mm fiber], [675 nm], [0.166], [0.602], [0.315], [*0.29*],
-  [mm fiber], [515 nm], [0.303], [0.730], [0.252], [*0.48*],
+  [free space], [635 nm], [0.171], [0.726], [0.309], [*0.42*], [1042],
+  [free space], [675 nm], [0.176], [0.628], [0.328], [*0.30*], [1108],
+  [free space], [515 nm], [0.080], [0.503], [0.290], [*0.21*], [846],
+  [mm fiber], [635 nm], [0.479], [0.872], [0.335], [*0.54*], [1028],
+  [mm fiber], [675 nm], [0.166], [0.557], [0.283], [*0.27*], [1092],
+  [mm fiber], [515 nm], [0.303], [0.781], [0.314], [*0.47*], [834],
 ))
 
 Global is one fit across the whole 33.6 ms record. Windowed is the same three
-parameters refit every 1024 samples (2.1 ms). Control is that windowed fit run
-again with another shot's displacement, so it measures what the window count
-alone buys. Gap is windowed minus control.
+parameters refit per fringe-matched window. Control is that windowed fit run
+again against another shot's displacement at the same $W$. Gap is windowed
+minus control. The last column is the median $W$ the channel resolved to; the
+spread behind that median is wide, since $W$ tracks each shot's fringe rate --
+free-space 635 nm runs 688 to 2286 samples between its quartiles and reaches
+the clip at 4096 on the quietest shots.
 
-=== What the earlier draft claimed, and what replaces it
+The model clears its control on all six, by 0.21 to 0.54. The global column is
+a property of an estimator that holds amplitude and phase fixed for 33.6 ms,
+and it is in the table as the contrast that motivates windowing at all.
+Between the two columns the model gains nothing about the displacement: it is
+known throughout and identical in both. Only the interval over which amplitude
+and phase are held constant differs, and on these shots that interval is worth
+0.39 to 0.55 in $R^2$. Section 5 measures how the difference behaves against
+excursion, which is where it comes from.
 
-The earlier draft read the global column as a statement about the Michelson
-model, and concluded from its 0.080-0.479 that the model and the data
-disagree badly.
+=== Why a control is mandatory
 
-*The global column is retracted as a statement about the model.* It measures a
-three-parameter fit held fixed for 33.6 ms. Refitting those same three
-parameters every 2.1 ms raises the same shots to 0.42-0.86, and the model
-gained no new freedom about the displacement in between: the displacement was
-known throughout and identical in both columns. Only the interval over which
-amplitude and phase were held constant changed.
+A shorter window fits more of anything. Three free parameters per window,
+enough windows, and a cosine at the wrong phase will still track a photodiode
+trace some of the way -- which is why the windowed column read alone would
+credit the model with 0.28 to 0.34 of $R^2$ it did not earn. Those are the
+control values, measured by running the identical fit against a displacement
+that belongs to a different shot. On free-space 515 nm that is more than half
+the windowed number. No windowed $R^2$ appears anywhere in this document
+without its control beside it.
 
-The gap column replaces that claim. The model does describe this data, by 0.18
-to 0.53 over its own flexibility, and that is the strongest version of the
-claim this document supports.
+The control has to run at the fit's own $W$. Fringe-matching resolves $W$ per
+shot, so the fit's freedom varies from shot to shot; a control pinned at some
+other length measures a different estimator, and the difference between the
+two would mix agreement with fitting capacity in unknown proportion.
 
-=== Why the control is mandatory, and why $W = 1024$
+=== How the window length is chosen
 
-A shorter window fits more of anything, so the windowed column read alone
-would credit the model with its own flexibility: it overstates agreement by
-0.24 to 0.33, the control values themselves. No windowed $R^2$ appears in this
-document without its control beside it.
+$W$ spans about two fringes, clipped to $[256, 4096]$ samples, and both bounds
+are set by what the control does rather than by preference. Measured on the
+free-space above-3 um cohort, the control climbs from 0.006-0.010 at
+$W = 16384$ through 0.19-0.25 at $W = 1024$ to 0.56-0.71 at $W = 256$, while
+the real fit rises more slowly over the same range. At $W = 256$ the control is
+about two thirds of the real fit: a number quoted from there is mostly fitting
+capacity, and must never be read as agreement. That is the lower clip. At the
+upper clip the opposite failure appears -- four windows in a record leave the
+within-shot phase drift the windowing exists to absorb largely unabsorbed, and
+both curves fall toward zero together. The clip brackets the range where the
+gap is worth reading. These window-sweep numbers are recorded in
+`smi/analysis/baseline_fit.py` beside the clip constants they justify, rather
+than in the results artifacts.
 
-$W = 1024$ is chosen by the gap rather than by taste. On the
-largest-excursion cohort the control rises from 0.006-0.009 at $W = 16384$ to
-0.185-0.274 at $W = 1024$ to 0.569-0.681 at $W = 256$, while the real value
-rises more slowly. $W = 1024$ is where the difference between them is widest.
-A $W = 256$ number is mostly fitting capacity and must never be quoted as
-agreement.
+=== Per-channel caveats
 
-=== Per-channel caveat: free-space 515 nm is the weak case
+*Free-space 515 nm is the weak case.* It has the narrowest gap of the six,
+0.21, and the lowest global $R^2$ of the six, 0.080. Averaging the three
+free-space channels would report a gap near 0.31 and hide it, so every
+table in this document reports the channels separately. 515 nm crosses the most
+fringes per micron of the three wavelengths, which is the ordering to expect if
+the residual is a phase effect; this document has no measurement that pins that
+down.
 
-Free-space 515 nm has the narrowest gap of the six, 0.18, and the lowest
-global $R^2$, 0.080. Averaging the three free-space channels would report a
-gap near 0.30 and hide it, so this document reports the channels separately
-throughout.
-
-515 nm crosses the most fringes per micron of the three wavelengths, which is
-the ordering to expect if the residual is a phase effect. This document does
-not have a measurement that pins that down.
+*The mm-fiber 675 nm channel is the one to read carefully elsewhere.* Nothing
+in the table above is affected, because both columns there use the known
+displacement. But where a gain is fit per shot -- section 5.3 -- that channel
+picks a gain near twice the true one in 249 of 1000 shots, which re-aligns the
+fringe pattern by a whole fringe order and scores well without describing the
+motion. Its per-shot median $R^2$ of 0.336 is inflated by those aliases and is
+not evidence that the channel is fit better than the table says.
 
 == What the fits look like on real shots
 
-Every number above is a median. A median $R^2$ of 0.715 does not say whether
-the fit follows individual fringes or merely happens to land close to them on
-average, so @fig-traces draws three shots and the fits themselves.
+Every number above is a median over a thousand shots. A median $R^2$ does not
+say whether the fit follows individual fringes or merely happens to land close
+to them on average, so @fig-traces draws three shots and the fits themselves.
 
 #fig(
   "baseline_shot_traces",
@@ -307,11 +366,11 @@ average, so @fig-traces draws three shots and the fits themselves.
   ],
 ) <fig-traces>
 
-The window here is fringe-matched rather than fixed: $W$ is scaled by each
-shot's own fringe rate so that every window spans about two fringes. That
-choice is the subject of the next subsection, and the panel titles state the
-$W$ each shot resolved to -- 4096 at low excursion down to 519 at high, on
-515 nm.
+These are the estimator of section 4.2 applied shot by shot, so the panel
+titles state the $W$ each shot resolved to: on 515 nm, 4096 at low excursion
+down to 519 at high. A loud shot gets a shorter window because it crosses more
+fringes in the same time, which is what keeps one window's worth of
+accumulated phase error comparable between the three columns.
 
 Read down a column and the three channels agree about what is happening, which
 is itself the point: they are three independent detectors watching one mirror.
@@ -351,11 +410,9 @@ attenuates toward zero when the regressor is wrong, because projecting the
 data onto a cosine whose phase is off by $epsilon$ recovers $A cos epsilon$
 and not $A$. Average that over a window in which the phase error wanders and
 the fitted amplitude comes out small. So the low amplitude measures the phase
-error, and an earlier version of this report was wrong to say that the
-amplitudes agree where the fit and the measurement are in step -- they agree
-only locally, and the whole-window amplitude is low precisely because the
-phase does not stay in step. A gain correction cannot fix it, because there is
-no gain error to fix.
+error. Fit and data agree in amplitude locally, wherever they are in step; the
+whole-window amplitude runs low precisely where they do not stay in step. A
+gain correction cannot fix that, because there is no gain error to fix.
 
 The sharp flat-topped fringe peaks are a property of the fringe shape at high
 fringe rate, not detector clipping -- only 1 shot in 400 reaches the channel
@@ -369,11 +426,11 @@ whether the windowed fit follows real fringes or only tracks their general
 shape without matching them fringe for fringe. At low and medium excursion,
 on 635 nm and 675 nm, it follows them.
 
-=== Two ways to give the fit more room, each against its own control
+=== Why the fringe-matched window and not a smooth envelope
 
 If the low amplitude is a phase-error symptom, then anything that reduces the
-phase error inside one fit should recover amplitude. Two candidates, both
-tried:
+phase error inside one fit should recover amplitude. Two ways to give the fit
+that room, each measured against its own control:
 
 / fringe-matched $W$: scale the window by the shot's own fringe rate so every
   window spans about two fringes, clipped to $[256, 4096]$. At a fixed $W$ a
@@ -384,10 +441,11 @@ tried:
   stepping discontinuously at every window edge.
 
 Both add fitting freedom, so both are scored against a scrambled-theta control
-recomputed *under that same freedom*. This matters more than it sounds. A fit
-with more parameters compared against a control with fewer is not a
-comparison, and getting that wrong is the error this document already had to
-retract once.
+recomputed *under that same freedom*. A fit with more parameters compared
+against a control with fewer measures the parameters: on the comparison below,
+scoring both variants against the fixed window's own control would have made
+the envelope the clear winner on raw $R^2$ and the fringe-matched window the
+loser, which is the reverse of what a matched control shows.
 
 #figure(
   table(
@@ -420,38 +478,33 @@ is capacity, not agreement. It also does nothing about the phase error, since
 it only lets the estimator describe a varying amplitude rather than find the
 right phase.
 
-The fringe-matched window is the honest improvement, and it is where this
-report's headline numbers for @fig-traces come from. It widens the
-high-excursion gap from 0.174 to 0.296, and it recovers the amplitude the
-fixed window was losing: the median amplitude ratio on that shot goes from
+The fringe-matched window is the variant that earns its freedom, and it is the
+estimator every table in this document uses. It widens the high-excursion gap
+from the fixed window's 0.174 to 0.296, and it recovers the amplitude the
+fixed window was losing: the median amplitude ratio on that shot rises from
 0.586 to 0.883, with the fraction of windows below 1 falling from 94% to 81%.
 Amplitude recovered by shortening a window is the mechanism confirming itself,
 since nothing in the shortening touches amplitude directly.
 
-It is not free either. On the low-excursion shot the fringe-matched rule asks
-for $W = 4096$, and four windows in a record is few enough that the phase
-drift the windowing exists to absorb starts coming back: $R^2$ falls from
-0.927 to 0.794, though the control falls much further (0.547 to 0.111) so the
-gap in fact widens. The tables of section 4.2 stay at $W = 1024$ throughout,
-so they remain comparable to the committed artifact and to each other.
+The improvement is not uniform. On the low-excursion shot the rule asks for
+$W = 4096$, the clip's upper bound, and four windows in a record is few enough
+that the phase drift the windowing exists to absorb starts coming back: $R^2$
+there is 0.794 against the fixed window's 0.927. The control falls much
+further over the same change, 0.547 to 0.111, so the gap still widens -- but
+the raw $R^2$ at the top of the clip is the one place where a shorter fixed
+window scores higher, and reading those two numbers without their controls
+would invert the conclusion.
 
 #takeaway[
-  Method 1 no longer says "the model does not explain this data". It says the
-  global fit was the wrong estimator, and that once refit per window the model
-  clears its own scrambled control by 0.18 to 0.53 depending on channel. The
-  fitted amplitude running low at large excursion is a further consequence of
-  the same phase error, not a separate gain problem: matching the window to
-  the fringe rate recovers it from 0.586 to 0.883 of the local amplitude. The
-  remaining question is what the gap *fails* to close at large excursion, which
-  is section 5.
+  Method 1 says the Michelson model describes this data when its amplitude and
+  phase are fit over intervals short enough for them to be constant: refit per
+  fringe-matched window, the model clears its own scrambled control by
+  0.21 to 0.54 depending on channel. The fitted amplitude running low at large
+  excursion is a consequence of the same phase error rather than a separate
+  gain problem, and matching the window to the fringe rate recovers it from
+  0.586 to 0.883 of the local amplitude. What the gap *fails* to close at
+  large excursion is section 5.
 ]
-
-The synthetic control is what keeps the blame off the decoder. The same
-decoder, run on signals genuinely generated by the Michelson forward model,
-recovers displacement to a median NRMSE below 0.06 with at least 75% of shots
-under 0.10 -- roughly twenty times better than it manages on real shots. That
-bound is asserted by the test suite (`tests/test_baseline_fit.py`) and so is
-re-checked on every run, rather than being a number remembered from a session.
 
 = What limits the fit
 
@@ -461,25 +514,28 @@ re-checked on every run, rather than being a number remembered from a session.
   caption: [
     Method-1 median $R^2$ binned by the drive's peak-to-peak displacement
     excursion, per channel and per acquisition, N = 1000 shots each. The
-    dotted line is the global fit, the solid line the windowed refit at
-    $W = 1024$, the dashed line the scrambled-theta control, and the shaded
-    band the gap between the last two. The global fit collapses toward zero
-    above 2 um in all six panels; the windowed fit does not.
+    dotted line is the global fit, the solid line the windowed refit at a
+    fringe-matched $W$, the dashed line the scrambled-theta control at that
+    same $W$, and the shaded band the gap between the last two. Because $W$
+    tracks each shot's fringe rate it shortens as excursion grows: each panel
+    states the median and interquartile range of the $W$ its own numbers came
+    from. The global fit collapses toward zero above 2 um in all six panels;
+    the windowed fit does not.
   ],
 )
 
 Binning the method-1 fits by how far the speaker actually moved separates
-three effects that the single global number confounded. The next three
+three effects that any aggregate median blends together. The next three
 subsections take them in the order they matter.
 
-== The global fit was the wrong estimator
+== The interval the fit holds its parameters over
 
 The global curve falls from 0.453-0.730 in the smallest bin to
 0.014-0.047 above 3 um, and does so in all six channel/acquisition
-combinations. The windowed curve over the same shots stays at 0.265-0.777 in
-that top bin, against controls of 0.186-0.280. Nothing about the model or the
-displacement changed between those two curves; only the interval over which
-amplitude and phase were held fixed.
+combinations. The windowed curve over the same shots stays at 0.510-0.867 in
+that top bin, against controls of 0.365-0.400. Nothing about the model or the
+displacement differs between those two curves; only the interval over which
+amplitude and phase are held fixed.
 
 The fringe phase and the fringe contrast both wander within a shot, and those
 are the two quantities the global fit holds constant. Within-shot drift of 1
@@ -527,11 +583,19 @@ targets are derived rather than measured: everything downstream inherits this
 calibration's accuracy, and its accuracy is now measured at the 5-13% level
 rather than assumed.
 
-It is secondary to the estimator problem, for two reasons the sweep itself
-supplies. First, the correction it buys shrinks once the estimator is right:
-windowed $R^2$ moves only 0.712 -> 0.767, 0.626 -> 0.651 and 0.422 -> 0.435
+It is secondary to the interval the fit spans, for two reasons the sweep
+itself supplies. First, the correction it buys shrinks once amplitude and
+phase are refit per window: windowed $R^2$ moves only 0.712 -> 0.767,
+0.626 -> 0.651 and 0.422 -> 0.435
 in free space, and 0.860 -> 0.883, 0.600 -> 0.617 and 0.726 -> 0.746 in the
-fiber. Second, the best gain is *not* consistent between the two
+fiber. The sweep's windowed measure is taken at a fixed $W = 1024$ rather than
+fringe-matched, and has to be: the swept gain scales the displacement, so it
+scales the fringe rate, and a window matched to that rate would change length
+along the very axis the sweep varies. A curve whose estimator moves with its
+x-axis locates nothing. These six numbers are therefore the sweep's own
+measure and are not comparable to the fringe-matched tables of section 4.2;
+what they establish is the *size* of the gain's effect, and that is the claim
+being made. Second, the best gain is *not* consistent between the two
 acquisitions -- 16.50 against 15.50 at 635 nm, 16.25 against 15.75 at 675 nm,
 16.00 against 15.25 at 515 nm, a disagreement of 3.2 to 6.5%. Drive-to-
 displacement gain is a property of the speaker, not of the optical path, so a
@@ -614,10 +678,10 @@ and produces an NRMSE in the hundreds -- the maxima are 262 and 267 -- which
 drags the mean without describing any typical shot. Every headline number in
 this document is a median for that reason.
 
-*Never quote a windowed $R^2$ without its control.* At $W = 1024$ the controls
-run 0.238 to 0.332 overall and 0.186 to 0.280 in the largest-excursion bin.
-Those are not negligible, and a windowed figure reported alone credits the
-model with them.
+*Never quote a windowed $R^2$ without its control.* The controls run
+0.28 to 0.34 overall and 0.37 to 0.40 in the largest-excursion bin. Those are
+not negligible, and a windowed figure reported alone credits the model with
+them.
 
 *The synthetic control is noiseless.* It has no measurement noise and no
 within-shot phase drift, so it establishes that the decoder is sound on clean
@@ -628,9 +692,10 @@ cannot separate those two.
 
 *The fiber gap does not appear here.* Free space and mm fiber are comparable
 at this level of performance -- 0.433 against 0.462 um displacement RMSE,
-1.10 against 1.18 NRMSE. Method 1 favors the fiber in two windowed channels of
-three (0.863 against 0.715 at 635 nm, 0.730 against 0.422 at 515 nm, and
-0.602 against 0.629 at 675 nm). Whatever makes the fiber path harder for a
+1.10 against 1.18 NRMSE. Method 1 favors the fiber on two of the three
+channels by gap over control (0.54 against 0.42 at 635 nm and 0.47 against
+0.21 at 515 nm, with free space ahead only at 675 nm, 0.30 against 0.27).
+Whatever makes the fiber path harder for a
 learned model is not visible in the baseline. The band-limiting below is real
 in the raw data; it is not costing the baseline anything measurable.
 
@@ -678,8 +743,9 @@ rather than assumed.
 
 Method 1 establishes two further things, at N = 1000. The Michelson forward
 model does describe this data when it is fit over intervals short enough for
-its amplitude and phase to be constant: windowed $R^2$ of 0.42 to 0.86 against
-scrambled controls of 0.24 to 0.33. And the drive-to-displacement calibration
+its amplitude and phase to be constant: windowed $R^2$ of 0.50 to 0.87 against
+scrambled controls of 0.28 to 0.34, a gap of 0.21 to 0.54 by channel. And the
+drive-to-displacement calibration
 carries a real gain error of 5 to 13%, so the supervision targets are
 systematically small by about that much.
 
@@ -695,7 +761,9 @@ And the residual amplitude dependence that survives a per-shot gain fit is
 unexplained -- measured, bounded, and open.
 
 The next steps are the inverse and the calibration, in that order. Improving
-the inverse is worth doing: method 2's NRMSE near 1.1 is now the binding
-number, because the model it inverts is no longer the thing that fails. Then
+the inverse is worth doing: method 2's NRMSE near 1.1 is the binding number,
+and the model it inverts is not what fails -- method 1 clears its control on
+every channel with the displacement supplied, so the loss is in the decode.
+Then
 settle `k`, which needs an experiment that can explain why two acquisitions of
 the same speaker prefer gains 3.2 to 6.5% apart.
