@@ -2,17 +2,22 @@
 """Method-1 fit quality against how far the speaker actually moved.
 
 The forward-model residual is computed with the displacement already known,
-so what it fails to explain is not an estimator's fault -- provided the
-estimator is the right one. It was not. The global fit forces a single
-amplitude, phase and offset across all 16384 samples, and that is what
+so what it fails to explain is a property of the estimator and the model, not
+of any inverse. The two estimators drawn here differ only in the interval
+over which amplitude and phase are held constant. The global fit forces a
+single amplitude, phase and offset across all 16384 samples, and that is what
 collapses with excursion: the longer the sweep, the more the fringe phase and
-contrast wander away from any one setting. Refitting in windows of 1024
-samples and pooling the variances recovers most of it.
+contrast wander away from any one setting. The windowed refit holds them
+constant only over a window spanning about two fringes -- W is resolved per
+shot per channel from that shot's own fringe rate, so the measure means the
+same thing in every excursion bin -- and pools the variances into one R^2.
 
 Three series per panel, because a windowed R^2 on its own is not evidence: a
-short window can fit anything, so the scrambled-theta control -- the same
-window count and the same three parameters, with the displacement taken from
-a different shot -- is what turns the windowed curve into a measurement. The
+short window can fit anything, so the scrambled-theta control -- the same W,
+the same window count and the same three parameters, with the displacement
+taken from a different shot -- is what turns the windowed curve into a
+measurement. Matching W between fit and control is not a detail: comparing a
+fit against a control with less fitting freedom measures the freedom. The
 *gap* between windowed and control is the claim; the shading draws it.
 
 Per channel and per acquisition, never averaged: free-space 515 nm has a gap
@@ -57,18 +62,30 @@ BIN_LABELS: dict[str, str] = {
 }
 
 # The three artifact keys this figure draws, with how each is styled. Order is
-# the reading order of the legend: what was reported, what the corrected
-# estimator gives, and the floor that corrected number has to clear.
+# the reading order of the legend: the single-window contrast, the windowed
+# measure, and the floor that measure has to clear.
+#
+# The windowed label is filled in from the artifact's own config rather than
+# written here, because a label naming a window the artifact was not
+# generated with is exactly the drift this figure cannot afford.
 SERIES: tuple[tuple[str, str, str, str], ...] = (
     ('r_squared_by_drive_ptp', 'global fit', COLORS['muted'], ':'),
-    ('r_squared_windowed_by_drive_ptp', 'windowed, W = 1024', COLORS['accent'], '-'),
+    ('r_squared_windowed_by_drive_ptp', '{windowed}', COLORS['accent'], '-'),
     (
         'r_squared_windowed_scrambled_by_drive_ptp',
-        'scrambled control',
+        'scrambled control, same W',
         COLORS['ch635'],
         '--',
     ),
 )
+
+
+def _windowed_label(config: dict) -> str:
+    """Legend label for the windowed series, from the artifact's config."""
+    if config.get('windowing') == 'fringe-matched':
+        fringes = config['fringes_per_window']
+        return f'windowed, W fringe-matched ({fringes:g} fringes)'
+    return f'windowed, W = {config["window_samples"]}'
 
 
 def _medians(channel_stats: dict, key: str, bin_keys: list[str]) -> np.ndarray:
@@ -88,6 +105,7 @@ def main() -> None:
     args = parse_args(__doc__ or '')
     results = json.loads(RESULTS_JSON.read_text(encoding='utf-8'))
     n_shots = results['config']['n_shots']
+    windowed_label = _windowed_label(results['config'])
 
     bin_keys = list(BIN_LABELS)
     x = np.arange(len(bin_keys), dtype=float)
@@ -131,7 +149,7 @@ def main() -> None:
                     color=color,
                     marker='o',
                     markersize=3,
-                    label=label,
+                    label=label.format(windowed=windowed_label),
                 )
 
             ax.set_ylim(0, 1.0)
@@ -140,6 +158,21 @@ def main() -> None:
                 ax.set_title(f'{wavelength_um * 1e3:.0f} nm')
             if col == 0:
                 ax.set_ylabel(f'{title}\nmedian $R^2$')
+            # A fringe-matched W differs per shot, so the panel has to say
+            # what window its own numbers came from. The median and the
+            # interquartile range are what the artifact records.
+            resolved = stats['window_samples_resolved']
+            ax.text(
+                0.97,
+                0.95,
+                f'W {resolved["median"]:.0f}\n({resolved["p25"]:.0f}-'
+                f'{resolved["p75"]:.0f})',
+                transform=ax.transAxes,
+                ha='right',
+                va='top',
+                fontsize=5.5,
+                color=COLORS['muted'],
+            )
             if row == len(BASELINE_DATASETS) - 1:
                 ax.set_xticks(x)
                 ax.set_xticklabels([BIN_LABELS[b] for b in bin_keys])

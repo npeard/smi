@@ -22,13 +22,16 @@ Two fit modes are drawn, and the difference between them is the physics:
   Three fringe rates differing by 31% pin a ``g`` that one channel alone would
   trade almost freely against a phase offset.
 
-The window length is fringe-matched rather than fixed (see
-``fringe_matched_window``): ``W`` is scaled by each shot's own fringe rate so
-every window spans about two fringes. At fixed ``W = 1024`` the fitted
-amplitude runs systematically under the data's local amplitude at high
-excursion -- median ratio 0.586, below 1 in 94% of windows -- because a
-least-squares amplitude attenuates toward zero when the phase regressor is
-wrong. Fringe-matching is what recovers it, to 0.883.
+The window length is fringe-matched (see ``fringe_matched_window``): ``W`` is
+scaled by each shot's own fringe rate so every window spans about two
+fringes, which is the same estimator the results artifact and every table in
+the report use -- ``_check_artifact_agreement`` fails the build if it is not.
+Matching the window to the fringe rate is also what keeps the fitted
+amplitude from attenuating at high excursion: a least-squares amplitude
+projects the data onto a cosine whose phase is off by ``eps`` and recovers
+``A*cos(eps)``, so a window holding a dozen fringes of accumulated phase
+error returns an amplitude well under the data's own. Both fit modes and the
+control use the one ``W``, so the three numbers on a panel are comparable.
 
 Shot selection is a rule, not a choice. Over the same first N = 1000 shots the
 committed artifact scored, each shot's displacement peak-to-peak is computed
@@ -53,6 +56,7 @@ A clipped channel would pile hundreds of samples on one rail.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -67,6 +71,7 @@ from _figcommon import (
     CHANNEL_COLORS,
     FREE_SPACE_H5,
     PD_CHANNELS,
+    RESULTS_JSON,
     apply_style,
     parse_args,
     read_shot,
@@ -75,6 +80,7 @@ from _figcommon import (
 )
 
 from smi.analysis.baseline_fit import (
+    DEFAULT_FRINGES_PER_WINDOW,
     fit_phase_amplitude,
     fringe_matched_window,
     joint_gain_fit,
@@ -332,9 +338,38 @@ def _annotate_scores(
     )
 
 
+def _check_artifact_agreement() -> None:
+    """Fail the build if the artifact's estimator is not the one drawn here.
+
+    This figure has to recompute -- it draws waveforms, and no summary
+    artifact holds any -- so nothing structural stops it from drawing a
+    different estimator than the tables report. Then two figures in one
+    document would both say "the windowed fit" and mean different things.
+    Reading the artifact's config and checking it is what keeps that honest.
+
+    Raises:
+        ValueError: If the artifact was generated with a different windowing
+            rule or a different fringes-per-window target.
+    """
+    config = json.loads(RESULTS_JSON.read_text(encoding='utf-8'))['config']
+    if config.get('windowing') != 'fringe-matched':
+        raise ValueError(
+            f'this figure draws a fringe-matched window, but '
+            f'{RESULTS_JSON.name} was generated with '
+            f'windowing={config.get("windowing")!r}; regenerate the artifact '
+            f'or the document will report two different estimators'
+        )
+    if config['fringes_per_window'] != DEFAULT_FRINGES_PER_WINDOW:
+        raise ValueError(
+            f'artifact targets {config["fringes_per_window"]} fringes per '
+            f'window, this figure {DEFAULT_FRINGES_PER_WINDOW}'
+        )
+
+
 def main() -> None:
     args = parse_args(__doc__ or '')
     apply_style()
+    _check_artifact_agreement()
 
     displacement, sample_rate = _displacements(N_SHOTS)
     selected = _select_shots(displacement)

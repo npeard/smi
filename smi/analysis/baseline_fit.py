@@ -26,8 +26,15 @@ R^2 understates the model's agreement with the data.
 :func:`windowed_forward_model_residual` refits per window of W samples and
 pools the variances into one comparable R^2 per shot. Both are reported. A
 windowed R^2 must always be quoted beside :func:`scrambled_theta_control`,
-which does the identical fit against a *different* shot's displacement and so
-measures the windowing's fitting capacity on its own.
+which does the identical fit against a *different* shot's displacement at the
+*same* W, and so measures the windowing's fitting capacity on its own.
+
+W itself is fringe-matched (:func:`fringe_matched_window`): it is resolved per
+shot per channel so every window spans about two fringes, because a fixed W
+holds a third of a fringe on the quietest shots and a dozen on the loudest and
+so does not mean the same thing across excursion bins. The artifact the
+baseline report reads is generated this way, so one estimator backs every
+table and figure in it.
 
 **Method 2 -- inverse fit** (:func:`inverse_fit`).
 Question answered: *how well can a classical estimator recover displacement
@@ -625,10 +632,21 @@ def joint_gain_fit(
 
 
 # Fringe-matched window bounds. Below 256 the three fitted parameters start to
-# explain a meaningful share of the window by themselves -- the measured
-# control at W = 256 is 0.57-0.68 on the largest-excursion cohort, which is
-# mostly fitting capacity. Above 4096 there are only four windows in a record
-# and the phase drift the windowing exists to absorb comes back.
+# explain a meaningful share of the window by themselves, so the number stops
+# measuring agreement. Measured on the free-space above-3 um cohort (54 shots
+# of the leading 400), median control against median real fit:
+#
+#     W       635 nm         675 nm         515 nm
+#     256     0.665 / 0.880  0.708 / 0.871  0.562 / 0.690
+#     1024    0.239 / 0.536  0.251 / 0.423  0.193 / 0.280
+#     4096    0.067 / 0.155  0.065 / 0.129  0.050 / 0.082
+#     16384   0.010 / 0.030  0.009 / 0.025  0.006 / 0.014
+#
+# At 256 the control is two thirds of the real fit: most of that R^2 is
+# fitting capacity and it must never be quoted as agreement. Above 4096 there
+# are only four windows in a record and the phase drift the windowing exists
+# to absorb comes back, taking both curves toward zero. The clip therefore
+# brackets the range over which the gap is worth reading at all.
 MIN_FRINGE_WINDOW = 256
 MAX_FRINGE_WINDOW = 4096
 DEFAULT_FRINGES_PER_WINDOW = 2.0
@@ -1309,6 +1327,13 @@ def _summary(values: np.ndarray) -> dict[str, float]:
 # '2+' top bin hid the distinction that matters.
 PTP_BIN_EDGES_UM = (0.0, 0.3, 1.0, 2.0, 3.0, np.inf)
 
+# How the windowed measure picks its window length. 'fringe-matched' resolves
+# W per shot per channel from that shot's own fringe rate, which is what the
+# report's artifact uses so every table in it means one estimator. 'fixed'
+# holds W at ``window_samples``, which is what the known-answer tests want:
+# their fringe rate is synthetic, so matching a window to it measures nothing.
+_WINDOWING_MODES = frozenset({'fringe-matched', 'fixed'})
+
 
 def binned_by_amplitude(
     scores: np.ndarray, ptp_um: np.ndarray
@@ -1333,6 +1358,97 @@ def binned_by_amplitude(
     return bins
 
 
+def _method1_channel(
+    signals: np.ndarray,
+    true_disp: np.ndarray,
+    scramble: np.ndarray,
+    wavelength_um: float,
+    ptp_um: np.ndarray,
+    windowing: str,
+    window_samples: int | None,
+) -> dict[str, Any]:
+    """Method-1 statistics for one channel over every shot.
+
+    Args:
+        signals: Photodiode samples for this channel, shape ``(n_shots, n)``.
+        true_disp: Drive-implied displacement per shot (um), same shape.
+        scramble: Shot index each shot borrows a control displacement from.
+        wavelength_um: This channel's laser wavelength (microns).
+        ptp_um: Per-shot displacement peak-to-peak, for the excursion bins.
+        windowing: ``'fringe-matched'`` or ``'fixed'``.
+        window_samples: Window length used when ``windowing='fixed'``.
+
+    Returns:
+        The per-channel block written into the artifact.
+    """
+    n_shots, n_time = signals.shape
+    rmses = np.empty(n_shots)
+    r2s = np.empty(n_shots)
+    rel = np.empty(n_shots)
+    windowed_r2s = np.empty(n_shots)
+    control_r2s = np.empty(n_shots)
+    resolved_w = np.empty(n_shots, dtype=np.int64)
+    for i in range(n_shots):
+        fit = forward_model_residual(signals[i], true_disp[i], wavelength_um)
+        rmses[i] = fit.rmse
+        r2s[i] = fit.r_squared
+        signal_rms = float(np.std(signals[i]))
+        rel[i] = fit.rmse / signal_rms if signal_rms > 0 else np.nan
+        # One W per shot per channel, resolved from *this* shot's own
+        # displacement and this channel's wavelength: a shot's fringe rate
+        # differs by 31% between 515 and 675 nm, so a per-shot W shared
+        # across channels would be fringe-matched for none of them.
+        shot_w = (
+            fringe_matched_window(true_disp[i], wavelength_um)
+            if windowing == 'fringe-matched'
+            else window_samples
+        )
+        resolved_w[i] = shot_w if shot_w is not None else n_time
+        windowed_r2s[i] = windowed_forward_model_residual(
+            signals[i], true_disp[i], wavelength_um, window_samples=shot_w
+        ).r_squared
+        # The control gets the *same* W as the fit it controls, resolved from
+        # this shot rather than from the displacement it borrows. Scoring a
+        # fit against a control that had a different amount of fitting
+        # freedom measures the freedom, not the agreement.
+        control_r2s[i] = scrambled_theta_control(
+            signals[i], true_disp[scramble[i]], wavelength_um, window_samples=shot_w
+        ).r_squared
+
+    return {
+        'wavelength_um': wavelength_um,
+        # What window the numbers below came from. A fringe-matched W is per
+        # shot, so no single number states it: the median and the range are
+        # what let a reader see the window without holding the per-shot array.
+        'window_samples_resolved': {
+            'median': float(np.median(resolved_w)),
+            'min': int(resolved_w.min()),
+            'max': int(resolved_w.max()),
+            'p25': float(np.percentile(resolved_w, 25)),
+            'p75': float(np.percentile(resolved_w, 75)),
+        },
+        'residual_rmse_volts': _summary(rmses),
+        'residual_rmse_fraction_of_signal_rms': _summary(rel),
+        'r_squared': _summary(r2s),
+        # The windowed refit measures model/data agreement and the global
+        # single-window fit is the contrast that motivates windowing, so both
+        # are reported side by side. The control is not optional -- short
+        # windows can fit almost anything, so a windowed R^2 reported without
+        # it is not evidence.
+        'r_squared_windowed': _summary(windowed_r2s),
+        'r_squared_windowed_scrambled': _summary(control_r2s),
+        # Binned by drive excursion because the aggregate R^2 hides the trend
+        # that matters: the forward model tracks small excursions better than
+        # large ones. Persisted rather than left to an ad-hoc session, so the
+        # claim can be checked against the artifact instead of taken on trust.
+        'r_squared_by_drive_ptp': binned_by_amplitude(r2s, ptp_um),
+        'r_squared_windowed_by_drive_ptp': binned_by_amplitude(windowed_r2s, ptp_um),
+        'r_squared_windowed_scrambled_by_drive_ptp': binned_by_amplitude(
+            control_r2s, ptp_um
+        ),
+    }
+
+
 def evaluate_dataset(
     file_path: Path,
     label: str,
@@ -1343,6 +1459,7 @@ def evaluate_dataset(
     grid_points: int = 1201,
     phase_grid_points: int = 16,
     window_samples: int | None = DEFAULT_WINDOW_SAMPLES,
+    windowing: str = 'fringe-matched',
 ) -> DatasetBaseline:
     """Run both baseline methods over a subset of one acquired HDF5 file.
 
@@ -1359,6 +1476,16 @@ def evaluate_dataset(
     disputes. Both counts are recorded so a reader can tell which N produced
     which table.
 
+    **The windowed measure is fringe-matched by default.** A fixed ``W``
+    spans a third of a fringe on the quietest shots and a dozen on the
+    loudest, so one window's worth of phase error is not comparable between
+    them and the measure means something different in each excursion bin.
+    :func:`fringe_matched_window` scales ``W`` by each shot's own fringe rate
+    instead, so every window holds about the same number of fringes. Pass
+    ``windowing='fixed'`` for the fixed-``W`` behaviour, which is what the
+    known-answer tests want: their fringe rate is synthetic, so matching a
+    window to it measures nothing.
+
     Args:
         file_path: Path to the acquisition HDF5 file.
         label: Short label recorded in the result.
@@ -1370,7 +1497,11 @@ def evaluate_dataset(
         device: Torch device for the method-2 decode.
         grid_points: Displacement grid resolution for method 2.
         phase_grid_points: Phase search resolution for method 2.
-        window_samples: Window length for method 1's windowed refit.
+        window_samples: Window length for method 1's windowed refit, used
+            only when ``windowing='fixed'``.
+        windowing: ``'fringe-matched'`` to resolve ``W`` per shot per channel
+            from that shot's own fringe rate, or ``'fixed'`` to use
+            ``window_samples`` for every shot.
 
     Returns:
         Aggregated statistics for this dataset.
@@ -1378,8 +1509,12 @@ def evaluate_dataset(
     Raises:
         ValueError: If fewer than two shots are available, which leaves the
             scrambled-theta control no other shot to borrow a displacement
-            from.
+            from, or if ``windowing`` is not one of the two accepted values.
     """
+    if windowing not in _WINDOWING_MODES:
+        raise ValueError(
+            f'windowing must be one of {sorted(_WINDOWING_MODES)}, got {windowing!r}'
+        )
     start = time.perf_counter()
     coil = CoilDriver()
     channels = list(PD_WAVELENGTHS_UM)
@@ -1427,58 +1562,19 @@ def evaluate_dataset(
         )
     scramble = np.roll(np.arange(n_shots), -1)
 
-    m1: dict[str, Any] = {}
-    for k, channel in enumerate(channels):
-        rmses = np.empty(n_shots)
-        r2s = np.empty(n_shots)
-        rel = np.empty(n_shots)
-        windowed_r2s = np.empty(n_shots)
-        control_r2s = np.empty(n_shots)
-        for i in range(n_shots):
-            fit = forward_model_residual(pd_raw[i, k], true_disp[i], wavelengths[k])
-            rmses[i] = fit.rmse
-            r2s[i] = fit.r_squared
-            signal_rms = float(np.std(pd_raw[i, k]))
-            rel[i] = fit.rmse / signal_rms if signal_rms > 0 else np.nan
-            windowed_r2s[i] = windowed_forward_model_residual(
-                pd_raw[i, k],
-                true_disp[i],
-                wavelengths[k],
-                window_samples=window_samples,
-            ).r_squared
-            control_r2s[i] = scrambled_theta_control(
-                pd_raw[i, k],
-                true_disp[scramble[i]],
-                wavelengths[k],
-                window_samples=window_samples,
-            ).r_squared
-        m1[channel] = {
-            'wavelength_um': float(wavelengths[k]),
-            'residual_rmse_volts': _summary(rmses),
-            'residual_rmse_fraction_of_signal_rms': _summary(rel),
-            'r_squared': _summary(r2s),
-            # The windowed refit is the corrected measure of model/data
-            # agreement and the global fit is what it replaces, so both are
-            # reported side by side: the contrast is the finding. The control
-            # is not optional -- short windows can fit almost anything, so a
-            # windowed R^2 reported without it is not evidence.
-            'r_squared_windowed': _summary(windowed_r2s),
-            'r_squared_windowed_scrambled': _summary(control_r2s),
-            # Binned by drive excursion because the aggregate R2 hides the
-            # trend that matters: the forward model tracks small excursions
-            # far better than large ones. Persisted rather than left to an
-            # ad-hoc session, so the claim can be checked against the
-            # artifact instead of taken on trust.
-            'r_squared_by_drive_ptp': binned_by_amplitude(
-                r2s, np.ptp(true_disp_centered, axis=1)
-            ),
-            'r_squared_windowed_by_drive_ptp': binned_by_amplitude(
-                windowed_r2s, np.ptp(true_disp_centered, axis=1)
-            ),
-            'r_squared_windowed_scrambled_by_drive_ptp': binned_by_amplitude(
-                control_r2s, np.ptp(true_disp_centered, axis=1)
-            ),
-        }
+    ptp_um = np.ptp(true_disp_centered, axis=1)
+    m1: dict[str, Any] = {
+        channel: _method1_channel(
+            pd_raw[:, k],
+            true_disp,
+            scramble,
+            float(wavelengths[k]),
+            ptp_um,
+            windowing,
+            window_samples,
+        )
+        for k, channel in enumerate(channels)
+    }
 
     # --- Method 2 ---------------------------------------------------------
     # The search grid must cover the true excursion with margin; use the
@@ -1571,6 +1667,7 @@ def run_baselines(
     grid_points: int = 1201,
     phase_grid_points: int = 16,
     window_samples: int | None = DEFAULT_WINDOW_SAMPLES,
+    windowing: str = 'fringe-matched',
 ) -> dict[str, Any]:
     """Evaluate both baselines on every configured dataset and write JSON.
 
@@ -1586,7 +1683,10 @@ def run_baselines(
         datasets: Mapping of label to file name under ``smi/analysis/data``.
         grid_points: Displacement grid resolution.
         phase_grid_points: Phase search resolution.
-        window_samples: Window length for method 1's windowed refit.
+        window_samples: Window length for method 1's windowed refit, used
+            only when ``windowing='fixed'``.
+        windowing: ``'fringe-matched'`` (default) or ``'fixed'``; see
+            :func:`evaluate_dataset`.
 
     Returns:
         The results dictionary that was written to disk.
@@ -1598,11 +1698,28 @@ def run_baselines(
         # 3: method 1 gained the windowed refit and its scrambled-theta
         # control, the excursion bins split 2+ into 2-3 and 3+, and the two
         # methods no longer share one shot count.
-        'schema_version': 3,
+        # 4: the windowed measure and its control are fringe-matched per shot
+        # per channel, so `window_samples` no longer describes them and each
+        # channel carries a `window_samples_resolved` distribution instead.
+        'schema_version': 4,
         'config': {
             'n_shots': n_shots,
             'n_shots_method2': n_shots_method2,
-            'window_samples': window_samples,
+            # What the windowed measure is. A reader who sees only
+            # `window_samples` would take the windowed columns for a
+            # fixed-window measure; under 'fringe-matched' that field is
+            # inactive and the per-channel `window_samples_resolved` block is
+            # what states the window the numbers came from.
+            'windowing': windowing,
+            'window_samples': window_samples if windowing == 'fixed' else None,
+            'fringes_per_window': (
+                DEFAULT_FRINGES_PER_WINDOW if windowing == 'fringe-matched' else None
+            ),
+            'window_clip_samples': (
+                [MIN_FRINGE_WINDOW, MAX_FRINGE_WINDOW]
+                if windowing == 'fringe-matched'
+                else None
+            ),
             'device': device,
             'batch_size': batch_size,
             'grid_points': grid_points,
@@ -1627,6 +1744,7 @@ def run_baselines(
             grid_points=grid_points,
             phase_grid_points=phase_grid_points,
             window_samples=window_samples,
+            windowing=windowing,
         )
         results['datasets'][label] = asdict(baseline)
         m2 = baseline.method2
@@ -1634,13 +1752,14 @@ def run_baselines(
             # Log the windowed number with its control attached, so even the
             # console output cannot quote one without the other.
             logger.info(
-                '  %s %s: method-1 median R^2 global %.3f -> windowed %.3f '
-                '(scrambled control %.3f)',
+                '  %s %s: method-1 median R^2 global %.3f, windowed %.3f '
+                '(scrambled control %.3f) at median W = %.0f',
                 label,
                 channel,
                 stats['r_squared']['median'],
                 stats['r_squared_windowed']['median'],
                 stats['r_squared_windowed_scrambled']['median'],
+                stats['window_samples_resolved']['median'],
             )
         logger.info(
             '  %s: method-2 median displacement RMSE %.4f um, '
@@ -1680,11 +1799,20 @@ def main(argv: list[str] | None = None) -> None:
         'Viterbi decode is ~5.85 s per shot on cuda:0.',
     )
     parser.add_argument(
+        '--windowing',
+        choices=sorted(_WINDOWING_MODES),
+        default='fringe-matched',
+        help="How method 1's windowed measure picks its window length. "
+        "'fringe-matched' (the default, and what the committed artifact "
+        "uses) scales W by each shot's own fringe rate; 'fixed' uses "
+        '--window-samples for every shot.',
+    )
+    parser.add_argument(
         '--window-samples',
         type=int,
         default=DEFAULT_WINDOW_SAMPLES,
-        help="Window length for method 1's windowed refit. Pass 0 to report "
-        'only the global fit.',
+        help="Window length for method 1's windowed refit under "
+        '--windowing=fixed. Pass 0 to report only the global fit.',
     )
     parser.add_argument(
         '--device',
@@ -1709,6 +1837,7 @@ def main(argv: list[str] | None = None) -> None:
         grid_points=args.grid_points,
         phase_grid_points=args.phase_grid_points,
         window_samples=args.window_samples or None,
+        windowing=args.windowing,
     )
 
 
