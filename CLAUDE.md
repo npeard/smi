@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with
 code in this repository.
 
-See `~/.claude/CLAUDE.md` (from `~/Documents/Projects/claude-config`) for
+See `~/.claude/CLAUDE.md` (from `~/Documents/Projects/agent-config`) for
 cross-project workflow, verification, and design preferences -- the numbered
 workflow spine, the coding standards, and the agent-evolution rules all live
 there. This file covers only what is specific to smi and does not restate the
@@ -54,13 +54,13 @@ Workflow-spine tasks (see the master CLAUDE.md's numbered spine):
 - `pixi run friction` - Recurring-friction miner, for step 7 and the `reflect`
   skill's detection half.
 - `pixi run toolgaps` - Missing standard tooling, plus an inventory of
-  claude-config assets available to adopt.
+  agent-config assets available to adopt.
 
 `friction` and `toolgaps` are deliberately **not** copied into this repo: both
 are cross-project by construction (friction mines `~/.claude/projects`
 transcripts against one shared ledger, because global transcripts need global
-suppression; toolgaps inventories claude-config's assets). They therefore
-depend on the sibling checkout at `~/Documents/Projects/claude-config`, which
+suppression; toolgaps inventories agent-config's assets). They therefore
+depend on the sibling checkout at `~/Documents/Projects/agent-config`, which
 is where both resolve it unconditionally. Without that layout these two tasks
 fail and nothing else is affected.
 

@@ -157,7 +157,7 @@ allow-dict-calls-with-keyword-arguments = true
 # (E402).
 "report/figures/*.py" = ["INP001", "E402"]
 # A different reason, kept separate from the block above: these two are copied
-# verbatim from ~/Documents/Projects/claude-config, where they are maintained
+# verbatim from ~/Documents/Projects/agent-config, where they are maintained
 # and linted. Reformatting them to this project's stricter rules would fork
 # them from upstream and make the next copy a merge, so the rules they trip
 # here are disabled rather than the files edited.
@@ -262,15 +262,15 @@ all = { depends-on = ["format", "lint", "ascii", "typecheck", "test"] }
 # and reads one shared decision ledger, because transcripts are global so
 # suppression has to be global too -- a per-project ledger would re-propose
 # classes already decided elsewhere. toolgaps likewise inventories
-# claude-config's assets to answer "does a fix already exist?". Copying either
+# agent-config's assets to answer "does a fix already exist?". Copying either
 # would fork a global tool and let the copies drift.
 #
 # The cost is a hard dependency on the sibling checkout living at
-# ~/Documents/Projects/claude-config, which is where both scripts resolve it
+# ~/Documents/Projects/agent-config, which is where both scripts resolve it
 # from unconditionally. On a machine without that layout these two tasks fail
 # and the rest of the project is unaffected.
-friction = "python ../Projects/claude-config/scripts/friction.py"
-toolgaps = "python ../Projects/claude-config/scripts/toolgaps.py"
+friction = "python ../Projects/agent-config/scripts/friction.py"
+toolgaps = "python ../Projects/agent-config/scripts/toolgaps.py"
 # Data-loading throughput measurement (smi/analysis/benchmark_loading.py).
 # Deliberately not part of `all`: it needs a CUDA GPU and takes minutes, and
 # its answer only changes when the model or the loader path changes.
