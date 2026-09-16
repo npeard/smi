@@ -161,15 +161,19 @@ def main() -> None:
             # A fringe-matched W differs per shot, so the panel has to say
             # what window its own numbers came from. The median and the
             # interquartile range are what the artifact records.
+            # Placed at the bottom left: every curve in every panel is above
+            # 0.2 at the left edge, so this corner is the one region no
+            # series occupies. The top right collides with the windowed
+            # curve, which reaches 0.87 on the fiber 635 nm panel.
             resolved = stats['window_samples_resolved']
             ax.text(
-                0.97,
-                0.95,
-                f'W {resolved["median"]:.0f}\n({resolved["p25"]:.0f}-'
+                0.03,
+                0.03,
+                f'W {resolved["median"]:.0f} ({resolved["p25"]:.0f}-'
                 f'{resolved["p75"]:.0f})',
                 transform=ax.transAxes,
-                ha='right',
-                va='top',
+                ha='left',
+                va='bottom',
                 fontsize=5.5,
                 color=COLORS['muted'],
             )
@@ -189,10 +193,21 @@ def main() -> None:
         f'{label} n = ' + '/'.join(str(n) for n in ns) for label, ns in counts.items()
     )
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc='outside lower center', ncol=4)
-    fig.supxlabel(
-        f'N = {n_shots} shots per acquisition (method 1). Shots per bin: {population}',
+    # The shot counts hang off the legend rather than going to supxlabel: a
+    # supxlabel is positioned independently of the legend box, and the
+    # windowed label is long enough that at this figure width the two
+    # overlapped. As the legend's title it is laid out with the legend.
+    fig.legend(
+        handles,
+        labels,
+        loc='outside lower center',
+        ncol=2,
         fontsize=7,
+        title=(
+            f'N = {n_shots} shots per acquisition (method 1).\n'
+            f'Shots per bin: {population}'
+        ),
+        title_fontsize=6.5,
     )
 
     save(fig, args.output)
