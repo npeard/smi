@@ -1,16 +1,34 @@
 #!/usr/bin/env python
-"""Three real shots, with the method-1 fits drawn on the waveforms.
+"""Three real shots on all three channels, with the method-1 fits drawn.
 
 Every other number in the baseline report is a summary statistic: a median
 $R^2$ per channel, a trend across excursion bins. None of them lets a reader
 see whether an $R^2$ of 0.49 means the fit tracks fringes or is coincidentally
 correlated. This figure shows the waveforms so that can be judged by eye.
 
-Left column is the displacement the drive voltage implies for that shot, with
-the zoom window shaded. Right column is the photodiode trace inside that
-window with the global fit and the windowed refit over it. Displacement (um)
-and photodiode signal (V) never share an axis -- two units on one axes is the
-chart mistake that makes both unreadable, so they get separate panels.
+Layout is channels down the rows and excursion bands across the columns, with
+the two fit modes overlaid on the measured trace. Displacement (um) gets its
+own top row rather than a second y-axis on a photodiode panel: two units on
+one axes is the chart mistake that makes both unreadable.
+
+Two fit modes are drawn, and the difference between them is the physics:
+
+- *individual*, each channel fit against the drive-implied displacement as
+  given, amplitude and phase free per window. What the report's tables score.
+- *joint*, one displacement scale factor ``g`` shared by all three channels
+  with amplitude and phase still free per channel. The mirror moves once and
+  three lasers observe that one motion, so the scale is a shared mechanical
+  quantity while the amplitude and phase are per-channel optics and detector.
+  Three fringe rates differing by 31% pin a ``g`` that one channel alone would
+  trade almost freely against a phase offset.
+
+The window length is fringe-matched rather than fixed (see
+``fringe_matched_window``): ``W`` is scaled by each shot's own fringe rate so
+every window spans about two fringes. At fixed ``W = 1024`` the fitted
+amplitude runs systematically under the data's local amplitude at high
+excursion -- median ratio 0.586, below 1 in 94% of windows -- because a
+least-squares amplitude attenuates toward zero when the phase regressor is
+wrong. Fringe-matching is what recovers it, to 0.883.
 
 Shot selection is a rule, not a choice. Over the same first N = 1000 shots the
 committed artifact scored, each shot's displacement peak-to-peak is computed
@@ -21,9 +39,9 @@ resolved indices are stated in the caption.
 
 Unlike the other baseline figures, this one reads the HDF5 directly rather
 than `baseline_results.json`: it has to show waveforms, and no summary
-artifact contains any. Cost is 1000 drive rows plus 3 photodiode rows, not a
+artifact contains any. Cost is 1000 drive rows plus 9 photodiode rows, not a
 whole channel (0.66 GB each). The fits are closed-form least squares, so
-recomputing them here is milliseconds and gives the same numbers the artifact
+recomputing them here is seconds and gives the same numbers the artifact
 reports.
 
 Note on the flat-topped fringe peaks: they are not detector clipping. Only 1
@@ -46,8 +64,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from _figcommon import (
-    COLORS,
+    CHANNEL_COLORS,
     FREE_SPACE_H5,
+    PD_CHANNELS,
     apply_style,
     parse_args,
     read_shot,
@@ -56,16 +75,17 @@ from _figcommon import (
 )
 
 from smi.analysis.baseline_fit import (
-    DEFAULT_WINDOW_SAMPLES,
-    DRIVE_KEY,
-    PD_WAVELENGTHS_UM,
     fit_phase_amplitude,
-    forward_model_residual,
-    measure_phase_drift,
+    fringe_matched_window,
+    joint_gain_fit,
     scrambled_theta_control,
     windowed_forward_model_residual,
 )
 from smi.synthetic.coil_driver import CoilDriver
+
+# Drive voltage channel. Named here rather than imported so this script does
+# not depend on which module happens to re-export it.
+DRIVE_KEY = 'RP1_CH1'
 
 # Matches the artifact's method-1 shot count, so the percentiles below are
 # taken over exactly the population the report's medians describe.
@@ -77,16 +97,12 @@ N_SHOTS = 1000
 # dataset, and so no shot is chosen by how its trace looks.
 BANDS: tuple[tuple[str, float], ...] = (('low', 10.0), ('medium', 50.0), ('high', 95.0))
 
-# The channel shown. 635 nm free space is the report's lead channel and the
-# one whose global/windowed/control numbers appear first in its table.
-CHANNEL = 'RP1_CH2'
-
 # Partners the scrambled-theta control is averaged over. The artifact pairs
 # each shot with the next one only, which is the right rule for a median over
-# 1000 shots but too noisy to annotate a single panel with: for shot 203 that
-# one partner happens to have almost the same peak-to-peak (0.28 against
-# 0.29 um) and scores 0.79, against 0.55 for the median over 16 partners and a
-# 0.45-0.71 spread across 200 of them. A single draw that high would
+# 1000 shots but too noisy to annotate a single panel with: a single-partner
+# control ranges 0.418-0.798 on the low band and correlates *negatively* with
+# the partner's own excursion (r = -0.63 to -0.75), because a low-excursion
+# partner supplies slowly-varying theta the fit absorbs easily. One draw would
 # understate the gap this figure is about. The median over the next 16 shots
 # is stable to within 0.01-0.02 from 8 partners to 32.
 N_CONTROL_PARTNERS = 16
@@ -96,6 +112,12 @@ N_CONTROL_PARTNERS = 16
 # resolved at the high one.
 ZOOM_MS = 1.5
 
+# Ink, not theme. The measured trace and the two fits need to be
+# distinguishable from each other and from the per-channel colors, and these
+# three are the same in any matplotlib style.
+MEASURED_COLOR = 'black'
+JOINT_COLOR = 'tab:gray'
+
 
 def _displacements(n_shots: int) -> tuple[np.ndarray, float]:
     """Drive-implied displacement for the first ``n_shots`` shots (um).
@@ -103,9 +125,12 @@ def _displacements(n_shots: int) -> tuple[np.ndarray, float]:
     Reads only the drive channel, which is what the selection rule needs; the
     photodiode rows are read one at a time later.
 
+    Args:
+        n_shots: Number of leading shots to read.
+
     Returns:
-        Tuple of (displacement array of shape ``(n_shots, n_time)``, mean
-        removed per shot, and the sample rate in Hz).
+        Tuple of (per-shot zero-mean displacement of shape
+        ``(n_shots, n_time)``, sample rate in Hz).
     """
     with h5py.File(FREE_SPACE_H5, 'r') as handle:
         sample_rate = float(handle.attrs['sample_rate'])
@@ -138,9 +163,9 @@ def _select_shots(displacement: np.ndarray) -> list[tuple[str, float, int, float
 
 
 def _reconstruct(
-    signal: np.ndarray, theta: np.ndarray, window_samples: int | None
+    signal: np.ndarray, theta: np.ndarray, window_samples: int
 ) -> np.ndarray:
-    """Fitted waveform ``A cos(theta + phi) + c``, globally or per window.
+    """Fitted waveform ``A cos(theta + phi) + c``, refit per window.
 
     This draws what the R^2 columns score. The fit is the same closed-form
     least squares the scoring functions use; only the reconstruction is done
@@ -149,15 +174,11 @@ def _reconstruct(
     Args:
         signal: Zero-mean photodiode samples (V).
         theta: Model phase, ``4*pi/lambda * displacement`` (radians).
-        window_samples: Window length, or ``None`` for one global fit.
+        window_samples: Window length in samples.
 
     Returns:
         The fitted waveform, same shape as ``signal``.
     """
-    if window_samples is None:
-        fit = fit_phase_amplitude(signal, theta)
-        return fit.amplitude * np.cos(theta + fit.phase) + fit.offset
-
     out = np.empty_like(signal)
     for begin in range(0, signal.size, window_samples):
         end = min(begin + window_samples, signal.size)
@@ -173,21 +194,27 @@ def _reconstruct(
 
 
 def _control_r2(
-    signal: np.ndarray, displacement: np.ndarray, index: int, wavelength_um: float
+    signal: np.ndarray,
+    displacement: np.ndarray,
+    index: int,
+    wavelength_um: float,
+    window_samples: int,
 ) -> float:
     """Median scrambled-theta control over ``N_CONTROL_PARTNERS`` partners.
 
-    Same windowed fit and same parameter count as the real one, with the
-    displacement taken from other shots, so what it explains is the
-    windowing's own fitting capacity. Extending the artifact's single-partner
-    pairing to a median over the next several shots, because one partner is
-    too noisy to annotate a panel with -- see ``N_CONTROL_PARTNERS``.
+    Same fit, same window length and same parameter count as the real one,
+    with the displacement taken from other shots, so what it explains is the
+    fit's own capacity rather than agreement with the data. The window length
+    is passed in rather than defaulted: the fringe-matched fit has more
+    freedom than the fixed-W one, and a control run at a different window
+    length would not be a control at all.
 
     Args:
         signal: Zero-mean photodiode samples for this shot (V).
         displacement: Per-shot displacement, shape ``(n_shots, n_time)``.
         index: Index of the shot being scored.
         wavelength_um: Laser wavelength for this channel (microns).
+        window_samples: Window length, matching the real fit exactly.
 
     Returns:
         The median control R^2.
@@ -195,7 +222,10 @@ def _control_r2(
     n_shots = displacement.shape[0]
     scores = [
         scrambled_theta_control(
-            signal, displacement[(index + 1 + offset) % n_shots], wavelength_um
+            signal,
+            displacement[(index + 1 + offset) % n_shots],
+            wavelength_um,
+            window_samples=window_samples,
         ).r_squared
         for offset in range(N_CONTROL_PARTNERS)
     ]
@@ -209,6 +239,13 @@ def _zoom_slice(displacement: np.ndarray, n_zoom: int) -> slice:
     error shows up as a visible slip rather than as a slow baseline wander.
     Deterministic: it is an argmax over a boxcar-smoothed speed, with no
     randomness and no manual nudging.
+
+    Args:
+        displacement: Displacement for one shot (um).
+        n_zoom: Zoom width in samples.
+
+    Returns:
+        The slice to draw.
     """
     speed = np.abs(np.gradient(displacement))
     smoothed = np.convolve(speed, np.ones(n_zoom) / n_zoom, mode='same')
@@ -217,118 +254,164 @@ def _zoom_slice(displacement: np.ndarray, n_zoom: int) -> slice:
     return slice(begin, begin + n_zoom)
 
 
+def _annotate_scores(
+    ax: plt.Axes, individual: float, joint: float, control: float, window: int
+) -> None:
+    """Title the panel with its three R^2 values, naming the quantity.
+
+    A number on a panel has to say what it is without the reader reaching for
+    the caption, so the quantity is spelled out rather than left as three bare
+    decimals. Above the axes rather than inside it: a box in the corner sits
+    on top of the waveform this figure exists to show, and at high excursion
+    the fringes fill the panel with nowhere for it to go.
+
+    Args:
+        ax: Axes to annotate.
+        individual: R^2 of the per-channel fit.
+        joint: R^2 at the joint fit's shared gain.
+        control: Median scrambled-theta control R^2.
+        window: Window length the three were computed at.
+    """
+    ax.set_title(
+        f'W = {window} | $R^2$ indiv. {individual:.2f} '
+        f'/ joint {joint:.2f} / ctrl {control:.2f}',
+        fontsize=6.5,
+    )
+
+
 def main() -> None:
     args = parse_args(__doc__ or '')
     apply_style()
 
-    wavelength_um = PD_WAVELENGTHS_UM[CHANNEL]
     displacement, sample_rate = _displacements(N_SHOTS)
     selected = _select_shots(displacement)
     n_zoom = int(ZOOM_MS * 1e-3 * sample_rate)
+    wavelengths = tuple(wavelength for _, wavelength in PD_CHANNELS)
 
+    # One row of displacement panels on top, then one row per channel.
     fig, axes = plt.subplots(
-        len(BANDS),
-        2,
-        figsize=(7.0, 6.0),
-        gridspec_kw={'width_ratios': [1.0, 1.7]},
-        constrained_layout=True,
+        len(PD_CHANNELS) + 1, len(BANDS), figsize=(7.2, 8.0), constrained_layout=True
     )
 
-    for row, (band, percentile, index, ptp) in enumerate(selected):
-        signal, _ = read_shot(FREE_SPACE_H5, CHANNEL, index)
-        signal = signal - signal.mean()
+    for column, (band, percentile, index, ptp) in enumerate(selected):
         shot_disp = displacement[index]
-        theta = 4.0 * np.pi / wavelength_um * shot_disp
-
-        # Whole-shot statistics, from the same functions that wrote the
-        # artifact's table, so the annotation and the report agree by
-        # construction rather than by transcription.
-        global_r2 = forward_model_residual(signal, shot_disp, wavelength_um).r_squared
-        windowed_r2 = windowed_forward_model_residual(
-            signal, shot_disp, wavelength_um
-        ).r_squared
-        control_r2 = _control_r2(signal, displacement, index, wavelength_um)
-        drift = measure_phase_drift(signal, shot_disp, wavelength_um).drift_fringes
-
-        global_fit = _reconstruct(signal, theta, None)
-        windowed_fit = _reconstruct(signal, theta, DEFAULT_WINDOW_SAMPLES)
-        times = time_axis(signal.size, sample_rate)
+        times = time_axis(shot_disp.size, sample_rate)
         window = _zoom_slice(shot_disp, n_zoom)
 
-        left = axes[row, 0]
-        left.plot(times, shot_disp, color=COLORS['drive'], linewidth=0.7)
-        left.axvspan(
+        # All three channels of this shot, read once, so the joint fit sees
+        # the same samples the panels draw.
+        signals = np.stack(
+            [read_shot(FREE_SPACE_H5, channel, index)[0] for channel, _ in PD_CHANNELS]
+        )
+        signals = signals - signals.mean(axis=1, keepdims=True)
+
+        # The shared gain is a whole-shot, whole-instrument quantity, so it is
+        # fit once per shot against all three channels at once. Global rather
+        # than windowed: with amplitude and phase refit per window there is
+        # enough freedom to absorb a gain error, and the search wanders to the
+        # bracket edge instead of finding the mechanical scale.
+        joint = joint_gain_fit(signals, shot_disp, wavelengths)
+
+        top = axes[0, column]
+        top.plot(times, shot_disp, color=MEASURED_COLOR, linewidth=0.7)
+        # The zoom is 1.5 ms of a 33.6 ms record, so a shaded span alone is a
+        # sliver that reads as a plotting artifact. Edge lines make it legible
+        # at the width this panel gets in the document.
+        top.axvspan(
             times[window.start],
             times[window.stop - 1],
-            color=COLORS['accent'],
-            alpha=0.15,
+            color='tab:red',
+            alpha=0.25,
             linewidth=0,
         )
-        left.set_ylabel(f'{band}\ndisplacement (um)')
-        left.set_title(
-            f'shot {index} (p{percentile:.0f}): {ptp:.2f} um ptp,\n'
-            f'drift {drift:.2f} fringes',
+        for edge in (window.start, window.stop - 1):
+            top.axvline(times[edge], color='tab:red', linewidth=0.6)
+        top.set_title(
+            f'{band}: shot {index} (p{percentile:.0f})\n'
+            f'{ptp:.2f} um ptp, joint g = {joint.gain:.3f}',
             fontsize=8,
         )
+        if column == 0:
+            top.set_ylabel('displacement (um)')
 
-        right = axes[row, 1]
-        right.plot(
-            times[window],
-            signal[window],
-            color=COLORS['drive'],
-            linewidth=1.0,
-            label='measured',
-        )
-        right.plot(
-            times[window],
-            global_fit[window],
-            color=COLORS['ch635'],
-            linewidth=1.0,
-            linestyle=':',
-            label='global fit',
-        )
-        right.plot(
-            times[window],
-            windowed_fit[window],
-            color=COLORS['accent'],
-            linewidth=1.0,
-            label='windowed fit, W = 1024',
-        )
-        right.set_ylabel('PD signal (V)')
-        # Whole-shot statistics annotated inside the panel rather than as a
-        # title: as one line of title text this overflows the axes width, and
-        # these numbers belong beside the trace they describe anyway. Ink
-        # color, not series colors, so it is not misread as a fourth series.
-        #
-        # Titled on the top row only. The box below says which three numbers
-        # these are, so repeating the header over every row spends ink on
-        # nothing -- the reader learns it once and carries it down the column.
-        if row == 0:
-            right.set_title('whole-shot $R^2$', fontsize=8)
-        right.annotate(
-            f'global {global_r2:.2f}\n'
-            f'windowed {windowed_r2:.2f}\n'
-            f'control {control_r2:.2f}',
-            xy=(0.015, 0.03),
-            xycoords='axes fraction',
-            ha='left',
-            va='bottom',
-            fontsize=7.5,
-            color='#333333',
-            bbox={
-                'boxstyle': 'round,pad=0.25',
-                'facecolor': 'white',
-                'edgecolor': '#d0d0d0',
-                'linewidth': 0.5,
-                'alpha': 0.9,
-            },
-        )
+        for row, ((_channel, wavelength_um), color) in enumerate(
+            zip(PD_CHANNELS, CHANNEL_COLORS, strict=True), start=1
+        ):
+            signal = signals[row - 1]
+            # Fringe-matched: W scaled so each window spans about two
+            # fringes, which is what keeps the fitted amplitude from
+            # attenuating at high excursion. Both fit modes and the control
+            # use the same W, so the three numbers are comparable.
+            window_samples = fringe_matched_window(shot_disp, wavelength_um)
 
-    axes[-1, 0].set_xlabel('time (ms)')
-    axes[-1, 1].set_xlabel('time (ms)')
+            theta = 4.0 * np.pi / wavelength_um * shot_disp
+            joint_theta = 4.0 * np.pi / wavelength_um * joint.gain * shot_disp
+            individual_fit = _reconstruct(signal, theta, window_samples)
+            joint_fit = _reconstruct(signal, joint_theta, window_samples)
 
-    handles, labels = axes[0, 1].get_legend_handles_labels()
-    fig.legend(handles, labels, loc='outside lower center', ncol=3)
+            individual_r2 = windowed_forward_model_residual(
+                signal, shot_disp, wavelength_um, window_samples=window_samples
+            ).r_squared
+            joint_r2 = windowed_forward_model_residual(
+                signal,
+                joint.gain * shot_disp,
+                wavelength_um,
+                window_samples=window_samples,
+            ).r_squared
+            control_r2 = _control_r2(
+                signal, displacement, index, wavelength_um, window_samples
+            )
+
+            ax = axes[row, column]
+            ax.plot(
+                times[window],
+                signal[window],
+                color=MEASURED_COLOR,
+                linewidth=0.9,
+                label='measured',
+            )
+            ax.plot(
+                times[window],
+                individual_fit[window],
+                color=color,
+                linewidth=0.9,
+                label='individual fit',
+            )
+            ax.plot(
+                times[window],
+                joint_fit[window],
+                color=JOINT_COLOR,
+                linewidth=0.9,
+                linestyle='--',
+                label='joint fit, shared g',
+            )
+            _annotate_scores(ax, individual_r2, joint_r2, control_r2, window_samples)
+            if column == 0:
+                ax.set_ylabel(f'{wavelength_um * 1e3:.0f} nm\nPD signal (V)')
+
+    for ax in axes[-1, :]:
+        ax.set_xlabel('time (ms)')
+
+    # The panel titles have to abbreviate to fit the column width, so the
+    # three quantities are named in the legend's own title. A reader must be
+    # able to learn what a number on a panel is without leaving the figure,
+    # and hanging the key off the legend is what keeps the layout engine
+    # aware of it -- a bare fig.text lands under the legend instead.
+    handles, labels = axes[1, 0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc='outside lower center',
+        ncol=3,
+        fontsize=8,
+        title=(
+            'panel titles: W = fringe-matched window (samples); whole-shot $R^2$ '
+            'for the per-channel\nfit (indiv.), the shared-gain joint fit (joint), '
+            f'and the scrambled-theta control (ctrl),\na median over '
+            f'{N_CONTROL_PARTNERS} partner shots at the same W.'
+        ),
+        title_fontsize=6.5,
+    )
 
     save(fig, args.output)
 
