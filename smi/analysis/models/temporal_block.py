@@ -102,15 +102,14 @@ class TemporalBlock(nn.Module):
             self.dropout,
         )
 
-        # 1x1 convolution for residual connection if input and output channels differ
-        self.downsample = (
-            nn.Conv1d(in_channels, out_channels, 1)
-            if in_channels != out_channels
-            else None
-        )
+        # Always project the residual, even when the channel count is unchanged.
+        # The conditional form gave equal-channel blocks a bare identity skip and
+        # unequal ones a learned projection, so depth and width interacted through
+        # a choice nobody made.
+        self.downsample = nn.Conv1d(in_channels, out_channels, 1)
         self.activation = self.activation_fn
 
     def forward(self, x: Tensor) -> Tensor:
         out = self.net(x)
-        res = x if self.downsample is None else self.downsample(x)
+        res = self.downsample(x)
         return self.activation(out + res)
