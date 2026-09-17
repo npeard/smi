@@ -284,16 +284,21 @@ class Mamba(nn.Module):
 
         # dt_proj bias initialised as in paper (log-uniform between dt_min, dt_max)
         dt_min, dt_max = 0.001, 0.1
-        for layer in self.layers:
+        for module in self.layers:
+            layer: MambaBlock = module  # ty: ignore[invalid-assignment]  # ModuleList iterates as Module; layers are all MambaBlock
             dt_init_std = layer.d_model**-0.5
             nn.init.uniform_(layer.dt_proj.weight, -dt_init_std, dt_init_std)
+            d_inner: int = layer.d_inner
             dt = torch.exp(
-                torch.rand(layer.d_inner) * (math.log(dt_max) - math.log(dt_min))
+                torch.rand((d_inner,)) * (math.log(dt_max) - math.log(dt_min))
                 + math.log(dt_min)
             )
             inv_dt = dt + torch.log(-torch.expm1(-dt))
             with torch.no_grad():
-                layer.dt_proj.bias.copy_(inv_dt)
+                # dt_proj is an nn.Linear with bias=True, so .bias is a
+                # Tensor; the annotation lets ty confirm .copy_ is callable.
+                bias: Tensor = layer.dt_proj.bias
+                bias.copy_(inv_dt)
 
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass through Mamba.
