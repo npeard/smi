@@ -359,4 +359,4 @@ h5py = "*"
 report = { cmd = "snakemake --cores all", cwd = "report" }
 report-dry = { cmd = "snakemake --cores all -n", cwd = "report" }
 report-clean = { cmd = "snakemake --cores 1 clean", cwd = "report" }
-report-baseline = { cmd = "snakemake --cores all build/baseline.pdf", cwd = "report" }
+report-only = { cmd = "snakemake --cores all build/report.pdf", cwd = "report" }

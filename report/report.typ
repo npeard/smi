@@ -1,6 +1,6 @@
 // Standalone report: what a non-learned baseline achieves on this data.
 //
-// Build:  pixi run report-baseline  (or, from report/: snakemake build/baseline.pdf)
+// Build:  pixi run report-only  (or, from report/: snakemake build/report.pdf)
 //
 // Every number in this document comes from smi/analysis/data/baseline_results.json
 // (method 1 and method 2, written by smi.analysis.baseline_fit) or from
@@ -767,3 +767,5 @@ every channel with the displacement supplied, so the loss is in the decode.
 Then
 settle `k`, which needs an experiment that can explain why two acquisitions of
 the same speaker prefer gains 3.2 to 6.5% apart.
+
+#bibliography("refs.bib")

@@ -3,7 +3,7 @@
 # Run from this directory:
 #     pixi run -e report snakemake --cores all
 # or, from anywhere in the repo, via the pixi tasks:
-#     pixi run report / report-dry / report-clean / report-baseline
+#     pixi run report / report-dry / report-clean / report-only
 #
 # Design notes
 #
@@ -28,7 +28,7 @@ FIGDIR = f"{BUILD}/figures"
 # figures" so a document only rebuilds when something it actually shows
 # changes.
 DOCUMENT_FIGURES = {
-    "baseline": [
+    "report": [
         "baseline_summary",
         "baseline_amplitude_trend",
         "baseline_shot_traces",
