@@ -150,6 +150,11 @@ dmypy.json
 # never triggers that file's ~40 min method-2 GPU decode.
 !smi/analysis/data/gain_sweep_results.json
 
+# Same reasoning again for the learned-baseline sweep: a few KB of computed
+# numbers that the comparison table reads, costing ~2.5 GPU-hours to
+# recompute. Regenerate with `python -m smi.analysis.run_baseline_sweep`.
+!smi/analysis/data/learned_results.json
+
 # Session-scoped agent scaffolding (specs, plans) -- durable rationale goes
 # in commit messages and code comments instead.
 docs/superpowers/
