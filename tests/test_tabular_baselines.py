@@ -56,7 +56,9 @@ def test_lightgbm_learns_a_nonlinear_relationship():
     rng = np.random.default_rng(0)
     x = rng.standard_normal((2048, 4))
     y = np.sign(x[:, 0]) * np.abs(x[:, 1])
-    model = fit_lightgbm(x, y, {'num_boost_round': 60, 'min_data_in_leaf': 5})
+    model = fit_lightgbm(
+        x, y, {'objective': 'regression', 'num_boost_round': 60, 'min_data_in_leaf': 5}
+    )
     rmse = np.sqrt(np.mean((predict_windows(model, x) - y) ** 2))
     assert rmse < 0.5 * np.std(y)
 
@@ -67,7 +69,7 @@ def test_lightgbm_and_ridge_share_a_prediction_shape():
     rng = np.random.default_rng(0)
     x = rng.standard_normal((128, 6))
     y = x @ rng.standard_normal(6)
-    booster = fit_lightgbm(x, y, {'num_boost_round': 5})
+    booster = fit_lightgbm(x, y, {'objective': 'regression', 'num_boost_round': 5})
     ridge = fit_ridge(x, y, alpha=1.0)
     assert predict_windows(booster, x).shape == (128,)
     assert predict_windows(ridge, x).shape == (128,)
@@ -88,3 +90,15 @@ def test_torch_and_the_tabular_stack_coexist():
     corr = np.corrcoef(rng.standard_normal(4096), rng.standard_normal(4096))[0, 1]
     assert np.isfinite(corr)
     assert torch.randn(8, 8).sum().isfinite()
+
+
+@pytest.mark.skipif(not LIGHTGBM_AVAILABLE, reason='lightgbm not installed')
+def test_fit_lightgbm_requires_an_explicit_objective():
+    """Omitting the objective is an error, not a silent 'regression'.
+
+    A caller who forgot it would otherwise get a model fitted to a loss they
+    never chose, and no signal that they had not chosen it.
+    """
+    rng = np.random.default_rng(0)
+    with pytest.raises(ValueError, match='objective'):
+        fit_lightgbm(rng.standard_normal((64, 3)), rng.standard_normal(64), {})

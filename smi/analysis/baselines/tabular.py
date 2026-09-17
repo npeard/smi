@@ -86,24 +86,36 @@ def fit_lightgbm(
     Args:
         x_train: [n_samples, n_features] training windows.
         y_train: [n_samples] targets.
-        params: LightGBM parameters. ``num_boost_round``, if present, is
-            consumed here rather than passed through, since LightGBM takes it
-            as a keyword argument and not as a parameter.
+        params: LightGBM parameters. Must include ``objective``: which loss
+            the trees descend is a modelling choice, and defaulting it here
+            would let a caller who forgot it silently get a different model
+            rather than an error. ``num_boost_round``, if present, is consumed
+            here rather than passed through, since LightGBM takes it as a
+            keyword argument and not as a parameter.
 
     Returns:
         The trained ``Booster``.
 
     Raises:
         ImportError: If lightgbm is not installed.
+        ValueError: If ``objective`` is absent from ``params``.
     """
     if not LIGHTGBM_AVAILABLE:
         raise ImportError(
             'lightgbm is required for fit_lightgbm; it lives in the `simple` '
             'pixi feature'
         )
+    if 'objective' not in params:
+        raise ValueError(
+            "params must name an 'objective'; it decides what is being fit, so "
+            'it is for the caller to state (e.g. "regression")'
+        )
     train_params = dict(params)
     num_boost_round = train_params.pop('num_boost_round', 100)
-    train_params.setdefault('objective', 'regression')
+    # Unlike `objective`, verbosity cannot change the fitted model -- it only
+    # decides whether LightGBM prints per-iteration chatter. Silence is the
+    # useful default under a sweep that trains hundreds of boosters, and a
+    # caller wanting the log can still pass its own `verbose`.
     train_params.setdefault('verbose', -1)
     dataset = lgb.Dataset(x_train, label=y_train)
     return lgb.train(train_params, dataset, num_boost_round=num_boost_round)
