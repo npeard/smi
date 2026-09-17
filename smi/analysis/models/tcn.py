@@ -144,9 +144,15 @@ class TCN(nn.Module):
     @property
     @torch.jit.unused
     def receptive_field(self) -> int:
-        """Calculate the receptive field of the TCN."""
+        """Receptive field in input samples.
+
+        Each TemporalBlock applies two convolutions at the same dilation, so a
+        block contributes twice (kernel_size - 1) * dilation, not once. The
+        trailing +1 is the centre sample itself.
+        """
         dilations = torch.tensor(self.config.temporal_dilations)
-        return int(torch.sum((self.config.kernel_size - 1) * dilations).item())
+        per_block = 2 * (self.config.kernel_size - 1) * dilations
+        return int(torch.sum(per_block).item()) + 1
 
     @property
     @torch.jit.unused
