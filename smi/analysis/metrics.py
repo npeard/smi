@@ -6,9 +6,12 @@ artifact reports: velocity RMSE in um/ms and displacement RMSE in um,
 summarized per shot with the same six keys ``baseline_results.json`` uses.
 """
 
+from typing import Any
+
 import numpy as np
 import torch
 
+from smi.analysis.models.factory import create_model
 from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
 
 #: The six summary keys, in the order ``baseline_results.json`` defines them.
@@ -99,3 +102,24 @@ def summarize_per_shot(values: np.ndarray) -> dict[str, float]:
         'min': float(np.min(values)),
         'max': float(np.max(values)),
     }
+
+
+def count_parameters(model_hparams: dict[str, Any]) -> int:
+    """Count the trainable parameters of the model a config would build.
+
+    Instantiates via :func:`create_model` rather than predicting the count
+    from the config, so the number can never drift from the architecture.
+
+    Args:
+        model_hparams: Model configuration, including the ``'type'`` key.
+
+    Returns:
+        Number of trainable (``requires_grad``) parameters.
+
+    Raises:
+        ValueError: If the factory returns no model for this configuration.
+    """
+    model = create_model(model_hparams)
+    if model is None:
+        raise ValueError(f'No model built for config: {model_hparams}')
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)

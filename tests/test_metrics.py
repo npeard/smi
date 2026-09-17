@@ -4,10 +4,12 @@ import numpy as np
 import torch
 
 from smi.analysis.metrics import (
+    count_parameters,
     displacement_from_velocity,
     summarize_per_shot,
     velocity_rmse,
 )
+from smi.analysis.models.factory import create_model
 
 #: Dataset sample rate (Hz) after the decimate-by-256 acquisition setting.
 SAMPLE_RATE_HZ = 488281.25
@@ -60,3 +62,30 @@ def test_displacement_from_velocity_accepts_the_model_output_shape():
 def test_displacement_from_velocity_preserves_two_dimensional_input():
     velocity = torch.ones(2, 8)
     assert displacement_from_velocity(velocity, DT_MS).shape == (2, 8)
+
+
+# The matched-parameter budget: Barland at three channels. Its single-channel
+# count (57,153) matches the 2021 paper's stated total exactly, which is what
+# confirms the port is faithful.
+BARLAND_HPARAMS = {
+    'type': 'Barland',
+    'window_size': 256,
+    'in_channels': 3,
+    'activation': 'LeakyReLU',
+    'dropout': 0.1,
+    'use_weight_norm': False,
+    'window_stride': 64,
+}
+
+
+def test_count_parameters_agrees_with_instantiated_model():
+    hparams = dict(BARLAND_HPARAMS)
+    model = create_model(hparams)
+    assert count_parameters(hparams) == sum(
+        p.numel() for p in model.parameters() if p.requires_grad
+    )
+
+
+def test_barland_three_channel_budget_is_stable():
+    """The matched-parameter budget every other model is held to."""
+    assert count_parameters(dict(BARLAND_HPARAMS)) == 57377
