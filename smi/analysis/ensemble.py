@@ -154,8 +154,6 @@ def build_member(
     """
     torch.manual_seed(seed)
     inner = create_model(model_hparams)
-    if inner is None:
-        raise ValueError(f'create_model returned None for hparams: {model_hparams}')
     if dropout is not None:
         _set_dropout(inner, dropout)
     channels = in_channels if in_channels is not None else model_hparams['in_channels']

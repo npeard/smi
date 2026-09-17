@@ -117,9 +117,7 @@ def count_parameters(model_hparams: dict[str, Any]) -> int:
         Number of trainable (``requires_grad``) parameters.
 
     Raises:
-        ValueError: If the factory returns no model for this configuration.
+        ValueError: If the configuration names an unknown model type.
     """
     model = create_model(model_hparams)
-    if model is None:
-        raise ValueError(f'No model built for config: {model_hparams}')
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
