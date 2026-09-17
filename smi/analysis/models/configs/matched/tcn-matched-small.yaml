@@ -1,0 +1,44 @@
+# Second capacity point at the SAME receptive field (85 samples) as
+# tcn-matched.yaml, at 19,329 parameters instead of 44,049. Holding the
+# field fixed while moving only the width is what separates "needs capacity"
+# from "needs context".
+model:
+  type: "TCN"
+  sequence_length: 16384
+  in_channels: 3
+  activation: "GELU"
+  use_layer_norm: true
+  use_weight_norm: false
+  kernel_size: 7
+  temporal_channels: [16, 16, 32]
+  dilation_base: 2
+  dropout: 0.0
+
+training:
+  max_epochs: 30
+  warmup_epochs: 0
+  T_0: 30
+  T_mult: 1
+  batch_size: 16
+  optimizer: "Adam"
+  weight_decay: 1e-6
+  momentum: 0.9
+  learning_rate: 1e-3
+  eta_min: 1e-6
+  accelerator: "gpu"
+  devices: [0]
+  use_logging: false
+  wandb_project: "smi"
+  experiment_name: "tcn_matched_small"
+  target: "velocity"
+
+loss:
+  dynamic: false
+  velocity_loss_weight: 1.0
+  displacement_loss_weight: 0.0
+
+data:
+  data_dir: "./analysis/data"
+  dataset_file: "free-space-synchro_10k.h5"
+  split_ratios: [80, 10, 10]
+  num_workers: 7
