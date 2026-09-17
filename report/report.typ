@@ -967,7 +967,7 @@ next session can act on, and section 10 lists the sweep it implies.
 
 == What limits these numbers
 
-Six things bound what the section above establishes, each of them a threat
+Seven things bound what the section above establishes, each of them a threat
 to a conclusion a reader would otherwise draw.
 
 *Only the TCN is causal.* Eight of the ten configurations label each window
@@ -1000,6 +1000,17 @@ velocity; the analytic decode fits displacement directly and differentiates
 for velocity. They are different estimators of the same quantity, so the
 displacement columns compare less cleanly than the velocity ones, and the
 velocity column is the one every claim above uses.
+
+*Not every published figure in section 8 came off the page cleanly.* The two
+parameter counts, 57,153 and 207,905, are each stated twice in their own
+paper, and the first is confirmed independently by this repository's port
+measuring exactly 57,153. The correlation and RMSE figures -- 0.90 for
+@barland2021cnn, and 0.96, 0.13 um/ms, 0.97 and 0.11 um/ms for
+@matha2023multichannel -- were recovered from a text extraction that mangled
+the decimal-point glyph, and were reconstructed by cross-referencing passages
+where the same value extracted cleanly. They are almost certainly right; a
+reader checking one against its source should know which figures are
+transcribed and which are reconstructed.
 
 Two further facts about how the runs were produced belong on the record.
 Every model trained from scratch: the checkpoint directory was empty, and the
