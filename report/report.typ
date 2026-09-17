@@ -791,10 +791,10 @@ about every absolute number below.
     against the analytic decode of section 3.2 drawn as the dashed line. Bars
     are the mean over two seeds and the whisker spans the seed-to-seed range,
     which two seeds give and a standard error does not. Row order is the
-    free-space ranking and is held fixed in the right panel, so the fiber
-    reordering reads as crossing rather than as a second unrelated chart.
-    Hatched bars label the models that see samples after the timestamp they
-    predict; only the TCN rows do not.
+    free-space ranking and is held fixed in the right panel, so where the
+    fiber ordering differs it reads as crossing rather than as a second
+    unrelated chart. Hatched bars label the models that see samples after the
+    timestamp they predict; only the TCN rows do not.
   ],
 ) <fig-models>
 
@@ -821,16 +821,16 @@ reports only the winners cannot be used to decide what to try next.
     [disp. FS],
     [disp. MMF],
   ),
-  [SCNN], [44,049], [85], [no], [*0.0953*], [0.2471], [0.0945], [0.3287],
+  [Barland], [57,377], [91], [no], [*0.0814*], [*0.1643*], [0.1345], [0.3897],
+  [SCNN], [44,049], [85], [no], [0.0953], [0.2471], [0.0945], [0.3287],
   [TCN], [44,049], [85], [*yes*], [0.1116], [0.2540], [0.1137], [0.3285],
   [SCNN], [19,329], [85], [no], [0.1125], [0.2713], [0.1293], [0.3778],
+  [MLP], [51,329], [256], [no], [0.1275], [0.2547], [0.2571], [0.4993],
   [TCN], [19,329], [85], [*yes*], [0.1401], [0.2788], [0.1443], [0.3772],
-  [Barland], [57,377], [91], [no], [0.1962], [*0.2320*], [0.1314], [0.3576],
   [TCN], [35,585], [29], [*yes*], [0.2021], [0.3136], [0.1921], [0.4107],
   [TCN], [27,985], [29], [*yes*], [0.2096], [0.3203], [0.2290], [0.4253],
-  [MLP], [51,329], [256], [no], [0.2409], [0.3158], [0.3667], [0.5167],
-  [LightGBM], [200], [91], [no], [0.2588], [0.3258], [0.3900], [0.4835],
-  [Ridge], [274], [91], [no], [0.3839], [0.3432], [0.6067], [0.5117],
+  [LightGBM], [200], [91], [no], [0.2483], [0.3240], [0.3827], [0.4808],
+  [Ridge], [274], [91], [no], [0.3837], [0.3431], [0.6061], [0.5133],
   [analytic], [--], [--], [no], [0.5611], [0.5647], [0.5051], [0.4833],
 ))
 
@@ -839,8 +839,8 @@ section 3.2, the same decode the dashed line in @fig-models marks; the means
 are quoted here because the learned rows are means, where section 4.1's table
 quotes medians of the same decode.
 
-Across all twenty runs per acquisition the mean velocity RMSE is 0.1951
-(free space) and 0.2902 (mm fiber). The best single run is 0.0889 and 0.2318.
+Across all twenty runs per acquisition the mean velocity RMSE is 0.1712
+(free space) and 0.2771 (mm fiber). The best single run is 0.0799 and 0.1632.
 Those are different claims and neither substitutes for the other: the mean
 says what a configuration drawn from this set achieves on average, and the
 best says what the set's most fortunate seed of its best architecture
@@ -850,8 +850,8 @@ achieved once.
 
 On both acquisitions, all ten configurations score a lower velocity RMSE than
 the analytic decode. The weakest, a ridge regression over a 91-sample window
-with 274 coefficients, comes in at 0.3839 against the decode's 0.5611 in free
-space and 0.3432 against 0.5647 in the fiber.
+with 274 coefficients, comes in at 0.3837 against the decode's 0.5611 in free
+space and 0.3431 against 0.5647 in the fiber.
 
 A linear fit over a 91-sample window is not a powerful estimator, so its
 beating the multi-wavelength inverse says more about the inverse than about
@@ -869,6 +869,21 @@ centre, so they read samples after the timestamp they predict. The sentence
 "every learned model beats the analytic baseline" is true, and eight of the
 ten do it with lookahead the decode and the TCN are denied.
 
+The MLP row is the useful one for reading the three non-deep rows against
+each other. At window stride 1 it steps its 256-sample window one sample at a
+time, so the comparison against LightGBM and Ridge holds the features and the
+evaluation grid fixed and varies only the estimator: 0.1275 um/ms against
+LightGBM's 0.2483 and Ridge's 0.3837 in free space. What separates them is
+how much of the window each can actually use: a boosted-tree ensemble over 91
+raw samples lands at 1.95x the error of a two-layer network over 256.
+
+One thing not to read into that. Stride 1 does not make the MLP a pointwise
+map: 256 windows still overlap every output position, and the value reported
+there is their average. It is closer to a kernel-256 convolution with a
+learned nonlinear kernel and a stride-1 output than to a per-sample
+regression, and its 256-sample receptive field in the table is the honest
+description.
+
 == Causality costs less than the architecture literature would suggest
 
 The TCN and the SCNN at 44,049 parameters are a controlled pair. Both span 85
@@ -878,16 +893,19 @@ the TCN spanning $[-84, 0]$ samples and the SCNN $[-42, +42]$.
 
 In free space the SCNN scores 0.0953 against the TCN's 0.1116, a 15% margin
 for the non-causal model. *That margin is about one seed-spread wide* -- the
-SCNN's two seeds differ by 0.0091 at this configuration -- so it establishes
+SCNN's two seeds differ by 0.0129 at this configuration -- so it establishes
 the direction of the effect and not its size. What it does support is the
 weaker and more useful statement: giving up lookahead entirely costs
 something on the order of a seed, not a factor.
 
-The comparison against the published architecture is wider than any seed
-spread. In free space the causal TCN at 44,049 parameters scores 0.1116
-against the Barland port's 0.1962, a 43% reduction in velocity RMSE with 23%
-fewer parameters and no access to future samples. The seed spreads there are
-0.0004 and 0.0030, two orders below the gap.
+The comparison against the published architecture runs the other way, and it
+is wider than any seed spread. In free space the Barland port at 57,377
+parameters scores 0.0814 against the causal TCN's 0.1116 at 44,049 -- a 27%
+lower velocity RMSE -- and behind fiber 0.1643 against 0.2540, 35% lower. The
+seed spreads there are 0.0028 and 0.0004, an order below the free-space gap
+and two below the fiber one. Part of that margin is lookahead the TCN is
+denied; the SCNN pair above bounds how much lookahead alone is worth at about
+one seed, so most of it is the architecture.
 
 *This does not establish that the published network is non-causal.* Both
 papers were searched for language about causality, centering or lookahead and
@@ -899,53 +917,89 @@ pair above, which is this repository's own controlled comparison. What the
 Barland row measures is the architecture as ported, run centered, on this
 data.
 
-== On the fiber the ranking reverses
+== The published architecture wins on both acquisitions
 
-The Barland architecture is the best of all ten configurations on the
-multimode fiber acquisition, at 0.2320 against the best TCN's 0.2540 and the
-best SCNN's 0.2471 -- having placed fifth of ten in free space. The
-recommendation is therefore dataset-dependent, and that is more useful than a
-single ranking would have been: the dilated-convolution stack is the thing to
-reach for in free space, and the published architecture is the thing to reach
-for behind fiber.
+The port of @barland2021cnn is the strongest of the ten configurations on
+both datasets: 0.0814 um/ms in free space against the best dilated stack's
+0.0953, and 0.1643 behind fiber against 0.2471. It is the only model that
+places first twice, and the margin over the repository's own causal TCN is
+27% in free space and 35% in the fiber. There is no dataset-dependent
+recommendation to make here. A 2021 architecture with a 256-sample window and
+aggressive max-pooling, ported and retrained on this data, is simply better
+than the dilated-convolution stack this repository built, at a comparable
+parameter budget.
+
+That is not the answer this section was built to find, and it changes what
+section 10 should sweep: the open question is which part of the Barland stack
+does the work -- the wider window, the pooling, or the fully connected head --
+not whether the dilated stack can be tuned past it.
+
+== Measuring an architecture requires an output resolution finer than the score
+
+`SlidingWindowModel` labels each window at its centre and averages the
+predictions that overlap a given output sample. Run at a stride equal to the
+window, nothing overlaps: the model emits one constant per 256-sample block,
+so a 16,384-sample shot carries only 64 distinct values. That is a resolution
+limit, not a modelling limit, and it has an oracle: the RMSE reached by a
+predictor that emits the exact per-block mean of the true velocity. On
+free space that floor is 0.1866 um/ms.
+
+The Barland and MLP configurations were first run at stride 256 and scored
+0.1962 and 0.2409. Barland's number sits within 5% of the floor, which means
+the run reported almost nothing about the architecture -- a perfect estimator
+constrained to the same output grid would have scored 0.1866. Both were
+re-run at a stride where the floor cannot bind: Barland at 8, floor 0.0065,
+and the MLP at 1, floor 0.0000. The tabular baselines moved to evaluation
+stride 1 for the same reason. The TCN and SCNN rows emit one prediction per
+input sample and were never affected; their numbers are byte-identical across
+the two rounds.
+
+The lesson generalizes past this table. A windowed model's score is bounded
+below by its output discretization, and that bound is cheap to compute --
+block-average the truth and take the RMSE -- so it should be computed before
+any comparison is drawn, not after one turns out to be surprising. A score
+close to its own floor is a measurement of the evaluation grid.
 
 == The generalization gap is the finding
 
-Ranking by how much each model degrades from free space to fiber puts the
-table in a different order, and a more informative one:
+Ranking by how much each model degrades from free space to fiber is close to
+inverting the free-space ranking, which is itself the result:
 
 #align(center, table(
   columns: 4,
   align: (left, right, right, right),
   stroke: 0.5pt + rgb("#d0d0d0"),
   table.header([model], [vel. FS], [vel. MMF], [MMF / FS]),
-  [Ridge (274)], [0.3839], [0.3432], [*0.89*],
+  [Ridge (274)], [0.3837], [0.3431], [*0.89*],
   [analytic decode], [0.5611], [0.5647], [1.01],
-  [Barland (57k)], [0.1962], [0.2320], [1.18],
-  [LightGBM (200)], [0.2588], [0.3258], [1.26],
-  [MLP (51k)], [0.2409], [0.3158], [1.31],
-  [TCN (36k, field 29)], [0.2021], [0.3136], [1.55],
+  [LightGBM (200)], [0.2483], [0.3240], [1.30],
   [TCN (28k, field 29)], [0.2096], [0.3203], [1.53],
+  [TCN (36k, field 29)], [0.2021], [0.3136], [1.55],
   [TCN (19k, field 85)], [0.1401], [0.2788], [1.99],
+  [MLP (51k)], [0.1275], [0.2547], [2.00],
+  [Barland (57k)], [0.0814], [0.1643], [2.02],
   [TCN (44k, field 85)], [0.1116], [0.2540], [*2.28*],
   [SCNN (44k, field 85)], [0.0953], [0.2471], [*2.59*],
 ))
 
-The ordering is close to monotonic in the opposite direction from the
-free-space ranking: the models that win biggest in free space lose the most
-behind fiber. The two best free-space models degrade by 2.3x and 2.6x, while
-the analytic decode is flat at 1.01x and the ridge regression actually
-improves, at 0.89x.
+Every learned model degrades behind fiber; the analytic decode does not. That
+much is unambiguous, and it is the finding. The ordering is also roughly
+monotonic against the free-space ranking -- the models resolving the finest
+fringe structure lose the most -- with the four best free-space models
+degrading between 2.0x and 2.6x while the decode holds flat at 1.01x and the
+ridge regression improves slightly, at 0.89x.
 
-Each end of that has a reading the data supports. Ridge improving slightly is
-what a model extracting only a coarse relationship should do when speckle
-destroys the fine structure it was never using; the coarse relationship
-survives. At the other end, a dilated-convolution stack that has learned the
-detailed fringe shape in free space has learned something mode scrambling
-takes away. Barland's 256-sample window with aggressive max-pooling sits
-between them and is evidently more speckle-robust than the dilated stack,
-which is consistent with its winning the fiber outright while placing fifth
-in free space.
+Each end of that has a reading the data supports. Ridge improving is what a
+model extracting only a coarse relationship should do when speckle destroys
+the fine structure it was never using; the coarse relationship survives. At
+the other end, a stack that has learned the detailed fringe shape in free
+space has learned something mode scrambling takes away.
+
+The Barland port is not an exception to this. It degrades 2.02x, squarely
+inside the band its free-space score predicts, and it wins behind fiber by
+starting further ahead rather than by holding its ground. Its 256-sample
+window and heavy pooling buy accuracy on both acquisitions, not robustness
+across them.
 
 Section 7 found no free-space/fiber gap in the analytic baseline at all, and
 these ratios say why that was not reassuring: the gap is invisible to an
@@ -967,7 +1021,7 @@ next session can act on, and section 10 lists the sweep it implies.
 
 == What limits these numbers
 
-Seven things bound what the section above establishes, each of them a threat
+Eight things bound what the section above establishes, each of them a threat
 to a conclusion a reader would otherwise draw.
 
 *Only the TCN is causal.* Eight of the ten configurations label each window
@@ -985,14 +1039,24 @@ in these tables is a port run here, not a reproduction of their measurement.
 
 *Two seeds is thin.* The 15% SCNN-over-TCN margin in free space is about one
 seed-spread wide and is not leaned on anywhere above. Every cross-architecture
-conclusion drawn here -- the 43% TCN-over-Barland gap, the fiber reversal, the
+conclusion drawn here -- the 27% and 35% Barland-over-TCN gaps, the
 receptive-field result, the generalization ratios -- is many spreads wide.
-Which of those two a claim is has been stated at each claim.
+Which of the two any given claim is has been stated beside it.
 
 *The runs are budget-limited, not converged.* Twenty epochs, chosen to fit
 about two GPU hours. The absolute RMSEs are therefore pessimistic; what the
 section compares is ten models trained under one identical budget, which is
 the comparison the numbers support.
+
+*Output stride now differs by row, so a matched parameter budget no longer
+implies a matched output resolution.* Barland runs at window stride 8, the
+MLP at 1, the tabular baselines evaluate at 1, and the TCN and SCNN emit one
+prediction per input sample by construction. Each stride is recorded
+per-record in the artifact. The strides were chosen to push each model's
+discretization floor well below its score rather than to match each other:
+Barland retains a floor of 0.0065 um/ms, 12x below its 0.0814, so the floor
+cannot bind -- but it is not zero, and a future comparison drawn at a finer
+error scale would have to revisit it.
 
 *Displacement is not measured the same way in the two halves of the table.*
 The learned displacement column is obtained by integrating predicted
@@ -1018,9 +1082,13 @@ Every model trained from scratch: the checkpoint directory was empty, and the
 would have invalidated older checkpoints in any case. And at these model
 sizes the data loader, not the GPU, was the constraint -- about 42 s per epoch
 of loading against 9.6 s of compute, so the dataset had to be preloaded to
-fit the budget. `VelocityDataModule`'s docstring claims roughly 7.5x of loader
-headroom; that was measured on a production-size TCN at batch 32 and does not
-hold at 19-44k parameters.
+fit the budget. Those two figures are the measurement, not a quotation: the
+compute side is 19.2 ms per step at batch 16, warmed, with
+`torch.cuda.synchronize()` around the timed region and the median taken over
+ten steps on the same GPU. The loader headroom reported by
+`smi.analysis.benchmark_loading` was measured on a production-size TCN at
+batch 32, where training is GPU bound; it does not transfer to 19-44k
+parameters, which is why the sweep had to be measured on its own.
 
 = Future directions
 
@@ -1038,13 +1106,13 @@ brackets how far up the parameter axis is worth sweeping before measuring.
 measurement rather than an argument can settle: whether the SCNN's free-space
 margin over the TCN is real.
 
-*A receptive-field sweep.* Section 9.6 found 27% more parameters at a fixed
+*A receptive-field sweep.* Section 9.7 found 27% more parameters at a fixed
 29-sample field buying nothing, while widening the field at fewer parameters
 cut the error by 31%. Only two field lengths have been tried, 29 and 85, so
 the axis that moved the numbers most is the one with two points on it.
 
 *Feature engineering for the fiber gap.* Better motivated now than before:
-section 9.5 measures the degradation at 2.3x for the best causal model rather
+section 9.6 measures the degradation at 2.3x for the best causal model rather
 than leaving it as a suspicion, and locates it specifically in the models
 that resolve fine fringe structure. That is a target a feature can be
 designed against.
@@ -1068,12 +1136,12 @@ carries a real gain error of 5 to 13%, so the supervision targets are
 systematically small by about that much.
 
 Section 9 establishes that the floor is clear of every learned model tried,
-by a margin that runs from 1.46x (ridge, free space) to 5.9x (SCNN, free
-space); that a causal TCN at 44,049 parameters improves on this repository's
-port of the published architecture by 43% in free space while the same port
-wins the fiber outright; and that the free-space-to-fiber degradation runs
-from 0.89x to 2.59x across the ten configurations, ordered against the
-free-space ranking.
+by a margin that runs from 1.46x (ridge, free space) to 6.9x (the Barland
+port, free space); that this repository's port of the published architecture
+is the best model measured on both acquisitions, ahead of the causal TCN at
+44,049 parameters by 27% in free space and 35% behind fiber; and that the
+free-space-to-fiber degradation runs from 0.89x to 2.59x across the ten
+configurations, ordered against the free-space ranking.
 
 *What this does not establish.* It is not an upper bound on classical
 processing: a better inverse, or a corrected transfer function, could do
@@ -1081,7 +1149,7 @@ better. It says nothing about latency, and nothing about waveform families
 outside the one these acquisitions sweep. It does not prove the decoder is
 noise-robust, only that it is correct on clean model-generated fringes. The
 baseline half does not speak to the free-space/fiber gap, which is invisible
-at this error level -- section 9.5 is where that gap becomes measurable, and
+at this error level -- section 9.6 is where that gap becomes measurable, and
 it is measured there only for the models trained under this round's budget.
 It does not give a corrected value for `k`: the two acquisitions
 disagree by 3.2 to 6.5%, so the sweep locates an error without resolving it.

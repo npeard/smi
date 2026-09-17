@@ -2,9 +2,11 @@
 """Every trained configuration against the analytic baseline it has to clear.
 
 One panel per acquisition, configurations sorted by their free-space score so
-both panels keep the same row order and the reordering between them is visible
-as crossing rather than as two unrelated rankings. That reordering is the
-finding: the models that win biggest in free space lose the most in the fiber.
+both panels keep the same row order and any reordering between them is visible
+as crossing rather than as two unrelated rankings. What the fixed order shows
+is that the ranking barely reorders while the bars stretch: every learned
+model degrades behind fiber, and the models that win biggest in free space
+degrade the most.
 
 Hatching marks the models that see samples after the timestamp they predict.
 Only the TCN does not, so a reader comparing bar lengths across the hatch
@@ -106,9 +108,9 @@ def main() -> None:
     grouped = _grouped(read_results(LEARNED_JSON))
     analytic = json.loads(RESULTS_JSON.read_text(encoding='utf-8'))['datasets']
 
-    # Sort by free space, worst at the top, so the best model sits at the
-    # bottom of both panels and the fiber panel's reordering reads as crossing
-    # against a fixed row order.
+    # Sort by free space descending. barh puts y=0 at the bottom, so this
+    # renders the best model on the top row of both panels, and any
+    # fiber-panel reordering reads as crossing against a fixed row order.
     order = sorted(
         grouped, key=lambda label: grouped[label].mean['free-space'], reverse=True
     )
