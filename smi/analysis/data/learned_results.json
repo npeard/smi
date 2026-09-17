@@ -419,192 +419,6 @@
       },
       {
         "config": {
-          "activation": "LeakyReLU",
-          "batch_size": 16,
-          "budget_limited": true,
-          "compiled": false,
-          "config_name": "barland-matched",
-          "dropout": 0.0,
-          "in_channels": 3,
-          "learning_rate": "1e-3",
-          "max_epochs": 20,
-          "optimizer": "Adam",
-          "split_seed": 42,
-          "type": "Barland",
-          "use_weight_norm": false,
-          "wall_clock_s": 115.1,
-          "window_size": 256,
-          "window_stride": 256
-        },
-        "dataset": "free-space",
-        "device": "NVIDIA GeForce RTX 3090 Ti",
-        "metrics": {
-          "displacement_rmse_um": {
-            "max": 0.8912795782089233,
-            "mean": 0.13965141773223877,
-            "median": 0.12211085855960846,
-            "min": 0.02093883603811264,
-            "p25": 0.07839474081993103,
-            "p75": 0.17367808520793915
-          },
-          "velocity_rmse_um_per_ms": {
-            "max": 0.458789199590683,
-            "mean": 0.19774456322193146,
-            "median": 0.18604910373687744,
-            "min": 0.013201300986111164,
-            "p25": 0.08546756953001022,
-            "p75": 0.2948872447013855
-          }
-        },
-        "model_type": "Barland",
-        "receptive_field": 91,
-        "seed": 0,
-        "sees_future": true,
-        "total_params": 57377
-      },
-      {
-        "config": {
-          "activation": "LeakyReLU",
-          "batch_size": 16,
-          "budget_limited": true,
-          "compiled": false,
-          "config_name": "barland-matched",
-          "dropout": 0.0,
-          "in_channels": 3,
-          "learning_rate": "1e-3",
-          "max_epochs": 20,
-          "optimizer": "Adam",
-          "split_seed": 42,
-          "type": "Barland",
-          "use_weight_norm": false,
-          "wall_clock_s": 125.3,
-          "window_size": 256,
-          "window_stride": 256
-        },
-        "dataset": "free-space",
-        "device": "NVIDIA GeForce RTX 3090 Ti",
-        "metrics": {
-          "displacement_rmse_um": {
-            "max": 0.49511590600013733,
-            "mean": 0.12307342886924744,
-            "median": 0.1073317676782608,
-            "min": 0.022700991481542587,
-            "p25": 0.07865554839372635,
-            "p75": 0.15284307301044464
-          },
-          "velocity_rmse_um_per_ms": {
-            "max": 0.4614812731742859,
-            "mean": 0.1947391927242279,
-            "median": 0.18364179134368896,
-            "min": 0.015021356754004955,
-            "p25": 0.08334865421056747,
-            "p75": 0.2932208478450775
-          }
-        },
-        "model_type": "Barland",
-        "receptive_field": 91,
-        "seed": 1,
-        "sees_future": true,
-        "total_params": 57377
-      },
-      {
-        "config": {
-          "activation": "GELU",
-          "batch_size": 16,
-          "budget_limited": true,
-          "compiled": false,
-          "config_name": "mlp-matched",
-          "dropout": 0.0,
-          "hidden_sizes": [
-            64,
-            32
-          ],
-          "in_channels": 3,
-          "learning_rate": "1e-3",
-          "max_epochs": 20,
-          "optimizer": "Adam",
-          "split_seed": 42,
-          "type": "MLP",
-          "wall_clock_s": 97.8,
-          "window_size": 256,
-          "window_stride": 256
-        },
-        "dataset": "free-space",
-        "device": "NVIDIA GeForce RTX 3090 Ti",
-        "metrics": {
-          "displacement_rmse_um": {
-            "max": 2.567256450653076,
-            "mean": 0.36188632249832153,
-            "median": 0.261022686958313,
-            "min": 0.015468470752239227,
-            "p25": 0.14746122062206268,
-            "p75": 0.4290710389614105
-          },
-          "velocity_rmse_um_per_ms": {
-            "max": 0.6509090065956116,
-            "mean": 0.24132618308067322,
-            "median": 0.21785302460193634,
-            "min": 0.01773213967680931,
-            "p25": 0.10716323554515839,
-            "p75": 0.3494470715522766
-          }
-        },
-        "model_type": "MLP",
-        "receptive_field": 256,
-        "seed": 0,
-        "sees_future": true,
-        "total_params": 51329
-      },
-      {
-        "config": {
-          "activation": "GELU",
-          "batch_size": 16,
-          "budget_limited": true,
-          "compiled": false,
-          "config_name": "mlp-matched",
-          "dropout": 0.0,
-          "hidden_sizes": [
-            64,
-            32
-          ],
-          "in_channels": 3,
-          "learning_rate": "1e-3",
-          "max_epochs": 20,
-          "optimizer": "Adam",
-          "split_seed": 42,
-          "type": "MLP",
-          "wall_clock_s": 97.8,
-          "window_size": 256,
-          "window_stride": 256
-        },
-        "dataset": "free-space",
-        "device": "NVIDIA GeForce RTX 3090 Ti",
-        "metrics": {
-          "displacement_rmse_um": {
-            "max": 2.0160176753997803,
-            "mean": 0.3714834153652191,
-            "median": 0.28145337104797363,
-            "min": 0.035473816096782684,
-            "p25": 0.1597682237625122,
-            "p75": 0.4529038369655609
-          },
-          "velocity_rmse_um_per_ms": {
-            "max": 0.6158041954040527,
-            "mean": 0.2405521422624588,
-            "median": 0.21333995461463928,
-            "min": 0.016255563125014305,
-            "p25": 0.10886697471141815,
-            "p75": 0.3518542945384979
-          }
-        },
-        "model_type": "MLP",
-        "receptive_field": 256,
-        "seed": 1,
-        "sees_future": true,
-        "total_params": 51329
-      },
-      {
-        "config": {
           "activation": "GELU",
           "batch_size": 16,
           "budget_limited": true,
@@ -813,10 +627,198 @@
       },
       {
         "config": {
+          "activation": "LeakyReLU",
+          "batch_size": 16,
+          "budget_limited": true,
+          "compiled": false,
+          "config_name": "barland-matched",
+          "dropout": 0.0,
+          "in_channels": 3,
+          "learning_rate": "1e-3",
+          "max_epochs": 20,
+          "optimizer": "Adam",
+          "split_seed": 42,
+          "type": "Barland",
+          "use_weight_norm": false,
+          "wall_clock_s": 972.7,
+          "window_size": 256,
+          "window_stride": 8
+        },
+        "dataset": "free-space",
+        "device": "NVIDIA GeForce RTX 3090 Ti",
+        "metrics": {
+          "displacement_rmse_um": {
+            "max": 0.5497666597366333,
+            "mean": 0.13769972324371338,
+            "median": 0.1101054772734642,
+            "min": 0.02308713272213936,
+            "p25": 0.06564631313085556,
+            "p75": 0.18164390325546265
+          },
+          "velocity_rmse_um_per_ms": {
+            "max": 0.2185249775648117,
+            "mean": 0.08277049660682678,
+            "median": 0.07293678820133209,
+            "min": 0.016422707587480545,
+            "p25": 0.05377866327762604,
+            "p75": 0.11043195426464081
+          }
+        },
+        "model_type": "Barland",
+        "receptive_field": 91,
+        "seed": 0,
+        "sees_future": true,
+        "total_params": 57377
+      },
+      {
+        "config": {
+          "activation": "LeakyReLU",
+          "batch_size": 16,
+          "budget_limited": true,
+          "compiled": false,
+          "config_name": "barland-matched",
+          "dropout": 0.0,
+          "in_channels": 3,
+          "learning_rate": "1e-3",
+          "max_epochs": 20,
+          "optimizer": "Adam",
+          "split_seed": 42,
+          "type": "Barland",
+          "use_weight_norm": false,
+          "wall_clock_s": 967.2,
+          "window_size": 256,
+          "window_stride": 8
+        },
+        "dataset": "free-space",
+        "device": "NVIDIA GeForce RTX 3090 Ti",
+        "metrics": {
+          "displacement_rmse_um": {
+            "max": 0.5404958128929138,
+            "mean": 0.13137125968933105,
+            "median": 0.09425973892211914,
+            "min": 0.019298197701573372,
+            "p25": 0.05910978466272354,
+            "p75": 0.17930272221565247
+          },
+          "velocity_rmse_um_per_ms": {
+            "max": 0.21753095090389252,
+            "mean": 0.07992963492870331,
+            "median": 0.0707007572054863,
+            "min": 0.02018117904663086,
+            "p25": 0.049107469618320465,
+            "p75": 0.1064881980419159
+          }
+        },
+        "model_type": "Barland",
+        "receptive_field": 91,
+        "seed": 1,
+        "sees_future": true,
+        "total_params": 57377
+      },
+      {
+        "config": {
+          "activation": "GELU",
+          "batch_size": 16,
+          "budget_limited": true,
+          "compiled": false,
+          "config_name": "mlp-matched",
+          "dropout": 0.0,
+          "hidden_sizes": [
+            64,
+            32
+          ],
+          "in_channels": 3,
+          "learning_rate": "1e-3",
+          "max_epochs": 20,
+          "optimizer": "Adam",
+          "split_seed": 42,
+          "type": "MLP",
+          "wall_clock_s": 158.5,
+          "window_size": 256,
+          "window_stride": 1
+        },
+        "dataset": "free-space",
+        "device": "NVIDIA GeForce RTX 3090 Ti",
+        "metrics": {
+          "displacement_rmse_um": {
+            "max": 1.6916230916976929,
+            "mean": 0.2568538784980774,
+            "median": 0.17015641927719116,
+            "min": 0.03492645546793938,
+            "p25": 0.10660214722156525,
+            "p75": 0.34473514556884766
+          },
+          "velocity_rmse_um_per_ms": {
+            "max": 0.4303000867366791,
+            "mean": 0.12737204134464264,
+            "median": 0.11056230962276459,
+            "min": 0.020749971270561218,
+            "p25": 0.07206282764673233,
+            "p75": 0.17021521925926208
+          }
+        },
+        "model_type": "MLP",
+        "receptive_field": 256,
+        "seed": 0,
+        "sees_future": true,
+        "total_params": 51329
+      },
+      {
+        "config": {
+          "activation": "GELU",
+          "batch_size": 16,
+          "budget_limited": true,
+          "compiled": false,
+          "config_name": "mlp-matched",
+          "dropout": 0.0,
+          "hidden_sizes": [
+            64,
+            32
+          ],
+          "in_channels": 3,
+          "learning_rate": "1e-3",
+          "max_epochs": 20,
+          "optimizer": "Adam",
+          "split_seed": 42,
+          "type": "MLP",
+          "wall_clock_s": 158.7,
+          "window_size": 256,
+          "window_stride": 1
+        },
+        "dataset": "free-space",
+        "device": "NVIDIA GeForce RTX 3090 Ti",
+        "metrics": {
+          "displacement_rmse_um": {
+            "max": 1.3491637706756592,
+            "mean": 0.25739020109176636,
+            "median": 0.16611027717590332,
+            "min": 0.03706367686390877,
+            "p25": 0.11009307205677032,
+            "p75": 0.34129437804222107
+          },
+          "velocity_rmse_um_per_ms": {
+            "max": 0.4363744854927063,
+            "mean": 0.12754899263381958,
+            "median": 0.11250096559524536,
+            "min": 0.0219161007553339,
+            "p25": 0.07358622550964355,
+            "p75": 0.17029841244220734
+          }
+        },
+        "model_type": "MLP",
+        "receptive_field": 256,
+        "seed": 1,
+        "sees_future": true,
+        "total_params": 51329
+      },
+      {
+        "config": {
           "budget_limited": false,
           "config_name": "lightgbm",
           "eval_shots": 100,
+          "eval_stride": 1,
           "fit_shots": 800,
+          "fit_stride": 64,
           "learning_rate": 0.05,
           "num_boost_round": 200,
           "num_leaves": 31,
@@ -824,30 +826,29 @@
           "params_are": "trees",
           "seed": 0,
           "split_seed": 42,
-          "stride": 64,
           "train_rows": 204000,
           "verbose": -1,
-          "wall_clock_s": 7.0,
+          "wall_clock_s": 26.2,
           "window": 91
         },
         "dataset": "free-space",
         "device": "cpu",
         "metrics": {
           "displacement_rmse_um": {
-            "max": 1.2299760580062866,
-            "mean": 0.39139148592948914,
-            "median": 0.34413987398147583,
-            "min": 0.04782771319150925,
-            "p25": 0.17269624769687653,
-            "p75": 0.536850094795227
+            "max": 1.223609447479248,
+            "mean": 0.3835851550102234,
+            "median": 0.3104550838470459,
+            "min": 0.058045532554388046,
+            "p25": 0.16593675315380096,
+            "p75": 0.5425657629966736
           },
           "velocity_rmse_um_per_ms": {
-            "max": 0.6431388854980469,
-            "mean": 0.25887587666511536,
-            "median": 0.24410510063171387,
-            "min": 0.022968895733356476,
-            "p25": 0.13446331024169922,
-            "p75": 0.3546804189682007
+            "max": 0.6202597618103027,
+            "mean": 0.2484559416770935,
+            "median": 0.2307969033718109,
+            "min": 0.017931267619132996,
+            "p25": 0.12970834970474243,
+            "p75": 0.3347129821777344
           }
         },
         "model_type": "LightGBM",
@@ -861,7 +862,9 @@
           "budget_limited": false,
           "config_name": "lightgbm",
           "eval_shots": 100,
+          "eval_stride": 1,
           "fit_shots": 800,
+          "fit_stride": 64,
           "learning_rate": 0.05,
           "num_boost_round": 200,
           "num_leaves": 31,
@@ -869,30 +872,29 @@
           "params_are": "trees",
           "seed": 1,
           "split_seed": 42,
-          "stride": 64,
           "train_rows": 204000,
           "verbose": -1,
-          "wall_clock_s": 6.5,
+          "wall_clock_s": 22.7,
           "window": 91
         },
         "dataset": "free-space",
         "device": "cpu",
         "metrics": {
           "displacement_rmse_um": {
-            "max": 1.2085503339767456,
-            "mean": 0.38854244351387024,
-            "median": 0.35928165912628174,
-            "min": 0.032123927026987076,
-            "p25": 0.17670324444770813,
-            "p75": 0.5297904014587402
+            "max": 1.2330862283706665,
+            "mean": 0.38182616233825684,
+            "median": 0.3075581192970276,
+            "min": 0.04063742980360985,
+            "p25": 0.16555312275886536,
+            "p75": 0.555181622505188
           },
           "velocity_rmse_um_per_ms": {
-            "max": 0.6368964910507202,
-            "mean": 0.25878551602363586,
-            "median": 0.2427402138710022,
-            "min": 0.02249656617641449,
-            "p25": 0.13321322202682495,
-            "p75": 0.3557817041873932
+            "max": 0.6221278309822083,
+            "mean": 0.24818870425224304,
+            "median": 0.2311002016067505,
+            "min": 0.01557255070656538,
+            "p25": 0.1293882131576538,
+            "p75": 0.3344469964504242
           }
         },
         "model_type": "LightGBM",
@@ -907,32 +909,33 @@
           "budget_limited": false,
           "config_name": "ridge",
           "eval_shots": 100,
+          "eval_stride": 1,
           "fit_shots": 800,
+          "fit_stride": 64,
           "params_are": "coefficients",
           "split_seed": 42,
-          "stride": 64,
           "train_rows": 204000,
-          "wall_clock_s": 0.5,
+          "wall_clock_s": 11.8,
           "window": 91
         },
         "dataset": "free-space",
         "device": "cpu",
         "metrics": {
           "displacement_rmse_um": {
-            "max": 1.8724325895309448,
-            "mean": 0.6067115664482117,
-            "median": 0.4716365337371826,
-            "min": 0.015800660476088524,
-            "p25": 0.18142235279083252,
-            "p75": 0.967519223690033
+            "max": 1.860617995262146,
+            "mean": 0.6060670614242554,
+            "median": 0.46416765451431274,
+            "min": 0.013375736773014069,
+            "p25": 0.18538033962249756,
+            "p75": 0.9673877954483032
           },
           "velocity_rmse_um_per_ms": {
-            "max": 0.8617071509361267,
-            "mean": 0.38393712043762207,
-            "median": 0.3731328547000885,
-            "min": 0.01944095268845558,
-            "p25": 0.15727277100086212,
-            "p75": 0.5858392715454102
+            "max": 0.8640865683555603,
+            "mean": 0.3837309181690216,
+            "median": 0.37209370732307434,
+            "min": 0.017788754776120186,
+            "p25": 0.15737096965312958,
+            "p75": 0.584304928779602
           }
         },
         "model_type": "Ridge",
@@ -947,32 +950,33 @@
           "budget_limited": false,
           "config_name": "ridge",
           "eval_shots": 100,
+          "eval_stride": 1,
           "fit_shots": 800,
+          "fit_stride": 64,
           "params_are": "coefficients",
           "split_seed": 42,
-          "stride": 64,
           "train_rows": 204000,
-          "wall_clock_s": 0.6,
+          "wall_clock_s": 11.8,
           "window": 91
         },
         "dataset": "free-space",
         "device": "cpu",
         "metrics": {
           "displacement_rmse_um": {
-            "max": 1.8724325895309448,
-            "mean": 0.6067115664482117,
-            "median": 0.4716365337371826,
-            "min": 0.015800660476088524,
-            "p25": 0.18142235279083252,
-            "p75": 0.967519223690033
+            "max": 1.860617995262146,
+            "mean": 0.6060670614242554,
+            "median": 0.46416765451431274,
+            "min": 0.013375736773014069,
+            "p25": 0.18538033962249756,
+            "p75": 0.9673877954483032
           },
           "velocity_rmse_um_per_ms": {
-            "max": 0.8617071509361267,
-            "mean": 0.38393712043762207,
-            "median": 0.3731328547000885,
-            "min": 0.01944095268845558,
-            "p25": 0.15727277100086212,
-            "p75": 0.5858392715454102
+            "max": 0.8640865683555603,
+            "mean": 0.3837309181690216,
+            "median": 0.37209370732307434,
+            "min": 0.017788754776120186,
+            "p25": 0.15737096965312958,
+            "p75": 0.584304928779602
           }
         },
         "model_type": "Ridge",
@@ -1401,192 +1405,6 @@
       },
       {
         "config": {
-          "activation": "LeakyReLU",
-          "batch_size": 16,
-          "budget_limited": true,
-          "compiled": false,
-          "config_name": "barland-matched",
-          "dropout": 0.0,
-          "in_channels": 3,
-          "learning_rate": "1e-3",
-          "max_epochs": 20,
-          "optimizer": "Adam",
-          "split_seed": 42,
-          "type": "Barland",
-          "use_weight_norm": false,
-          "wall_clock_s": 142.5,
-          "window_size": 256,
-          "window_stride": 256
-        },
-        "dataset": "mmfiber",
-        "device": "NVIDIA GeForce RTX 3090 Ti",
-        "metrics": {
-          "displacement_rmse_um": {
-            "max": 1.3228763341903687,
-            "mean": 0.36014214158058167,
-            "median": 0.2827884256839752,
-            "min": 0.03194785490632057,
-            "p25": 0.1827964186668396,
-            "p75": 0.45651018619537354
-          },
-          "velocity_rmse_um_per_ms": {
-            "max": 0.5214927792549133,
-            "mean": 0.23176293075084686,
-            "median": 0.22522170841693878,
-            "min": 0.01718517206609249,
-            "p25": 0.11699947714805603,
-            "p75": 0.3234896957874298
-          }
-        },
-        "model_type": "Barland",
-        "receptive_field": 91,
-        "seed": 0,
-        "sees_future": true,
-        "total_params": 57377
-      },
-      {
-        "config": {
-          "activation": "LeakyReLU",
-          "batch_size": 16,
-          "budget_limited": true,
-          "compiled": false,
-          "config_name": "barland-matched",
-          "dropout": 0.0,
-          "in_channels": 3,
-          "learning_rate": "1e-3",
-          "max_epochs": 20,
-          "optimizer": "Adam",
-          "split_seed": 42,
-          "type": "Barland",
-          "use_weight_norm": false,
-          "wall_clock_s": 133.2,
-          "window_size": 256,
-          "window_stride": 256
-        },
-        "dataset": "mmfiber",
-        "device": "NVIDIA GeForce RTX 3090 Ti",
-        "metrics": {
-          "displacement_rmse_um": {
-            "max": 1.7500079870224,
-            "mean": 0.3550717830657959,
-            "median": 0.2865701913833618,
-            "min": 0.03296444192528725,
-            "p25": 0.1704673320055008,
-            "p75": 0.45715734362602234
-          },
-          "velocity_rmse_um_per_ms": {
-            "max": 0.5221695303916931,
-            "mean": 0.2322445660829544,
-            "median": 0.21853682398796082,
-            "min": 0.011003300547599792,
-            "p25": 0.1221218928694725,
-            "p75": 0.32831257581710815
-          }
-        },
-        "model_type": "Barland",
-        "receptive_field": 91,
-        "seed": 1,
-        "sees_future": true,
-        "total_params": 57377
-      },
-      {
-        "config": {
-          "activation": "GELU",
-          "batch_size": 16,
-          "budget_limited": true,
-          "compiled": false,
-          "config_name": "mlp-matched",
-          "dropout": 0.0,
-          "hidden_sizes": [
-            64,
-            32
-          ],
-          "in_channels": 3,
-          "learning_rate": "1e-3",
-          "max_epochs": 20,
-          "optimizer": "Adam",
-          "split_seed": 42,
-          "type": "MLP",
-          "wall_clock_s": 100.1,
-          "window_size": 256,
-          "window_stride": 256
-        },
-        "dataset": "mmfiber",
-        "device": "NVIDIA GeForce RTX 3090 Ti",
-        "metrics": {
-          "displacement_rmse_um": {
-            "max": 2.904330015182495,
-            "mean": 0.5126340389251709,
-            "median": 0.42646849155426025,
-            "min": 0.05820373818278313,
-            "p25": 0.23990283906459808,
-            "p75": 0.6342073678970337
-          },
-          "velocity_rmse_um_per_ms": {
-            "max": 0.8890073299407959,
-            "mean": 0.31555330753326416,
-            "median": 0.2952114939689636,
-            "min": 0.024454480037093163,
-            "p25": 0.14531996846199036,
-            "p75": 0.43226057291030884
-          }
-        },
-        "model_type": "MLP",
-        "receptive_field": 256,
-        "seed": 0,
-        "sees_future": true,
-        "total_params": 51329
-      },
-      {
-        "config": {
-          "activation": "GELU",
-          "batch_size": 16,
-          "budget_limited": true,
-          "compiled": false,
-          "config_name": "mlp-matched",
-          "dropout": 0.0,
-          "hidden_sizes": [
-            64,
-            32
-          ],
-          "in_channels": 3,
-          "learning_rate": "1e-3",
-          "max_epochs": 20,
-          "optimizer": "Adam",
-          "split_seed": 42,
-          "type": "MLP",
-          "wall_clock_s": 107.0,
-          "window_size": 256,
-          "window_stride": 256
-        },
-        "dataset": "mmfiber",
-        "device": "NVIDIA GeForce RTX 3090 Ti",
-        "metrics": {
-          "displacement_rmse_um": {
-            "max": 3.1460037231445312,
-            "mean": 0.5206998586654663,
-            "median": 0.4186704754829407,
-            "min": 0.05510658025741577,
-            "p25": 0.238702654838562,
-            "p75": 0.6531388759613037
-          },
-          "velocity_rmse_um_per_ms": {
-            "max": 0.892162561416626,
-            "mean": 0.3160616159439087,
-            "median": 0.2953570485115051,
-            "min": 0.024404246360063553,
-            "p25": 0.1537473201751709,
-            "p75": 0.4353344738483429
-          }
-        },
-        "model_type": "MLP",
-        "receptive_field": 256,
-        "seed": 1,
-        "sees_future": true,
-        "total_params": 51329
-      },
-      {
-        "config": {
           "activation": "GELU",
           "batch_size": 16,
           "budget_limited": true,
@@ -1795,10 +1613,198 @@
       },
       {
         "config": {
+          "activation": "LeakyReLU",
+          "batch_size": 16,
+          "budget_limited": true,
+          "compiled": false,
+          "config_name": "barland-matched",
+          "dropout": 0.0,
+          "in_channels": 3,
+          "learning_rate": "1e-3",
+          "max_epochs": 20,
+          "optimizer": "Adam",
+          "split_seed": 42,
+          "type": "Barland",
+          "use_weight_norm": false,
+          "wall_clock_s": 963.8,
+          "window_size": 256,
+          "window_stride": 8
+        },
+        "dataset": "mmfiber",
+        "device": "NVIDIA GeForce RTX 3090 Ti",
+        "metrics": {
+          "displacement_rmse_um": {
+            "max": 2.0139822959899902,
+            "mean": 0.3806961178779602,
+            "median": 0.28032076358795166,
+            "min": 0.038189277052879333,
+            "p25": 0.17777791619300842,
+            "p75": 0.47571706771850586
+          },
+          "velocity_rmse_um_per_ms": {
+            "max": 0.45440739393234253,
+            "mean": 0.16538593173027039,
+            "median": 0.1558263599872589,
+            "min": 0.010555987246334553,
+            "p25": 0.10174217075109482,
+            "p75": 0.2234443575143814
+          }
+        },
+        "model_type": "Barland",
+        "receptive_field": 91,
+        "seed": 0,
+        "sees_future": true,
+        "total_params": 57377
+      },
+      {
+        "config": {
+          "activation": "LeakyReLU",
+          "batch_size": 16,
+          "budget_limited": true,
+          "compiled": false,
+          "config_name": "barland-matched",
+          "dropout": 0.0,
+          "in_channels": 3,
+          "learning_rate": "1e-3",
+          "max_epochs": 20,
+          "optimizer": "Adam",
+          "split_seed": 42,
+          "type": "Barland",
+          "use_weight_norm": false,
+          "wall_clock_s": 965.8,
+          "window_size": 256,
+          "window_stride": 8
+        },
+        "dataset": "mmfiber",
+        "device": "NVIDIA GeForce RTX 3090 Ti",
+        "metrics": {
+          "displacement_rmse_um": {
+            "max": 2.20125675201416,
+            "mean": 0.39878785610198975,
+            "median": 0.2936626076698303,
+            "min": 0.030877504497766495,
+            "p25": 0.1789676398038864,
+            "p75": 0.540772557258606
+          },
+          "velocity_rmse_um_per_ms": {
+            "max": 0.4297245442867279,
+            "mean": 0.1631985455751419,
+            "median": 0.14614489674568176,
+            "min": 0.012567734345793724,
+            "p25": 0.10162457078695297,
+            "p75": 0.2100592702627182
+          }
+        },
+        "model_type": "Barland",
+        "receptive_field": 91,
+        "seed": 1,
+        "sees_future": true,
+        "total_params": 57377
+      },
+      {
+        "config": {
+          "activation": "GELU",
+          "batch_size": 16,
+          "budget_limited": true,
+          "compiled": false,
+          "config_name": "mlp-matched",
+          "dropout": 0.0,
+          "hidden_sizes": [
+            64,
+            32
+          ],
+          "in_channels": 3,
+          "learning_rate": "1e-3",
+          "max_epochs": 20,
+          "optimizer": "Adam",
+          "split_seed": 42,
+          "type": "MLP",
+          "wall_clock_s": 158.2,
+          "window_size": 256,
+          "window_stride": 1
+        },
+        "dataset": "mmfiber",
+        "device": "NVIDIA GeForce RTX 3090 Ti",
+        "metrics": {
+          "displacement_rmse_um": {
+            "max": 2.460336208343506,
+            "mean": 0.49101707339286804,
+            "median": 0.371722936630249,
+            "min": 0.046374235302209854,
+            "p25": 0.2049199789762497,
+            "p75": 0.6277802586555481
+          },
+          "velocity_rmse_um_per_ms": {
+            "max": 0.7025201320648193,
+            "mean": 0.254869282245636,
+            "median": 0.2209470570087433,
+            "min": 0.038923587650060654,
+            "p25": 0.12544333934783936,
+            "p75": 0.3327198028564453
+          }
+        },
+        "model_type": "MLP",
+        "receptive_field": 256,
+        "seed": 0,
+        "sees_future": true,
+        "total_params": 51329
+      },
+      {
+        "config": {
+          "activation": "GELU",
+          "batch_size": 16,
+          "budget_limited": true,
+          "compiled": false,
+          "config_name": "mlp-matched",
+          "dropout": 0.0,
+          "hidden_sizes": [
+            64,
+            32
+          ],
+          "in_channels": 3,
+          "learning_rate": "1e-3",
+          "max_epochs": 20,
+          "optimizer": "Adam",
+          "split_seed": 42,
+          "type": "MLP",
+          "wall_clock_s": 160.6,
+          "window_size": 256,
+          "window_stride": 1
+        },
+        "dataset": "mmfiber",
+        "device": "NVIDIA GeForce RTX 3090 Ti",
+        "metrics": {
+          "displacement_rmse_um": {
+            "max": 2.6527862548828125,
+            "mean": 0.5076209306716919,
+            "median": 0.3956270217895508,
+            "min": 0.060220327228307724,
+            "p25": 0.23751434683799744,
+            "p75": 0.6444766521453857
+          },
+          "velocity_rmse_um_per_ms": {
+            "max": 0.7051776647567749,
+            "mean": 0.25446686148643494,
+            "median": 0.22178250551223755,
+            "min": 0.03732740879058838,
+            "p25": 0.12993499636650085,
+            "p75": 0.34035083651542664
+          }
+        },
+        "model_type": "MLP",
+        "receptive_field": 256,
+        "seed": 1,
+        "sees_future": true,
+        "total_params": 51329
+      },
+      {
+        "config": {
           "budget_limited": false,
           "config_name": "lightgbm",
           "eval_shots": 100,
+          "eval_stride": 1,
           "fit_shots": 800,
+          "fit_stride": 64,
           "learning_rate": 0.05,
           "num_boost_round": 200,
           "num_leaves": 31,
@@ -1806,30 +1812,29 @@
           "params_are": "trees",
           "seed": 0,
           "split_seed": 42,
-          "stride": 64,
           "train_rows": 204000,
           "verbose": -1,
-          "wall_clock_s": 6.3,
+          "wall_clock_s": 23.4,
           "window": 91
         },
         "dataset": "mmfiber",
         "device": "cpu",
         "metrics": {
           "displacement_rmse_um": {
-            "max": 2.5352001190185547,
-            "mean": 0.48343929648399353,
-            "median": 0.3647669553756714,
-            "min": 0.025228630751371384,
-            "p25": 0.19982050359249115,
-            "p75": 0.6553609371185303
+            "max": 2.662557363510132,
+            "mean": 0.4810209572315216,
+            "median": 0.36251282691955566,
+            "min": 0.02713812328875065,
+            "p25": 0.17924417555332184,
+            "p75": 0.6584216356277466
           },
           "velocity_rmse_um_per_ms": {
-            "max": 0.7881987690925598,
-            "mean": 0.3261251449584961,
-            "median": 0.32343554496765137,
-            "min": 0.007012929301708937,
-            "p25": 0.1298065483570099,
-            "p75": 0.476825088262558
+            "max": 0.7826834321022034,
+            "mean": 0.32426944375038147,
+            "median": 0.3214881420135498,
+            "min": 0.0064402068965137005,
+            "p25": 0.12783029675483704,
+            "p75": 0.47376203536987305
           }
         },
         "model_type": "LightGBM",
@@ -1843,7 +1848,9 @@
           "budget_limited": false,
           "config_name": "lightgbm",
           "eval_shots": 100,
+          "eval_stride": 1,
           "fit_shots": 800,
+          "fit_stride": 64,
           "learning_rate": 0.05,
           "num_boost_round": 200,
           "num_leaves": 31,
@@ -1851,30 +1858,29 @@
           "params_are": "trees",
           "seed": 1,
           "split_seed": 42,
-          "stride": 64,
           "train_rows": 204000,
           "verbose": -1,
-          "wall_clock_s": 5.9,
+          "wall_clock_s": 24.2,
           "window": 91
         },
         "dataset": "mmfiber",
         "device": "cpu",
         "metrics": {
           "displacement_rmse_um": {
-            "max": 2.5305709838867188,
-            "mean": 0.48354122042655945,
-            "median": 0.3711017370223999,
-            "min": 0.009446372278034687,
-            "p25": 0.20552140474319458,
-            "p75": 0.6496424674987793
+            "max": 2.6330854892730713,
+            "mean": 0.4806201159954071,
+            "median": 0.3627097010612488,
+            "min": 0.01033442746847868,
+            "p25": 0.17856717109680176,
+            "p75": 0.6546758413314819
           },
           "velocity_rmse_um_per_ms": {
-            "max": 0.7872288823127747,
-            "mean": 0.32547613978385925,
-            "median": 0.321896493434906,
-            "min": 0.007579265162348747,
-            "p25": 0.12848378717899323,
-            "p75": 0.4777500629425049
+            "max": 0.7814869284629822,
+            "mean": 0.3236868679523468,
+            "median": 0.32094788551330566,
+            "min": 0.006669719237834215,
+            "p25": 0.12754584848880768,
+            "p75": 0.4743303656578064
           }
         },
         "model_type": "LightGBM",
@@ -1889,32 +1895,33 @@
           "budget_limited": false,
           "config_name": "ridge",
           "eval_shots": 100,
+          "eval_stride": 1,
           "fit_shots": 800,
+          "fit_stride": 64,
           "params_are": "coefficients",
           "split_seed": 42,
-          "stride": 64,
           "train_rows": 204000,
-          "wall_clock_s": 0.6,
+          "wall_clock_s": 13.3,
           "window": 91
         },
         "dataset": "mmfiber",
         "device": "cpu",
         "metrics": {
           "displacement_rmse_um": {
-            "max": 2.5116729736328125,
-            "mean": 0.5116898417472839,
-            "median": 0.3846023976802826,
-            "min": 0.04789319261908531,
-            "p25": 0.19657590985298157,
-            "p75": 0.6920775771141052
+            "max": 2.533290147781372,
+            "mean": 0.5133286714553833,
+            "median": 0.3889268636703491,
+            "min": 0.04612479358911514,
+            "p25": 0.1994045078754425,
+            "p75": 0.6911252737045288
           },
           "velocity_rmse_um_per_ms": {
-            "max": 0.8176636695861816,
-            "mean": 0.3431774377822876,
-            "median": 0.33407285809516907,
-            "min": 0.00897715613245964,
-            "p25": 0.13921865820884705,
-            "p75": 0.520055890083313
+            "max": 0.8192947506904602,
+            "mean": 0.3430694341659546,
+            "median": 0.33523285388946533,
+            "min": 0.007653262931853533,
+            "p25": 0.13955116271972656,
+            "p75": 0.5204199552536011
           }
         },
         "model_type": "Ridge",
@@ -1929,32 +1936,33 @@
           "budget_limited": false,
           "config_name": "ridge",
           "eval_shots": 100,
+          "eval_stride": 1,
           "fit_shots": 800,
+          "fit_stride": 64,
           "params_are": "coefficients",
           "split_seed": 42,
-          "stride": 64,
           "train_rows": 204000,
-          "wall_clock_s": 0.6,
+          "wall_clock_s": 12.6,
           "window": 91
         },
         "dataset": "mmfiber",
         "device": "cpu",
         "metrics": {
           "displacement_rmse_um": {
-            "max": 2.5116729736328125,
-            "mean": 0.5116898417472839,
-            "median": 0.3846023976802826,
-            "min": 0.04789319261908531,
-            "p25": 0.19657590985298157,
-            "p75": 0.6920775771141052
+            "max": 2.533290147781372,
+            "mean": 0.5133286714553833,
+            "median": 0.3889268636703491,
+            "min": 0.04612479358911514,
+            "p25": 0.1994045078754425,
+            "p75": 0.6911252737045288
           },
           "velocity_rmse_um_per_ms": {
-            "max": 0.8176636695861816,
-            "mean": 0.3431774377822876,
-            "median": 0.33407285809516907,
-            "min": 0.00897715613245964,
-            "p25": 0.13921865820884705,
-            "p75": 0.520055890083313
+            "max": 0.8192947506904602,
+            "mean": 0.3430694341659546,
+            "median": 0.33523285388946533,
+            "min": 0.007653262931853533,
+            "p25": 0.13955116271972656,
+            "p75": 0.5204199552536011
           }
         },
         "model_type": "Ridge",
