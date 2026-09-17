@@ -33,6 +33,7 @@ DOCUMENT_FIGURES = {
         "baseline_amplitude_trend",
         "baseline_shot_traces",
         "freespace_vs_fiber",
+        "model_comparison",
     ],
 }
 
@@ -58,6 +59,7 @@ DATA_DIR = REPORT_DIR.parent / "smi" / "analysis" / "data"
 RESULTS = [
     str(DATA_DIR / "baseline_results.json"),
     str(DATA_DIR / "gain_sweep_results.json"),
+    str(DATA_DIR / "learned_results.json"),
 ]
 
 # Without this, the unconstrained {document} wildcard in `rule document` also

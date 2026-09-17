@@ -731,6 +731,23 @@ the previous section. Both acquisitions are limited by the same things, and a
 comparison at this level should not be cited as evidence either way about the
 fiber gap.
 
+= Learned models against the analytic baseline
+
+#fig(
+  "model_comparison",
+  width: 100%,
+  caption: [
+    Velocity RMSE for every configuration trained, one panel per acquisition,
+    against the analytic decode of section 3.2 drawn as the dashed line. Bars
+    are the mean over two seeds and the whisker spans the seed-to-seed range,
+    which two seeds give and a standard error does not. Row order is the
+    free-space ranking and is held fixed in the right panel, so the fiber
+    reordering reads as crossing rather than as a second unrelated chart.
+    Hatched bars label the models that see samples after the timestamp they
+    predict; only the TCN rows do not.
+  ],
+) <fig-models>
+
 = Scope
 
 *What this establishes.* A floor. Method 2's displacement RMSE of 0.433 um
