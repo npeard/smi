@@ -93,10 +93,18 @@ NONCAUSAL_MODELS = frozenset({'SCNN', 'Barland', 'MLP', 'LightGBM', 'Ridge'})
 
 #: Window for the tabular baselines, matched to the Barland receptive field.
 TABULAR_WINDOW = 91
-#: Hop between tabular training windows. Dense strides would make a 16384-long
-#: shot into 16k rows; 64 keeps the design matrix tractable without changing
-#: what the model is asked to predict.
-TABULAR_STRIDE = 64
+#: Hop between tabular *training* windows. Dense strides would make a
+#: 16384-long shot into 16k rows; 64 keeps the design matrix tractable without
+#: changing what the model is asked to predict.
+TABULAR_FIT_STRIDE = 64
+#: Hop between tabular *evaluation* windows. 1, unlike the fit stride, because
+#: the evaluation stride is what the reported RMSE measures: at stride s the
+#: reconstructed trace is piecewise constant over s samples, which imposes a
+#: discretization floor on the RMSE independent of the model (0.052 um/ms at
+#: s=64, against a TCN at 0.112). At stride 1 that floor is zero, so the row
+#: measures the predictor. Evaluation is 100 shots on CPU, cheap enough to
+#: afford the dense design matrix the fit cannot.
+TABULAR_EVAL_STRIDE = 1
 #: Shots used to fit the tabular baselines. Both are fit on CPU from a dense
 #: design matrix, so this is bounded by memory and fit time rather than by the
 #: GPU budget the torch runs are bounded by. 800 shots is 204k rows and costs
@@ -440,10 +448,10 @@ def _tabular_predictions(
 
     Each window yields one value at its centre; the trace is reconstructed by
     assigning that value to every position the window covers and averaging
-    overlaps, which is what the windowed torch models do internally. Using a
-    stride of 1 here would be exact but costs 16384 rows per shot, so the
-    evaluation stride matches the fit stride and the gaps are filled by the
-    same overlap average.
+    overlaps, which is what the windowed torch models do internally. The stride
+    here is :data:`TABULAR_EVAL_STRIDE` (1) rather than the fit stride, so the
+    reconstruction is dense and the reported RMSE carries no discretization
+    floor of its own.
 
     Args:
         model: Fitted ridge or booster.
@@ -454,10 +462,10 @@ def _tabular_predictions(
         [shots, length] predicted velocity in um/ms.
     """
     out = np.zeros((len(signals), length), dtype=np.float32)
-    starts = np.arange(0, length - TABULAR_WINDOW + 1, TABULAR_STRIDE)
+    starts = np.arange(0, length - TABULAR_WINDOW + 1, TABULAR_EVAL_STRIDE)
     for row, sig in enumerate(signals):
         x, _ = windowize(
-            sig, np.zeros(length, dtype=np.float32), TABULAR_WINDOW, TABULAR_STRIDE
+            sig, np.zeros(length, dtype=np.float32), TABULAR_WINDOW, TABULAR_EVAL_STRIDE
         )
         values = predict_windows(model, x)
         accum = np.zeros(length, dtype=np.float64)
@@ -510,7 +518,7 @@ def run_tabular(
 
     xs, ys = zip(
         *(
-            windowize(sig, vel, TABULAR_WINDOW, TABULAR_STRIDE)
+            windowize(sig, vel, TABULAR_WINDOW, TABULAR_FIT_STRIDE)
             for sig, vel in zip(train_signals, train_velocity, strict=True)
         ),
         strict=True,
@@ -521,7 +529,8 @@ def run_tabular(
     record_config: dict[str, Any] = {
         'config_name': kind.lower(),
         'window': TABULAR_WINDOW,
-        'stride': TABULAR_STRIDE,
+        'fit_stride': TABULAR_FIT_STRIDE,
+        'eval_stride': TABULAR_EVAL_STRIDE,
         'fit_shots': len(train_signals),
         'eval_shots': len(test_signals),
         'train_rows': int(x_train.shape[0]),

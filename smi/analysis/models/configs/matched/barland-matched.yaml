@@ -9,7 +9,15 @@ model:
   activation: "LeakyReLU"
   dropout: 0.0
   use_weight_norm: false
-  window_stride: 256
+  # Stride 8, not the window size. At stride == window_size the overlap
+  # average in SlidingWindowModel.forward has nothing to average, so the
+  # output is a staircase of 256-sample constants; the lowest velocity RMSE
+  # any such predictor can reach on this split is 0.1866 um/ms, which is what
+  # the earlier stride-256 row measured instead of the architecture. The floor
+  # at stride 8 is 0.0065 um/ms, 17x below the TCN's 0.1116, so it cannot bind
+  # the comparison. Stride 1 would be exact but costs ~6 min per epoch
+  # (memory-bound on the unfold).
+  window_stride: 8
 
 training:
   max_epochs: 30

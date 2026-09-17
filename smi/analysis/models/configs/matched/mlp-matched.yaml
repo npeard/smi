@@ -7,7 +7,12 @@ model:
   hidden_sizes: [64, 32]
   activation: "GELU"
   dropout: 0.0
-  window_stride: 256
+  # Stride 1 makes this a point-to-point map from local input to velocity --
+  # "a CNN with kernel size 1" -- which is the question the MLP row is meant to
+  # answer: how much does windowed context buy over none? At the earlier stride
+  # 256 the output was a staircase of 256-sample constants and the row measured
+  # that discretization rather than the model.
+  window_stride: 1
 
 training:
   max_epochs: 30
