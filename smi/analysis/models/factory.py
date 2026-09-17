@@ -8,14 +8,28 @@ from torch import nn
 from .barland_cnn import BarlandCNN, BarlandCNNConfig
 from .lstm import LSTM, LSTMConfig
 from .mamba import Mamba, MambaConfig
+from .mlp import MLP, MLPConfig
 from .scnn import SCNN, SCNNConfig
 from .tcan import TCAN, TCANConfig
 from .tcn import TCN, TCNConfig
 
 logger = logging.getLogger(__name__)
 
+# Every architecture is built the same way -- config dataclass from the
+# remaining hparams, then the module -- so the dispatch is a table rather than
+# an if/elif chain that grows a branch per model.
+MODEL_REGISTRY: dict[str, tuple[type, type[nn.Module]]] = {
+    'Barland': (BarlandCNNConfig, BarlandCNN),
+    'TCN': (TCNConfig, TCN),
+    'SCNN': (SCNNConfig, SCNN),
+    'TCAN': (TCANConfig, TCAN),
+    'LSTM': (LSTMConfig, LSTM),
+    'MLP': (MLPConfig, MLP),
+    'Mamba': (MambaConfig, Mamba),
+}
 
-def create_model(model_hparams: dict[str, Any]) -> nn.Module | None:
+
+def create_model(model_hparams: dict[str, Any]) -> nn.Module:
     """Create model instance based on configuration.
 
     Args:
@@ -23,7 +37,8 @@ def create_model(model_hparams: dict[str, Any]) -> nn.Module | None:
                       and model-specific configuration parameters.
 
     Returns:
-        A PyTorch model instance based on the configuration.
+        A PyTorch model instance based on the configuration. Always a module:
+        an unrecognised type raises rather than returning None.
 
     Raises:
         ValueError: If unknown model type is specified.
@@ -36,31 +51,9 @@ def create_model(model_hparams: dict[str, Any]) -> nn.Module | None:
     params.pop('total_params', None)  # Remove total_params if present
     params.pop('receptive_field', None)  # Remove receptive_field if present
 
-    if model_type == 'Barland':
-        logger.debug('Creating BarlandCNN model...')
-        config = BarlandCNNConfig(**params)
-        return BarlandCNN(config)
-    elif model_type == 'TCN':
-        logger.debug('Creating TCN model...')
-        config = TCNConfig(**params)
-        return TCN(config)
-    elif model_type == 'SCNN':
-        logger.debug('Creating SCNN model...')
-        config = SCNNConfig(**params)
-        return SCNN(config)
-    elif model_type == 'TCAN':
-        logger.debug('Creating TCAN model...')
-        config = TCANConfig(**params)
-        return TCAN(config)
-
-    elif model_type == 'LSTM':
-        logger.debug('Creating LSTM model...')
-        config = LSTMConfig(**params)
-        return LSTM(config)
-    elif model_type == 'Mamba':
-        logger.debug('Creating Mamba model...')
-        config = MambaConfig(**params)
-        return Mamba(config)
-
-    else:
+    if model_type not in MODEL_REGISTRY:
         raise ValueError(f'Unknown model type: {model_type}')
+
+    config_cls, model_cls = MODEL_REGISTRY[model_type]
+    logger.debug(f'Creating {model_cls.__name__} model...')
+    return model_cls(config_cls(**params))

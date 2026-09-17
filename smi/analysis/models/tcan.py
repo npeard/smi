@@ -148,8 +148,10 @@ class TCAN(nn.Module):
 
         The encoder and decoder TCNs are in series, so their receptive fields add.
         The cross-channel attention has no temporal span (same time step only).
+        Each TCN field already includes its own centre sample, so subtract one
+        to avoid counting the shared centre twice.
         """
-        return self.siamese_encoder.receptive_field + self.decoder.receptive_field
+        return self.siamese_encoder.receptive_field + self.decoder.receptive_field - 1
 
     @property
     @torch.jit.unused

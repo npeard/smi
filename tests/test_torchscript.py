@@ -69,6 +69,21 @@ MODEL_CONFIGS = [
         512,
     ),
     (
+        # Same 256-sample window as Barland, for the same reason: the MLP's
+        # first Linear is sized to in_channels * window_size.
+        'MLP',
+        dict(
+            type='MLP',
+            window_size=256,
+            in_channels=IN_CHANNELS,
+            hidden_sizes=[16, 8],
+            activation='GELU',
+            dropout=0.0,
+            window_stride=64,
+        ),
+        512,
+    ),
+    (
         'TCAN',
         dict(
             type='TCAN',

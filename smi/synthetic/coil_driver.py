@@ -473,13 +473,17 @@ class CoilDriver:
             if len(velocity_waveform.shape) > 1:
                 _batch_size, _signal_length = velocity_waveform.shape
 
-                displacement = torch.cumsum(velocity_waveform, dim=-1) * dt  # ty: ignore[no-matching-overload]  # narrowed to Tensor at runtime via is_torch
+                displacement = (
+                    torch.cumsum(velocity_waveform, dim=-1) * dt
+                )  # narrowed to Tensor at runtime via is_torch
                 # Shift displacement to start at zero
                 displacement = displacement - displacement[:, 0].unsqueeze(-1)
 
             else:
                 # Single waveform case
-                displacement = torch.cumsum(velocity_waveform, dim=0) * dt  # ty: ignore[no-matching-overload]  # narrowed to Tensor at runtime via is_torch
+                displacement = (
+                    torch.cumsum(velocity_waveform, dim=0) * dt
+                )  # narrowed to Tensor at runtime via is_torch
 
                 # Shift displacement to start at zero
                 displacement = displacement - displacement[0]

@@ -25,6 +25,7 @@ except ImportError:
 
 from smi.analysis.features import default_registry
 from smi.analysis.features.normalization import NORMALIZATION_STATS
+from smi.analysis.metrics import velocity_rmse
 from smi.analysis.models.base import Model
 from smi.analysis.models.factory import create_model
 from smi.analysis.models.vicreg import VicRegLoss
@@ -279,6 +280,28 @@ class LitModule(lightning_module.LightningModule):
 
         return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler}}
 
+    def _velocity_prediction(self, prediction: torch.Tensor) -> torch.Tensor:
+        """Recover predicted velocity (um/ms) from the model's output.
+
+        When the model targets displacement the velocity is differentiated
+        back out, using the same conversion ``loss_function`` and
+        ``predict_step`` use, so the logged RMSE describes exactly the
+        quantity those report.
+
+        Args:
+            prediction: Model output, velocity or displacement per
+                ``self.target``.
+
+        Returns:
+            Predicted velocity in um/ms.
+        """
+        if self.target == 'velocity':
+            return prediction
+        sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+        return cast(
+            torch.Tensor, CoilDriver.derivative_displacement(prediction, sample_rate)
+        )
+
     def loss_function(
         self,
         prediction: torch.Tensor,
@@ -454,6 +477,15 @@ class LitModule(lightning_module.LightningModule):
                 and torch.distributed.is_initialized(),
             )
 
+        # RMSE in stored units, so a run is directly comparable to the
+        # analytic baseline without a separate evaluation pass.
+        self.log(
+            'val/velocity_rmse_um_per_ms',
+            velocity_rmse(self._velocity_prediction(prediction), velocity_target),
+            sync_dist=torch.distributed.is_available()
+            and torch.distributed.is_initialized(),
+        )
+
     @override
     def test_step(
         self, batch: tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
@@ -482,6 +514,13 @@ class LitModule(lightning_module.LightningModule):
                 sync_dist=torch.distributed.is_available()
                 and torch.distributed.is_initialized(),
             )
+
+        self.log(
+            'test/velocity_rmse_um_per_ms',
+            velocity_rmse(self._velocity_prediction(prediction), velocity_target),
+            sync_dist=torch.distributed.is_available()
+            and torch.distributed.is_initialized(),
+        )
 
     @override
     def predict_step(

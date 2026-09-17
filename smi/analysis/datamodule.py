@@ -43,12 +43,18 @@ class VelocityDataModule(lightning_module.LightningDataModule):
     ``preload_device`` instead materializes the whole file as tensors on that
     device (:class:`GPUResidentDataset`) and serves batches by indexing them.
 
-    On the measured workload the resident mode is *not* a speedup: training is
-    GPU bound, and it came out 1.7% ahead of an 8-worker DataLoader on an RTX
-    3090 Ti over the full 10k-shot file. See
-    ``smi.analysis.benchmark_loading``. It is offered because it removes worker
-    processes and the host-to-device copy, which matters for determinism and
-    for cheaper models, not because it makes this model train faster.
+    Whether preloading is a speedup depends on model scale. At production
+    size (a TCN at batch 32), training is GPU bound and preloading came out
+    only 1.7% ahead of an 8-worker DataLoader on an RTX 3090 Ti over the full
+    10k-shot file -- see ``smi.analysis.benchmark_loading``. At the
+    19k-44k-parameter scale used by the learned-baseline sweep, the DataLoader
+    path costs about 42 s/epoch against about 9.6 s/epoch of actual compute
+    (19.2 ms/step at batch 16, warmed, ``torch.cuda.synchronize()`` around the
+    timed region, median of 10 steps, same GPU); there, loading dominates and
+    preloading was necessary for the sweep to fit its time budget at all. It
+    is offered because it removes worker processes and the host-to-device
+    copy, which matters for determinism always, and for wall-clock time once
+    the model is cheap enough that loading is no longer hidden behind it.
 
     Args:
         dataset_path: Path to the HDF5 dataset file.

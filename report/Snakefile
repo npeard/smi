@@ -3,7 +3,7 @@
 # Run from this directory:
 #     pixi run -e report snakemake --cores all
 # or, from anywhere in the repo, via the pixi tasks:
-#     pixi run report / report-dry / report-clean / report-baseline
+#     pixi run report / report-dry / report-clean / report-only
 #
 # Design notes
 #
@@ -28,11 +28,12 @@ FIGDIR = f"{BUILD}/figures"
 # figures" so a document only rebuilds when something it actually shows
 # changes.
 DOCUMENT_FIGURES = {
-    "baseline": [
+    "report": [
         "baseline_summary",
         "baseline_amplitude_trend",
         "baseline_shot_traces",
         "freespace_vs_fiber",
+        "model_comparison",
     ],
 }
 
@@ -58,6 +59,7 @@ DATA_DIR = REPORT_DIR.parent / "smi" / "analysis" / "data"
 RESULTS = [
     str(DATA_DIR / "baseline_results.json"),
     str(DATA_DIR / "gain_sweep_results.json"),
+    str(DATA_DIR / "learned_results.json"),
 ]
 
 # Without this, the unconstrained {document} wildcard in `rule document` also
