@@ -36,8 +36,15 @@ from typing import Any
 
 import numpy as np
 import torch
+from torch.utils.data import Subset
 
-from smi.analysis.baselines import fit_lightgbm, fit_ridge, predict_windows, windowize
+from smi.analysis.baselines import (
+    SupportsPredict,
+    fit_lightgbm,
+    fit_ridge,
+    predict_windows,
+    windowize,
+)
 from smi.analysis.datamodule import VelocityDataModule
 from smi.analysis.metrics import displacement_from_velocity, summarize_per_shot
 from smi.analysis.models.factory import create_model
@@ -405,7 +412,9 @@ def _nan_metrics() -> dict[str, dict[str, float]]:
     return {'velocity_rmse_um_per_ms': dict(nan), 'displacement_rmse_um': dict(nan)}
 
 
-def _collect_shots(subset, count: int) -> tuple[list[np.ndarray], list[np.ndarray]]:  # noqa: ANN001
+def _collect_shots(
+    subset: Subset, count: int
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """Pull raw signal/velocity arrays out of a split subset.
 
     Args:
@@ -424,7 +433,9 @@ def _collect_shots(subset, count: int) -> tuple[list[np.ndarray], list[np.ndarra
     return signals, velocities
 
 
-def _tabular_predictions(model, signals: list[np.ndarray], length: int) -> torch.Tensor:  # noqa: ANN001
+def _tabular_predictions(
+    model: SupportsPredict, signals: list[np.ndarray], length: int
+) -> torch.Tensor:
     """Predict a full-length velocity trace per shot from window predictions.
 
     Each window yields one value at its centre; the trace is reconstructed by

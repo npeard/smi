@@ -6,6 +6,18 @@ and a scikit-learn ``Ridge`` are not ``nn.Module``s, and routing them through
 distort that contract to accommodate two objects that never train on a GPU.
 """
 
-from .tabular import fit_lightgbm, fit_ridge, predict_windows, windowize
+from .tabular import (
+    SupportsPredict,
+    fit_lightgbm,
+    fit_ridge,
+    predict_windows,
+    windowize,
+)
 
-__all__ = ['fit_lightgbm', 'fit_ridge', 'predict_windows', 'windowize']
+__all__ = [
+    'SupportsPredict',
+    'fit_lightgbm',
+    'fit_ridge',
+    'predict_windows',
+    'windowize',
+]
