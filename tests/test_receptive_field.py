@@ -10,6 +10,7 @@ import pytest
 import torch
 
 from smi.analysis.models.scnn import SCNN, SCNNConfig
+from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
 
 
@@ -85,3 +86,29 @@ def test_scnn_does_see_the_future():
     )
     _, sees_future = measure_receptive_field(SCNN(config), in_channels=3, length=2048)
     assert sees_future
+
+
+def test_tcan_receptive_field_does_not_double_count_the_centre():
+    """TCAN sums two TCN fields, each of which already includes its centre.
+
+    Without the correction the reported field is one larger than the measured
+    one -- an off-by-one that is invisible unless the field is measured.
+    """
+    config = TCANConfig(
+        sequence_length=2048,
+        in_channels=3,
+        activation='GELU',
+        use_layer_norm=False,
+        use_weight_norm=False,
+        siamese_kernel_size=3,
+        siamese_channels=[8, 16],
+        siamese_dilation_base=2,
+        atten_heads=2,
+        decoder_kernel_size=3,
+        decoder_channels=[16, 16],
+        decoder_dilation_base=2,
+        dropout=0.0,
+    )
+    model = TCAN(config)
+    measured, _ = measure_receptive_field(model, in_channels=3, length=2048)
+    assert model.receptive_field == measured
