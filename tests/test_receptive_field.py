@@ -112,3 +112,31 @@ def test_tcan_receptive_field_does_not_double_count_the_centre():
     model = TCAN(config)
     measured, _ = measure_receptive_field(model, in_channels=3, length=2048)
     assert model.receptive_field == measured
+
+
+def test_config_rejects_dilation_base_that_outruns_the_kernel():
+    """A stack whose dilation outruns one block's span must not construct.
+
+    kernel_size=2 / dilation_base=4 reports a field of 43 but measures 27: the
+    dilated coverage has gaps, so the property over-reports. A config that
+    silently misstates its own receptive field is worse than one that refuses.
+    """
+    with pytest.raises(ValueError, match='dilation_base 4 exceeds'):
+        _config(2, 4, [8, 16, 32])
+
+
+@pytest.mark.parametrize(
+    ('kernel_size', 'dilation_base'),
+    # (3, 4) is the case that matters: tcn-config.yaml and scnn-config.yaml
+    # both search kernel_size [3,5,7] x dilation_base [2,3,4], so a tighter
+    # bound than 2*(k-1)+1 would crash those searches mid-run on a
+    # configuration that is in fact exact.
+    [(2, 3), (3, 4), (3, 5), (5, 2), (7, 7)],
+)
+def test_config_accepts_dilation_base_within_the_kernel_span(
+    kernel_size, dilation_base
+):
+    """Inside the valid regime the config constructs and the field is exact."""
+    model = TCN(_config(kernel_size, dilation_base, [8, 16]))
+    measured, _ = measure_receptive_field(model, in_channels=3, length=2048)
+    assert model.receptive_field == measured
