@@ -1,0 +1,112 @@
+# Build DAG for the smi report documents: figure scripts -> PDFs -> documents.
+#
+# Run from this directory:
+#     pixi run -e report snakemake --cores all
+# or, from anywhere in the repo, via the pixi tasks:
+#     pixi run report / report-dry / report-clean / report-only
+#
+# Design notes
+#
+# - FIGURES is the single registry. Adding a figure means dropping
+#   report/figures/plot_<name>.py on disk and adding <name> here.
+#   tests/test_report_build.py checks those two stay in sync in both
+#   directions, because a file-per-figure layout invites exactly that drift.
+# - Documents depend on the figure PDFs they include, so editing one figure
+#   script rebuilds that figure and the documents that use it, and nothing
+#   else.
+# - Everything generated lands in build/, which is gitignored.
+# - Commands are kept to plain `python` / `typst` invocations with no shell
+#   builtins, so the same rules run under cmd.exe, PowerShell and bash.
+
+from pathlib import Path
+
+REPORT_DIR = Path(workflow.basedir)
+BUILD = "build"
+FIGDIR = f"{BUILD}/figures"
+
+# Which figures each document includes. Kept explicit rather than "all
+# figures" so a document only rebuilds when something it actually shows
+# changes.
+DOCUMENT_FIGURES = {
+    "report": [
+        "baseline_summary",
+        "baseline_amplitude_trend",
+        "baseline_shot_traces",
+        "freespace_vs_fiber",
+        "model_comparison",
+    ],
+}
+
+# The figure registry: stem <name> maps to figures/plot_<name>.py ->
+# build/figures/<name>.pdf. Derived rather than written out, because a figure
+# that no document includes should not be built, and a figure a document
+# includes must be. Maintaining both lists by hand made those two invariants
+# something to remember and then test for; deriving makes them true by
+# construction.
+FIGURES = sorted({name for names in DOCUMENT_FIGURES.values() for name in names})
+
+DOCUMENTS = sorted(DOCUMENT_FIGURES)
+
+THEME = "lib/theme.typ"
+
+# The results artifacts every baseline figure reads. Declared as figure inputs
+# so regenerating them rebuilds the figures that quote them: without this the
+# DAG only watches the scripts, and a regenerated artifact leaves stale figure
+# PDFs beside a document whose tables have moved. Listed for all figures
+# rather than per figure because the set is small and a figure that ignores
+# them is only rebuilt spuriously, while one omitted from the list is wrong.
+DATA_DIR = REPORT_DIR.parent / "smi" / "analysis" / "data"
+RESULTS = [
+    str(DATA_DIR / "baseline_results.json"),
+    str(DATA_DIR / "gain_sweep_results.json"),
+    str(DATA_DIR / "learned_results.json"),
+]
+
+# Without this, the unconstrained {document} wildcard in `rule document` also
+# matches "figures/<name>", so Snakemake evaluates a figure PDF as a candidate
+# document output and its input function raises KeyError on every run. Pinning
+# both wildcards to their registries keeps the DAG unambiguous.
+wildcard_constraints:
+    document="|".join(DOCUMENTS),
+    name="|".join(FIGURES),
+
+
+def figure_pdfs(document):
+    return [f"{FIGDIR}/{name}.pdf" for name in DOCUMENT_FIGURES[document]]
+
+
+rule all:
+    input:
+        expand(f"{BUILD}/{{document}}.pdf", document=DOCUMENTS),
+
+
+rule figure:
+    """Render one figure. The script writes exactly the path it is handed."""
+    input:
+        script="figures/plot_{name}.py",
+        common="figures/_figcommon.py",
+        results=RESULTS,
+    output:
+        f"{FIGDIR}/{{name}}.pdf",
+    shell:
+        "python {input.script} --output {output}"
+
+
+rule document:
+    """Compile a Typst document against its figures."""
+    input:
+        source="{document}.typ",
+        theme=THEME,
+        figures=lambda wildcards: figure_pdfs(wildcards.document),
+    output:
+        f"{BUILD}/{{document}}.pdf",
+    shell:
+        "typst compile --root . {input.source} {output}"
+
+
+rule clean:
+    """Remove every generated artifact."""
+    run:
+        import shutil
+
+        shutil.rmtree(REPORT_DIR / BUILD, ignore_errors=True)

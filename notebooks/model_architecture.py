@@ -10,7 +10,7 @@ def _():
     import yaml
     from torchview import draw_graph
 
-    from self_interferometry.analysis.models.factory import create_model
+    from smi.analysis.models.factory import create_model
 
     return create_model, draw_graph, mo, yaml
 
@@ -26,7 +26,7 @@ def _(mo):
 
 @app.cell
 def _():
-    config_path = '/Users/nolanpeard/Documents/Projects/self-interferometry/self_interferometry/analysis/models/configs/tcn-config.yaml'
+    config_path = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/models/configs/tcn-config.yaml'
     return (config_path,)
 
 
@@ -40,7 +40,7 @@ def _(config_path, create_model, yaml):
     # Handle list-valued hyperparams (from sweep configs) by taking first element
     _clean_hparams = {}
     for k, v in _model_hparams.items():
-        if (isinstance(v, list) and k not in ('temporal_channels',)) or (
+        if (isinstance(v, list) and k != 'temporal_channels') or (
             k == 'temporal_channels' and isinstance(v, list) and isinstance(v[0], list)
         ):
             _clean_hparams[k] = v[0]

@@ -1,0 +1,40 @@
+# Windowed MLP baseline: the simplest learned model in the comparison.
+# Windowed exactly as BarlandCNN is (256 samples in, one velocity out), so the
+# number it produces answers "architecture vs architecture".
+model:
+  type: "MLP"
+  window_size: 256
+  in_channels: 3
+  hidden_sizes: [64, 32]
+  activation: "GELU"
+  dropout: 0.0
+  window_stride: 256
+
+training:
+  max_epochs: 200
+  warmup_epochs: 0
+  T_0: 200
+  T_mult: 1
+  batch_size: 128
+  optimizer: "Adam"
+  weight_decay: 1e-6
+  momentum: 0.9
+  learning_rate: 1e-3
+  eta_min: 1e-6
+  accelerator: "gpu"
+  devices: 1
+  use_logging: false
+  wandb_project: "smi"
+  experiment_name: "mlp_baseline"
+  target: "velocity"
+
+loss:
+  dynamic: false
+  velocity_loss_weight: 1.0
+  displacement_loss_weight: 0.0
+
+data:
+  data_dir: "./analysis/data"
+  dataset_file: "free-space-synchro_10k.h5"
+  split_ratios: [80, 10, 10]
+  num_workers: 7

@@ -18,13 +18,11 @@ def _():
 
 @app.cell
 def _():
-    from self_interferometry.acquisition.redpitaya.redpitaya_config import (
-        RedPitayaConfig,
-    )
-    from self_interferometry.analysis.datasets import get_data_loaders
-    from self_interferometry.analysis.generate_data import generate_synthetic_test_data
-    from self_interferometry.analysis.lit_module import LitModule
-    from self_interferometry.analysis.synthetic_lit_module import DEFAULT_WAVELENGTHS_NM
+    from smi.analysis.datasets import get_data_loaders
+    from smi.analysis.generate_data import generate_synthetic_test_data
+    from smi.analysis.lit_module import LitModule
+    from smi.analysis.synthetic_lit_module import DEFAULT_WAVELENGTHS_NM
+    from smi.redpitaya.redpitaya_config import RedPitayaConfig
 
     ACQ_SAMPLE_RATE = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
     CHANNEL_NAMES = ['PD1 (635 nm)', 'PD2 (675 nm)', 'PD3 (515 nm)']
@@ -50,11 +48,11 @@ def _(mo):
 
 @app.cell
 def _():
-    freespace_datapath = '/Users/nolanpeard/Documents/Projects/self-interferometry/self_interferometry/analysis/data/free-space-synchro_10k.h5'
-    mmfiber_datapath = '/Users/nolanpeard/Documents/Projects/self-interferometry/self_interferometry/analysis/data/mmfiber-synchro_10k.h5'
+    freespace_datapath = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/data/free-space-synchro_10k.h5'
+    mmfiber_datapath = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/data/mmfiber-synchro_10k.h5'
 
-    best_freespace_model = '/Users/nolanpeard/Documents/Projects/self-interferometry/self_interferometry/analysis/models/checkpoints/4puqewmv_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
-    best_fiber_model = '/Users/nolanpeard/Documents/Projects/self-interferometry/self_interferometry/analysis/models/checkpoints/bfzctg24_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
+    best_freespace_model = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/models/checkpoints/4puqewmv_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
+    best_fiber_model = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/models/checkpoints/bfzctg24_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
     return best_fiber_model, mmfiber_datapath
 
 
@@ -241,7 +239,7 @@ def _(ACQ_SAMPLE_RATE, CHANNEL_NAMES, np, plt, sample_index, signals, velocity_t
             label='Velocity',
             lw=3,
         )
-        _ax2.set_ylabel('Velocity (umm/s)', color='#972a19')
+        _ax2.set_ylabel('Velocity (um/ms)', color='#972a19')
         _ax2.tick_params(axis='y', labelcolor='#972a19')
     _axs[-1].set_xlabel('Time (ms)')
     # _fig.suptitle(f'Raw Input Signals - Sample {_i + 1}')
@@ -291,8 +289,8 @@ def _(
     _axs[0].plot(
         _time_ms, velocity_hat[_i], label='Predicted', color='#d95f02', linestyle='--'
     )
-    _axs[0].set_title(f'Velocity (RMSE: {_v_rmse:.1f} umm/s)')
-    _axs[0].set_ylabel('Velocity (umm/s)')
+    _axs[0].set_title(f'Velocity (RMSE: {_v_rmse:.4f} um/ms)')
+    _axs[0].set_ylabel('Velocity (um/ms)')
     _axs[0].grid(True, alpha=0.3)
     _axs[0].legend(loc='upper right')
 
@@ -300,7 +298,7 @@ def _(
     _axs[1].plot(_time_ms, _v_residual, label='Residual', color='#7570b3')
     _axs[1].axhline(y=0, color='black', linestyle=':')
     _axs[1].set_title(f'Velocity Residual (MSE: {_v_mse:.2e})')
-    _axs[1].set_ylabel('Residual (umm/s)')
+    _axs[1].set_ylabel('Residual (um/ms)')
     _axs[1].grid(True, alpha=0.3)
     _axs[1].legend(loc='upper right')
 
@@ -313,8 +311,8 @@ def _(
         color='#d95f02',
         linestyle='--',
     )
-    _axs[2].set_title(f'Displacement (RMSE: {_d_rmse:.4f} umm)')
-    _axs[2].set_ylabel('Displacement (umm)')
+    _axs[2].set_title(f'Displacement (RMSE: {_d_rmse:.4f} um)')
+    _axs[2].set_ylabel('Displacement (um)')
     _axs[2].grid(True, alpha=0.3)
     _axs[2].legend(loc='upper right')
 
@@ -322,7 +320,7 @@ def _(
     _axs[3].plot(_time_ms, _d_residual, label='Residual', color='#7570b3')
     _axs[3].axhline(y=0, color='black', linestyle=':')
     _axs[3].set_title(f'Displacement Residual (MSE: {_d_mse:.2e})')
-    _axs[3].set_ylabel('Residual (umm)')
+    _axs[3].set_ylabel('Residual (um)')
     _axs[3].grid(True, alpha=0.3)
     _axs[3].legend(loc='upper right')
 
@@ -388,7 +386,7 @@ def _(
         linestyle='--',
     )
     _axs[0].set_title(f'Velocity (MSE: {_v_mse:.2e})')
-    _axs[0].set_ylabel('Velocity (umm/s)')
+    _axs[0].set_ylabel('Velocity (um/ms)')
     _axs[0].grid(True, alpha=0.3)
     _axs[0].legend(loc='upper right')
 
@@ -396,7 +394,7 @@ def _(
     _axs[1].plot(_time_ms, _v_residual, label='Velocity Residual', color='purple')
     _axs[1].axhline(y=0, color='black', linestyle=':', alpha=0.5)
     _axs[1].set_title(f'Velocity Residual (MSE: {_v_mse:.2e})')
-    _axs[1].set_ylabel('Residual (umm/s)')
+    _axs[1].set_ylabel('Residual (um/ms)')
     _axs[1].grid(True, alpha=0.3)
     _axs[1].legend(loc='upper right')
 
@@ -412,7 +410,7 @@ def _(
         linestyle='--',
     )
     _axs[2].set_title(f'Displacement (MSE: {_d_mse:.2e})')
-    _axs[2].set_ylabel('Displacement (umm)')
+    _axs[2].set_ylabel('Displacement (um)')
     _axs[2].grid(True, alpha=0.3)
     _axs[2].legend(loc='upper right')
 
@@ -420,7 +418,7 @@ def _(
     _axs[3].plot(_time_ms, _d_residual, label='Displacement Residual', color='purple')
     _axs[3].axhline(y=0, color='black', linestyle=':', alpha=0.5)
     _axs[3].set_title(f'Displacement Residual (MSE: {_d_mse:.2e})')
-    _axs[3].set_ylabel('Residual (umm)')
+    _axs[3].set_ylabel('Residual (um)')
     _axs[3].grid(True, alpha=0.3)
     _axs[3].legend(loc='upper right')
 
@@ -496,10 +494,10 @@ def _(displacement_hat, displacement_target, np, plt, velocity_hat, velocity_tar
         color='#d95f02',
         linestyle='--',
         linewidth=2,
-        label=f'Mean: {_v_rmse.mean():.2f}',
+        label=f'Mean: {_v_rmse.mean():.4f}',
     )
-    _axs[0].set_title(f'Velocity RMSE (std: {_v_rmse.std():.2f})')
-    _axs[0].set_xlabel('RMSE (umm/s)')
+    _axs[0].set_title(f'Velocity RMSE (std: {_v_rmse.std():.4f})')
+    _axs[0].set_xlabel('RMSE (um/ms)')
     _axs[0].set_ylabel('Count')
     _axs[0].legend()
     _axs[0].grid(True, alpha=0.3)
@@ -513,7 +511,7 @@ def _(displacement_hat, displacement_target, np, plt, velocity_hat, velocity_tar
         label=f'Mean: {_d_rmse.mean():.3f}',
     )
     _axs[1].set_title(f'Displacement RMSE (std: {_d_rmse.std():.3f})')
-    _axs[1].set_xlabel('RMSE (umm)')
+    _axs[1].set_xlabel('RMSE (um)')
     _axs[1].set_ylabel('Count')
     _axs[1].legend()
     _axs[1].grid(True, alpha=0.3)
@@ -548,8 +546,8 @@ def _(
         range=[[-_v_lim, _v_lim], [-_v_lim, _v_lim]],
     )
     _axs[0].plot([-_v_lim, _v_lim], [-_v_lim, _v_lim], 'r--', alpha=0.7, label='y = x')
-    _axs[0].set_xlabel('Target Velocity (umm/s)')
-    _axs[0].set_ylabel('Predicted Velocity (umm/s)')
+    _axs[0].set_xlabel('Target Velocity (um/ms)')
+    _axs[0].set_ylabel('Predicted Velocity (um/ms)')
     _axs[0].set_title('Velocity Correlation')
     _axs[0].set_aspect('equal')
     _axs[0].legend()
@@ -568,8 +566,8 @@ def _(
         range=[[-_d_lim, _d_lim], [-_d_lim, _d_lim]],
     )
     _axs[1].plot([-_d_lim, _d_lim], [-_d_lim, _d_lim], 'r--', alpha=0.7, label='y = x')
-    _axs[1].set_xlabel('Target Displacement (umm)')
-    _axs[1].set_ylabel('Predicted Displacement (umm)')
+    _axs[1].set_xlabel('Target Displacement (um)')
+    _axs[1].set_ylabel('Predicted Displacement (um)')
     _axs[1].set_title('Displacement Correlation')
     _axs[1].set_aspect('equal')
     _axs[1].legend()
@@ -691,7 +689,7 @@ def _(
         _ax.set_xticks(_x)
         _ax.set_xticklabels(_labels, rotation=30, ha='right')
         _ax.set_title(_title)
-        _unit = '(umm/ms)' if 'Velocity' in _title else '(umm)'
+        _unit = '(um/ms)' if 'Velocity' in _title else '(um)'
         _ax.set_ylabel(f'RMSE {_unit}')
         _ax.grid(True, alpha=0.3, axis='y')
 

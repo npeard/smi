@@ -1,0 +1,54 @@
+model:
+  type: "TCAN"
+  sequence_length: 16384
+  in_channels: 3
+  activation: "GELU"
+  use_layer_norm: true
+  use_weight_norm: true
+  dropout: 0.0
+
+  # Siamese encoder: shared-weight TCN applied independently to each input channel
+  siamese_kernel_size: 7
+  siamese_channels: [[16, 16, 16, 16], [8,8,16,16]]
+  siamese_dilation_base: 3
+
+  # Cross-channel attention: attends across channels at each time step
+  atten_heads: [4, 8]      # must divide siamese_channels[-1]
+
+  # Decoder: single TCN from all attended channel features to 1 output
+  decoder_kernel_size: 7
+  decoder_channels: [[16,16,8,8],[16,16,8,8]]
+  decoder_dilation_base: 2
+
+training:
+  max_epochs: 200
+  warmup_epochs: 0
+  T_0: 200
+  T_mult: 1
+  batch_size: 64
+  optimizer: "Muon"
+  weight_decay: 1e-6
+  momentum: 0.9
+  learning_rate: 1e-3
+  eta_min: 1e-6
+  accelerator: "gpu"
+  devices: 1
+  use_logging: true
+  wandb_project: "smi"
+  experiment_name: "tcan_pareto_setup"
+  target: "velocity"
+
+loss:
+  dynamic: false
+  velocity_loss_weight: 1.0
+  displacement_loss_weight: 0.0
+  vicreg_weight: 0.0   # set > 0 to enable VICReg on siamese encoder outputs
+  vicreg_sim_coeff: 25.0
+  vicreg_std_coeff: 25.0
+  vicreg_cov_coeff: 1.0
+
+data:
+  data_dir: "./analysis/data"
+  dataset_file: ["free-space-synchro_10k.h5", "mmfiber-synchro_10k.h5"]
+  split_ratios: [[80, 10, 10]]
+  num_workers: 7

@@ -1,0 +1,49 @@
+# Small synthetic ensemble search config (CPU smoke test).
+#
+# The architecture is FIXED here (model/training scalars); the `ensemble` section
+# carries the within-architecture axis. A Ray Tune trial trains a vmap-ensemble
+# (smi.analysis.ensemble.SyntheticEnsembleModule) of K = len(per_member_lr)
+# members on one shared on-GPU synthetic batch, and reports the best member's
+# val/total_unweighted_loss. The `ensemble` section passes through verbatim --
+# its lists are per-member specs, not tune.choice search dimensions. Values that
+# are themselves lists (temporal_channels, wavelengths_nm) are singleton
+# list-of-lists so they round-trip through the search-space builder.
+
+model:
+  type: "TCN"
+  sequence_length: 256
+  activation: "GELU"
+  use_layer_norm: true
+  use_weight_norm: true
+  dropout: 0.0
+  kernel_size: 3
+  temporal_channels: [[8, 8, 16]]
+  dilation_base: 2
+
+training:
+  max_epochs: 1
+  batch_size: 4
+  learning_rate: 1e-3
+  accelerator: "cpu"
+  devices: 1
+  target: "velocity"
+
+loss:
+  velocity_loss_weight: 1.0
+  displacement_loss_weight: 0.1
+
+synthetic:
+  use_synthetic_training: true
+  wavelengths_nm: [[635, 674.8, 515]]
+  start_freq: 1
+  end_freq: 1000
+  steps_per_epoch: 2
+  val_steps: 2
+  max_displacement_um: 5.0
+
+ensemble:
+  size: 3
+  # Per-member learning rates (length defines K); enables manual per-member-lr
+  # optimization in EnsembleModule. Use decimal notation -- YAML parses bare
+  # scientific notation like 1e-3 as a string.
+  per_member_lr: [0.001, 0.0005, 0.0001]

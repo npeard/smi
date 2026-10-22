@@ -1,0 +1,49 @@
+# The budget itself: 57,377 parameters at in_channels=3, receptive field 91.
+# use_weight_norm is false here (unlike barland-config.yaml): the weight-norm
+# reparametrization adds 176 g-scalars, and the 57,377 ceiling every other
+# config is held to is the unnormalized count.
+model:
+  type: "Barland"
+  window_size: 256
+  in_channels: 3
+  activation: "LeakyReLU"
+  dropout: 0.0
+  use_weight_norm: false
+  # Stride 8, not the window size. At stride == window_size the overlap
+  # average in SlidingWindowModel.forward has nothing to average, so the
+  # output is a staircase of 256-sample constants; the lowest velocity RMSE
+  # any such predictor can reach on this split is 0.1866 um/ms, which is what
+  # the earlier stride-256 row measured instead of the architecture. The floor
+  # at stride 8 is 0.0065 um/ms, 17x below the TCN's 0.1116, so it cannot bind
+  # the comparison. Stride 1 would be exact but costs ~6 min per epoch
+  # (memory-bound on the unfold).
+  window_stride: 8
+
+training:
+  max_epochs: 30
+  warmup_epochs: 0
+  T_0: 30
+  T_mult: 1
+  batch_size: 16
+  optimizer: "Adam"
+  weight_decay: 1e-6
+  momentum: 0.9
+  learning_rate: 1e-3
+  eta_min: 1e-6
+  accelerator: "gpu"
+  devices: [0]
+  use_logging: false
+  wandb_project: "smi"
+  experiment_name: "barland_matched"
+  target: "velocity"
+
+loss:
+  dynamic: false
+  velocity_loss_weight: 1.0
+  displacement_loss_weight: 0.0
+
+data:
+  data_dir: "./analysis/data"
+  dataset_file: "free-space-synchro_10k.h5"
+  split_ratios: [80, 10, 10]
+  num_workers: 7
