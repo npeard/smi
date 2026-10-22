@@ -149,20 +149,12 @@ allow-dict-calls-with-keyword-arguments = true
 # and they are not packages, so INP001 does not either. Grouped under one
 # rationale rather than repeated per file -- a new script of this shape
 # belongs in this block, not in a fresh entry with its own justification.
-"scripts/check_ascii.py" = ["S603", "S607", "T201"]
 "report/scripts/*.py" = ["INP001", "T201"]
 "smi/analysis/benchmark_loading.py" = ["T201"]
 # report/figures/*.py are the same shape, and additionally import their shared
 # helpers through a sys.path insert, which must precede the import it enables
 # (E402).
 "report/figures/*.py" = ["INP001", "E402"]
-# A different reason, kept separate from the block above: these two are copied
-# verbatim from ~/Documents/Projects/agent-config, where they are maintained
-# and linted. Reformatting them to this project's stricter rules would fork
-# them from upstream and make the next copy a merge, so the rules they trip
-# here are disabled rather than the files edited.
-"scripts/preflight.py" = ["ANN202", "B007", "D301", "PLC0415", "PTH115", "S603", "S607", "T201"]
-"scripts/platform_paths.py" = ["ANN202", "D301", "INP001", "PLC0415", "PTH115", "S603", "S607", "T201"]
 "tests/plot_waveforms.py" = ["PLR0915", "E501"]
 "smi/redpitaya/manager.py" = ["C901", "PLR0912", "PLR0915"]
 "smi/redpitaya/scpi.py" = ["C901", "PLR0912", "PLR0915", "E501"]
@@ -196,6 +188,9 @@ codespell = "*"
 
 [tool.pixi.pypi-dependencies]
 smi = { path = ".", editable = true }
+# The generic gates (check-ascii, preflight), pinned to the same tag as the
+# pre-commit hook. Bump both together.
+agent-config = { git = "https://github.com/npeard/agent-config", tag = "v0.1.0" }
 
 # Torch arrives via the editable `smi` install, and PyPI's default win-64 torch
 # wheel is CPU-only -- which cannot answer the GPU-residency question this
@@ -258,26 +253,26 @@ report = { features = ["report"], solve-group = "default" }
 [tool.pixi.tasks]
 format = "ruff format . && ruff check --fix ."
 lint = "ruff check ."
-ascii = "python scripts/check_ascii.py"
+ascii = "check-ascii"
 # `python -m pytest` (not bare `pytest`) so it runs via the env's interpreter.
 test = "python -m pytest"
 spell = "python -m codespell_lib ."
 precommit = "pre-commit run --all-files"
 # Step 0 of the workflow spine: is this project fit to start work in?
-# scripts/preflight.py is a *copy*, by design -- it checks the repo it sits in
-# (branch, clean tree, hook installation, interpreter) and is meant to travel
-# with the project rather than be shared. Add --with-tests when starting fresh
-# work, --check-updates weekly rather than per session (a network round trip
-# per hook repo).
-preflight = "python scripts/preflight.py"
+# The agent-config command checks the repo it runs in (branch, clean tree, hook
+# installation, interpreter). Add --with-tests when starting fresh work,
+# --check-updates weekly rather than per session (a network round trip per
+# hook repo).
+preflight = "preflight"
 
 [tool.pixi.feature.dev.tasks]
 typecheck = "ty check"
 all = { depends-on = ["format", "lint", "ascii", "typecheck", "test"] }
 # Step 7 of the workflow spine, and the reflect skill's detection half.
 #
-# Unlike preflight above, these two are deliberately NOT copied here. They are
-# cross-project by construction: friction mines ~/.claude/projects transcripts
+# Unlike preflight above, agent-config does not export these two as commands,
+# and they are deliberately not copied here. They are cross-project by
+# construction: friction mines ~/.claude/projects transcripts
 # and reads one shared decision ledger, because transcripts are global so
 # suppression has to be global too -- a per-project ledger would re-propose
 # classes already decided elsewhere. toolgaps likewise inventories

@@ -22,7 +22,7 @@ The importable package is `smi/`:
 - `smi/redpitaya/` - Red Pitaya hardware control and acquisition.
 - `report/` - Typst slides and reports, built from matplotlib figures through a
   Snakemake DAG (`pixi run report`). See the `report/` section in `CLAUDE.md`.
-- `tests/`, `notebooks/` (marimo apps), `scripts/`, `docs/`.
+- `tests/`, `notebooks/` (marimo apps), `docs/`.
 
 Supported platforms are `win-64` and `linux-64`.
 

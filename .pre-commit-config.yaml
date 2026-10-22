@@ -53,11 +53,11 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-    -   id: ascii-only
-        name: ASCII-only source (no Unicode; use plain text or LaTeX)
-        entry: pixi run -e dev python scripts/check_ascii.py
-        language: system
-        types_or: [python, markdown]
+
+-   repo: https://github.com/npeard/agent-config
+    rev: v0.1.0
+    hooks:
+    -   id: check-ascii
 
 -   repo: meta
     hooks:
