@@ -206,7 +206,10 @@ torch = { version = ">=2.14", index = "https://download.pytorch.org/whl/cu130" }
 [tool.pixi.feature.dev.pypi-dependencies]
 pre-commit = "*"
 nbstripout = "*"
-ty = "*"
+# Held below 0.0.81: 0.0.90 reports invalid-mutable-override on every
+# nn.Module.forward override, because torch types `forward` as a mutable
+# Callable attribute. Lift the pin when torch or ty resolves that.
+ty = "<0.0.81"
 bandit = "*"
 marimo = "*"
 lmfit = "*"
