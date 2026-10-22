@@ -6,7 +6,7 @@
 //   report-theme(title: ..., subtitle: ..., author: ..., date: ...)
 //
 // ASCII only, matching the repo-wide convention enforced by
-// scripts/check_ascii.py for *.py and *.md. Write "->", "um", "<=" rather
+// the check-ascii hook for *.py and *.md. Write "->", "um", "<=" rather
 // than the corresponding Unicode glyphs.
 
 // Palette mirrors report/figures/_figcommon.py COLORS, so text accents and

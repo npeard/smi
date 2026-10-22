@@ -49,14 +49,15 @@ Workflow-spine tasks (see the master CLAUDE.md's numbered spine):
 
 - `pixi run preflight` - Step 0: is this project fit to start work in?
   `--with-tests` when starting fresh work; `--check-updates` weekly, not per
-  session (one network round trip per hook repo). The script is a *copy* in
-  `scripts/`, by design: it checks the repo it sits in.
+  session (one network round trip per hook repo). Runs agent-config's pinned
+  `preflight` command, which checks the repo it runs in.
 - `pixi run friction` - Recurring-friction miner, for step 7 and the `reflect`
   skill's detection half.
 - `pixi run toolgaps` - Missing standard tooling, plus an inventory of
   agent-config assets available to adopt.
 
-`friction` and `toolgaps` are deliberately **not** copied into this repo: both
+`friction` and `toolgaps` are not agent-config commands and are deliberately
+**not** copied into this repo: both
 are cross-project by construction (friction mines `~/.claude/projects`
 transcripts against one shared ledger, because global transcripts need global
 suppression; toolgaps inventories agent-config's assets). They therefore
@@ -116,8 +117,7 @@ not, the index pin in `[tool.pixi.pypi-dependencies]` is the thing to check.
 ## Package layout
 
 The importable package is `smi/` (distribution name `smi`). Top-level repo
-layout: `smi/` (library), `tests/`, `notebooks/` (marimo apps), `scripts/`
-(`check_ascii.py`), `docs/`.
+layout: `smi/` (library), `tests/`, `notebooks/` (marimo apps), `docs/`.
 
 Inside `smi/`:
 
@@ -228,7 +228,7 @@ These override defaults; follow them unless explicitly told otherwise.
 
 - Ruff formatting and linting with Google-style docstrings
 - Type hints required (Python 3.12+)
-- Pre-commit hooks: ruff, ty, ascii-only, codespell, nbstripout, standard checks
+- Pre-commit hooks: ruff, ty, check-ascii, codespell, nbstripout, standard checks
 - Spell checking with codespell
 
 ### ASCII-only source convention
@@ -241,7 +241,7 @@ instead of the corresponding Greek letters, angle brackets, arrows, and
 relation glyphs. This keeps source grep-able, diff-able, and free of
 homoglyph ambiguity.
 
-Enforcement: `scripts/check_ascii.py` (run via `pixi run ascii`, part of
-`pixi run all`, and the `ascii-only` pre-commit hook) fails on any non-ASCII
+Enforcement: agent-config's `check-ascii` (run via `pixi run ascii`, part of
+`pixi run all`, and the pinned `check-ascii` pre-commit hook) fails on any non-ASCII
 codepoint in `*.py`/`*.md`. Ruff's `RUF001/2/3` additionally flag the
 confusable subset.
