@@ -25,6 +25,7 @@ training:
   batch_size: 4
   learning_rate: 1e-3
   accelerator: "cpu"
+  precision: "32-true"
   devices: 1
   target: "velocity"
 

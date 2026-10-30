@@ -307,6 +307,8 @@ class TrainingInterface:
         # Get accelerator and device settings from config
         accelerator = self.config.training_config['accelerator']
         devices = self.config.training_config['devices']
+        # Required, no default: precision changes results, so it must be stated.
+        precision = self.config.training_config['precision']
 
         # Convert devices to proper type if it's a string
         if isinstance(devices, str):
@@ -320,6 +322,7 @@ class TrainingInterface:
             check_val_every_n_epoch=check_val_every_n_epoch,
             accelerator=accelerator,
             devices=devices,
+            precision=precision,
         )
 
     def train(self):
@@ -336,10 +339,14 @@ class TrainingInterface:
 
     def test(self):
         """Test the model using best checkpoint."""
-        checkpoint_callback = any(
-            isinstance(cb, ModelCheckpoint) for cb in self.trainer.callbacks
+        # Lightning always installs a default ModelCheckpoint, so its presence
+        # does not mean a best checkpoint exists (it has none without a monitor
+        # or when logging is off); test the in-memory weights in that case.
+        has_best = any(
+            isinstance(cb, ModelCheckpoint) and cb.best_model_path
+            for cb in self.trainer.callbacks
         )
-        ckpt_path = 'best' if checkpoint_callback else None
+        ckpt_path = 'best' if has_best else None
 
         if getattr(self, 'datamodule', None) is not None:
             self.trainer.test(

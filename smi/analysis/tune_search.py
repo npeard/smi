@@ -261,6 +261,7 @@ def _train_ensemble(config: dict[str, dict[str, Any]]) -> None:
         max_epochs=int(training['max_epochs']),
         accelerator=training.get('accelerator', 'cpu'),
         devices=training.get('devices', 1),
+        precision=training['precision'],
         callbacks=[report_callback],
         check_val_every_n_epoch=1,
         logger=False,

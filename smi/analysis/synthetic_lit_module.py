@@ -253,6 +253,18 @@ class SyntheticLitModule(LitModule):
         super().validation_step(synthetic_batch, batch_idx)
 
     @override
+    def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+        """Generate synthetic data on-device and delegate to parent test_step.
+
+        Args:
+            batch: Tensor of indices from SyntheticIndexDataset (batch size only)
+            batch_idx: Index of current batch
+        """
+        batch_size = len(batch)
+        synthetic_batch = self._generate_synthetic_batch(batch_size, self.device)
+        super().test_step(synthetic_batch, batch_idx)
+
+    @override
     def predict_step(
         self, batch: torch.Tensor, batch_idx: int
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -265,3 +277,8 @@ class SyntheticLitModule(LitModule):
     def on_validation_epoch_start(self) -> None:
         """Set a fixed random seed for reproducible validation data."""
         torch.manual_seed(42)
+
+    @override
+    def on_test_epoch_start(self) -> None:
+        """Fixed seed distinct from validation, so test data is never val data."""
+        torch.manual_seed(4242)

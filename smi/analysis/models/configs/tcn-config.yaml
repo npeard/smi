@@ -23,6 +23,7 @@ training:
   learning_rate: 1e-3
   eta_min: 1e-6
   accelerator: "gpu"
+  precision: "32-true"
   devices: 1
   use_logging: true
   wandb_project: "smi"
