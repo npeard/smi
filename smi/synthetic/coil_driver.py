@@ -51,6 +51,11 @@ class CoilDriver:
             self.params = CalibrationParameters()
         else:
             self.params = calibration_params
+        # Device tensors of the torch paths, keyed by every argument they are
+        # built from: simulation rebuilds them per batch otherwise, from a
+        # numpy round trip for the precompensation. Valid because ``params``
+        # is never reassigned after construction; callers must not mutate them.
+        self._torch_cache: dict[tuple, tuple[torch.Tensor, torch.Tensor]] = {}
 
     def normalized_velocity_transfer(
         self, freq: np.ndarray, min_freq: float
@@ -429,13 +434,15 @@ class CoilDriver:
         # Stay in the input dtype (float32/complex64): MPS has no float64, and
         # promoting here would make the on-device path unusable there.
         spectrum = torch.fft.fft(voltage_waveform, dim=-1, norm='ortho')
-        freq = torch.fft.fftfreq(
-            n,
-            d=1.0 / sample_rate,
-            device=voltage_waveform.device,
-            dtype=voltage_waveform.dtype,
-        )
-        transfer = self.get_transfer_function_torch(freq, max_freq)
+        device, dtype = voltage_waveform.device, voltage_waveform.dtype
+        key = ('transfer', n, sample_rate, max_freq, device, dtype)
+        if key not in self._torch_cache:
+            freq = torch.fft.fftfreq(n, d=1.0 / sample_rate, device=device, dtype=dtype)
+            self._torch_cache[key] = (
+                freq,
+                self.get_transfer_function_torch(freq, max_freq),
+            )
+        freq, transfer = self._torch_cache[key]
 
         return spectrum * transfer / 2, freq
 
@@ -501,13 +508,17 @@ class CoilDriver:
             Pre-compensated drive voltage, same shape/dtype, circularly shifted
             with ``fftshift`` as :meth:`sample` does.
         """
-        freq = np.fft.fftfreq(spectrum_voltage.shape[-1], d=1.0 / sample_rate)
-        velocity_transfer = torch.from_numpy(
-            self.normalized_velocity_transfer(freq, min_freq).astype(np.complex64)
-        ).to(spectrum_voltage.device)
+        n, device = spectrum_voltage.shape[-1], spectrum_voltage.device
+        key = ('precompensate', n, sample_rate, min_freq, device)
+        if key not in self._torch_cache:
+            freq = np.fft.fftfreq(n, d=1.0 / sample_rate)
+            velocity_transfer = torch.from_numpy(
+                self.normalized_velocity_transfer(freq, min_freq).astype(np.complex64)
+            ).to(device)
+            self._torch_cache[key] = (velocity_transfer, velocity_transfer != 0)
+        velocity_transfer, nonzero = self._torch_cache[key]
 
         spectrum = torch.fft.fft(spectrum_voltage, dim=-1, norm='ortho')
-        nonzero = velocity_transfer != 0
         out = torch.ones_like(spectrum)
         out[:, nonzero] = spectrum[:, nonzero] / velocity_transfer[nonzero]
         voltage = torch.fft.ifft(out, dim=-1, norm='ortho').real

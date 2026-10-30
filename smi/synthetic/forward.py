@@ -475,13 +475,36 @@ def pd_lowpass(x: torch.Tensor, cutoff_hz: float, sample_rate: float) -> torch.T
     x[0] p^(n+1); both terms use only samples at or before n.
     """
     length = x.shape[-1]
-    p = one_pole_coefficient(cutoff_hz, sample_rate)
-    n = torch.arange(length, device=x.device, dtype=x.dtype)
-    decay = torch.exp(n * math.log(p))
+    kernel, state = _lowpass_kernel(length, cutoff_hz, sample_rate, x.device, x.dtype)
     nfft = 2 * length
-    spectrum = torch.fft.rfft(x, nfft) * torch.fft.rfft((1 - p) * decay, nfft)
-    y = torch.fft.irfft(spectrum, nfft)[..., :length]
-    return y + x[..., :1] * (decay * p)
+    y = torch.fft.irfft(torch.fft.rfft(x, nfft) * kernel, nfft)[..., :length]
+    return y + x[..., :1] * state
+
+
+@functools.cache
+def _lowpass_kernel(
+    length: int,
+    cutoff_hz: float,
+    sample_rate: float,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """``pd_lowpass``'s kernel spectrum and steady-state term, per geometry.
+
+    Cached because every simulated batch of a config rebuilds the same two.
+    """
+    p = one_pole_coefficient(cutoff_hz, sample_rate)
+    n = torch.arange(length, device=device, dtype=dtype)
+    decay = torch.exp(n * math.log(p))
+    return torch.fft.rfft((1 - p) * decay, 2 * length), decay * p
+
+
+@functools.cache
+def _wavelengths_tensor(
+    wavelengths_um: tuple[float, ...], device: torch.device, dtype: torch.dtype
+) -> torch.Tensor:
+    """``[1, C, 1]`` wavelengths, cached per config and device for simulate_batch."""
+    return torch.tensor(wavelengths_um, device=device, dtype=dtype).view(1, -1, 1)
 
 
 def _quantize(x: torch.Tensor, bits: int, full_scale: float) -> torch.Tensor:
@@ -555,7 +578,9 @@ def simulate_batch(
     n_ch, length = len(cfg.wavelengths_um), displacement.shape[-1]
     full = (batch_size, n_ch, length)
 
-    lam = torch.tensor(cfg.wavelengths_um, device=sim_device).view(1, -1, 1)
+    lam = _wavelengths_tensor(
+        cfg.wavelengths_um, torch.device(sim_device), torch.get_default_dtype()
+    )
     phi_k = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
     lo, hi = cfg.visibility_range
     u = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)

@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
+from smi.synthetic import forward
 from smi.synthetic.forward import (
     NOMINAL_DRIVE_GAIN,
     SMI_NEWTON_ITERATIONS,
@@ -287,3 +288,25 @@ def test_full_model_causal_with_baked_normalization():
         a, b = model(x), model(y)
     torch.testing.assert_close(a[..., :t0], b[..., :t0], atol=1e-6, rtol=0)
     assert not torch.allclose(a[..., t0:], b[..., t0:])
+
+
+@pytest.mark.parametrize('device', devices())
+def test_cached_simulation_is_bitwise_the_uncached_one(device):
+    """Warm caches (coil transfers, wavelengths, low-pass kernel) change nothing.
+
+    Clearing them first makes the first batch build every tensor afresh, the
+    uncached path; the second, same seed, reads them all back.
+    """
+    cfg = dataclasses.replace(
+        _noise_free(feedback_c=0.3, alpha=3.0), snr_db=20.0, pd_bandwidth_hz=50e3
+    )
+    for cache in (forward.drive, forward._lowpass_kernel, forward._wavelengths_tensor):
+        cache.cache_clear()
+    cold, warm = (
+        simulate_batch(
+            cfg, 4, torch.device(device), torch.Generator(device).manual_seed(3)
+        )
+        for _ in range(2)
+    )
+    for field in dataclasses.fields(cold):
+        assert torch.equal(getattr(cold, field.name), getattr(warm, field.name))
