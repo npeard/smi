@@ -141,6 +141,8 @@ allow-dict-calls-with-keyword-arguments = true
 # argv is sys.executable plus paths globbed from the repo, so there is no
 # untrusted input. Scoped to this file rather than widened to tests/**.
 "tests/test_report_build.py" = ["S603"]
+# Same shape: the subprocess argv is sys.executable plus a literal probe.
+"tests/test_platform.py" = ["S603"]
 # Marimo notebooks define imports inside reactive cells (PLC0415 is expected).
 "notebooks/**.py" = ["T201", "ANN", "INP001", "E501", "B018", "PLR0915", "PTH123", "F841", "PLC0415"]
 "*.ipynb" = ["ALL"]
@@ -192,13 +194,13 @@ polars = ">=1.0"
 ruff = ">=0.15,<0.16"
 codespell = "*"
 
-# The PyPI lightgbm macOS wheel does not bundle libomp and looks for Homebrew's
-# copy; conda-forge's llvm-openmp supplies it inside the env. The torch and
-# scikit-learn wheels each bundle their own libomp, so three copies load in one
-# process on macOS (verified with vmmap) -- unlike Windows, they do not abort:
-# tests/test_platform.py runs np.corrcoef after importing all three.
-[tool.pixi.target.macos-14-arm64.dependencies]
-llvm-openmp = "*"
+# The PyPI lightgbm macOS wheel does not bundle libomp and looks for
+# @rpath/libomp.dylib (Homebrew's copy, absent here). A second runtime next to
+# torch's deadlocks threaded lightgbm fits, so the activation script links
+# torch's own libomp into the env instead of installing conda's llvm-openmp.
+# tests/test_platform.py runs torch, lightgbm and scikit-learn threads together.
+[tool.pixi.target.macos-14-arm64.activation]
+scripts = ["scripts/link-torch-libomp.sh"]
 
 [tool.pixi.pypi-dependencies]
 smi = { path = ".", editable = true }

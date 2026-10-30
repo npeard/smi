@@ -90,13 +90,13 @@ committed for reproducibility.
 ### Environment constraints (three live ones, all easy to break)
 
 **Platforms are `win-64`, `linux-64` and `osx-arm64`.** macOS Apple silicon
-is back for MPS work (torch from the default PyPI wheel, `llvm-openmp` from
+is back for MPS work (torch from the default PyPI wheel, libomp linked from torch for
 conda-forge for lightgbm); Intel Mac is unsupported. In `pyproject.toml` the
 osx-arm64 entry is named `macos-14-arm64` so it can declare macOS 14, which
 the torch>=2.14 wheels require; its target tables use that name. The stack is
 `torch>=2.14` / `numpy>=2`.
 
-**One OpenMP runtime, so the numeric stack comes from PyPI.** `numpy`,
+**Keep OpenMP runtimes from colliding; the numeric stack comes from PyPI.** `numpy`,
 `numba`, `matplotlib` and `h5py` resolve from PyPI (via
 `[project.dependencies]`), *not* conda. Conda-forge numpy links
 `libomp.dll` while the PyPI CUDA torch wheel bundles Intel's
@@ -107,6 +107,14 @@ these to `[tool.pixi.dependencies]`, and do not reach for
 silently produce incorrect results, which is disqualifying here. Only
 `typst` and `polars` come from conda; typst is a self-contained Rust
 binary with no BLAS linkage.
+
+On macOS torch and scikit-learn each bundle a libomp and coexist, but
+lightgbm's wheel needs one on the rpath: a second, conda `llvm-openmp` copy
+deadlocks or segfaults threaded fits (OMP Error #179), so
+`scripts/link-torch-libomp.sh` (pixi activation) links torch's own libomp
+into the env instead. `tests/test_platform.py` guards this by running
+threaded torch, lightgbm and scikit-learn work in one subprocess, in either
+import order.
 
 **Torch comes from the `cu130` PyPI index** because the default win-64
 wheel is CPU-only, and because cu124 publishes no cp312/win-64 wheel past
