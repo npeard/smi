@@ -17,7 +17,9 @@ from smi.analysis.experiments import (
     run_grid,
     runner_lock,
 )
+from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import read_results
+from smi.analysis.training_interface import SIGNED_RMSE_KEY
 from smi.synthetic import frozen
 
 MATCHED = experiments.ANALYSIS_DIR / 'models' / 'configs' / 'matched'
@@ -199,7 +201,22 @@ def test_only_filters_cells_by_glob(tmp_path):
     assert keys == ['tcn__ch635-675-515__smi__seed1']
 
 
-def test_runner_evaluates_the_best_checkpoint(tmp_path):
+def test_runner_evaluates_the_best_checkpoint(tmp_path, monkeypatch):
+    """With epoch 1 scripted best and epoch 2 worse, epoch 1's weights are scored."""
+    scripted = [1.0, 0.1, 5.0]  # monitored value by epoch: the middle one is best
+    snapshots: dict[int, dict] = {}
+    real_log = LitModule.log
+
+    def log(self, name, value, *args, **kwargs):
+        if name == SIGNED_RMSE_KEY:
+            epoch = self.trainer.current_epoch
+            snapshots[epoch] = {
+                k: v.detach().clone() for k, v in self.state_dict().items()
+            }
+            value = torch.tensor(scripted[epoch])
+        return real_log(self, name, value, *args, **kwargs)
+
+    monkeypatch.setattr(LitModule, 'log', log)
     path = _grid(tmp_path)
     grid = yaml.safe_load(path.read_text())
     grid['training']['max_epochs'] = 3
@@ -207,14 +224,15 @@ def test_runner_evaluates_the_best_checkpoint(tmp_path):
     path.write_text(yaml.safe_dump(grid))
     _run(path, tmp_path)
     (record,) = read_results(tmp_path / 'results.json')
-    ckpt = torch.load(tmp_path / 'runs' / f'{record.cell_key}.ckpt', weights_only=False)
-    (state,) = (
-        v for k, v in ckpt['callbacks'].items() if k.startswith('ModelCheckpoint')
-    )
-    # The file the estimator loaded is the best-scoring one, not the last epoch.
-    assert state['best_model_score'] == pytest.approx(record.best_monitor)
-    assert record.best_monitor <= record.final_monitor
     assert record.epochs_run == 3
+    assert record.best_monitor == pytest.approx(0.1)
+    assert record.final_monitor == pytest.approx(5.0)
+    ckpt = torch.load(tmp_path / 'runs' / f'{record.cell_key}.ckpt', weights_only=False)
+    saved = ckpt['state_dict']
+    best, last = snapshots[1], snapshots[2]
+    assert any(not torch.equal(best[k], last[k]) for k in best), 'epochs identical'
+    for k, v in best.items():
+        torch.testing.assert_close(saved[k], v, atol=0, rtol=0)
 
 
 def test_patience_exhausted_cell_records_converged(tmp_path):

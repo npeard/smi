@@ -80,22 +80,22 @@ gives the median of the 3 run values and their min-max. Memory is the peak of
 
 | Mode | Per member-epoch, median (min-max) | Peak memory |
 |---|---|---|
-| Sequential, fresh batch per member (what sequential training does) | 3.08 s (3.077-3.080) | 2.5 GB |
-| Sequential, one batch shared by all members (vmap-equivalent data work) | 3.05 s (3.046-3.051) | 2.5 GB |
-| vmap ensemble, K=8, shared batch | 5.18 s (5.170-5.189) | 21.0 GB |
-| Ray, 2 concurrent trials (`mps`: 1/2), fresh batch per member | 2.80 s (2.787-2.805) | 2.5 GB per process |
+| Sequential, fresh batch per member (what sequential training does) | 3.08 s (3.077-3.080) | 2494 MiB |
+| Sequential, one batch shared by all members (vmap-equivalent data work) | 3.05 s (3.046-3.051) | 2494 MiB |
+| vmap ensemble, K=8, shared batch | 5.18 s (5.170-5.189) | 21013 MiB |
+| Ray, 2 concurrent trials (`mps`: 1/2), fresh batch per member | 2.80 s (2.787-2.805) | 2494 MiB per process |
 
-Ray was run at k=2 only for the 3 repeats; k=4 was a single earlier run at
-2.80 s per member-epoch (trial epoch / 4), no faster than k=2.
+Ray was run at k=2 only for the 3 repeats; k=4 was a single run, not in
+`results.log`, at 2.80 s per member-epoch (trial epoch / 4), no faster than k=2.
 
 - vmap over conv1d runs on MPS with no unsupported op and no CPU fallback, but
   it is 1.7x slower per member than sequential (either variant, so the gap is
-  not data generation) and needs 8x the memory.
+  not data generation) and needs 8x the memory (21013 vs 2494 MiB).
 - Ray with a custom `mps` resource (`ray.init(resources={'mps': 1})`,
   `resources_per_trial={'cpu': 1, 'mps': 1/k}`) works: each worker initializes
   its own MPS context without error. Its epoch time is a reproducible 9%
   below sequential (runs do not overlap), but whole-search wall time for 8
-  members was 122-125 s against about 126 s sequential (one run), because
+  members was 122-125 s against about 126 s sequential (single run, not in `results.log`), because
   worker start-up eats the gain; k=4 adds nothing over k=2 since one process
   already saturates the GPU.
 - **Decision: run sequentially on MPS.** The only option faster per
