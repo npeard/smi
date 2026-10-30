@@ -2,13 +2,8 @@
 
 import logging
 from pathlib import Path
-from typing import Any
-
-import torch
-from torch.utils.data import DataLoader, TensorDataset
 
 from smi.redpitaya.manager import RedPitayaManager
-from smi.synthetic.forward import SimConfig, simulate_batch
 
 logger = logging.getLogger(__name__)
 
@@ -43,25 +38,3 @@ def generate_dataset_from_rp(
 
     logger.info(f'Dataset creation complete: {dataset_path}')
     return str(dataset_path)
-
-
-def generate_synthetic_test_data(
-    num_samples: int, sim: dict[str, Any], batch_size: int, seed: int
-) -> DataLoader:
-    """Simulate a seeded CPU test set and return it as a DataLoader.
-
-    Args:
-        num_samples: Number of test shots to simulate.
-        sim: Every ``SimConfig`` field by name (e.g. a checkpoint's ``sim``
-            hyperparameter), so test data matches the training simulator.
-        batch_size: Batch size for the returned DataLoader.
-        seed: Seed of the CPU generator.
-
-    Returns:
-        DataLoader yielding (signals, velocity, displacement) tuples, with
-        velocity in um/ms and displacement in um
-    """
-    gen = torch.Generator().manual_seed(seed)
-    batch = simulate_batch(SimConfig(**sim), num_samples, torch.device('cpu'), gen)
-    dataset = TensorDataset(batch.signals, batch.velocity, batch.displacement)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=False)

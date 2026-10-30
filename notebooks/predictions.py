@@ -18,19 +18,26 @@ def _():
 
 @app.cell
 def _():
-    from smi.analysis.datasets import get_data_loaders
-    from smi.analysis.generate_data import generate_synthetic_test_data
+    from torch.utils.data import DataLoader
+
+    from smi.analysis.datasets import VelocityDataset, get_data_loaders
     from smi.analysis.lit_module import LitModule
     from smi.redpitaya.redpitaya_config import RedPitayaConfig
+    from smi.synthetic.forward import SimConfig
+    from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
     ACQ_SAMPLE_RATE = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
     CHANNEL_NAMES = ['PD1 (635 nm)', 'PD2 (675 nm)', 'PD3 (515 nm)']
     return (
         ACQ_SAMPLE_RATE,
         CHANNEL_NAMES,
+        DEFAULT_ROOT,
+        DataLoader,
         LitModule,
-        generate_synthetic_test_data,
+        SimConfig,
+        VelocityDataset,
         get_data_loaders,
+        load_or_create,
     )
 
 
@@ -86,11 +93,15 @@ def _(LitModule, checkpoint_path, mo, torch):
 
 @app.cell
 def _(
+    DEFAULT_ROOT,
+    DataLoader,
+    SimConfig,
+    VelocityDataset,
     batch_size,
     ckpt_hparams,
     dataset_path,
-    generate_synthetic_test_data,
     get_data_loaders,
+    load_or_create,
 ):
     if dataset_path.value == 'synthetic':
         if 'sim' not in ckpt_hparams:
@@ -100,11 +111,12 @@ def _(
             )
         # The checkpoint's own simulator config: its baked normalization
         # matches this data, unlike the real-data stats.
-        test_loader = generate_synthetic_test_data(
-            num_samples=batch_size.value * 4,
-            sim=ckpt_hparams['sim'],
+        _cfg = SimConfig(**ckpt_hparams['sim'])
+        _path = load_or_create(_cfg, 0, batch_size.value * 4, DEFAULT_ROOT)
+        test_loader = DataLoader(
+            VelocityDataset(_path, num_pd_channels=len(_cfg.wavelengths_um)),
             batch_size=batch_size.value,
-            seed=0,
+            shuffle=False,
         )
     else:
         _, _, test_loader = get_data_loaders(
