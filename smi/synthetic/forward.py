@@ -34,6 +34,12 @@ NOMINAL_DRIVE_GAIN = 0.002454
 # Measured 10.87 um/ms, x1.5 = 16.30, rounded up.
 MAX_SPEED_UM_PER_MS = 17.0
 
+# Bump on ANY change to simulate_batch numerics or the coil/trajectory path
+# (sample_trajectory, CoilDriver, Waveform): SimConfig.hash() covers config
+# values, not code, so a frozen test set written by older code would otherwise
+# be reused under the same name. Written to frozen-set attrs and to records.
+SIMULATOR_VERSION = 1
+
 
 def sample_trajectory(
     batch_size: int,

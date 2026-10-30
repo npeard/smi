@@ -14,7 +14,7 @@ import numpy as np
 import torch
 
 from smi.analysis.baseline_fit import DRIVE_KEY, PD_WAVELENGTHS_UM
-from smi.synthetic.forward import SimConfig, simulate_batch
+from smi.synthetic.forward import SIMULATOR_VERSION, SimConfig, simulate_batch
 
 # Shots per simulate_batch call. Part of the file identity: random draws are
 # made per batch (all trajectories, then all phases, ...), so the stream a shot
@@ -73,6 +73,7 @@ def write_frozen_set(cfg: SimConfig, seed: int, n_shots: int, path: Path) -> Pat
         f.attrs['sim_config'] = json.dumps(asdict(cfg), sort_keys=True)
         f.attrs['seed'] = seed
         f.attrs['chunk_shots'] = CHUNK_SHOTS
+        f.attrs['simulator_version'] = SIMULATOR_VERSION
         f.attrs['num_samples'] = n_shots
         datasets: dict[str, h5py.Dataset] = {}
         for start in range(0, n_shots, CHUNK_SHOTS):
@@ -107,12 +108,17 @@ def load_or_create(cfg: SimConfig, seed: int, n_shots: int, root: Path) -> Path:
     """Path of the frozen set, writing it first if it does not exist.
 
     A file written with a different ``CHUNK_SHOTS`` holds different random
-    streams under the same name, so it is regenerated rather than reused.
+    streams under the same name, and one written by another
+    ``SIMULATOR_VERSION`` holds another simulator's shots, so either is
+    regenerated rather than reused.
     """
     path = frozen_set_path(cfg, seed, n_shots, root)
     if path.exists():
         with h5py.File(path, 'r') as f:
-            if f.attrs.get('chunk_shots') == CHUNK_SHOTS:
+            if (
+                f.attrs.get('chunk_shots') == CHUNK_SHOTS
+                and f.attrs.get('simulator_version') == SIMULATOR_VERSION
+            ):
                 return path
     write_frozen_set(cfg, seed, n_shots, path)
     return path

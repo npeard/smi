@@ -19,7 +19,7 @@ from smi.analysis.metrics import sign_invariant_rmse
 from smi.analysis.results_artifact import RunRecord, read_results, write_results
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.synthetic import frozen
-from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SimConfig
+from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SIMULATOR_VERSION, SimConfig
 from smi.synthetic.frozen import pd_keys, write_frozen_set
 
 SAMPLE_RATE = 125e6 / 256
@@ -95,6 +95,7 @@ def test_perfect_estimator_scores_zero(michelson_set):
     assert result.record.converged
     assert result.record.causal
     assert result.record.sim_config_hash == _michelson().hash()
+    assert result.record.simulator_version == SIMULATOR_VERSION
 
 
 def test_sign_flip_invariant_but_signed_differs(michelson_set):
@@ -158,6 +159,7 @@ def test_subset_by_wavelength_on_real_schema(tmp_path):
         torch.testing.assert_close(est.seen[0][:, 0], torch.from_numpy(f['RP2_CH2'][:]))
     assert result.record.wavelengths_um == [0.515]
     assert result.record.sim_config_hash is None
+    assert result.record.simulator_version is None
 
 
 def test_velocity_dataset_selects_channels_by_wavelength(tmp_path):

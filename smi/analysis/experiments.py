@@ -4,10 +4,11 @@ A grid YAML expands to cells ``family x channel subset x sim x seed`` (plus one
 optional classical oracle per ``sim x subset``). Each cell trains one network on
 its own simulator config, then scores it on the frozen test set of that config
 through :func:`smi.analysis.evaluate.evaluate`. A cell's record carries its
-``cell_key``, ``sim_config_hash`` and training budget (``BUDGET_FIELDS``); a
-cell recorded with all three matching is skipped, so an interrupted grid
-resumes where it stopped. A recorded key whose sim or budget has since changed
-raises rather than mixing the two in one table.
+``cell_key``, ``sim_config_hash``, ``simulator_version`` and training budget
+(``BUDGET_FIELDS``); a cell recorded with all of them matching is skipped, so
+an interrupted grid resumes where it stopped. A recorded key whose sim,
+simulator or budget has since changed raises rather than mixing the two in one
+table.
 
 Grid YAML keys (all required except where noted):
 
@@ -64,7 +65,7 @@ from smi.analysis.training_interface import (
     TrainingInterface,
     convergence_monitor,
 )
-from smi.synthetic.forward import NOMINAL_SWEEPS, SimConfig
+from smi.synthetic.forward import NOMINAL_SWEEPS, SIMULATOR_VERSION, SimConfig
 from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
 logger = logging.getLogger(__name__)
@@ -328,12 +329,16 @@ def _budget(config: TrainingConfig) -> dict[str, Any]:
 
 
 def _fingerprint(cell: Cell, grid: dict[str, Any]) -> dict[str, Any]:
-    """``sim_config_hash`` plus budget, as the cell's record will carry them."""
+    """Sim hash, simulator version and budget, as the cell's record carries them."""
     if cell.seed is None:
         budget = dict.fromkeys(BUDGET_FIELDS)
     else:
         budget = _budget(_training_config(cell, grid))
-    return {'sim_config_hash': cell.sim.hash(), **budget}
+    return {
+        'sim_config_hash': cell.sim.hash(),
+        'simulator_version': SIMULATOR_VERSION,
+        **budget,
+    }
 
 
 def _is_done(cell: Cell, grid: dict[str, Any], records: list[RunRecord]) -> bool:

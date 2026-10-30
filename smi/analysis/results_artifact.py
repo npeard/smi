@@ -51,6 +51,8 @@ class RunRecord:
             one.
         finite_predictions: Whether every prediction was finite.
         sim_config_hash: ``SimConfig.hash()`` of the evaluated frozen set.
+        simulator_version: ``SIMULATOR_VERSION`` that wrote that set; the
+            hash covers config values only, not simulator code.
         binned: Per-sample errors binned by ``|v|`` quantile and by distance to
             the nearest fringe extremum, keyed by binning name.
         cell_key: Experiment-runner cell identifier; its presence in the
@@ -95,6 +97,7 @@ class RunRecord:
     test_seed: int | None = None
     finite_predictions: bool | None = None
     sim_config_hash: str | None = None
+    simulator_version: int | None = None
     binned: dict[str, list[dict[str, float]]] | None = None
     cell_key: str | None = None
     sim_name: str | None = None

@@ -393,6 +393,9 @@ def evaluate(
         test_seed=int(attrs.get('seed', -1)),
         finite_predictions=finite,
         sim_config_hash=sim_hash,
+        simulator_version=(
+            int(attrs['simulator_version']) if 'simulator_version' in attrs else None
+        ),
         binned=binned,
     )
     return EvalRecord(record, arrays)

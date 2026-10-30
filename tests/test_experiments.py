@@ -368,3 +368,10 @@ def test_sigterm_kills_children_and_releases_lock(tmp_path):
         # A killed child stays a zombie until reaped; init reaps it shortly.
         time.sleep(0.1)
     assert not _pid_alive(child_pid)
+
+
+def test_resume_refuses_a_key_recorded_by_another_simulator(tmp_path, monkeypatch):
+    path = _one_cell(tmp_path)
+    monkeypatch.setattr(experiments, 'SIMULATOR_VERSION', -1)
+    with pytest.raises(ValueError, match='simulator_version'):
+        _run(path, tmp_path)
