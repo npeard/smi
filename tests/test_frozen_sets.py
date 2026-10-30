@@ -1,6 +1,7 @@
 """Frozen synthetic test sets: byte-stable, hash-keyed, loader-compatible."""
 
 import dataclasses
+import json
 
 import h5py
 import numpy as np
@@ -114,7 +115,7 @@ def test_schema_attrs_and_layout(tmp_path):
         assert f.attrs['sample_rate'] == SAMPLE_RATE
         assert f.attrs['seed'] == 11
         np.testing.assert_array_equal(f.attrs['pd_wavelengths_um'], RIG_WAVELENGTHS)
-        assert SimConfig(**__import__('json').loads(f.attrs['sim_config'])) == cfg
+        assert SimConfig(**json.loads(f.attrs['sim_config'])) == cfg
         length = f['RP1_CH1'].shape[1]
         for key in ('RP1_CH1', 'RP1_CH2', 'RP2_CH1', 'RP2_CH2', 'velocity'):
             ds = f[key]
@@ -164,3 +165,16 @@ def test_existing_loader_reads_frozen_set(tmp_path):
             atol=1e-5 * scale,
             rtol=0,
         )
+
+
+def test_load_or_create_regenerates_after_chunk_change(tmp_path, monkeypatch):
+    cfg = _cfg()
+    path = load_or_create(cfg, 2, 5, tmp_path)
+    before = _read(path)
+    assert load_or_create(cfg, 2, 5, tmp_path) == path
+    monkeypatch.setattr(frozen, 'CHUNK_SHOTS', 2)
+    load_or_create(cfg, 2, 5, tmp_path)
+    with h5py.File(path, 'r') as f:
+        assert f.attrs['chunk_shots'] == 2
+    assert not np.array_equal(_read(path)['velocity'], before['velocity'])
+    assert not list(tmp_path.glob('*.part'))
