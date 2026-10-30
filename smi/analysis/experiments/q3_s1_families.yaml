@@ -12,7 +12,8 @@ families:
   - {name: tcan-44k-T90, config: ../models/configs/matched/tcan-44k.yaml}
   - {name: lstm-44k-T90, config: ../models/configs/matched/lstm-44k.yaml}
   - {name: lstm-bidir-44k-T90, config: ../models/configs/matched/lstm-bidir-44k.yaml}
-  - {name: mamba-44k-T90, config: ../models/configs/matched/mamba-44k.yaml}
+  # mamba-44k deferred: its O(L) Python-loop scan trains ~7x slower on MPS; rerun
+  # as its own stage only with a verified parallel scan.
   - {name: mlp-44k-T90, config: ../models/configs/matched/mlp-44k.yaml}
   - {name: patchtransformer-causal-44k-T90, config: ../models/configs/matched/patchtransformer-causal-44k.yaml}
   - {name: patchtransformer-offline-44k-T90, config: ../models/configs/matched/patchtransformer-offline-44k.yaml}
