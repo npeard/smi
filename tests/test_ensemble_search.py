@@ -75,6 +75,7 @@ def test_synthetic_ensemble_reports_search_metric():
         max_epochs=1,
         accelerator='cpu',
         devices=1,
+        precision='32-true',
         logger=False,
         enable_checkpointing=False,
         enable_progress_bar=False,

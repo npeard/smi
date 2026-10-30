@@ -306,6 +306,7 @@ def _training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
     # whose design needs full-length shots (the offline neural operator, whose
     # truncated modes are index-based) states ``train_crop_length: null``; an
     # absent key leaves the grid's value.
+    # A family YAML may have no ``synthetic`` block at all: legal, no override.
     family_synthetic = family.get('synthetic', {})
     if 'train_crop_length' in family_synthetic:
         synthetic['train_crop_length'] = family_synthetic['train_crop_length']

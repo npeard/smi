@@ -98,4 +98,8 @@ def is_causal(model_hparams: dict[str, Any]) -> bool:
         return False
     if model_hparams['type'] in _CAUSAL_FLAG_TYPES:
         return model_hparams['causal']
-    return not model_hparams.get('bidirectional', False)
+    if model_hparams['type'] == 'LSTM':
+        return not model_hparams['bidirectional']
+    # The remaining registry types (TCN, TCAN, Mamba, ...) are causal by
+    # construction, with no direction field to read.
+    return True

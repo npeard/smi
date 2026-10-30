@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+import shutil
 
 import h5py
 import numpy as np
@@ -412,6 +413,15 @@ def test_record_labels_training_and_test_seeds_and_finiteness(tmp_path, michelso
     assert ok.record.finite_predictions
     assert ok.record.train_seed is None
     assert ok.record.test_seed == 3
+
+
+def test_file_without_a_seed_records_no_test_seed(tmp_path, michelson_set):
+    path = tmp_path / 'noseed.h5'
+    shutil.copyfile(michelson_set, path)
+    with h5py.File(path, 'r+') as f:
+        del f.attrs['seed']
+    result = evaluate(_Truth(path), path, RIG, 2, converged=True, train_seed=None)
+    assert result.record.test_seed is None
 
 
 def test_records_without_new_fields_still_read_and_serialize_causal(tmp_path):

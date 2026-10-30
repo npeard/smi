@@ -395,7 +395,7 @@ def evaluate(
         precision=PRECISION,
         converged=converged,
         train_seed=train_seed,
-        test_seed=int(attrs.get('seed', -1)),
+        test_seed=int(attrs['seed']) if 'seed' in attrs else None,
         finite_predictions=finite,
         sim_config_hash=sim_hash,
         simulator_version=(

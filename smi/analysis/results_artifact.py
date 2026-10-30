@@ -47,8 +47,8 @@ class RunRecord:
             evaluator cannot know it from a checkpoint.
         train_seed: Seed the evaluated model was trained with; ``None`` for a
             classical estimator.
-        test_seed: Seed of the evaluated frozen set; ``-1`` for a file without
-            one.
+        test_seed: Seed of the evaluated frozen set; ``None`` for a file that
+            records none (frozen sets always do).
         finite_predictions: Whether every prediction was finite.
         sim_config_hash: ``SimConfig.hash()`` of the evaluated frozen set.
         simulator_version: ``SIMULATOR_VERSION`` that wrote that set; the

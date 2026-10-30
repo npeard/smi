@@ -550,7 +550,8 @@ class SyntheticEnsembleModule(EnsembleModule):
             equal the number of wavelengths in ``sim``.
         seeds: Per-member seeds (length defines ``K``).
         sim: Every ``SimConfig`` field by name (the YAML ``synthetic.sim`` block).
-        **ensemble_kwargs: Forwarded to :class:`EnsembleModule` (``target``, ``lr``,
+        target: Must be ``'velocity'``; stated, not defaulted.
+        **ensemble_kwargs: Forwarded to :class:`EnsembleModule` (``lr``,
             ``velocity_loss_weights``, ``displacement_loss_weights``, ``dropouts``,
             ``per_member_lr``).
     """
@@ -561,12 +562,12 @@ class SyntheticEnsembleModule(EnsembleModule):
         seeds: list[int],
         *,
         sim: dict[str, Any],
+        target: str,
         **ensemble_kwargs: Any,
     ) -> None:
-        if ensemble_kwargs.get('target', 'velocity') != 'velocity':
+        if target != 'velocity':
             raise ValueError(
-                'synthetic normalization scales the velocity target, '
-                f'not {ensemble_kwargs["target"]!r}'
+                f'synthetic normalization scales the velocity target, not {target!r}'
             )
         sim_config = SimConfig(**sim)
         if len(sim_config.wavelengths_um) != model_hparams['in_channels']:
@@ -580,6 +581,7 @@ class SyntheticEnsembleModule(EnsembleModule):
             norm_stats=normalization_stats(
                 sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED
             ),
+            target=target,
             **ensemble_kwargs,
         )
         self.sim_config = sim_config
