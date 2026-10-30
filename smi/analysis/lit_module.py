@@ -447,14 +447,12 @@ class LitModule(lightning_module.LightningModule):
             loss_dict['vicreg'] = vicreg
             loss_dict['total'] = loss_dict['total'] + self._vicreg_weight * vicreg
 
-        # Log each loss component with train_ prefix
+        # Log each loss component with train_ prefix. Not in the progress
+        # bar: it reads a per-step value back with .item() every batch, a
+        # host-device sync measured at 2-3% of a tcn-44k MPS step. Logger
+        # output (step and epoch keys) is unchanged.
         for loss_name, loss_value in loss_dict.items():
-            self.log(
-                f'train/{loss_name}_loss',
-                loss_value,
-                prog_bar=(loss_name == 'total'),  # Only show total loss in progress bar
-                on_epoch=True,
-            )
+            self.log(f'train/{loss_name}_loss', loss_value, on_epoch=True)
 
         # Return the total loss for backpropagation
         return loss_dict['total']
