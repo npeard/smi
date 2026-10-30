@@ -257,6 +257,7 @@ def _load_config(name: str, settings: SweepSettings, dataset: str) -> TrainingCo
     config = TrainingConfig.from_yaml(str(CONFIG_DIR / f'{name}.yaml'))
     config.training_config['max_epochs'] = settings.epochs
     config.training_config['T_0'] = settings.epochs
+    config.training_config['check_val_every_n_epoch'] = settings.check_val_every_n_epoch
     config.training_config['use_logging'] = False
     config.data_config['dataset_file'] = DATASETS[dataset]
 
@@ -349,9 +350,7 @@ def run_torch_config(
         # separately and constantly with SPLIT_SEED.
         torch.manual_seed(seed)
         interface = TrainingInterface(
-            config=config,
-            experiment_name=f'{name}_{dataset}_s{seed}',
-            check_val_every_n_epoch=settings.check_val_every_n_epoch,
+            config=config, experiment_name=f'{name}_{dataset}_s{seed}'
         )
         if settings.preload:
             # The DataLoader path re-reads HDF5 and recomputes the velocity

@@ -19,6 +19,7 @@ model:
 
 training:
   max_epochs: 30
+  check_val_every_n_epoch: 1  # validate every epoch; patience_epochs counts these
   convergence:  # stop on a plateau; max_epochs above stays the cap
     monitor: "val/velocity_rmse_um_per_ms"  # must follow loss.sign_invariant
     patience_epochs: 10

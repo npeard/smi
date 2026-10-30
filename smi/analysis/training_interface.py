@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 SIGNED_RMSE_KEY = 'val/velocity_rmse_um_per_ms'
 SIGN_INVARIANT_RMSE_KEY = 'val/velocity_rmse_sign_invariant_um_per_ms'
 
+# Fewer checks than this and a noisy mid-schedule dip can pass for a plateau.
+MIN_PATIENCE_CHECKS = 5
+
 
 def convergence_monitor(loss_config: dict[str, Any]) -> str:
     """Validation metric a run must plateau on, decided by the loss.
@@ -125,7 +128,6 @@ class TrainingInterface:
         experiment_name: str | None = None,
         *,
         extra_callbacks: list[Any] | None = None,
-        check_val_every_n_epoch: int = 5,
     ):
         """Initialize the training interface.
 
@@ -134,9 +136,6 @@ class TrainingInterface:
             experiment_name: Name for logging and checkpointing
             extra_callbacks: Additional Lightning callbacks to attach to the
                 trainer (e.g. Ray Tune's report callback). Defaults to none.
-            check_val_every_n_epoch: How often (in epochs) to run validation.
-                Defaults to 5 to preserve historical single-run behavior; the
-                Tune driver lowers this so metrics are reported each epoch.
         """
         self.config = config
         self.checkpoint_dir = str(self.CHECKPOINT_DIR)
@@ -155,10 +154,7 @@ class TrainingInterface:
             self.lightning_module = self.create_lightning_module()
 
             # Setup training
-            self.trainer = self.setup_trainer(
-                extra_callbacks=extra_callbacks,
-                check_val_every_n_epoch=check_val_every_n_epoch,
-            )
+            self.trainer = self.setup_trainer(extra_callbacks=extra_callbacks)
 
         # Check what version of PyTorch is installed
         logger.info(f'PyTorch version: {torch.__version__}')
@@ -310,18 +306,17 @@ class TrainingInterface:
         return LitModule(**common_kwargs)
 
     def setup_trainer(
-        self,
-        *,
-        extra_callbacks: list[Any] | None = None,
-        check_val_every_n_epoch: int = 5,
+        self, *, extra_callbacks: list[Any] | None = None
     ) -> lightning_module.Trainer:
         """Setup Lightning trainer with callbacks and loggers.
 
         Args:
             extra_callbacks: Additional callbacks appended after the default
                 logging callbacks (e.g. Ray Tune's report callback).
-            check_val_every_n_epoch: How often (in epochs) to run validation.
         """
+        # Required, no default: with patience it fixes how many checks a plateau
+        # needs, so it changes what "converged" means.
+        check_val_every_n_epoch = self.config.training_config['check_val_every_n_epoch']
         callbacks = [self._convergence_callback(check_val_every_n_epoch)]
         # Add WandB logger if configured
         if self.config.training_config['use_logging']:
@@ -384,7 +379,8 @@ class TrainingInterface:
                 epoch-denominated patience into validation checks.
 
         Raises:
-            ValueError: If the configured monitor does not match the loss.
+            ValueError: If the configured monitor does not match the loss, or
+                patience spans fewer than MIN_PATIENCE_CHECKS validation checks.
         """
         convergence = self.config.training_config['convergence']
         monitor = convergence['monitor']
@@ -395,12 +391,17 @@ class TrainingInterface:
                 f'loss.sign_invariant={self.config.loss_config["sign_invariant"]} '
                 f'requires {expected!r}'
             )
+        checks = math.ceil(convergence['patience_epochs'] / check_val_every_n_epoch)
+        if checks < MIN_PATIENCE_CHECKS:
+            raise ValueError(
+                f'patience_epochs={convergence["patience_epochs"]} with '
+                f'check_val_every_n_epoch={check_val_every_n_epoch} is {checks} '
+                f'validation checks; a plateau needs at least {MIN_PATIENCE_CHECKS}'
+            )
         self.convergence_callback = RelativeEarlyStopping(
             monitor=monitor,
             min_rel_delta=float(convergence['min_rel_delta']),
-            patience=math.ceil(
-                convergence['patience_epochs'] / check_val_every_n_epoch
-            ),
+            patience=checks,
         )
         return self.convergence_callback
 
@@ -422,6 +423,11 @@ class TrainingInterface:
         Returns:
             :attr:`converged` for this run.
         """
+        # A second fit must not report the first run's stop reason.
+        self.convergence_callback.stopping_reason = EarlyStoppingReason.NOT_STOPPED
+        self.convergence_callback.wait_count = 0
+        self.convergence_callback.best_score = torch.tensor(math.inf)
+        self.convergence_callback.stopped_epoch = 0
         # Real data uses the DataModule; synthetic uses index dataloaders.
         if getattr(self, 'datamodule', None) is not None:
             self.trainer.fit(self.lightning_module, datamodule=self.datamodule)

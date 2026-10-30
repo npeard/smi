@@ -51,9 +51,10 @@ def test_missing_precision_names_the_field():
             'accelerator': 'cpu',
             'devices': 1,
             'use_logging': False,
+            'check_val_every_n_epoch': 1,
             'convergence': {
                 'monitor': 'val/velocity_rmse_um_per_ms',
-                'patience_epochs': 1,
+                'patience_epochs': 5,
                 'min_rel_delta': 0.01,
             },
         },

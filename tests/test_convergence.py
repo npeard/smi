@@ -4,9 +4,12 @@ The research report's noise-free ceilings must come from runs trained to a
 plateau, and every record must say whether its run got there.
 """
 
+import math
+
 import pytest
 import torch
 import yaml
+from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 
 from smi.analysis.training_interface import (
     RelativeEarlyStopping,
@@ -77,10 +80,11 @@ def _config(monitor: str, *, sign_invariant: bool, max_epochs: int) -> TrainingC
             'precision': '32-true',
             'devices': 1,
             'use_logging': False,
+            'check_val_every_n_epoch': 1,
             'target': 'velocity',
             'convergence': {
                 'monitor': monitor,
-                'patience_epochs': 2,
+                'patience_epochs': 5,
                 'min_rel_delta': 0.01,
             },
         },
@@ -104,10 +108,8 @@ def _sim() -> dict:
     return yaml.safe_load(CONFIG.read_text())['synthetic']['sim']
 
 
-def _run(config: TrainingConfig, check_val_every_n_epoch: int = 1) -> TrainingInterface:
-    interface = TrainingInterface(
-        config=config, check_val_every_n_epoch=check_val_every_n_epoch
-    )
+def _run(config: TrainingConfig) -> TrainingInterface:
+    interface = TrainingInterface(config=config)
     interface.train()
     return interface
 
@@ -133,14 +135,45 @@ def test_hitting_max_epochs_reports_not_converged():
 
 def test_patience_counts_epochs_not_validation_checks():
     config = _config(SIGNED, sign_invariant=False, max_epochs=40)
-    config.training_config['convergence'].update(min_rel_delta=0.5, patience_epochs=6)
-    interface = _run(config, check_val_every_n_epoch=3)
-    stopper = next(
-        cb
-        for cb in interface.trainer.callbacks
-        if isinstance(cb, RelativeEarlyStopping)
+    config.training_config['check_val_every_n_epoch'] = 3
+    config.training_config['convergence'].update(min_rel_delta=0.5, patience_epochs=15)
+    interface = TrainingInterface(config=config)
+    assert interface.convergence_callback.patience == 5
+
+
+def test_patience_spanning_too_few_checks_is_rejected():
+    config = _config(SIGNED, sign_invariant=False, max_epochs=40)
+    config.training_config['check_val_every_n_epoch'] = 5
+    config.training_config['convergence']['patience_epochs'] = 10
+    with pytest.raises(
+        ValueError, match=r'patience_epochs=10.*check_val_every_n_epoch=5'
+    ):
+        TrainingInterface(config=config)
+
+
+def test_missing_check_val_cadence_is_an_error():
+    config = _config(SIGNED, sign_invariant=False, max_epochs=1)
+    del config.training_config['check_val_every_n_epoch']
+    with pytest.raises(KeyError, match='check_val_every_n_epoch'):
+        TrainingInterface(config=config)
+
+
+def test_non_finite_monitor_is_not_converged():
+    interface = TrainingInterface(
+        config=_config(SIGNED, sign_invariant=False, max_epochs=1)
     )
-    assert stopper.patience == 2
+    interface.convergence_callback._evaluate_stopping_criteria(torch.tensor(math.nan))
+    assert interface.converged is False
+
+
+def test_second_train_does_not_report_a_stale_converged():
+    config = _config(SIGNED, sign_invariant=False, max_epochs=1)
+    config.training_config['convergence']['patience_epochs'] = 100
+    interface = TrainingInterface(config=config)
+    interface.convergence_callback.stopping_reason = (
+        EarlyStoppingReason.PATIENCE_EXHAUSTED
+    )
+    assert interface.train() is False
 
 
 def test_monitor_not_matching_loss_sign_invariance_is_rejected():

@@ -126,8 +126,9 @@ def train_func(config: dict[str, dict[str, Any]]) -> None:
 
     - a :class:`TuneReportCheckpointCallback` reporting :data:`SEARCH_METRIC`,
       injected via ``TrainingInterface(extra_callbacks=...)``;
-    - ``check_val_every_n_epoch=1`` so the metric is reported every epoch (the
-      single-run default of 5 would never report on a short ASHA budget).
+    - the tune YAMLs set ``training.check_val_every_n_epoch: 1`` so the metric
+      is reported every epoch (a coarser cadence would never report on a short
+      ASHA budget).
 
     The same code path runs on CPU (tests) and GPU (rig) -- the accelerator and
     device count come straight from ``config['training']``.
@@ -162,7 +163,6 @@ def train_func(config: dict[str, dict[str, Any]]) -> None:
         config=training_config,
         experiment_name=experiment_name,
         extra_callbacks=[report_callback],
-        check_val_every_n_epoch=1,
     )
     interface.train()
 
