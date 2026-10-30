@@ -69,30 +69,39 @@ vmap-ensemble over the within-architecture axis inside that trial.
 
 ### MPS (Apple M6, 32 GB unified memory)
 
-Measured with the TCN-44k matched config (`matched/tcn-matched.yaml`, 44,049
-parameters), `32-true`, synthetic data generated on-device per step, batch 32,
-sequence length 16384, 20 steps per epoch, 8 members, 2 warm-up epochs then the
-median of 3 timed epochs (`torch.mps.synchronize()` around each). Memory is
-`torch.mps.driver_allocated_memory()` (per process; Ray trials each hold one).
+Measured with the model section of `matched/tcn-matched.yaml` (TCN, 44,049
+parameters), batch size overridden to 32, `32-true`, sequence length 16384,
+20 steps per epoch, 8 members, synthetic data generated on-device per step.
+Per run: 2 warm-up epochs, then the median of 3 timed epochs
+(`torch.mps.synchronize()` around each). Each mode was run 3 times; the table
+gives the median of the 3 run values and their min-max. Memory is the peak of
+`torch.mps.driver_allocated_memory()` sampled every step (per process).
+`PYTORCH_ENABLE_MPS_FALLBACK` was unset.
 
-| Mode | Wall-clock per member-epoch | Memory |
+| Mode | Per member-epoch, median (min-max) | Peak memory |
 |---|---|---|
-| Sequential, K=8 | 3.08 s | 2.5 GB |
-| vmap ensemble, K=8 | 5.28 s (42.3 s per ensemble epoch) | 21.5 GB |
-| Ray, 2 concurrent trials (`mps`: 1/2) | 2.78 s (5.56 s per trial epoch / 2) | 2.5 GB x 2 |
-| Ray, 4 concurrent trials (`mps`: 1/4) | 2.80 s (11.19 s per trial epoch / 4) | 2.5 GB x 4 |
+| Sequential, fresh batch per member (what sequential training does) | 3.08 s (3.077-3.080) | 2.5 GB |
+| Sequential, one batch shared by all members (vmap-equivalent data work) | 3.05 s (3.046-3.051) | 2.5 GB |
+| vmap ensemble, K=8, shared batch | 5.18 s (5.170-5.189) | 21.0 GB |
+| Ray, 2 concurrent trials (`mps`: 1/2), fresh batch per member | 2.80 s (2.787-2.805) | 2.5 GB per process |
+
+Ray was run at k=2 only for the 3 repeats; k=4 was a single earlier run at
+2.80 s per member-epoch (trial epoch / 4), no faster than k=2.
 
 - vmap over conv1d runs on MPS with no unsupported op and no CPU fallback, but
-  it is 1.7x slower per member than sequential and needs 8.6x the memory.
+  it is 1.7x slower per member than sequential (either variant, so the gap is
+  not data generation) and needs 8x the memory.
 - Ray with a custom `mps` resource (`ray.init(resources={'mps': 1})`,
-  `resources_per_trial={'cpu': 1, 'mps': 1/k}`) works: worker processes each
-  initialize their own MPS context without error. Per member-epoch it is about
-  10% faster than sequential at k=2 and k=4, and k=4 is no faster than k=2:
-  the GPU is already saturated by one process. A single run per mode, so a
-  gain this size is within run-to-run noise and is not claimed as a speedup.
-- **Decision: run sequentially on MPS.** No option beats it by a margin worth
-  its complexity. The vmap ensemble and fractional-`mps` Ray trials stay
-  available for the CUDA rig, where they are designed for.
+  `resources_per_trial={'cpu': 1, 'mps': 1/k}`) works: each worker initializes
+  its own MPS context without error. Its epoch time is a reproducible 9%
+  below sequential (runs do not overlap), but whole-search wall time for 8
+  members was 122-125 s against about 126 s sequential (one run), because
+  worker start-up eats the gain; k=4 adds nothing over k=2 since one process
+  already saturates the GPU.
+- **Decision: run sequentially on MPS.** The only option faster per
+  member-epoch is Ray at 9%, which does not shorten a real search and costs
+  per-process memory and Ray complexity. The vmap ensemble and fractional
+  resource Ray trials stay for the CUDA rig, where they are designed for.
 
 ## 4. Components and integration points
 
