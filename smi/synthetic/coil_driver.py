@@ -515,12 +515,15 @@ class CoilDriver:
             velocity_transfer = torch.from_numpy(
                 self.normalized_velocity_transfer(freq, min_freq).astype(np.complex64)
             ).to(device)
-            self._torch_cache[key] = (velocity_transfer, velocity_transfer != 0)
-        velocity_transfer, nonzero = self._torch_cache[key]
+            # Integer indices, not a bool mask: bool-mask indexing a device
+            # tensor syncs with the host on every call.
+            nonzero = (velocity_transfer != 0).nonzero(as_tuple=True)[0]
+            self._torch_cache[key] = (velocity_transfer[nonzero], nonzero)
+        transfer_at_nonzero, nonzero = self._torch_cache[key]
 
         spectrum = torch.fft.fft(spectrum_voltage, dim=-1, norm='ortho')
         out = torch.ones_like(spectrum)
-        out[:, nonzero] = spectrum[:, nonzero] / velocity_transfer[nonzero]
+        out[:, nonzero] = spectrum[:, nonzero] / transfer_at_nonzero
         voltage = torch.fft.ifft(out, dim=-1, norm='ortho').real
         return torch.fft.fftshift(voltage, dim=-1)
 

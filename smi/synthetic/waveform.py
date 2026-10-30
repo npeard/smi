@@ -271,7 +271,10 @@ class Waveform:
         self._torch_cache = {
             'device': device,
             'freq': freq_t,
-            'valid_pos_mask': valid_pos_full,
+            # Integer indices, not the bool mask: indexing a device tensor
+            # with a bool mask counts its True entries on the host, a
+            # device sync on every batch.
+            'valid_pos_idx': valid_pos_full.nonzero(as_tuple=True)[0],
             'neg_indices': neg_indices,
             'conj_indices': conj_indices,
             'delta_f': delta_f,
@@ -322,7 +325,7 @@ class Waveform:
 
         cache = self._torch_cache
         N = cache['N']
-        valid_pos_mask = cache['valid_pos_mask']
+        valid_pos_idx = cache['valid_pos_idx']
         neg_indices = cache['neg_indices']
         conj_indices = cache['conj_indices']
         delta_f = cache['delta_f']
@@ -338,18 +341,17 @@ class Waveform:
         )  # power spectral density
         scale = torch.sqrt(s_f * delta_f)
         amplitudes = scale * torch.sqrt(-2.0 * torch.log(u_amp))
-        # Zero out non-valid frequencies
-        amplitudes[:, ~valid_pos_mask] = 0.0
 
         # 2. Random uniform phases in [0, 2*pi)
         phases = torch.rand(batch_size, N, device=device, generator=generator) * (
             2.0 * torch.pi
         )
 
-        # 3. Build complex spectrum for positive frequencies
+        # 3. Build complex spectrum for the valid positive frequencies; every
+        # other bin stays zero.
         spectrum = torch.zeros(batch_size, N, dtype=torch.cfloat, device=device)
-        spectrum[:, valid_pos_mask] = (
-            amplitudes[:, valid_pos_mask] * torch.exp(1j * phases[:, valid_pos_mask])
+        spectrum[:, valid_pos_idx] = (
+            amplitudes[:, valid_pos_idx] * torch.exp(1j * phases[:, valid_pos_idx])
         ).to(torch.cfloat)
 
         # 4. Hermitian symmetry: spectrum[neg_idx] = conj(spectrum[N - neg_idx])
