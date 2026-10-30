@@ -382,8 +382,14 @@ h5py = "*"
 # neither typst nor snakemake. `cwd` points them at report/ so the Snakefile's
 # relative paths resolve the same whether you invoke a task from the repo root
 # or run snakemake by hand from inside report/.
+#
+# `--scheduler greedy`: the default ILP scheduler shells out to the CBC binary
+# bundled with pulp, which is x86-64 only on macOS and fails with "Bad CPU
+# type" on osx-arm64 without Rosetta. A handful of figure jobs gains nothing
+# from ILP scheduling.
 [tool.pixi.feature.report.tasks]
-report = { cmd = "snakemake --cores all", cwd = "report" }
-report-dry = { cmd = "snakemake --cores all -n", cwd = "report" }
+report = { cmd = "snakemake --cores all --scheduler greedy", cwd = "report" }
+report-dry = { cmd = "snakemake --cores all --scheduler greedy -n", cwd = "report" }
 report-clean = { cmd = "snakemake --cores 1 clean", cwd = "report" }
-report-only = { cmd = "snakemake --cores all build/report.pdf", cwd = "report" }
+report-only = { cmd = "snakemake --cores all --scheduler greedy build/report.pdf", cwd = "report" }
+report-synthetic = { cmd = "snakemake --cores all --scheduler greedy build/synthetic.pdf", cwd = "report" }

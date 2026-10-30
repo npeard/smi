@@ -42,7 +42,8 @@ always invoke Python and tools through `pixi run` (or from inside `pixi shell`)
 - `pixi run precommit` - Run all pre-commit hooks
 - `pixi run -e test pytest` - Run pytest in the minimal `test` environment (CI-equivalent)
 - `pixi run report` - Build the Typst documents (see `report/` below)
-- `pixi run report-dry` / `report-clean` / `report-baseline`
+- `pixi run report-dry` / `report-clean` / `report-only` (report.typ) /
+  `report-synthetic` (synthetic.typ)
 - `pixi run benchmark-loading` - Data-loading throughput benchmark (GPU; not in `all`)
 
 Workflow-spine tasks (see the master CLAUDE.md's numbered spine):
@@ -193,8 +194,16 @@ spirit of the `dispersion-engineering` paper repo but with Typst in place of
 LaTeX. Typst is a conda package, so unlike a TeX engine the whole toolchain is
 lockfile-reproducible with no manual install.
 
-- `baseline.typ` - the standalone non-deep-learning baseline report. The only
-  document this repo builds; there is no slide deck.
+- Two documents, no slide deck:
+  - `report.typ` - the baseline report: the Michelson analytic baseline and
+    the learned models on the real acquisitions. Its figures read the real
+    HDF5 files, so it builds only where they are present (and the synthetic
+    program is blinded to them).
+  - `synthetic.typ` - the synthetic research report: identifiability,
+    Fisher information and Bayesian bounds (computed in its figure scripts
+    from `smi.analysis.bounds`), then the Q3 and Q1 results from
+    `smi/analysis/data/synthetic_results.json`. Build it alone with
+    `pixi run report-synthetic`.
 - `figures/plot_<name>.py` - one script per figure, each taking `--output
   <path>` and writing exactly that path. Shared style lives in
   `figures/_figcommon.py`; scripts import it rather than setting `rcParams`.
