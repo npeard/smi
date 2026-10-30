@@ -290,6 +290,7 @@ def test_full_model_causal_with_baked_normalization():
         training_hparams={'target': 'velocity'},
         data_hparams={},
         steps_per_epoch=1,
+        train_crop_length=None,
         sim=dataclasses.asdict(_noise_free()),
     )
     model = module.model.eval()

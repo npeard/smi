@@ -302,7 +302,10 @@ class TrainingInterface:
         if self._is_synthetic():
             syn = self.config.synthetic_config
             return SyntheticLitModule(
-                **common_kwargs, steps_per_epoch=syn['steps_per_epoch'], sim=syn['sim']
+                **common_kwargs,
+                steps_per_epoch=syn['steps_per_epoch'],
+                sim=syn['sim'],
+                train_crop_length=syn['train_crop_length'],
             )
 
         return LitModule(**common_kwargs)

@@ -21,6 +21,34 @@ NORM_STATS_SHOTS = 256
 NORM_STATS_SEED = 0
 
 
+def random_crop(length: int | None, *tensors: torch.Tensor) -> tuple[torch.Tensor, ...]:
+    """One random contiguous window per shot, shared by every tensor.
+
+    Signals ``[B, C, L]`` and targets ``[B, L]`` are cropped at the same
+    positions, so they stay aligned.
+
+    Args:
+        length: Window length; ``None`` returns the tensors unchanged.
+        *tensors: ``[B, ..., L]`` tensors sharing ``B`` and ``L``.
+
+    Returns:
+        The cropped tensors, in order.
+    """
+    full = tensors[0].shape[-1]
+    if length is None:
+        return tensors
+    if not 0 < length <= full:
+        raise ValueError(f'train_crop_length {length} must lie in (0, {full}]')
+    device = tensors[0].device
+    start = torch.randint(0, full - length + 1, (tensors[0].shape[0],), device=device)
+    index = start[:, None] + torch.arange(length, device=device)
+    cropped = []
+    for t in tensors:
+        idx = index.view(t.shape[0], *([1] * (t.dim() - 2)), length)
+        cropped.append(t.gather(-1, idx.expand(*t.shape[:-1], length)))
+    return tuple(cropped)
+
+
 class SyntheticIndexDataset(Dataset):
     """Dummy dataset that returns indices, for use with SyntheticLitModule.
 
@@ -60,6 +88,7 @@ class SyntheticLitModule(LitModule):
         steps_per_epoch: int = 1000,
         *,
         sim: dict[str, Any],
+        train_crop_length: int | None,
     ):
         """Initialize SyntheticLitModule with hyperparameter configuration.
 
@@ -73,6 +102,10 @@ class SyntheticLitModule(LitModule):
         steps_per_epoch: Number of training batches per epoch
         sim: Every ``SimConfig`` field by name (the YAML ``synthetic.sim``
             block); kept as a plain dict so it is saved with the checkpoint
+        train_crop_length: Length of the random window each training and
+            validation shot is cut to after simulating the full shot (the
+            trajectory spectrum needs the full length); ``None`` keeps the
+            full shot. Evaluation never crops.
         """
         # _make_model runs inside LitModule.__init__ and needs the config.
         self.sim_config = SimConfig(**sim)
@@ -90,6 +123,7 @@ class SyntheticLitModule(LitModule):
             data_hparams=data_hparams,
         )
         self.steps_per_epoch = steps_per_epoch
+        self.train_crop_length = train_crop_length
         self.save_hyperparameters(ignore=['model'])
         logger.info(f'SyntheticLitModule sim config {self.sim_config.hash()}')
 
@@ -108,10 +142,12 @@ class SyntheticLitModule(LitModule):
 
     def _generate_synthetic_batch(
         self, batch_size: int, device: torch.device
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Simulate ``(signals, velocity, displacement)`` on ``device``."""
+    ) -> tuple[torch.Tensor, ...]:
+        """Simulate ``(signals, velocity, displacement)``, cropped, on ``device``."""
         batch = simulate_batch(self.sim_config, batch_size, device, None)
-        return batch.signals, batch.velocity, batch.displacement
+        return random_crop(
+            self.train_crop_length, batch.signals, batch.velocity, batch.displacement
+        )
 
     @override
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:

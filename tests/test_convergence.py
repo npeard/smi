@@ -99,6 +99,7 @@ def _config(monitor: str, *, sign_invariant: bool, max_epochs: int) -> TrainingC
             'use_synthetic_training': True,
             'steps_per_epoch': 2,
             'val_steps': 1,
+            'train_crop_length': None,
             'sim': _sim(),
         },
     )

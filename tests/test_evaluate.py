@@ -193,6 +193,7 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
         training_hparams={'target': 'velocity'},
         data_hparams={},
         steps_per_epoch=1,
+        train_crop_length=None,
         sim=dataclasses.asdict(_michelson()),
     )
     ckpt = tmp_path / 'm.ckpt'

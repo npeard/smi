@@ -42,6 +42,7 @@ loss:
 synthetic:
   use_synthetic_training: true
   steps_per_epoch: 2
+  train_crop_length: null  # null trains on the full 16384-sample shot
   val_steps: 2
   # Every SimConfig field, no defaults (smi.synthetic.forward.SimConfig).
   # Michelson, noise-free: each detector knob at its exact-identity value.
