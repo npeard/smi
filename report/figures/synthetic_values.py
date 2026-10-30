@@ -43,6 +43,7 @@ from _figcommon import (
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from smi.analysis import bounds
+from smi.analysis.experiments import expand_grid
 from smi.analysis.results_artifact import RunRecord
 from smi.synthetic.forward import NOMINAL_ALPHA, SimConfig
 from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
@@ -52,6 +53,9 @@ N_STEPS = 2000
 N_SHOTS = 8
 SEED = 0
 NOMINAL_C = 0.2
+CEILING_GRID = (
+    Path(__file__).resolve().parents[2] / 'smi/analysis/experiments/q3_s0c_ceiling.yaml'
+)
 TABLE_C = (0.05, 0.2, 0.7)
 TABLE_ALPHA = (3.0, 5.0)
 TABLE_K = (1, 3)
@@ -108,21 +112,13 @@ def test_shots(record: RunRecord) -> int:
 def zero_predictor_rmse(record: RunRecord) -> float:
     """Test RMSE of predicting zero velocity on the alpha = 0 control's test set.
 
-    That is each shot's velocity RMS, averaged over shots. The frozen set is
-    looked up (or rebuilt) from the noise-free config the runner builds for
-    the control; the hash check stops a drift between the two from scoring
-    another set.
+    That is each shot's velocity RMS, averaged over shots. The control's sim
+    config comes from expanding the grid that produced the record, so the
+    emitter cannot drift from the runner; the hash check stops a grid edit
+    since the run from scoring another set.
     """
-    nominal = SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, NOMINAL_C, NOMINAL_ALPHA)
-    cfg = SimConfig.noise_free(
-        wavelengths_um=SYNTHETIC_WAVELENGTHS_UM,
-        sample_rate=nominal.sample_rate,
-        start_freq_hz=nominal.start_freq_hz,
-        end_freq_hz=nominal.end_freq_hz,
-        drive_gain=nominal.drive_gain,
-        feedback_c=NOMINAL_C,
-        alpha=0.0,
-    )
+    _, cells = expand_grid(CEILING_GRID)
+    (cfg,) = [cell.sim for cell in cells if cell.key == record.cell_key]
     assert cfg.hash() == record.sim_config_hash, record.cell_key
     assert record.test_seed is not None
     path = load_or_create(cfg, record.test_seed, test_shots(record), DEFAULT_ROOT)
