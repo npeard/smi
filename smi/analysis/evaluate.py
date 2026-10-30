@@ -31,12 +31,11 @@ import torch
 from torch import Tensor
 
 from smi.analysis.baseline_fit import PD_WAVELENGTHS_UM, inverse_fit
-from smi.analysis.datasets import file_pd_channels, select_pd_keys
+from smi.analysis.datasets import file_pd_channels, file_sample_rate, select_pd_keys
 from smi.analysis.lit_module import LitModule
 from smi.analysis.metrics import best_sign, sign_invariant_rmse, summarize_per_shot
 from smi.analysis.results_artifact import RunRecord, append_results
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
-from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.forward import MAX_SPEED_UM_PER_MS, SimConfig
 
@@ -208,21 +207,17 @@ class EvalRecord:
     per_shot: dict[str, np.ndarray]
 
 
-def _sample_rate(f: h5py.File) -> float:
-    if 'sample_rate' in f.attrs:
-        return float(f.attrs['sample_rate'])
-    return RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
-
-
 def _iter_chunks(
     f: h5py.File,
     keys: list[str],
     fringe_wavelength_um: float,
     fringe_key: str,
     n_shots: int,
-    with_signals: bool,
-) -> Iterator[tuple[Tensor | None, Tensor, np.ndarray]]:
-    """Yield ``(signals [b,C,L] | None, velocity [b,L], phase [b,L])`` chunks.
+    full: bool,
+) -> Iterator[tuple[Tensor | None, Tensor, np.ndarray | None]]:
+    """Yield ``(signals [b,C,L], velocity [b,L], phase [b,L])`` chunks.
+
+    With ``full`` false only the velocity is read; signals and phase are None.
 
     Truth comes from the file when stored (frozen sets), else from the drive
     voltage through the coil model, as the training datasets do. The phase is
@@ -231,29 +226,36 @@ def _iter_chunks(
     fringe-distance bins from such files are approximate.
     """
     driver = CoilDriver()
+    sample_rate = None if 'velocity' in f else file_sample_rate(f)
+    channels = list(file_pd_channels(f))
     for start in range(0, n_shots, EVAL_CHUNK_SHOTS):
         sl = slice(start, min(start + EVAL_CHUNK_SHOTS, n_shots))
         if 'velocity' in f:
             velocity = torch.from_numpy(np.asarray(f['velocity'][sl], dtype=np.float32))
+            if not full:
+                yield None, velocity, None
+                continue
             displacement = np.asarray(f['displacement'][sl], dtype=np.float64)
         else:
             volts = torch.from_numpy(np.asarray(f['RP1_CH1'][sl], dtype=np.float32))
+            assert sample_rate is not None
             velocity, disp_t = driver.get_velocity_and_displacement_torch(
-                volts, _sample_rate(f)
+                volts, sample_rate
             )
+            if not full:
+                yield None, velocity.float(), None
+                continue
             displacement = disp_t.double().numpy()
         if 'optical_phase' in f:
-            channel = list(file_pd_channels(f)).index(fringe_key)
+            channel = channels.index(fringe_key)
             # Column order is the file's channel order (pd_wavelengths_um).
-            assert f['optical_phase'].shape[1] == len(file_pd_channels(f))
+            assert f['optical_phase'].shape[1] == len(channels)
             phase = np.asarray(f['optical_phase'][sl, channel], dtype=np.float64)
         else:
             phase = 4 * np.pi * displacement / fringe_wavelength_um
-        signals = None
-        if with_signals:
-            signals = torch.from_numpy(
-                np.stack([np.asarray(f[k][sl], dtype=np.float32) for k in keys], axis=1)
-            )
+        signals = torch.from_numpy(
+            np.stack([np.asarray(f[k][sl], dtype=np.float32) for k in keys], axis=1)
+        )
         yield signals, velocity.float(), phase
 
 
@@ -322,6 +324,7 @@ def evaluate(
             f, keys, fringe[1], fringe[0], n, True
         ):
             assert signals is not None
+            assert phase is not None
             pred = est.predict_velocity(signals, wavelengths_um)
             if pred.shape != velocity.shape:
                 raise ValueError(

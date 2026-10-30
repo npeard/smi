@@ -29,6 +29,19 @@ def file_pd_channels(f: h5py.File) -> dict[str, float]:
     return dict(zip(pd_keys(wavelengths), wavelengths, strict=True))
 
 
+def file_sample_rate(f: h5py.File) -> float:
+    """Sample rate (Hz) of an open file.
+
+    Acquisitions predating the ``sample_rate`` attr were all taken at the Red
+    Pitaya's decimation 256, so that is the fallback.
+    """
+    if 'sample_rate' in f.attrs:
+        return float(f.attrs['sample_rate'])
+    rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+    logger.warning('Using default sample rate of %.2f Hz', rate)
+    return rate
+
+
 def select_pd_keys(f: h5py.File, wavelengths_um: tuple[float, ...]) -> list[str]:
     """Photodiode keys for the requested wavelengths, in the requested order.
 
@@ -142,15 +155,7 @@ class VelocityDataset(Dataset):
             self.voltage_data = self.h5_file[self.voltage_key]
             self.pd_data = [self.h5_file[key] for key in self.pd_channel_keys]
 
-            # Get sample rate from file attributes if available
-            if 'sample_rate' in self.h5_file.attrs:
-                self.sample_rate = float(self.h5_file.attrs['sample_rate'])
-            else:
-                # Default sample rate for Red Pitaya with decimation of 256
-                self.sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
-                logger.warning(
-                    f'Using default sample rate of {self.sample_rate:.2f} Hz'
-                )
+            self.sample_rate = file_sample_rate(self.h5_file)
 
             self.opened_flag = True
 
@@ -273,11 +278,7 @@ class GPUResidentDataset(Dataset):
                     raise ValueError(f"Channel key '{key}' not found in file")
             total = len(f['RP1_CH1'])
             n = total if max_shots is None else min(max_shots, total)
-            if 'sample_rate' in f.attrs:
-                self.sample_rate = float(f.attrs['sample_rate'])
-            else:
-                self.sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
-                logger.warning('Using default sample rate of %.2f Hz', self.sample_rate)
+            self.sample_rate = file_sample_rate(f)
             signals = np.stack(
                 [np.asarray(f[key][:n], dtype=np.float32) for key in channel_keys],
                 axis=1,
