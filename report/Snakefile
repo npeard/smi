@@ -38,6 +38,7 @@ DOCUMENT_FIGURES = {
     "synthetic": [
         "exit_check",
         "sign_information",
+        "feedback_curve",
         "fisher_phase",
         "velocity_bounds",
     ],
@@ -55,7 +56,7 @@ DOCUMENTS = sorted(DOCUMENT_FIGURES)
 
 THEME = "lib/theme.typ"
 
-# The results artifacts every baseline figure reads. Declared as figure inputs
+# The results artifacts the figures read. Declared as figure inputs
 # so regenerating them rebuilds the figures that quote them: without this the
 # DAG only watches the scripts, and a regenerated artifact leaves stale figure
 # PDFs beside a document whose tables have moved. Listed for all figures
@@ -66,7 +67,7 @@ RESULTS = [
     str(DATA_DIR / "baseline_results.json"),
     str(DATA_DIR / "gain_sweep_results.json"),
     str(DATA_DIR / "learned_results.json"),
-    str(DATA_DIR / "exit_check_results.json"),
+    str(DATA_DIR / "synthetic_results.json"),
 ]
 
 # The library modules the synthetic figures compute from rather than read, so

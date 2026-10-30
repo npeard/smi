@@ -33,6 +33,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.typing import RcKeyType
 
+from smi.analysis.results_artifact import RunRecord, read_results
 from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
 
 # Repository root, resolved from this file so scripts work from any cwd
@@ -50,6 +51,35 @@ MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
 # deterministic. (Method 1's fits are ~1 minute on CPU at N = 1000; it is
 # method 2 that makes regeneration expensive.)
 RESULTS_JSON = DATA_DIR / 'baseline_results.json'
+
+# Experiment-runner records behind synthetic.typ's learned-model results.
+SYNTHETIC_RESULTS_JSON = DATA_DIR / 'synthetic_results.json'
+
+# The feedback values the Q3 grids sweep at alpha = 3, and the two cosine
+# schedules they ran under, as (runner family name, epochs per cosine cycle).
+Q3_FEEDBACK_C = (0.05, 0.1, 0.2, 0.4, 0.7, 0.9)
+Q3_BUDGETS = (('tcn-44k-T90', 90), ('tcn-44k', 30))
+
+
+def synthetic_records() -> dict[str, RunRecord]:
+    """The synthetic results artifact's records, keyed by runner cell key."""
+    records = read_results(SYNTHETIC_RESULTS_JSON)
+    return {r.cell_key: r for r in records if r.cell_key is not None}
+
+
+def synthetic_cell(records: dict[str, RunRecord], family: str, sim: str) -> RunRecord:
+    """The seed-0, three-channel record of ``family`` on ``sim``.
+
+    Every synthetic.typ figure reads three-channel seed-0 cells; a missing one
+    raises here, naming the key, rather than plotting a gap.
+    """
+    return records[f'{family}__ch635-675-515__{sim}__seed0']
+
+
+def mean_metric(record: RunRecord, metric: str) -> float:
+    """Mean over test shots of a per-shot metric of ``record``."""
+    return record.metrics[metric]['mean']
+
 
 # Photodiode channels, in the order the dataset feeds them to the model, with
 # the laser wavelength each one detects (microns).
