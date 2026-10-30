@@ -49,8 +49,9 @@ def _value_and_grads(fn, xs, weight):
 
 
 @pytest.mark.parametrize('device', devices())
-# 7: one partial block; 1000: padded, two levels; 4096: three levels.
-@pytest.mark.parametrize('length', [7, 256, 1000, 4096])
+# 7: one partial block; 32/33: exactly one block, and one sample past it;
+# 1000: padded, two levels; 4096: three levels.
+@pytest.mark.parametrize('length', [7, 32, 33, 256, 1000, 4096])
 def test_chunked_scan_matches_recurrence(length: int, device: str):
     xs = _inputs(length)
     weight = torch.randn(2, 8, length, generator=torch.Generator().manual_seed(1))

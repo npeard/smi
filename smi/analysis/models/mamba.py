@@ -63,6 +63,9 @@ def diagonal_linear_scan(a: Tensor, b: Tensor) -> Tensor:
     (exp(S_t) * cumsum(exp(-S_s) b_s)) would overflow float32 once a block's
     total log-decay passes about -88. Causal, since padding is appended
     after the sequence as identity steps (a = 1, b = 0).
+
+    Memory: autograd keeps the padded a, b and both levels' (P, H), about four
+    [batch, d_inner, d_state, seq_len] tensors per layer.
     """
     # Block length. The step count is about block * log_block(seq_len): 32
     # gives 96 sequential steps at 4096 samples instead of 4096. On MPS 8, 16
