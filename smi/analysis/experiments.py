@@ -36,9 +36,11 @@ Grid YAML keys (all required except where noted):
 """
 
 import argparse
+import copy
 import dataclasses
 import fcntl
 import fnmatch
+import functools
 import hashlib
 import json
 import logging
@@ -184,11 +186,14 @@ def _build_sims(
     ]
 
 
-def expand_grid(path: Path) -> list[Cell]:
-    """Expand a grid YAML into its cells, in a deterministic order.
+def expand_grid(path: Path) -> tuple[dict[str, Any], list[Cell]]:
+    """Parse a grid YAML and expand it into its cells, in a deterministic order.
 
     Order is sim, then subset, then (oracle first) family and seed, so a
     ``--only`` filter on a sim name picks a contiguous block.
+
+    Returns:
+        ``(grid, cells)``: the parsed YAML and its cells.
 
     Raises:
         ValueError: On duplicate cell keys (two entries with the same name).
@@ -235,7 +240,7 @@ def expand_grid(path: Path) -> list[Cell]:
     if len(set(keys)) != len(keys):
         dupes = sorted({k for k in keys if keys.count(k) > 1})
         raise ValueError(f'duplicate cell keys: {dupes}')
-    return cells
+    return grid, cells
 
 
 def _kill_children() -> None:
@@ -288,8 +293,21 @@ def runner_lock(path: Path) -> Iterator[None]:
         os.close(fd)
 
 
+@functools.cache
+def _family(text: str) -> tuple[dict[str, Any], bool]:
+    """A family YAML's parse and its model's ``requires_full_length``.
+
+    Keyed by content, not path, so an edited file is never served stale; a
+    grid's cells share a handful of families, each built once.
+    """
+    family = yaml.safe_load(text)
+    return family, create_model(family['model']).requires_full_length
+
+
 def _training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
-    family = yaml.safe_load(cell.family_config.read_text())
+    cached, requires_full_length = _family(cell.family_config.read_text())
+    # A copy: TrainingInterface writes in_channels into its model config.
+    family = copy.deepcopy(cached)
     training = {**family['training'], **grid['training']}
     loss = {**family['loss'], 'sign_invariant': cell.sign_invariant}
     # Derived, not chosen: the monitor must follow the loss (Task 11 rule), and
@@ -304,7 +322,7 @@ def _training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
         **grid['synthetic'],
         'sim': dataclasses.asdict(cell.sim),
     }
-    if create_model(family['model']).requires_full_length:
+    if requires_full_length:
         synthetic['train_crop_length'] = None
     return TrainingConfig(
         model_config=family['model'],
@@ -328,7 +346,9 @@ def _budget(config: TrainingConfig) -> dict[str, Any]:
     }
 
 
-def _fingerprint(cell: Cell, grid: dict[str, Any]) -> dict[str, Any]:
+def _fingerprint(
+    cell: Cell, grid: dict[str, Any], config: TrainingConfig | None
+) -> dict[str, Any]:
     """What a cell trained and was scored on, as its record carries it.
 
     ``run_fingerprint`` hashes every top-level block of the resolved training
@@ -339,11 +359,10 @@ def _fingerprint(cell: Cell, grid: dict[str, Any]) -> dict[str, Any]:
     """
     test = grid['test_set']
     blocks: dict[str, Any] = {'test_set': test}
-    if cell.seed is None:
+    if config is None:
         budget = dict.fromkeys(BUDGET_FIELDS)
         blocks['sim'] = dataclasses.asdict(cell.sim)
     else:
-        config = _training_config(cell, grid)
         budget = _budget(config)
         blocks.update(
             model=config.model_config,
@@ -368,8 +387,10 @@ def _stable_hash(value: object) -> str:
     return hashlib.sha1(blob.encode(), usedforsecurity=False).hexdigest()[:16]
 
 
-def _is_done(cell: Cell, grid: dict[str, Any], records: list[RunRecord]) -> bool:
+def _is_done(cell: Cell, want: dict[str, Any], records: list[RunRecord]) -> bool:
     """Whether ``cell`` is recorded under its current sim, simulator and setup.
+
+    ``want`` is the cell's :func:`_fingerprint`.
 
     Raises:
         ValueError: If its key is recorded only under another setup.
@@ -377,7 +398,6 @@ def _is_done(cell: Cell, grid: dict[str, Any], records: list[RunRecord]) -> bool
     recorded = [r for r in records if r.cell_key == cell.key]
     if not recorded:
         return False
-    want = _fingerprint(cell, grid)
     comparable = ('sim_config_hash', 'simulator_version', 'run_fingerprint')
     if any(all(getattr(r, k) == want[k] for k in comparable) for r in recorded):
         return True
@@ -402,7 +422,7 @@ def _is_done(cell: Cell, grid: dict[str, Any], records: list[RunRecord]) -> bool
 
 
 def _train(
-    cell: Cell, grid: dict[str, Any], checkpoint: Path
+    cell: Cell, config: TrainingConfig, checkpoint: Path
 ) -> tuple[bool, str, dict[str, Any]]:
     """Train ``cell`` and copy its best checkpoint to ``checkpoint``.
 
@@ -412,7 +432,6 @@ def _train(
     """
     assert cell.seed is not None
     lightning.seed_everything(cell.seed, workers=True)
-    config = _training_config(cell, grid)
     interface = TrainingInterface(config=config, experiment_name=cell.key)
     converged = interface.train()
     if not interface.best_model_path:
@@ -426,29 +445,38 @@ def _train(
         'epochs_run': interface.epochs_run,
         'best_monitor': interface.best_monitor,
         'final_monitor': interface.final_monitor,
-        **_budget(config),
     }
     return converged, str(interface.trainer.strategy.root_device), fields
 
 
 def run_cell(
-    cell: Cell, grid: dict[str, Any], out: Path, runs_dir: Path, frozen_root: Path
+    cell: Cell,
+    grid: dict[str, Any],
+    config: TrainingConfig | None,
+    fingerprint: dict[str, Any],
+    out: Path,
+    runs_dir: Path,
+    frozen_root: Path,
 ) -> None:
-    """Train (unless oracle), evaluate and append the cell's record."""
+    """Train (unless oracle), evaluate and append the cell's record.
+
+    ``config`` is the cell's :func:`_training_config` (None for the oracle),
+    and ``fingerprint`` its :func:`_fingerprint`.
+    """
     test = grid['test_set']
     dataset = load_or_create(cell.sim, test['seed'], test['n_shots'], frozen_root)
     start = time.perf_counter()
     est: Estimator
-    fingerprint = _fingerprint(cell, grid)
     extra: dict[str, Any] = {
-        k: fingerprint[k] for k in ('run_fingerprint', 'fingerprint_blocks')
+        k: fingerprint[k]
+        for k in ('run_fingerprint', 'fingerprint_blocks', *BUDGET_FIELDS)
     }
-    if cell.seed is None:
+    if config is None:
         est = InverseFitEstimator.for_dataset(dataset, test['n_shots'])
         converged = True
     else:
         ckpt = runs_dir / f'{cell.key}.ckpt'
-        converged, device, trained = _train(cell, grid, ckpt)
+        converged, device, trained = _train(cell, config, ckpt)
         extra.update(trained)
         est = CheckpointEstimator(ckpt, device)
     result = evaluate(
@@ -490,14 +518,18 @@ def run_grid(
     Raises:
         RunnerLockedError: If another runner is alive.
     """
-    grid = yaml.safe_load(Path(path).read_text())
-    cells = expand_grid(path)
+    grid, cells = expand_grid(path)
     if only is not None:
         cells = [c for c in cells if any(fnmatch.fnmatch(c.key, p) for p in only)]
+    # Resolved once, before any training: TrainingInterface edits its config.
+    configs = {
+        c.key: None if c.seed is None else _training_config(c, grid) for c in cells
+    }
+    fingerprints = {c.key: _fingerprint(c, grid, configs[c.key]) for c in cells}
     with runner_lock(lock_path):
         # Read under the lock: the other runner may have just finished.
         records = read_results(out) if Path(out).exists() else []
-        todo = [c for c in cells if not _is_done(c, grid, records)]
+        todo = [c for c in cells if not _is_done(c, fingerprints[c.key], records)]
         logger.info(
             '%d cells selected, %d done, %d to run',
             len(cells),
@@ -506,7 +538,15 @@ def run_grid(
         )
         for i, cell in enumerate(todo, 1):
             logger.info('[%d/%d] %s', i, len(todo), cell.key)
-            run_cell(cell, grid, Path(out), runs_dir, frozen_root)
+            run_cell(
+                cell,
+                grid,
+                configs[cell.key],
+                fingerprints[cell.key],
+                Path(out),
+                runs_dir,
+                frozen_root,
+            )
     return len(todo)
 
 

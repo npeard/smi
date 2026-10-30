@@ -177,16 +177,16 @@ def test_full_length_model_ignores_the_grid_crop(tmp_path):
     family = 'neuraloperator-offline-19k.yaml'
     (tmp_path / family).write_text((MATCHED / family).read_text())
     path = _grid(tmp_path, families=[{'name': 'no', 'config': family}])
-    cell = expand_grid(path)[0]
-    config = experiments._training_config(cell, yaml.safe_load(path.read_text()))
+    grid, (cell, *_) = expand_grid(path)
+    config = experiments._training_config(cell, grid)
     assert config.synthetic_config['train_crop_length'] is None
     assert config.synthetic_config['steps_per_epoch'] == 1  # grid value kept
 
 
 def test_family_crop_does_not_override_the_grid_crop(tmp_path):
     path = _grid(tmp_path, family_synthetic={'train_crop_length': None})
-    cell = expand_grid(path)[0]
-    config = experiments._training_config(cell, yaml.safe_load(path.read_text()))
+    grid, (cell, *_) = expand_grid(path)
+    config = experiments._training_config(cell, grid)
     assert config.synthetic_config['train_crop_length'] == 256
 
 
@@ -287,14 +287,14 @@ def test_sweep_and_subsets_expand_to_stable_readable_keys(tmp_path):
         seeds=[0],
         oracle=True,
     )
-    cells = expand_grid(path)
+    _, cells = expand_grid(path)
     # 2 subsets x 2 sweep points x (oracle + 1 family x 1 seed)
     assert len(cells) == 8
     assert cells[0].key == 'inverse_fit__ch635__nominal-visibility_range=0.5-1__oracle'
     assert cells[1].key == 'tcn__ch635__nominal-visibility_range=0.5-1__seed0'
     assert cells[-1].sim.visibility_range == (0.9, 1.0)
     assert cells[-1].wavelengths_um == (0.635, 0.6748)
-    assert expand_grid(path) == cells
+    assert expand_grid(path)[1] == cells
 
 
 def test_shipped_grids_expand_and_name_existing_configs():
@@ -305,7 +305,7 @@ def test_shipped_grids_expand_and_name_existing_configs():
         ('q1_channels', 14 * (3 * 14 + 1)),
     ):
         path = experiments.ANALYSIS_DIR / 'experiments' / f'{name}.yaml'
-        cells = expand_grid(path)
+        _, cells = expand_grid(path)
         assert len(cells) == n_cells
         assert all(c.family_config.exists() for c in cells)
         # Michelson cannot show direction; no SMI sim may claim sign invariance.
