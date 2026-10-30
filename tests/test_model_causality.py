@@ -20,13 +20,16 @@ from smi.analysis.models.mamba import Mamba, MambaConfig
 from smi.analysis.models.scnn import SCNN, SCNNConfig
 from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
+from tests.test_receptive_field import phase_period
 
 SEQUENCE_LENGTH = 256
 IN_CHANNELS = 3
 BLOCK_SIZE = 32
 # Positions where the step block is placed; chosen to give good coverage
-# without making the test suite slow.
-STEP_POSITIONS = list(range(BLOCK_SIZE, SEQUENCE_LENGTH - BLOCK_SIZE, 32))
+# without making the test suite slow. A step of 31 walks the in-stride phase
+# of every strided model below (test_step_positions_cover_every_phase): a
+# leak at one phase only is invisible to a probe that always lands on another.
+STEP_POSITIONS = list(range(BLOCK_SIZE, SEQUENCE_LENGTH - BLOCK_SIZE, 31))
 # A response before the step is a violation only if it exceeds this fraction
 # of the maximum post-step response magnitude.
 VIOLATION_THRESHOLD = 0.0
@@ -442,6 +445,20 @@ REGISTRY_HPARAMS: dict[str, dict] = {
         dropout=0.0,
         causal=True,
     ),
+    'UNetTransformer': dict(
+        type='UNetTransformer',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        channels=[8, 8, 16],
+        kernel_size=4,
+        pool=2,
+        n_heads=2,
+        n_layers=1,
+        ffn_dim=32,
+        attention_span=2,
+        dropout=0.0,
+        causal=True,
+    ),
     'Mamba': dict(
         type='Mamba',
         sequence_length=SEQUENCE_LENGTH,
@@ -456,6 +473,7 @@ REGISTRY_HPARAMS: dict[str, dict] = {
 }
 LSTM_BIDIRECTIONAL = {**REGISTRY_HPARAMS['LSTM'], 'bidirectional': True}
 PATCH_OFFLINE = {**REGISTRY_HPARAMS['PatchTransformer'], 'causal': False}
+UNET_OFFLINE = {**REGISTRY_HPARAMS['UNetTransformer'], 'causal': False}
 
 
 def test_registry_hparams_cover_every_model_type():
@@ -464,8 +482,13 @@ def test_registry_hparams_cover_every_model_type():
 
 @pytest.mark.parametrize(
     'hparams',
-    [*REGISTRY_HPARAMS.values(), LSTM_BIDIRECTIONAL, PATCH_OFFLINE],
-    ids=[*REGISTRY_HPARAMS, 'LSTM-bidirectional', 'PatchTransformer-offline'],
+    [*REGISTRY_HPARAMS.values(), LSTM_BIDIRECTIONAL, PATCH_OFFLINE, UNET_OFFLINE],
+    ids=[
+        *REGISTRY_HPARAMS,
+        'LSTM-bidirectional',
+        'PatchTransformer-offline',
+        'UNetTransformer-offline',
+    ],
 )
 def test_is_causal_agrees_with_the_empirical_probe(hparams):
     model = create_model(hparams).eval()
@@ -483,17 +506,35 @@ def test_is_causal_covers_the_tabular_baselines():
     assert not is_causal({'type': 'Ridge'})
 
 
-@pytest.mark.parametrize(
-    'hparams',
-    [REGISTRY_HPARAMS['PatchTransformer'], PATCH_OFFLINE],
-    ids=['causal', 'offline'],
-)
-def test_wrapped_patch_transformer_leaks_only_when_offline(hparams):
+STRIDED = [
+    REGISTRY_HPARAMS['PatchTransformer'],
+    PATCH_OFFLINE,
+    REGISTRY_HPARAMS['UNetTransformer'],
+    UNET_OFFLINE,
+]
+STRIDED_IDS = [
+    'PatchTransformer-causal',
+    'PatchTransformer-offline',
+    'UNetTransformer-causal',
+    'UNetTransformer-offline',
+]
+
+
+@pytest.mark.parametrize('hparams', STRIDED, ids=STRIDED_IDS)
+def test_step_positions_cover_every_phase(hparams):
+    period = phase_period(hparams)
+    assert period > 1
+    assert {s % period for s in STEP_POSITIONS} == set(range(period))
+
+
+@pytest.mark.parametrize('hparams', STRIDED, ids=STRIDED_IDS)
+def test_wrapped_strided_model_leaks_only_when_offline(hparams):
     """The probe runs on the full ``Model``, not the inner network.
 
-    Patch embedding, positional bias and the per-sample upsampling are each a
-    place a future sample could enter; only the wrapped model shows all three.
-    Non-trivial normalization stats make sure the baked buffers are included.
+    Tokenisation or pooling, positional bias, skip connections and the
+    per-sample upsampling are each a place a future sample could enter; only
+    the wrapped model shows them all. Non-trivial normalization stats make
+    sure the baked buffers are included.
     """
     model = Model(
         create_model(hparams),

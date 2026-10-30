@@ -13,6 +13,7 @@ from .patch_transformer import PatchTransformer, PatchTransformerConfig
 from .scnn import SCNN, SCNNConfig
 from .tcan import TCAN, TCANConfig
 from .tcn import TCN, TCNConfig
+from .unet_transformer import UNetTransformer, UNetTransformerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ MODEL_REGISTRY: dict[str, tuple[type, type[nn.Module]]] = {
     'MLP': (MLPConfig, MLP),
     'Mamba': (MambaConfig, Mamba),
     'PatchTransformer': (PatchTransformerConfig, PatchTransformer),
+    'UNetTransformer': (UNetTransformerConfig, UNetTransformer),
 }
 
 
@@ -69,6 +71,8 @@ def create_model(model_hparams: dict[str, Any]) -> nn.Module:
 #: Any table comparing them to the analytic baseline has to say so. LightGBM
 #: and Ridge are tabular baselines outside MODEL_REGISTRY.
 _NONCAUSAL_TYPES = frozenset({'SCNN', 'Barland', 'MLP', 'LightGBM', 'Ridge'})
+#: Model types built in both directions, chosen by their ``causal`` field.
+_CAUSAL_FLAG_TYPES = frozenset({'PatchTransformer', 'UNetTransformer'})
 
 
 def is_causal(model_hparams: dict[str, Any]) -> bool:
@@ -80,13 +84,14 @@ def is_causal(model_hparams: dict[str, Any]) -> bool:
 
     Args:
         model_hparams: Hyperparameters with a ``type`` key; an LSTM also needs
-            its ``bidirectional`` flag, a PatchTransformer its ``causal`` flag.
+            its ``bidirectional`` flag, a PatchTransformer or UNetTransformer
+            its ``causal`` flag.
 
     Returns:
         True if the model is causal.
     """
     if model_hparams['type'] in _NONCAUSAL_TYPES:
         return False
-    if model_hparams['type'] == 'PatchTransformer':
+    if model_hparams['type'] in _CAUSAL_FLAG_TYPES:
         return model_hparams['causal']
     return not model_hparams.get('bidirectional', False)

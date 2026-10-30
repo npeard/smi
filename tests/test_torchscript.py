@@ -155,6 +155,45 @@ MODEL_CONFIGS = [
         SEQ_LEN,
     ),
     (
+        'UNetTransformer-offline',
+        dict(
+            type='UNetTransformer',
+            sequence_length=SEQ_LEN,
+            in_channels=IN_CHANNELS,
+            channels=[8, 8, 16],
+            kernel_size=4,
+            pool=2,
+            n_heads=2,
+            n_layers=1,
+            ffn_dim=32,
+            attention_span=2,
+            dropout=0.0,
+            causal=False,
+        ),
+        # Not a multiple of the total pooling factor: the per-level length
+        # bookkeeping must script as well.
+        SEQ_LEN - 3,
+    ),
+    (
+        # Last of its type, so test_precision's by-type fixture is the causal one.
+        'UNetTransformer-causal',
+        dict(
+            type='UNetTransformer',
+            sequence_length=SEQ_LEN,
+            in_channels=IN_CHANNELS,
+            channels=[8, 8, 16],
+            kernel_size=4,
+            pool=2,
+            n_heads=2,
+            n_layers=1,
+            ffn_dim=32,
+            attention_span=2,
+            dropout=0.0,
+            causal=True,
+        ),
+        SEQ_LEN - 3,
+    ),
+    (
         'Mamba',
         dict(
             type='Mamba',

@@ -16,6 +16,7 @@ from smi.analysis.models.patch_transformer import (
 from smi.analysis.models.scnn import SCNN, SCNNConfig
 from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
+from smi.analysis.models.unet_transformer import UNetTransformer, UNetTransformerConfig
 
 
 def measure_receptive_field(
@@ -45,6 +46,19 @@ def measure_worst_phase_field(
         for j in range(period)
     ]
     return max(w for w, _ in probes), any(f for _, f in probes)
+
+
+def phase_period(hparams: dict) -> int:
+    """Output positions a probe must sweep to see every phase of the field.
+
+    Strided models repeat their geometry once per total stride; the
+    convolutional and recurrent families are translation invariant.
+    """
+    if hparams['type'] == 'PatchTransformer':
+        return hparams['stride']
+    if hparams['type'] == 'UNetTransformer':
+        return hparams['pool'] ** (len(hparams['channels']) - 1)
+    return 1
 
 
 def measure_receptive_field_at(
@@ -209,3 +223,75 @@ def test_patch_transformer_rejects_gapped_patches():
     """A stride longer than the patch skips samples no token ever sees."""
     with pytest.raises(ValueError, match='stride 9 exceeds patch_len 8'):
         _patch_transformer(8, 9, 1, 1, causal=True)
+
+
+def _unet(
+    channels: list[int],
+    kernel_size: int,
+    pool: int,
+    n_layers: int,
+    span: int,
+    causal: bool,
+) -> UNetTransformer:
+    return UNetTransformer(
+        UNetTransformerConfig(
+            sequence_length=2048,
+            in_channels=3,
+            channels=channels,
+            kernel_size=kernel_size,
+            pool=pool,
+            n_heads=2,
+            n_layers=n_layers,
+            ffn_dim=16,
+            attention_span=span,
+            dropout=0.0,
+            causal=causal,
+        )
+    )
+
+
+# (channels, kernel_size, pool, n_layers, span): the matched geometry first,
+# then odd kernels, a single level, a deeper stack and a pool of three.
+UNET_GEOMETRIES = [
+    ([4, 6, 8], 4, 2, 2, 6),
+    ([4, 6, 8], 3, 2, 1, 1),
+    ([4, 8], 5, 3, 2, 2),
+    ([4, 4, 4, 8], 2, 2, 2, 3),
+    ([4, 6, 8], 3, 3, 1, 2),
+]
+
+
+@pytest.mark.parametrize(
+    ('channels', 'kernel_size', 'pool', 'n_layers', 'span'), UNET_GEOMETRIES
+)
+@pytest.mark.parametrize('causal', [True, False], ids=['causal', 'offline'])
+def test_unet_transformer_field_matches_worst_phase_measurement(
+    channels, kernel_size, pool, n_layers, span, causal
+):
+    """The property is the worst case over the total stride, and finite."""
+    model = _unet(channels, kernel_size, pool, n_layers, span, causal)
+    period = pool ** (len(channels) - 1)
+    measured, sees_future = measure_worst_phase_field(
+        model, in_channels=3, length=2048, period=period
+    )
+    assert model.receptive_field == measured
+    assert sees_future == (not causal)
+
+
+@pytest.mark.parametrize(
+    ('channels', 'kernel_size', 'pool', 'n_layers', 'span'), UNET_GEOMETRIES
+)
+def test_causal_unet_transformer_lookback_spans_one_stride(
+    channels, kernel_size, pool, n_layers, span
+):
+    """Pooling latency moves the lookback by exactly one total stride.
+
+    The docstring's minimum, receptive_field - (period - 1), is reached at
+    one phase of every period; the matched comparison holds the maximum.
+    """
+    model = _unet(channels, kernel_size, pool, n_layers, span, causal=True)
+    period = pool ** (len(channels) - 1)
+    widths = [
+        measure_receptive_field_at(model, 3, 2048, 1024 + j)[0] for j in range(period)
+    ]
+    assert min(widths) == model.receptive_field - (period - 1)

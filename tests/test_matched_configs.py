@@ -17,7 +17,7 @@ from smi.analysis.models.base import Model
 from smi.analysis.models.factory import MODEL_REGISTRY, create_model, is_causal
 from smi.analysis.training_interface import MIN_PATIENCE_CHECKS, TrainingConfig
 from smi.synthetic.forward import SimConfig
-from tests.test_receptive_field import measure_worst_phase_field
+from tests.test_receptive_field import measure_worst_phase_field, phase_period
 
 MATCHED = (
     Path(__file__).parents[1] / 'smi' / 'analysis' / 'models' / 'configs' / 'matched'
@@ -135,17 +135,9 @@ def test_forward_preserves_length(path):
 CONV_ATTENTION = [
     p
     for p in CONFIGS
-    if _load(p)['model']['type'] in ('TCN', 'SCNN', 'TCAN', 'PatchTransformer')
+    if _load(p)['model']['type']
+    in ('TCN', 'SCNN', 'TCAN', 'PatchTransformer', 'UNetTransformer')
 ]
-
-
-def _phase_period(hparams: dict) -> int:
-    """Output positions one probe must sweep to see the widest field.
-
-    The patch Transformer's field depends on where a sample sits inside a
-    stride; the convolutional families are translation invariant.
-    """
-    return hparams['stride'] if hparams['type'] == 'PatchTransformer' else 1
 
 
 @pytest.mark.parametrize('path', CONV_ATTENTION, ids=lambda p: p.stem)
@@ -158,7 +150,7 @@ def test_measured_field_agrees_with_property(path):
     hparams = _load(path)['model']
     model = create_model(hparams)
     measured, sees_future = measure_worst_phase_field(
-        model, hparams['in_channels'], length=2048, period=_phase_period(hparams)
+        model, hparams['in_channels'], length=2048, period=phase_period(hparams)
     )
     assert measured == model.receptive_field
     assert sees_future == (not is_causal(hparams))

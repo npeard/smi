@@ -14,6 +14,8 @@ families:
   - {name: mlp-44k, config: ../models/configs/matched/mlp-44k.yaml}
   - {name: patchtransformer-causal-44k, config: ../models/configs/matched/patchtransformer-causal-44k.yaml}
   - {name: patchtransformer-offline-44k, config: ../models/configs/matched/patchtransformer-offline-44k.yaml}
+  - {name: unettransformer-causal-44k, config: ../models/configs/matched/unettransformer-causal-44k.yaml}
+  - {name: unettransformer-offline-44k, config: ../models/configs/matched/unettransformer-offline-44k.yaml}
 
 channel_subsets:
   - [0.635]

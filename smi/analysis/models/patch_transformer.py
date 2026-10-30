@@ -258,12 +258,14 @@ class PatchTransformer(nn.Module):
 
         Causal, t = kS + r with 0 <= r < S: the oldest sample reached is the
         start of token k - N's patch, (k - N)S - P + 1, so the lookback
-        (inclusive of t) is NS + r + P, largest at r = S - 1:
-        (N + 1)S + P - 1. Offline: tokens k - N .. k + N cover 2NS + P
-        contiguous samples whatever r is, and the local convolution stays
-        inside them because N >= 1. Both rely on stride <= patch_len, which
-        the config enforces; ``tests/test_receptive_field.py`` checks them
-        against a gradient probe swept over the phase.
+        (inclusive of t) is NS + r + P: smallest at r = 0, NS + P, and
+        largest at r = S - 1, (N + 1)S + P - 1 -- 76 and 85 for the matched
+        causal configs (N = 6, S = 10, P = 16). Offline: tokens
+        k - N .. k + N cover 2NS + P contiguous samples whatever r is, and
+        the local convolution stays inside them because N >= 1. Both rely
+        on stride <= patch_len, which the config enforces;
+        ``tests/test_receptive_field.py`` checks them against a gradient
+        probe swept over the phase.
         """
         c = self.config
         n = c.n_layers * c.attention_span

@@ -15,6 +15,7 @@ from .tcan import TCAN
 from .tcn import TCN
 from .temporal_block import TemporalBlock
 from .transpose import Transpose
+from .unet_transformer import UNetTransformer
 
 __all__ = [
     'LSTM',
@@ -30,4 +31,5 @@ __all__ = [
     'SlidingWindowModel',
     'TemporalBlock',
     'Transpose',
+    'UNetTransformer',
 ]

@@ -14,6 +14,7 @@ from smi.analysis.models.patch_transformer import (
 from smi.analysis.models.scnn import SCNN, SCNNConfig
 from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
+from smi.analysis.models.unet_transformer import UNetTransformer, UNetTransformerConfig
 
 SEQUENCE_LENGTH = 256
 IN_CHANNELS = 3
@@ -327,3 +328,49 @@ class TestPatchTransformerForward:
             out = _patch_transformer(causal)(x)
         assert out.shape == (BATCH_SIZE, 1, 3)
         assert torch.isfinite(out).all()
+
+
+def _unet_transformer(causal: bool) -> UNetTransformer:
+    config = UNetTransformerConfig(
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        channels=[8, 8, 16],
+        kernel_size=4,
+        pool=2,
+        n_heads=2,
+        n_layers=1,
+        ffn_dim=32,
+        attention_span=2,
+        dropout=0.0,
+        causal=causal,
+    )
+    return UNetTransformer(config).eval()
+
+
+@pytest.mark.parametrize('causal', [True, False], ids=['causal', 'offline'])
+class TestUNetTransformerForward:
+    # The total pooling factor is 4: 253 and 254 leave a partial coarse token
+    # at each level, and 1 and 3 are shorter than one bottleneck token.
+    @pytest.mark.parametrize('length', [SEQUENCE_LENGTH, 253, 254, 3, 1])
+    def test_output_shape(self, causal, length):
+        x = torch.randn(BATCH_SIZE, IN_CHANNELS, length)
+        with torch.no_grad():
+            out = _unet_transformer(causal)(x)
+        assert out.shape == (BATCH_SIZE, 1, length)
+        assert torch.isfinite(out).all()
+
+    def test_rejects_heads_that_do_not_divide_the_bottleneck(self, causal):
+        with pytest.raises(ValueError, match='not divisible by n_heads'):
+            UNetTransformerConfig(
+                sequence_length=SEQUENCE_LENGTH,
+                in_channels=IN_CHANNELS,
+                channels=[8, 8, 15],
+                kernel_size=4,
+                pool=2,
+                n_heads=2,
+                n_layers=1,
+                ffn_dim=32,
+                attention_span=2,
+                dropout=0.0,
+                causal=causal,
+            )
