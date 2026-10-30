@@ -82,3 +82,15 @@ def test_velocity_range_within_inverse_fit_limit():
     velocity = _shots(4 * NOMINAL_DRIVE_GAIN)
     p999 = torch.quantile(velocity.abs().flatten(), 0.999).item()
     assert p999 < MAX_SPEED_UM_PER_MS, f'p99.9 |v| = {p999:.2f} um/ms'
+
+
+def test_off_grid_min_freq_raises_clear_error():
+    coil, wf = (
+        CoilDriver(),
+        Waveform(start_freq=1.0, end_freq=1000.0, allowed_freqs=[37.5]),
+    )
+    match = 'not on the frequency grid'
+    with pytest.raises(ValueError, match=match):
+        coil.sample(wf, normalize_gain=True)
+    with pytest.raises(ValueError, match=match):
+        sample_trajectory(1, wf, coil, 1.0, SAMPLE_RATE, CPU, None)

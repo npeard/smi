@@ -66,6 +66,9 @@ class CoilDriver:
             min_freq: Lowest valid waveform frequency (Hz); the bin where
                 ``freq == min_freq`` is the normalization reference.
 
+        Raises:
+            ValueError: If no bin of ``freq`` equals ``min_freq``.
+
         Returns:
             Complex transfer * j*2*pi*f, divided by 10 times its magnitude at
             the reference bin.
@@ -80,7 +83,14 @@ class CoilDriver:
         # the original waveform (flat) and we don't care so much about the
         # overall scaling as long as it is within the hardware constraints and
         # allows us to scan over multiple fringes
-        scaling_factor = np.abs(velocity_transfer[freq == min_freq])
+        reference = freq == min_freq
+        if not reference.any():
+            raise ValueError(
+                f'min_freq {min_freq} Hz is not on the frequency grid (spacing '
+                f'{freq[1] - freq[0]} Hz); choose allowed_freqs / decimations '
+                'whose frequencies are grid bins'
+            )
+        scaling_factor = np.abs(velocity_transfer[reference])
         # The extra factor of 10 here is manually selected and seems to produce
         # voltages in a compatible range
         return velocity_transfer / (scaling_factor * 10)
