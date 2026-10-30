@@ -29,10 +29,12 @@ def small_simulations(monkeypatch):
     monkeypatch.setattr(synthetic_lit_module, 'NORM_STATS_SHOTS', 2)
 
 
-def _grid(tmp_path, **overrides):
+def _grid(tmp_path, family_synthetic=None, **overrides):
     """A tiny CPU grid whose family is a 2-layer TCN."""
     family = yaml.safe_load((MATCHED / 'tcn-matched.yaml').read_text())
     family['model']['temporal_channels'] = [4, 4]
+    if family_synthetic is not None:
+        family['synthetic'] = family_synthetic
     (tmp_path / 'tiny-tcn.yaml').write_text(yaml.safe_dump(family))
     grid = {
         'families': [{'name': 'tcn', 'config': 'tiny-tcn.yaml'}],
@@ -97,6 +99,25 @@ def test_two_cell_grid_writes_complete_records_and_resumes(tmp_path):
     # Rerun: every key is present, nothing is trained or appended.
     assert _run(path, tmp_path) == 0
     assert len(read_results(tmp_path / 'results.json')) == 2
+
+
+def test_family_null_crop_overrides_the_grid_crop(tmp_path):
+    """A family trained on full shots keeps that when the grid crops the rest."""
+    path = _grid(tmp_path, family_synthetic={'train_crop_length': None})
+    cell = expand_grid(path)[0]
+    grid = yaml.safe_load(path.read_text())
+    config = experiments._training_config(cell, grid)
+    assert config.synthetic_config['train_crop_length'] is None
+    assert config.synthetic_config['steps_per_epoch'] == 1  # grid value kept
+    assert _run(path, tmp_path, only=[cell.key]) == 1
+    assert read_results(tmp_path / 'results.json')[0].train_crop_length is None
+
+
+def test_family_without_crop_takes_the_grid_crop(tmp_path):
+    path = _grid(tmp_path, family_synthetic={})
+    cell = expand_grid(path)[0]
+    config = experiments._training_config(cell, yaml.safe_load(path.read_text()))
+    assert config.synthetic_config['train_crop_length'] == 256
 
 
 def test_only_filters_cells_by_glob(tmp_path):

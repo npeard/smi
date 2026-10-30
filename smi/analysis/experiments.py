@@ -21,7 +21,9 @@ Grid YAML keys (all required except where noted):
 * ``seeds``: training seeds.
 * ``oracle``: also score ``InverseFitEstimator`` on every (sim, subset).
 * ``loss: {sign_invariant}``: the default for every sim.
-* ``synthetic: {steps_per_epoch, val_steps, train_crop_length}``.
+* ``synthetic: {steps_per_epoch, val_steps, train_crop_length}``. A family
+  YAML's own ``synthetic.train_crop_length`` (``null`` = full shots) wins over
+  the grid's for that family; the record's ``train_crop_length`` reports it.
 * ``training``: shallow overrides of the family's ``training`` block (device,
   epoch cap). ``convergence.monitor`` is derived from the sim's sign
   invariance, so one family YAML serves Michelson and SMI sims.
@@ -284,6 +286,13 @@ def _training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
         **grid['synthetic'],
         'sim': dataclasses.asdict(cell.sim),
     }
+    # The one family-level override of the grid's synthetic block: a family
+    # whose design needs full-length shots (the offline neural operator, whose
+    # truncated modes are index-based) states ``train_crop_length: null``; an
+    # absent key leaves the grid's value.
+    family_synthetic = family.get('synthetic', {})
+    if 'train_crop_length' in family_synthetic:
+        synthetic['train_crop_length'] = family_synthetic['train_crop_length']
     return TrainingConfig(
         model_config=family['model'],
         training_config=training,

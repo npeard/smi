@@ -123,7 +123,14 @@ class SpectralConv1d(nn.Module):
         return torch.complex(self.real, functional.pad(self.imag, (1, 0)))
 
     def forward(self, x: Tensor) -> Tensor:
-        """Map [batch, width, length] to the same shape."""
+        """Map [batch, width, length] to the same shape.
+
+        An input shorter than ``2 * modes - 2`` samples has only ``L // 2 + 1``
+        frequency bins, so the retained modes are silently truncated to those.
+        The bins past them do not exist, so nothing is lost and the shape and
+        finiteness contract holds for any length; the weights for the missing
+        modes simply get no gradient.
+        """
         length = x.shape[-1]
         modes = min(self.modes, length // 2 + 1)
         x_hat = torch.fft.rfft(x)[..., :modes]

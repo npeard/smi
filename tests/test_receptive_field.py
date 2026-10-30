@@ -331,6 +331,9 @@ def test_causal_unet_transformer_lookback_spans_one_stride(
 def _neural_operator(
     n_layers: int, modes: int, kernel_len: int | None
 ) -> NeuralOperator:
+    # The 1e-5 round-off floor is relative to a random init's output scale, so
+    # an unseeded init could flip a gate; fix it.
+    torch.manual_seed(0)
     return NeuralOperator(
         NeuralOperatorConfig(
             sequence_length=2048,

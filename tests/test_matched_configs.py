@@ -38,6 +38,19 @@ def _load(path: Path) -> dict:
     return yaml.safe_load(path.read_text())
 
 
+def _expected_crop(hparams: dict) -> int | None:
+    """Training window the config must declare.
+
+    The offline neural operator keeps the full shot: its truncated modes are
+    indexed by frequency bin, so only the 16384-sample grid it is evaluated on
+    gives them one meaning. (lstm-bidir is unbounded too but shift-invariant,
+    so it crops like the rest.)
+    """
+    if hparams['type'] == 'NeuralOperator' and not is_causal(hparams):
+        return None
+    return 4096
+
+
 def _field(model_hparams: dict) -> int | None:
     """Receptive field of the built model; None when it is unbounded."""
     return getattr(create_model(model_hparams), 'receptive_field', None)
@@ -94,6 +107,7 @@ def test_context_rule_follows_the_column(path):
     if hparams.get('receptive_field') == 'unbounded':
         # Recurrent state has no finite lookback, so only parameters match.
         assert field is None
+        assert config['synthetic']['train_crop_length'] == _expected_crop(hparams)
         return
     assert field is not None
     if is_causal(hparams):
@@ -120,7 +134,7 @@ def test_config_loads_and_follows_training_rules(path):
     synthetic = config.synthetic_config
     assert synthetic is not None
     assert synthetic['use_synthetic_training'] is True
-    assert synthetic['train_crop_length'] == 4096
+    assert synthetic['train_crop_length'] == _expected_crop(config.model_config)
     # SimConfig has no defaults, so constructing it proves the block is complete.
     sim = SimConfig(**synthetic['sim'])
     assert len(sim.wavelengths_um) == config.model_config['in_channels']
@@ -155,6 +169,7 @@ def test_measured_field_agrees_with_property(path):
     makes the probed footprint wider than the window by construction.
     """
     hparams = _load(path)['model']
+    torch.manual_seed(0)  # the NeuralOperator floor is relative to the init
     model = create_model(hparams)
     measured, sees_future = measure_worst_phase_field(
         model,

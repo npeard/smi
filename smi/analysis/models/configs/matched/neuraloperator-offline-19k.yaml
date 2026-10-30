@@ -4,6 +4,9 @@
 # cannot be matched; only the parameter budget is (like lstm-bidir). The test
 # pins the marker below. Same width, depth and modes as the causal variant,
 # hence the same parameter count.
+# Trains on full shots (train_crop_length: null), so a step carries ~4x the
+# samples of the 4096-crop siblings: a training-budget confound, to be quoted
+# with the "matched on budget only" caveat.
 model:
   type: "NeuralOperator"
   sequence_length: 16384
@@ -54,7 +57,11 @@ data:
 synthetic:
   use_synthetic_training: true
   steps_per_epoch: 200
-  train_crop_length: 4096  # must exceed the receptive field with margin
+  # null = full 16384-sample shots. The truncated modes are indexed by
+  # frequency bin, so they mean one physical band only on the grid the model
+  # is evaluated on; a crop would train a different operator. A family-level
+  # value overrides the grid's (experiments.py).
+  train_crop_length: null
   val_steps: 20
   # Every SimConfig field, no defaults (smi.synthetic.forward.SimConfig).
   # The experiment runner replaces the whole block per cell.

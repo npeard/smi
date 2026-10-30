@@ -513,6 +513,7 @@ def test_registry_hparams_cover_every_model_type():
     ],
 )
 def test_is_causal_agrees_with_the_empirical_probe(hparams):
+    torch.manual_seed(0)  # the NeuralOperator floor is relative to the init
     model = create_model(hparams).eval()
     baseline, outputs = _get_step_outputs(
         model, STEP_POSITIONS, SEQUENCE_LENGTH, IN_CHANNELS, BLOCK_SIZE
@@ -562,6 +563,7 @@ def test_wrapped_two_way_model_leaks_only_when_offline(hparams):
     sample could enter; only the wrapped model shows them all. Non-trivial
     normalization stats make sure the baked buffers are included.
     """
+    torch.manual_seed(0)  # the NeuralOperator floor is relative to the init
     model = Model(
         create_model(hparams),
         input_mean=torch.tensor([0.1, -0.2, 0.3]),
