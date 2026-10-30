@@ -94,11 +94,51 @@ def test_two_cell_grid_writes_complete_records_and_resumes(tmp_path):
         assert r.epochs_run == 1
         assert r.best_monitor <= r.final_monitor
         assert (r.train_crop_length, r.steps_per_epoch, r.batch_size) == (256, 1, 2)
+        family = yaml.safe_load((tmp_path / 'tiny-tcn.yaml').read_text())['training']
+        assert (r.max_epochs, r.T_0) == (1, family['T_0'])
+        assert r.lr == float(family['learning_rate'])
         assert {'velocity_rmse', 'velocity_rmse_sign_invariant'} <= set(r.metrics)
         assert (tmp_path / 'runs' / f'{r.cell_key}.ckpt').exists()
     # Rerun: every key is present, nothing is trained or appended.
     assert _run(path, tmp_path) == 0
     assert len(read_results(tmp_path / 'results.json')) == 2
+
+
+def _one_cell(tmp_path, **overrides):
+    path = _grid(tmp_path, seeds=[0], **overrides)
+    assert _run(path, tmp_path) == 1
+    return path
+
+
+def test_resume_refuses_a_key_recorded_under_another_budget(tmp_path):
+    _one_cell(tmp_path)
+    budget = {
+        'accelerator': 'cpu',
+        'devices': 1,
+        'max_epochs': 2,
+        'batch_size': 2,
+        'use_logging': False,
+    }
+    path = _grid(tmp_path, seeds=[0], training=budget)
+    with pytest.raises(ValueError, match='max_epochs'):
+        _run(path, tmp_path)
+    assert len(read_results(tmp_path / 'results.json')) == 1
+
+
+def test_resume_refuses_a_key_recorded_under_another_sim(tmp_path):
+    _one_cell(tmp_path)
+    sims = [
+        {
+            'name': 'smi',
+            'preset': 'noise_free',
+            'feedback_c': 0.2,
+            'alpha': 3.0,
+            'override': {'snr_db': 30.0},
+        }
+    ]
+    path = _grid(tmp_path, seeds=[0], sims=sims)
+    with pytest.raises(ValueError, match='sim_config_hash'):
+        _run(path, tmp_path)
 
 
 def test_family_null_crop_overrides_the_grid_crop(tmp_path):

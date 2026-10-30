@@ -4,8 +4,10 @@ A grid YAML expands to cells ``family x channel subset x sim x seed`` (plus one
 optional classical oracle per ``sim x subset``). Each cell trains one network on
 its own simulator config, then scores it on the frozen test set of that config
 through :func:`smi.analysis.evaluate.evaluate`. A cell's record carries its
-``cell_key``; keys already in the results artifact are skipped, so an
-interrupted grid resumes where it stopped.
+``cell_key``, ``sim_config_hash`` and training budget (``BUDGET_FIELDS``); a
+cell recorded with all three matching is skipped, so an interrupted grid
+resumes where it stopped. A recorded key whose sim or budget has since changed
+raises rather than mixing the two in one table.
 
 Grid YAML keys (all required except where noted):
 
@@ -56,7 +58,7 @@ from smi.analysis.evaluate import (
     InverseFitEstimator,
     evaluate,
 )
-from smi.analysis.results_artifact import append_results, read_results
+from smi.analysis.results_artifact import RunRecord, append_results, read_results
 from smi.analysis.training_interface import (
     TrainingConfig,
     TrainingInterface,
@@ -78,6 +80,16 @@ _TUPLE_FIELDS = frozenset(
     name for name, values in NOMINAL_SWEEPS.items() if isinstance(values[0], tuple)
 )
 ORACLE_FAMILY = 'inverse_fit'
+# Record fields that, with the sim config, define what a cell trained on; the
+# cell key names neither, so resume compares them too.
+BUDGET_FIELDS = (
+    'steps_per_epoch',
+    'batch_size',
+    'train_crop_length',
+    'max_epochs',
+    'T_0',
+    'lr',
+)
 
 
 class RunnerLockedError(RuntimeError):
@@ -302,6 +314,50 @@ def _training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
     )
 
 
+def _budget(config: TrainingConfig) -> dict[str, Any]:
+    """The ``BUDGET_FIELDS`` of a cell's training config."""
+    synthetic, training = config.synthetic_config, config.training_config
+    return {
+        'steps_per_epoch': synthetic['steps_per_epoch'],
+        'batch_size': training['batch_size'],
+        'train_crop_length': synthetic['train_crop_length'],
+        'max_epochs': training['max_epochs'],
+        'T_0': training['T_0'],
+        'lr': float(training['learning_rate']),
+    }
+
+
+def _fingerprint(cell: Cell, grid: dict[str, Any]) -> dict[str, Any]:
+    """``sim_config_hash`` plus budget, as the cell's record will carry them."""
+    if cell.seed is None:
+        budget = dict.fromkeys(BUDGET_FIELDS)
+    else:
+        budget = _budget(_training_config(cell, grid))
+    return {'sim_config_hash': cell.sim.hash(), **budget}
+
+
+def _is_done(cell: Cell, grid: dict[str, Any], records: list[RunRecord]) -> bool:
+    """Whether ``cell`` is recorded under its current sim and budget.
+
+    Raises:
+        ValueError: If its key is recorded only under another sim or budget.
+    """
+    recorded = [r for r in records if r.cell_key == cell.key]
+    if not recorded:
+        return False
+    want = _fingerprint(cell, grid)
+    for r in recorded:
+        if all(getattr(r, k) == v for k, v in want.items()):
+            return True
+    have = {k: getattr(recorded[0], k) for k in want}
+    diff = {k: (have[k], want[k]) for k in want if have[k] != want[k]}
+    raise ValueError(
+        f'{cell.key} is recorded under a different sim or budget '
+        f'(field: (recorded, grid)) {diff}; write to another --out or remove '
+        'those records rather than mixing them'
+    )
+
+
 def _train(
     cell: Cell, grid: dict[str, Any], checkpoint: Path
 ) -> tuple[bool, str, dict[str, Any]]:
@@ -325,9 +381,7 @@ def _train(
         'epochs_run': interface.epochs_run,
         'best_monitor': interface.best_monitor,
         'final_monitor': interface.final_monitor,
-        'train_crop_length': config.synthetic_config['train_crop_length'],
-        'steps_per_epoch': config.synthetic_config['steps_per_epoch'],
-        'batch_size': config.training_config['batch_size'],
+        **_budget(config),
     }
     return converged, str(interface.trainer.strategy.root_device), fields
 
@@ -393,10 +447,13 @@ def run_grid(
         cells = [c for c in cells if any(fnmatch.fnmatch(c.key, p) for p in only)]
     with runner_lock(lock_path):
         # Read under the lock: the other runner may have just finished.
-        done = {r.cell_key for r in read_results(out)} if Path(out).exists() else set()
-        todo = [c for c in cells if c.key not in done]
+        records = read_results(out) if Path(out).exists() else []
+        todo = [c for c in cells if not _is_done(c, grid, records)]
         logger.info(
-            '%d cells selected, %d done, %d to run', len(cells), len(done), len(todo)
+            '%d cells selected, %d done, %d to run',
+            len(cells),
+            len(cells) - len(todo),
+            len(todo),
         )
         for i, cell in enumerate(todo, 1):
             logger.info('[%d/%d] %s', i, len(todo), cell.key)

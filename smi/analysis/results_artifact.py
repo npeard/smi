@@ -65,8 +65,12 @@ class RunRecord:
             epoch) it shows how far past its best a converged run went.
         train_crop_length: Training window length (samples) of the cell.
         steps_per_epoch: Training batches per epoch of the cell.
-        batch_size: Training batch size of the cell; with the two above, the
-            budget behind the cell, so cells are comparable.
+        batch_size: Training batch size of the cell.
+        max_epochs: Epoch cap of the cell.
+        T_0: First cosine-restart period (epochs) of the cell's scheduler.
+        lr: Peak learning rate of the cell; with the five above, the training
+            budget behind the cell, so cells are comparable and a resumed grid
+            can tell a recorded cell from a changed one.
 
     ``causal`` is the negation of ``sees_future``; it is a property so the one
     stored flag cannot disagree with it, and :func:`write_results` also writes
@@ -102,6 +106,9 @@ class RunRecord:
     train_crop_length: int | None = None
     steps_per_epoch: int | None = None
     batch_size: int | None = None
+    max_epochs: int | None = None
+    T_0: int | None = None
+    lr: float | None = None
     # Explicit alongside the null field so a reader never has to infer
     # "unbounded" from a missing number; False for records predating it.
     receptive_field_unbounded: bool = False
