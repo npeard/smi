@@ -5,6 +5,7 @@ plateau, and every record must say whether its run got there.
 """
 
 import math
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,9 @@ import torch
 import yaml
 from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 
+from smi.analysis.lit_module import LitModule
 from smi.analysis.training_interface import (
+    ZERO_PREDICTOR_RMSE_KEY,
     RelativeEarlyStopping,
     TrainingConfig,
     TrainingInterface,
@@ -89,6 +92,7 @@ def _config(monitor: str, *, sign_invariant: bool, max_epochs: int) -> TrainingC
                 'monitor': monitor,
                 'patience_epochs': 5,
                 'min_rel_delta': 0.01,
+                'min_epochs': 0,
             },
         },
         data_config={},
@@ -118,7 +122,34 @@ def _run(config: TrainingConfig) -> TrainingInterface:
     return interface
 
 
-def test_plateau_stops_early_and_reports_converged():
+def _script_log(
+    monkeypatch,
+    monitor: Callable[[int], float] | None = None,
+    zero: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> None:
+    """Script the logged monitor by epoch and the zero-predictor value.
+
+    The frozen, untrained tiny TCN need not beat a zero predictor, so a test
+    about plateau timing scales the zero-predictor value far above the monitor.
+    """
+    real_log = LitModule.log
+
+    def log(self, name, value, *args, **kwargs):
+        if name == SIGNED and monitor is not None:
+            value = torch.tensor(monitor(self.trainer.current_epoch))
+        if name == ZERO_PREDICTOR_RMSE_KEY and zero is not None:
+            value = zero(value)
+        return real_log(self, name, value, *args, **kwargs)
+
+    monkeypatch.setattr(LitModule, 'log', log)
+
+
+@pytest.fixture
+def beats_zero_predictor(monkeypatch):
+    _script_log(monkeypatch, zero=lambda v: v * 1e6)
+
+
+def test_plateau_stops_early_and_reports_converged(beats_zero_predictor):
     # Flat validation RMSE with fixed validation data is not exactly constant
     # under a synthetic generator, so use a plateau patience that stops the
     # run well before max_epochs, and assert the flag, not a specific epoch.
@@ -145,7 +176,9 @@ def test_patience_counts_epochs_not_validation_checks():
     assert interface.convergence_callback.patience == 5
 
 
-def test_patience_stops_after_that_many_epochs_at_a_coarser_cadence():
+def test_patience_stops_after_that_many_epochs_at_a_coarser_cadence(
+    beats_zero_predictor,
+):
     # Frozen weights: epoch 1 is the only improvement (the first value always
     # is), so the 5 checks of patience at cadence 2 end the run at epoch 10.
     config = _config(SIGNED, sign_invariant=False, max_epochs=40)
@@ -204,3 +237,66 @@ def test_best_checkpoint_is_tracked_without_logging(flag, key):
     assert interface.epochs_run == 2
     assert math.isfinite(interface.best_monitor)
     assert interface.best_monitor <= interface.final_monitor
+
+
+def test_missing_min_epochs_is_an_error():
+    config = _config(SIGNED, sign_invariant=False, max_epochs=1)
+    del config.training_config['convergence']['min_epochs']
+    with pytest.raises(KeyError, match='min_epochs'):
+        TrainingInterface(config=config)
+
+
+def test_min_epochs_reaches_the_trainer():
+    config = _config(SIGNED, sign_invariant=False, max_epochs=40)
+    config.training_config['convergence']['min_epochs'] = 7
+    assert TrainingInterface(config=config).trainer.fit_loop.min_epochs == 7
+
+
+def test_plateau_waits_for_min_epochs(beats_zero_predictor):
+    config = _config(SIGNED, sign_invariant=False, max_epochs=40)
+    config.training_config['convergence'].update(min_rel_delta=0.5, min_epochs=12)
+    interface = _run(config)
+    assert interface.converged is True
+    assert interface.epochs_run == 12
+
+
+def test_stall_inside_grace_period_does_not_stop_a_run_that_escapes(monkeypatch):
+    # Flat for 8 epochs (patience 5 runs out at epoch 5, inside the grace),
+    # then 10% better per epoch to epoch 20, then flat: the run must keep
+    # training past min_epochs and stop on the later plateau.
+    def monitor(epoch: int) -> float:
+        return 0.9 ** (min(max(epoch, 7), 20) - 7)
+
+    _script_log(monkeypatch, monitor, zero=lambda v: v * 1e6)
+    config = _config(SIGNED, sign_invariant=False, max_epochs=40)
+    config.training_config['convergence']['min_epochs'] = 10
+    interface = _run(config)
+    assert interface.converged is True
+    assert interface.best_monitor == pytest.approx(0.9**13)
+    assert 25 <= interface.epochs_run < 40
+
+
+def test_run_that_never_beats_the_zero_predictor_is_not_converged(monkeypatch):
+    # A zero-output model: the monitored RMSE is the zero predictor's itself.
+    monkeypatch.setattr(
+        LitModule, '_velocity_prediction', lambda _, p: torch.zeros_like(p)
+    )
+    interface = _run(_config(SIGNED, sign_invariant=False, max_epochs=40))
+    stopping_reason = interface.convergence_callback.stopping_reason
+    assert stopping_reason == EarlyStoppingReason.PATIENCE_EXHAUSTED
+    assert interface.best_monitor == pytest.approx(interface.zero_predictor_monitor)
+    assert interface.converged is False
+
+
+@pytest.mark.parametrize(('monitor', 'converged'), [(0.995, False), (0.98, True)])
+def test_converged_needs_min_rel_delta_below_the_zero_predictor(
+    monkeypatch, monitor, converged
+):
+    # Zero predictor scripted to 1.0, min_rel_delta=0.01: 0.5% below it is
+    # still a stall, 2% below it is a real plateau.
+    _script_log(monkeypatch, lambda _: monitor, zero=lambda _: torch.tensor(1.0))
+    interface = _run(_config(SIGNED, sign_invariant=False, max_epochs=40))
+    assert interface.zero_predictor_monitor == pytest.approx(1.0)
+    stopping_reason = interface.convergence_callback.stopping_reason
+    assert stopping_reason == EarlyStoppingReason.PATIENCE_EXHAUSTED
+    assert interface.converged is converged

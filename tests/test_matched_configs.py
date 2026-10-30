@@ -117,7 +117,12 @@ def test_config_loads_and_follows_training_rules(path):
     assert training['precision'] == '32-true'
     assert training['check_val_every_n_epoch'] == 1
     convergence = training['convergence']
-    assert {'monitor', 'patience_epochs', 'min_rel_delta'} <= convergence.keys()
+    assert {
+        'monitor',
+        'patience_epochs',
+        'min_rel_delta',
+        'min_epochs',
+    } <= convergence.keys()
     checks = math.ceil(
         convergence['patience_epochs'] / training['check_val_every_n_epoch']
     )

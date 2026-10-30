@@ -18,6 +18,7 @@ training:
     monitor: "val/velocity_rmse_um_per_ms"  # must follow loss.sign_invariant
     patience_epochs: 10
     min_rel_delta: 0.01  # improvement below 1% of the best counts as none
+    min_epochs: 30  # no stop sooner: S1 zero-output stalls lasted ~15 epochs, then escaped
   warmup_epochs: 0
   T_0: 200  # Initial restart period (epochs for first cosine cycle)
   T_mult: 1  # Factor to increase T_i after each restart (1 = constant period, 2 = doubling)

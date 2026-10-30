@@ -29,7 +29,10 @@ def _record(**overrides) -> RunRecord:
 
 def test_round_trip_preserves_records(tmp_path):
     path = tmp_path / 'learned_results.json'
-    records = [_record(), _record(model_type='SCNN', causal=False)]
+    records = [
+        _record(best_monitor=0.3, zero_predictor_monitor=0.5185),
+        _record(model_type='SCNN', causal=False),
+    ]
     write_results(path, records)
     assert read_results(path) == records
 

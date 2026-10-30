@@ -64,6 +64,10 @@ class RunRecord:
         epochs_run: Epochs trained; with ``best_monitor`` and ``final_monitor``
             (the monitored validation value of the best and of the last
             epoch) it shows how far past its best a converged run went.
+        zero_predictor_monitor: The monitored validation value for a zero
+            prediction; a ``best_monitor`` not below it by ``min_rel_delta``
+            marks a run stalled at the zero-output plateau, which is recorded
+            not converged, as distinct from one that hit ``max_epochs``.
         train_crop_length: Training window length (samples) of the cell.
         steps_per_epoch: Training batches per epoch of the cell.
         batch_size: Training batch size of the cell.
@@ -107,6 +111,7 @@ class RunRecord:
     epochs_run: int | None = None
     best_monitor: float | None = None
     final_monitor: float | None = None
+    zero_predictor_monitor: float | None = None
     train_crop_length: int | None = None
     steps_per_epoch: int | None = None
     batch_size: int | None = None

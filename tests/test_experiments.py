@@ -19,7 +19,7 @@ from smi.analysis.experiments import (
 )
 from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import read_results
-from smi.analysis.training_interface import SIGNED_RMSE_KEY
+from smi.analysis.training_interface import SIGNED_RMSE_KEY, ZERO_PREDICTOR_RMSE_KEY
 
 MATCHED = experiments.ANALYSIS_DIR / 'models' / 'configs' / 'matched'
 
@@ -92,6 +92,7 @@ def test_two_cell_grid_writes_complete_records_and_resumes(tmp_path):
         assert r.wall_clock_s > 0
         assert r.epochs_run == 1
         assert r.best_monitor <= r.final_monitor
+        assert r.zero_predictor_monitor > 0
         assert (r.train_crop_length, r.steps_per_epoch, r.batch_size) == (256, 1, 2)
         family = yaml.safe_load((tmp_path / 'tiny-tcn.yaml').read_text())['training']
         assert (r.max_epochs, r.T_0) == (1, family['T_0'])
@@ -231,19 +232,38 @@ def test_runner_evaluates_the_best_checkpoint(tmp_path, monkeypatch):
         torch.testing.assert_close(saved[k], v, atol=0, rtol=0)
 
 
-def test_patience_exhausted_cell_records_converged(tmp_path):
+@pytest.mark.parametrize(('zero_scale', 'converged'), [(1e6, True), (1e-6, False)])
+def test_patience_exhausted_cell_is_converged_only_below_the_zero_predictor(
+    tmp_path, monkeypatch, zero_scale, converged
+):
+    # Scale the logged zero-predictor value far above (a real plateau) or far
+    # below (a stall at the zero-output plateau) whatever the tiny TCN reaches.
+    real_log = LitModule.log
+
+    def log(self, name, value, *args, **kwargs):
+        if name == ZERO_PREDICTOR_RMSE_KEY:
+            value = value * zero_scale
+        return real_log(self, name, value, *args, **kwargs)
+
+    monkeypatch.setattr(LitModule, 'log', log)
     path = _grid(tmp_path)
     grid = yaml.safe_load(path.read_text())
     grid['seeds'] = [0]
     grid['training'].update(
         max_epochs=40,
-        convergence={'monitor': 'unused', 'patience_epochs': 5, 'min_rel_delta': 0.9},
+        convergence={
+            'monitor': 'unused',
+            'patience_epochs': 5,
+            'min_rel_delta': 0.9,
+            'min_epochs': 0,
+        },
     )
     path.write_text(yaml.safe_dump(grid))
     _run(path, tmp_path)
     (record,) = read_results(tmp_path / 'results.json')
-    assert record.converged is True
+    assert record.converged is converged
     assert record.epochs_run < 40
+    assert (record.best_monitor < record.zero_predictor_monitor) is converged
 
 
 def test_oracle_cell_is_untrained_and_converged(tmp_path, monkeypatch):

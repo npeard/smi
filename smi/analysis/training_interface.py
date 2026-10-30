@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 
 SIGNED_RMSE_KEY = 'val/velocity_rmse_um_per_ms'
 SIGN_INVARIANT_RMSE_KEY = 'val/velocity_rmse_sign_invariant_um_per_ms'
+# RMSE of prediction == 0 on the validation stream, logged by LitModule. It is
+# the value of both monitors above for a zero output (zero == -zero), so a best
+# monitor that never beats it marks a run stalled at the zero-output plateau.
+ZERO_PREDICTOR_RMSE_KEY = 'val/velocity_rmse_zero_predictor_um_per_ms'
 
 # Floor on ceil(patience_epochs / check_val_every_n_epoch), the number of
 # validation checks patience spans: fewer and a noisy mid-schedule dip can pass
@@ -78,6 +82,18 @@ class RelativeEarlyStopping(EarlyStopping):
         best = float(self.best_score)
         self.min_delta = -self.min_rel_delta * best if math.isfinite(best) else 0.0
         return super()._evaluate_stopping_criteria(current)
+
+    # Lightning latches trainer.should_stop, so under Trainer(min_epochs) a stop
+    # signalled inside the grace period would still end the run at min_epochs
+    # after it escaped the plateau. Withdrawing this callback's own earlier
+    # signal lets only the latest check decide; without a grace period the
+    # first signal stops the run, so nothing is ever withdrawn. Same private
+    # hook caveat as above.
+    def _run_early_stopping_check(self, trainer: lightning_module.Trainer) -> None:
+        if self.stopping_reason != EarlyStoppingReason.NOT_STOPPED:
+            trainer.should_stop = False
+            self.stopping_reason = EarlyStoppingReason.NOT_STOPPED
+        super()._run_early_stopping_check(trainer)
 
 
 @dataclass
@@ -357,6 +373,15 @@ class TrainingInterface:
         if extra_callbacks:
             callbacks.extend(extra_callbacks)
 
+        # Required, no default: S1 runs sat at the zero-output plateau for up
+        # to ~15 epochs before escaping, so the grace changes what gets published.
+        min_epochs = self.config.training_config['convergence']['min_epochs']
+        if not isinstance(min_epochs, int) or min_epochs < 0:
+            raise ValueError(
+                f'training.convergence.min_epochs must be an int >= 0, got '
+                f'{min_epochs!r}'
+            )
+
         # Get accelerator and device settings from config
         accelerator = self.config.training_config['accelerator']
         devices = self.config.training_config['devices']
@@ -370,6 +395,7 @@ class TrainingInterface:
 
         return lightning_module.Trainer(
             max_epochs=self.config.training_config['max_epochs'],
+            min_epochs=min_epochs,
             callbacks=callbacks,
             logger=loggers,
             check_val_every_n_epoch=check_val_every_n_epoch,
@@ -420,14 +446,20 @@ class TrainingInterface:
 
     @property
     def converged(self) -> bool:
-        """Whether the last :meth:`train` stopped on a plateau (not max_epochs).
+        """Whether the last :meth:`train` stopped on a plateau below the zero predictor.
 
-        False for a run that hit ``training.max_epochs`` or whose monitored
-        metric went non-finite. Pass it to ``evaluate(..., converged=...)``.
+        False for a run that hit ``training.max_epochs``, whose monitored
+        metric went non-finite, or whose best never beat
+        :attr:`zero_predictor_monitor` by ``min_rel_delta`` (a stall at the
+        zero-output plateau, which also looks like a plateau). Pass it to
+        ``evaluate(..., converged=...)``.
         """
-        return (
-            self.convergence_callback.stopping_reason
-            == EarlyStoppingReason.PATIENCE_EXHAUSTED
+        callback = self.convergence_callback
+        if callback.stopping_reason != EarlyStoppingReason.PATIENCE_EXHAUSTED:
+            return False
+        # Written as "beats", so a NaN on either side is not converged.
+        return self.best_monitor < (1 - callback.min_rel_delta) * (
+            self.zero_predictor_monitor
         )
 
     @property
@@ -445,6 +477,15 @@ class TrainingInterface:
     def final_monitor(self) -> float:
         """Monitored validation value at the last validation check."""
         return float(self.trainer.callback_metrics[self.convergence_callback.monitor])
+
+    @property
+    def zero_predictor_monitor(self) -> float:
+        """The monitored metric for prediction == 0 on the validation stream.
+
+        Read from the last validation check; the validation data are the same
+        at every check (fixed real split, or the reseeded synthetic stream).
+        """
+        return float(self.trainer.callback_metrics[ZERO_PREDICTOR_RMSE_KEY])
 
     @property
     def epochs_run(self) -> int:

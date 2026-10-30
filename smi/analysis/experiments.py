@@ -445,6 +445,7 @@ def _train(
         'epochs_run': interface.epochs_run,
         'best_monitor': interface.best_monitor,
         'final_monitor': interface.final_monitor,
+        'zero_predictor_monitor': interface.zero_predictor_monitor,
     }
     return converged, str(interface.trainer.strategy.root_device), fields
 

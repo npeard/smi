@@ -509,6 +509,15 @@ class LitModule(lightning_module.LightningModule):
             sync_dist=torch.distributed.is_available()
             and torch.distributed.is_initialized(),
         )
+        # The value of both RMSEs above for a zero output, reduced over the
+        # epoch the same way, so a run stalled at the zero-output plateau can be
+        # told from a converged one (TrainingInterface.converged).
+        self.log(
+            'val/velocity_rmse_zero_predictor_um_per_ms',
+            velocity_rmse(torch.zeros_like(velocity_hat), velocity_target),
+            sync_dist=torch.distributed.is_available()
+            and torch.distributed.is_initialized(),
+        )
 
     @override
     def test_step(

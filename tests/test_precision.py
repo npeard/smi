@@ -50,6 +50,7 @@ def test_missing_precision_names_the_field():
                 'monitor': 'val/velocity_rmse_um_per_ms',
                 'patience_epochs': 5,
                 'min_rel_delta': 0.01,
+                'min_epochs': 0,
             },
         },
         loss_config={'sign_invariant': False},
