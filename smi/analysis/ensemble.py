@@ -40,7 +40,11 @@ from torch.func import functional_call, stack_module_state
 from smi.analysis.metrics import apply_best_sign
 from smi.analysis.models.base import Model
 from smi.analysis.models.factory import create_model
-from smi.analysis.synthetic_lit_module import NORM_STATS_SEED, NORM_STATS_SHOTS
+from smi.analysis.synthetic_lit_module import (
+    NORM_STATS_SEED,
+    NORM_STATS_SHOTS,
+    VAL_SEED,
+)
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.forward import SimConfig, normalization_stats, simulate_batch
@@ -159,8 +163,13 @@ def build_member(
         dropout: If given, overrides the dropout probability of every dropout
             layer in the inner network (lets dropout vary per member).
     """
-    torch.manual_seed(seed)
-    inner = create_model(model_hparams)
+    # The member seed must fix only this init: torch.manual_seed reseeds every
+    # device and would pin the shared training stream to the last member's
+    # seed, whatever seed the grid cell set. Members are built on the CPU, so
+    # a forked, CPU-only seed suffices.
+    with torch.random.fork_rng(devices=[]):
+        torch.default_generator.manual_seed(seed)
+        inner = create_model(model_hparams)
     if dropout is not None:
         _set_dropout(inner, dropout)
     if norm_stats is None:
@@ -575,22 +584,26 @@ class SyntheticEnsembleModule(EnsembleModule):
         )
         self.sim_config = sim_config
 
-    def _shared_batch(self, batch: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def _shared_batch(
+        self, batch: Tensor, generator: torch.Generator | None
+    ) -> tuple[Tensor, Tensor, Tensor]:
         """Simulate one synthetic batch (shared across all members) on-device."""
-        out = simulate_batch(self.sim_config, len(batch), self.device, None)
+        out = simulate_batch(self.sim_config, len(batch), self.device, generator)
         return out.signals, out.velocity, out.displacement
 
     @override
     def training_step(self, batch: Tensor, batch_idx: int) -> Tensor:
         """Generate a shared synthetic batch, then run the ensemble training step."""
-        return super().training_step(self._shared_batch(batch), batch_idx)
+        return super().training_step(self._shared_batch(batch, None), batch_idx)
 
     @override
     def validation_step(self, batch: Tensor, batch_idx: int) -> None:
         """Generate a shared synthetic batch, then run the ensemble validation step."""
-        super().validation_step(self._shared_batch(batch), batch_idx)
+        super().validation_step(
+            self._shared_batch(batch, self._val_generator), batch_idx
+        )
 
     @override
     def on_validation_epoch_start(self) -> None:
-        """Fix the seed so validation batches are reproducible across epochs."""
-        torch.manual_seed(42)
+        """Restart the validation stream, leaving the training RNG untouched."""
+        self._val_generator = torch.Generator(self.device).manual_seed(VAL_SEED)

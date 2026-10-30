@@ -19,9 +19,18 @@ logger = logging.getLogger(__name__)
 # which is ample for a fixed affine scale; 0.13 s (Michelson) to 0.5 s (C = 0.9).
 NORM_STATS_SHOTS = 256
 NORM_STATS_SEED = 0
+# Validation and test draw from their own generators, reseeded each epoch, so
+# the held-out batches repeat across epochs while the training stream (the
+# global RNG, seeded per grid cell) is never touched. Reseeding the global RNG
+# here instead replayed the same training batches every epoch and for every
+# seed, because Lightning runs the validation hook before epoch 0 and after each.
+VAL_SEED = 42
+TEST_SEED = 4242
 
 
-def random_crop(length: int | None, *tensors: torch.Tensor) -> tuple[torch.Tensor, ...]:
+def random_crop(
+    length: int | None, *tensors: torch.Tensor, generator: torch.Generator | None
+) -> tuple[torch.Tensor, ...]:
     """One random contiguous window per shot, shared by every tensor.
 
     Signals ``[B, C, L]`` and targets ``[B, L]`` are cropped at the same
@@ -30,6 +39,7 @@ def random_crop(length: int | None, *tensors: torch.Tensor) -> tuple[torch.Tenso
     Args:
         length: Window length; ``None`` returns the tensors unchanged.
         *tensors: ``[B, ..., L]`` tensors sharing ``B`` and ``L``.
+        generator: Generator on the tensors' device, or None for the global RNG.
 
     Returns:
         The cropped tensors, in order.
@@ -40,7 +50,9 @@ def random_crop(length: int | None, *tensors: torch.Tensor) -> tuple[torch.Tenso
     if not 0 < length <= full:
         raise ValueError(f'train_crop_length {length} must lie in (0, {full}]')
     device = tensors[0].device
-    start = torch.randint(0, full - length + 1, (tensors[0].shape[0],), device=device)
+    start = torch.randint(
+        0, full - length + 1, (tensors[0].shape[0],), device=device, generator=generator
+    )
     index = start[:, None] + torch.arange(length, device=device)
     cropped = []
     for t in tensors:
@@ -141,12 +153,25 @@ class SyntheticLitModule(LitModule):
         )
 
     def _generate_synthetic_batch(
-        self, batch_size: int, device: torch.device
+        self,
+        batch_size: int,
+        generator: torch.Generator | None,
+        crop_length: int | None,
     ) -> tuple[torch.Tensor, ...]:
-        """Simulate ``(signals, velocity, displacement)``, cropped, on ``device``."""
-        batch = simulate_batch(self.sim_config, batch_size, device, None)
+        """Simulate ``(signals, velocity, displacement)`` on this module's device.
+
+        Args:
+            batch_size: Shots to simulate.
+            generator: Generator on ``self.device``, or None for the global RNG.
+            crop_length: Window length per shot; None keeps the full shot.
+        """
+        batch = simulate_batch(self.sim_config, batch_size, self.device, generator)
         return random_crop(
-            self.train_crop_length, batch.signals, batch.velocity, batch.displacement
+            crop_length,
+            batch.signals,
+            batch.velocity,
+            batch.displacement,
+            generator=generator,
         )
 
     @override
@@ -158,7 +183,9 @@ class SyntheticLitModule(LitModule):
             batch_idx: Index of current batch
         """
         batch_size = len(batch)
-        synthetic_batch = self._generate_synthetic_batch(batch_size, self.device)
+        synthetic_batch = self._generate_synthetic_batch(
+            batch_size, None, self.train_crop_length
+        )
         return super().training_step(synthetic_batch, batch_idx)
 
     @override
@@ -174,19 +201,25 @@ class SyntheticLitModule(LitModule):
             batch_idx: Index of current batch
         """
         batch_size = len(batch)
-        synthetic_batch = self._generate_synthetic_batch(batch_size, self.device)
+        synthetic_batch = self._generate_synthetic_batch(
+            batch_size, self._held_out_generator, self.train_crop_length
+        )
         super().validation_step(synthetic_batch, batch_idx)
 
     @override
     def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
-        """Generate synthetic data on-device and delegate to parent test_step.
+        """Generate full synthetic shots on-device and delegate to test_step.
+
+        Evaluation never crops, so test shots keep their full length.
 
         Args:
             batch: Tensor of indices from SyntheticIndexDataset (batch size only)
             batch_idx: Index of current batch
         """
         batch_size = len(batch)
-        synthetic_batch = self._generate_synthetic_batch(batch_size, self.device)
+        synthetic_batch = self._generate_synthetic_batch(
+            batch_size, self._held_out_generator, None
+        )
         super().test_step(synthetic_batch, batch_idx)
 
     @override
@@ -195,15 +228,17 @@ class SyntheticLitModule(LitModule):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Generate synthetic data on-device and delegate to parent predict_step."""
         batch_size = len(batch)
-        synthetic_batch = self._generate_synthetic_batch(batch_size, self.device)
+        synthetic_batch = self._generate_synthetic_batch(
+            batch_size, None, self.train_crop_length
+        )
         return super().predict_step(synthetic_batch, batch_idx)
 
     @override
     def on_validation_epoch_start(self) -> None:
-        """Set a fixed random seed for reproducible validation data."""
-        torch.manual_seed(42)
+        """Restart the validation stream, so every epoch sees the same batches."""
+        self._held_out_generator = torch.Generator(self.device).manual_seed(VAL_SEED)
 
     @override
     def on_test_epoch_start(self) -> None:
-        """Fixed seed distinct from validation, so test data is never val data."""
-        torch.manual_seed(4242)
+        """Seed distinct from validation, so test data is never val data."""
+        self._held_out_generator = torch.Generator(self.device).manual_seed(TEST_SEED)

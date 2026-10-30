@@ -13,7 +13,7 @@ def test_crop_keeps_signals_and_targets_aligned():
     velocity = ramp.expand(batch, length).clone()
     displacement = 2 * ramp.expand(batch, length)
 
-    s, v, d = random_crop(crop, signals, velocity, displacement)
+    s, v, d = random_crop(crop, signals, velocity, displacement, generator=None)
 
     assert s.shape == (batch, 3, crop)
     assert v.shape == d.shape == (batch, crop)
@@ -29,9 +29,9 @@ def test_crop_keeps_signals_and_targets_aligned():
 
 def test_crop_start_varies_per_shot_and_none_is_identity():
     x = torch.arange(1000.0).expand(64, 1000)
-    (cropped,) = random_crop(10, x)
+    (cropped,) = random_crop(10, x, generator=None)
     assert cropped[:, 0].unique().numel() > 1
-    (same,) = random_crop(None, x)
+    (same,) = random_crop(None, x, generator=None)
     assert same is x
 
 
