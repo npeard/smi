@@ -47,7 +47,7 @@ from smi.analysis.baselines import (
 )
 from smi.analysis.datamodule import VelocityDataModule
 from smi.analysis.metrics import displacement_from_velocity, summarize_per_shot
-from smi.analysis.models.factory import create_model
+from smi.analysis.models.factory import create_model, is_causal
 from smi.analysis.results_artifact import RunRecord, write_results
 from smi.analysis.training_interface import TrainingConfig, TrainingInterface
 from smi.synthetic.coil_driver import MS_PER_S
@@ -82,14 +82,6 @@ TORCH_CONFIGS: tuple[str, ...] = (
     'tcn-varying',
     'tcn-repeated',
 )
-
-#: Models that see samples after the timestamp they predict.
-#:
-#: This is not "SCNN only". ``windowize`` labels each window at its centre and
-#: the windowed torch models average one prediction across the whole span, so
-#: Barland, MLP, LightGBM and Ridge all use lookahead that the TCN is denied.
-#: Any table comparing them to the analytic baseline has to say so.
-NONCAUSAL_MODELS = frozenset({'SCNN', 'Barland', 'MLP', 'LightGBM', 'Ridge'})
 
 #: Window for the tabular baselines, matched to the Barland receptive field.
 TABULAR_WINDOW = 91
@@ -401,7 +393,7 @@ def run_torch_config(
         config=record_config,
         total_params=total_params,
         receptive_field=receptive_field,
-        sees_future=model_type in NONCAUSAL_MODELS,
+        sees_future=not is_causal(model_hparams),
         seed=seed,
         device=device_name(settings.device),
         dataset=dataset,
@@ -574,7 +566,7 @@ def run_tabular(
         config=record_config,
         total_params=total_params,
         receptive_field=TABULAR_WINDOW,
-        sees_future=kind in NONCAUSAL_MODELS,
+        sees_future=not is_causal({'type': kind}),
         seed=seed,
         device='cpu',
         dataset=dataset,

@@ -57,3 +57,32 @@ def create_model(model_hparams: dict[str, Any]) -> nn.Module:
     config_cls, model_cls = MODEL_REGISTRY[model_type]
     logger.debug(f'Creating {model_cls.__name__} model...')
     return model_cls(config_cls(**params))
+
+
+#: Model types that see samples after the timestamp they predict.
+#:
+#: This is not "SCNN only". ``windowize`` labels each window at its centre and
+#: the windowed torch models average one prediction across the whole span, so
+#: Barland, MLP, LightGBM and Ridge all use lookahead that the TCN is denied.
+#: Any table comparing them to the analytic baseline has to say so. LightGBM
+#: and Ridge are tabular baselines outside MODEL_REGISTRY.
+_NONCAUSAL_TYPES = frozenset({'SCNN', 'Barland', 'MLP', 'LightGBM', 'Ridge'})
+
+
+def is_causal(model_hparams: dict[str, Any]) -> bool:
+    """Whether a model uses only past and present samples.
+
+    The one place this is decided, so a results record cannot disagree with
+    the sweep that produced it. ``tests/test_model_causality.py`` checks it
+    against each registry model's measured behaviour.
+
+    Args:
+        model_hparams: Hyperparameters with a ``type`` key; an LSTM also needs
+            its ``bidirectional`` flag.
+
+    Returns:
+        True if the model is causal.
+    """
+    if model_hparams['type'] in _NONCAUSAL_TYPES:
+        return False
+    return not model_hparams.get('bidirectional', False)

@@ -30,7 +30,8 @@ class RunRecord:
         total_params: Trainable parameter count.
         receptive_field: Receptive field in samples.
         sees_future: Whether the model uses samples after the predicted one.
-        seed: Random seed the run was trained with.
+        seed: Random seed the run was trained with; records from
+            :mod:`smi.analysis.evaluate` use ``-1`` when the estimator has none.
         device: Device name, e.g. the CUDA device string.
         dataset: Dataset key, matching baseline_results.json's ('free-space'
             or 'mmfiber').
@@ -41,13 +42,20 @@ class RunRecord:
             architecture or ``inverse_fit``); absent from older records.
         wavelengths_um: Channel subset, in the order the estimator saw it.
         precision: Numeric precision of the evaluation, e.g. ``'32-true'``.
-        converged: Whether the evaluation produced finite predictions.
+        converged: Whether training converged, as reported by the caller; the
+            evaluator cannot know it from a checkpoint.
+        train_seed: Seed the evaluated model was trained with; ``None`` for a
+            classical estimator.
+        test_seed: Seed of the evaluated frozen set; ``-1`` for a file without
+            one.
+        finite_predictions: Whether every prediction was finite.
         sim_config_hash: ``SimConfig.hash()`` of the evaluated frozen set.
         binned: Per-sample errors binned by ``|v|`` quantile and by distance to
             the nearest fringe extremum, keyed by binning name.
 
     ``causal`` is the negation of ``sees_future``; it is a property so the one
-    stored flag cannot disagree with it.
+    stored flag cannot disagree with it, and :func:`write_results` also writes
+    it into the JSON so table readers find the key.
     """
 
     model_type: str
@@ -64,6 +72,9 @@ class RunRecord:
     wavelengths_um: list[float] | None = None
     precision: str | None = None
     converged: bool | None = None
+    train_seed: int | None = None
+    test_seed: int | None = None
+    finite_predictions: bool | None = None
     sim_config_hash: str | None = None
     binned: dict[str, list[dict[str, float]]] | None = None
 
@@ -87,7 +98,9 @@ def write_results(path: str | Path, records: list[RunRecord]) -> None:
     """
     datasets: dict[str, list[dict[str, Any]]] = {}
     for record in records:
-        datasets.setdefault(record.dataset, []).append(asdict(record))
+        entry = asdict(record)
+        entry['causal'] = record.causal
+        datasets.setdefault(record.dataset, []).append(entry)
 
     payload = {'schema_version': SCHEMA_VERSION, 'datasets': datasets}
     Path(path).write_text(

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import torch
 
-from smi.analysis.datasets import VelocityDataset
+from smi.analysis.datasets import VelocityDataset, select_pd_keys
 from smi.analysis.evaluate import (
     CheckpointEstimator,
     InverseFitEstimator,
@@ -16,13 +16,15 @@ from smi.analysis.evaluate import (
     evaluate_to_artifact,
 )
 from smi.analysis.metrics import sign_invariant_rmse
-from smi.analysis.results_artifact import read_results
+from smi.analysis.results_artifact import RunRecord, read_results, write_results
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.synthetic import frozen
 from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SimConfig
-from smi.synthetic.frozen import write_frozen_set
+from smi.synthetic.frozen import pd_keys, write_frozen_set
 
 SAMPLE_RATE = 125e6 / 256
+# What a runner passes from training; the oracle's convention is (True, None).
+TRAINED = {'converged': True, 'train_seed': 3}
 RIG = (0.635, 0.6748, 0.515)
 
 
@@ -52,8 +54,9 @@ class _Truth:
     total_params = 0
     device = 'cpu'
 
-    def __init__(self, path, scale=1.0):
+    def __init__(self, path, scale=1.0, offset=0.0):
         self.config = {}
+        self.offset = offset
         with h5py.File(path, 'r') as f:
             self.velocity = torch.from_numpy(f['velocity'][:])
         self.scale = scale
@@ -62,7 +65,7 @@ class _Truth:
     def predict_velocity(self, signals, _wavelengths_um):
         self.seen.append(signals)
         n = signals.shape[0]
-        out = self.scale * self.velocity[self._at : self._at + n]
+        out = self.scale * self.velocity[self._at : self._at + n] + self.offset
         self._at += n
         return out
 
@@ -86,7 +89,7 @@ def test_sign_invariant_rmse_per_shot():
 
 
 def test_perfect_estimator_scores_zero(michelson_set):
-    result = evaluate(_Truth(michelson_set), michelson_set, RIG, None)
+    result = evaluate(_Truth(michelson_set), michelson_set, RIG, None, **TRAINED)
     for key, summary in result.record.metrics.items():
         assert summary['max'] == 0.0, key
     assert result.record.converged
@@ -95,7 +98,9 @@ def test_perfect_estimator_scores_zero(michelson_set):
 
 
 def test_sign_flip_invariant_but_signed_differs(michelson_set):
-    result = evaluate(_Truth(michelson_set, scale=-1.0), michelson_set, RIG, None)
+    result = evaluate(
+        _Truth(michelson_set, scale=-1.0), michelson_set, RIG, None, **TRAINED
+    )
     m = result.record.metrics
     assert m['velocity_rmse_sign_invariant']['max'] == 0.0
     # Flipped prediction: signed error is 2|v|, so NRMSE is 2 * rms(v) / std(v).
@@ -108,7 +113,7 @@ def test_sign_flip_invariant_but_signed_differs(michelson_set):
 
 
 def test_bins_partition_every_sample(michelson_set):
-    result = evaluate(_Truth(michelson_set), michelson_set, RIG, 3)
+    result = evaluate(_Truth(michelson_set), michelson_set, RIG, 3, **TRAINED)
     n_samples = 3 * 16384
     for table in result.record.binned.values():
         assert sum(row['n'] for row in table) == n_samples
@@ -119,7 +124,7 @@ def test_bins_partition_every_sample(michelson_set):
 
 def test_wavelength_subset_reorders_and_selects(michelson_set):
     est = _Truth(michelson_set)
-    evaluate(est, michelson_set, (0.515, 0.635), 2)
+    evaluate(est, michelson_set, (0.515, 0.635), 2, **TRAINED)
     with h5py.File(michelson_set, 'r') as f:
         expected = np.stack([f['RP2_CH2'][:2], f['RP1_CH2'][:2]], axis=1)
     np.testing.assert_array_equal(est.seen[0].numpy(), expected)
@@ -148,7 +153,7 @@ def test_subset_by_wavelength_on_real_schema(tmp_path):
             return torch.zeros(signals.shape[0], signals.shape[2])
 
     est = Spy()
-    result = evaluate(est, path, (0.515,), None)
+    result = evaluate(est, path, (0.515,), None, **TRAINED)
     with h5py.File(path, 'r') as f:
         torch.testing.assert_close(est.seen[0][:, 0], torch.from_numpy(f['RP2_CH2'][:]))
     assert result.record.wavelengths_um == [0.515]
@@ -207,18 +212,167 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
         est.predict_velocity(x, RIG[::-1])
 
     out = tmp_path / 'results.json'
-    evaluate_to_artifact(est, michelson_set, RIG, 2, out)
-    evaluate_to_artifact(est, michelson_set, RIG, 2, out)
+    evaluate_to_artifact(est, michelson_set, RIG, 2, **TRAINED, results_path=out)
+    evaluate_to_artifact(est, michelson_set, RIG, 2, **TRAINED, results_path=out)
     records = read_results(out)
     assert len(records) == 2
     assert records[0].estimator.startswith('TCN:')
     assert json.loads(out.read_text())['schema_version'] == 1
 
 
+def _per_shot_nrmse_reference(pred, target):
+    rmse = np.sqrt(np.mean((pred - target) ** 2, axis=-1))
+    return rmse / np.std(target, axis=-1)
+
+
+def test_scaled_prediction_has_exact_nrmse(michelson_set):
+    result = evaluate(
+        _Truth(michelson_set, scale=0.5), michelson_set, RIG, None, **TRAINED
+    )
+    with h5py.File(michelson_set, 'r') as f:
+        v = f['velocity'][:].astype(np.float64)
+    expected = 0.5 * np.sqrt(np.mean(v**2, axis=-1)) / np.std(v, axis=-1)
+    np.testing.assert_allclose(result.per_shot['velocity_nrmse'], expected, rtol=1e-4)
+    np.testing.assert_allclose(
+        result.per_shot['velocity_nrmse_sign_invariant'], expected, rtol=1e-4
+    )
+    np.testing.assert_allclose(
+        result.per_shot['velocity_nrmse'],
+        _per_shot_nrmse_reference(0.5 * v, v),
+        rtol=1e-4,
+    )
+
+
+def test_sign_invariance_is_per_shot_not_per_sample():
+    target = torch.linspace(1.0, 2.0, 8).repeat(3, 1)
+    flips = torch.ones(8)
+    flips[4:] = -1.0
+    # Shot 0 flips mid-shot, shot 1 is negated whole, shot 2 is untouched.
+    pred = torch.stack([flips * target[0], -target[1], target[2]])
+    out = sign_invariant_rmse(pred, target)
+    # Negating the pred wins on the smaller first half: error 2t there, 0 after.
+    mid_shot = torch.sqrt(torch.sum((2 * target[0, :4]) ** 2) / 8)
+    # A per-sample sign choice would give 0 for shot 0; a per-shot one cannot.
+    torch.testing.assert_close(
+        out, torch.stack([mid_shot, torch.tensor(0.0), torch.tensor(0.0)])
+    )
+    assert out[0] > 0
+
+
+def test_rig_wavelength_spelling_resolves_to_stored_channel(tmp_path):
+    path = _real_schema_file(tmp_path / 'acq.h5')
+    with h5py.File(path, 'r') as f:
+        # The rig stores 0.675 for the laser the checkpoints spell 0.6748.
+        assert select_pd_keys(f, (0.6748,)) == select_pd_keys(f, (0.675,))
+        with pytest.raises(ValueError, match='matches'):
+            select_pd_keys(f, (0.5,))
+
+
+def test_unknown_wavelength_raises_through_evaluate(tmp_path):
+    path = _real_schema_file(tmp_path / 'acq.h5')
+
+    class Never(_Truth):
+        def __init__(self):
+            self.config = {}
+
+    with pytest.raises(ValueError, match='matches'):
+        evaluate(Never(), path, (0.5,), None, **TRAINED)
+
+
+def test_zero_std_shot_raises_naming_the_shot(tmp_path):
+    path = tmp_path / 'flat.h5'
+    rng = np.random.default_rng(0)
+    velocity = rng.normal(size=(3, 64)).astype('float32')
+    velocity[1] = 0.25
+    with h5py.File(path, 'w') as f:
+        f.attrs['sample_rate'] = SAMPLE_RATE
+        f.attrs['pd_wavelengths_um'] = np.asarray(RIG[:1])
+        f['velocity'] = velocity
+        f['displacement'] = np.cumsum(velocity, axis=1)
+        for key in pd_keys(RIG[:1]):
+            f[key] = rng.normal(size=(3, 64)).astype('float32')
+    with pytest.raises(ValueError, match='shot 1'):
+        evaluate(_Truth(path), path, RIG[:1], None, **TRAINED)
+
+
+def _stored_phase_file(path):
+    """Three-wavelength file whose optical phase differs per channel."""
+    rng = np.random.default_rng(0)
+    shots, length = 2, 32
+    velocity = rng.normal(size=(shots, length)).astype('float32')
+    phase = np.zeros((shots, 3, length))
+    phase[:, 0] = np.pi / 2  # 0.635 um channel: farthest from an extremum
+    phase[:, 1] = np.pi / 2
+    phase[:, 2] = 3 * np.pi + 0.3  # 0.515 um channel: distance 0.3 to 3 pi
+    with h5py.File(path, 'w') as f:
+        f.attrs['sample_rate'] = SAMPLE_RATE
+        f.attrs['pd_wavelengths_um'] = np.asarray(RIG)
+        f['velocity'] = velocity
+        f['displacement'] = np.cumsum(velocity, axis=1)
+        f['optical_phase'] = phase
+        for key in pd_keys(RIG):
+            f[key] = rng.normal(size=(shots, length)).astype('float32')
+    return path
+
+
+def test_fringe_distance_bin_uses_shortest_wavelength_phase_column(tmp_path):
+    path = _stored_phase_file(tmp_path / 'phase.h5')
+    result = evaluate(_Truth(path, offset=1.0), path, RIG, None, **TRAINED)
+    table = result.record.binned['fringe_distance']
+    # 0.3 rad falls in [pi/20 * 1, pi/20 * 2) = [0.157, 0.314): bin 1.
+    assert [row['n'] for row in table] == [0, 2 * 32] + [0] * 8
+    assert table[1]['rmse'] == pytest.approx(1.0, rel=1e-5)
+    # The same channel asked for alone is still found by wavelength.
+    only = evaluate(_Truth(path, offset=1.0), path, (0.515,), None, **TRAINED)
+    assert only.record.binned['fringe_distance'][1]['n'] == 2 * 32
+
+
+def test_record_labels_training_and_test_seeds_and_finiteness(tmp_path, michelson_set):
+    est = _Truth(michelson_set, scale=float('nan'))
+    out = tmp_path / 'r.json'
+    evaluate_to_artifact(
+        est, michelson_set, RIG, 2, converged=False, train_seed=11, results_path=out
+    )
+    entry = next(iter(json.loads(out.read_text())['datasets'].values()))[0]
+    assert entry['train_seed'] == 11
+    assert entry['test_seed'] == 3
+    assert entry['converged'] is False
+    assert entry['finite_predictions'] is False
+    assert entry['causal'] is True
+    (record,) = read_results(out)
+    assert record.train_seed == 11
+
+    ok = evaluate(
+        _Truth(michelson_set), michelson_set, RIG, 2, converged=True, train_seed=None
+    )
+    assert ok.record.finite_predictions
+    assert ok.record.train_seed is None
+    assert ok.record.test_seed == 3
+
+
+def test_records_without_new_fields_still_read_and_serialize_causal(tmp_path):
+    old = RunRecord(
+        model_type='TCN',
+        config={},
+        total_params=1,
+        receptive_field=1,
+        sees_future=True,
+        seed=0,
+        device='cpu',
+        dataset='d',
+        metrics={},
+    )
+    path = tmp_path / 'old.json'
+    write_results(path, [old])
+    entry = json.loads(path.read_text())['datasets']['d'][0]
+    assert entry['causal'] is False
+    assert read_results(path)[0].train_seed is None
+
+
 def test_inverse_fit_noise_free_oracle(tmp_path):
     path = write_frozen_set(_michelson(), 7, ORACLE_SHOTS, tmp_path / 'oracle.h5')
     est = InverseFitEstimator.for_dataset(path, None)
-    result = evaluate(est, path, RIG, None)
+    result = evaluate(est, path, RIG, None, converged=True, train_seed=None)
     nrmse = result.record.metrics['velocity_nrmse_sign_invariant']['mean']
     assert not result.record.causal
     assert nrmse < ORACLE_NRMSE_BOUND

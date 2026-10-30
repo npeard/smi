@@ -13,6 +13,7 @@ lookahead (i.e. it has causal violations).
 import pytest
 import torch
 
+from smi.analysis.models.factory import MODEL_REGISTRY, create_model, is_causal
 from smi.analysis.models.lstm import LSTM, LSTMConfig
 from smi.analysis.models.mamba import Mamba, MambaConfig
 from smi.analysis.models.scnn import SCNN, SCNNConfig
@@ -353,3 +354,113 @@ class TestTCANCausality:
                 f'{pre_step_diff:.4e} exceeds threshold '
                 f'{VIOLATION_THRESHOLD * post_step_max:.4e}'
             )
+
+
+# Smallest viable hparams per registry type, by the same probe the classes
+# above use: is_causal must agree with what the network actually does.
+REGISTRY_HPARAMS: dict[str, dict] = {
+    'Barland': dict(
+        type='Barland',
+        window_size=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        activation='LeakyReLU',
+        dropout=0.0,
+        use_weight_norm=False,
+        window_stride=SEQUENCE_LENGTH // 2,
+    ),
+    'TCN': dict(
+        type='TCN',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        activation='GELU',
+        use_layer_norm=True,
+        use_weight_norm=False,
+        kernel_size=3,
+        temporal_channels=[8, 8],
+        dilation_base=2,
+        dropout=0.0,
+    ),
+    'SCNN': dict(
+        type='SCNN',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        activation='GELU',
+        use_layer_norm=True,
+        use_weight_norm=False,
+        kernel_size=3,
+        temporal_channels=[8, 8],
+        dilation_base=2,
+        dropout=0.0,
+    ),
+    'TCAN': dict(
+        type='TCAN',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        activation='GELU',
+        use_layer_norm=True,
+        use_weight_norm=False,
+        siamese_kernel_size=3,
+        siamese_channels=[8, 8],
+        siamese_dilation_base=2,
+        atten_heads=4,
+        decoder_kernel_size=3,
+        decoder_channels=[8, 8],
+        decoder_dilation_base=2,
+        dropout=0.0,
+    ),
+    'LSTM': dict(
+        type='LSTM',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        hidden_size=8,
+        num_layers=1,
+        dropout=0.0,
+        bidirectional=False,
+    ),
+    'MLP': dict(
+        type='MLP',
+        window_size=SEQUENCE_LENGTH // 2,
+        in_channels=IN_CHANNELS,
+        hidden_sizes=[16],
+        activation='GELU',
+        dropout=0.0,
+        window_stride=SEQUENCE_LENGTH // 4,
+    ),
+    'Mamba': dict(
+        type='Mamba',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        d_model=16,
+        d_state=8,
+        d_conv=4,
+        expand=2,
+        num_layers=1,
+        use_layer_norm=True,
+    ),
+}
+LSTM_BIDIRECTIONAL = {**REGISTRY_HPARAMS['LSTM'], 'bidirectional': True}
+
+
+def test_registry_hparams_cover_every_model_type():
+    assert set(REGISTRY_HPARAMS) == set(MODEL_REGISTRY)
+
+
+@pytest.mark.parametrize(
+    'hparams',
+    [*REGISTRY_HPARAMS.values(), LSTM_BIDIRECTIONAL],
+    ids=[*REGISTRY_HPARAMS, 'LSTM-bidirectional'],
+)
+def test_is_causal_agrees_with_the_empirical_probe(hparams):
+    model = create_model(hparams).eval()
+    baseline, outputs = _get_step_outputs(
+        model, STEP_POSITIONS, SEQUENCE_LENGTH, IN_CHANNELS, BLOCK_SIZE
+    )
+    rate, _, _ = _causal_violation_rate(
+        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, VIOLATION_THRESHOLD
+    )
+    assert is_causal(hparams) == (rate == 0.0)
+
+
+def test_is_causal_covers_the_tabular_baselines():
+    assert not is_causal({'type': 'LightGBM'})
+    assert not is_causal({'type': 'Ridge'})

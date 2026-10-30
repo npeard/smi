@@ -34,8 +34,8 @@ from smi.analysis.baseline_fit import PD_WAVELENGTHS_UM, inverse_fit
 from smi.analysis.datasets import file_pd_channels, select_pd_keys
 from smi.analysis.lit_module import LitModule
 from smi.analysis.metrics import sign_invariant_rmse, summarize_per_shot
+from smi.analysis.models.factory import is_causal
 from smi.analysis.results_artifact import RunRecord, append_results
-from smi.analysis.run_baseline_sweep import NONCAUSAL_MODELS
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
@@ -121,10 +121,7 @@ class CheckpointEstimator:
         self.model_type = hp['type']
         self.name = f'{self.model_type}:{Path(path).stem}'
         self.wavelengths_um = _checkpoint_wavelengths(self.module)
-        # LSTM is causal unless bidirectional; the rest follow the sweep's list.
-        self.causal = self.model_type not in NONCAUSAL_MODELS and not hp.get(
-            'bidirectional', False
-        )
+        self.causal = is_causal(hp)
         # Recurrent models have no finite window: they see the whole shot.
         self.receptive_field = int(
             getattr(inner, 'receptive_field', None) or hp['sequence_length']
@@ -247,6 +244,8 @@ def _iter_chunks(
             displacement = disp_t.double().numpy()
         if 'optical_phase' in f:
             channel = list(file_pd_channels(f)).index(fringe_key)
+            # Column order is the file's channel order (pd_wavelengths_um).
+            assert f['optical_phase'].shape[1] == len(file_pd_channels(f))
             phase = np.asarray(f['optical_phase'][sl, channel], dtype=np.float64)
         else:
             phase = 4 * np.pi * displacement / fringe_wavelength_um
@@ -263,6 +262,8 @@ def evaluate(
     dataset: Path,
     wavelengths_um: tuple[float, ...],
     n_shots: int | None,
+    converged: bool,
+    train_seed: int | None,
 ) -> EvalRecord:
     """Score ``est`` on the first ``n_shots`` shots of ``dataset``.
 
@@ -272,9 +273,18 @@ def evaluate(
         wavelengths_um: Channel subset, selected by wavelength and fed to the
             estimator in this order.
         n_shots: Shots to score; ``None`` for all.
+        converged: Whether training converged, from the caller's training run
+            (a checkpoint does not say). ``True`` for ``InverseFitEstimator``,
+            which is not trained.
+        train_seed: Seed the estimator was trained with; ``None`` for
+            ``InverseFitEstimator``.
 
     Returns:
         The results record and the per-shot arrays behind it.
+
+    Raises:
+        ValueError: If a shot's true velocity has zero std (NRMSE undefined),
+            or the estimator returns the wrong shape.
     """
     wavelengths_um = tuple(wavelengths_um)
     with h5py.File(dataset, 'r') as f:
@@ -307,6 +317,7 @@ def evaluate(
         # [count, squared-error sum, sign-invariant squared-error sum] per bin
         acc = {name: np.zeros((3, N_BINS)) for name in ('v', 'p')}
         finite = True
+        shot = 0
         for signals, velocity, phase in _iter_chunks(
             f, keys, fringe[1], fringe[0], n, True
         ):
@@ -321,6 +332,13 @@ def evaluate(
             rmse = torch.sqrt(torch.mean((pred - velocity) ** 2, dim=-1))
             rmse_si = sign_invariant_rmse(pred, velocity)
             std = velocity.std(dim=-1, unbiased=False)
+            if (std == 0).any():
+                flat = shot + int(torch.argmax((std == 0).int()))
+                raise ValueError(
+                    f'shot {flat} of {dataset} has zero velocity std; NRMSE is '
+                    'undefined (invalid data)'
+                )
+            shot += len(std)
             for key, value in (
                 ('velocity_rmse', rmse),
                 ('velocity_rmse_sign_invariant', rmse_si),
@@ -363,14 +381,17 @@ def evaluate(
         total_params=est.total_params,
         receptive_field=est.receptive_field,
         sees_future=not est.causal,
-        seed=int(attrs.get('seed', -1)),
+        seed=-1 if train_seed is None else train_seed,
         device=est.device,
         dataset=Path(dataset).stem,
         metrics={k: summarize_per_shot(v) for k, v in arrays.items()},
         estimator=est.name,
         wavelengths_um=list(wavelengths_um),
         precision=PRECISION,
-        converged=finite,
+        converged=converged,
+        train_seed=train_seed,
+        test_seed=int(attrs.get('seed', -1)),
+        finite_predictions=finite,
         sim_config_hash=sim_hash,
         binned=binned,
     )
@@ -400,9 +421,11 @@ def evaluate_to_artifact(
     dataset: Path,
     wavelengths_um: tuple[float, ...],
     n_shots: int | None,
+    converged: bool,
+    train_seed: int | None,
     results_path: Path,
 ) -> EvalRecord:
     """:func:`evaluate`, then append the record to the results artifact."""
-    result = evaluate(est, dataset, wavelengths_um, n_shots)
+    result = evaluate(est, dataset, wavelengths_um, n_shots, converged, train_seed)
     append_results(results_path, [result.record])
     return result
