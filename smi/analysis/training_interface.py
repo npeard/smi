@@ -5,7 +5,7 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 import lightning as lightning_module
 import torch
@@ -66,10 +66,30 @@ class RelativeEarlyStopping(EarlyStopping):
     """
 
     def __init__(
-        self, monitor: str, min_rel_delta: float, patience: int, **kwargs: Any
+        self,
+        monitor: str,
+        min_rel_delta: float,
+        patience: int,
+        min_epochs: int,
+        **kwargs: Any,
     ):
         super().__init__(monitor=monitor, patience=patience, mode='min', **kwargs)
         self.min_rel_delta = min_rel_delta
+        self.min_epochs = min_epochs
+
+    # The grace period: no check runs before min_epochs, so patience counts
+    # only from there. Trainer(min_epochs) cannot do this, because Lightning
+    # latches a stop signalled inside it and ends the run at min_epochs even
+    # if the run has since escaped the plateau.
+    @override
+    def on_validation_end(self, trainer: lightning_module.Trainer, pl_module: Any):
+        if trainer.current_epoch >= self.min_epochs:
+            super().on_validation_end(trainer, pl_module)
+
+    @override
+    def on_train_epoch_end(self, trainer: lightning_module.Trainer, pl_module: Any):
+        if trainer.current_epoch >= self.min_epochs:
+            super().on_train_epoch_end(trainer, pl_module)
 
     # Overrides a private Lightning hook (no public one exists for a relative
     # delta); written against lightning 2.6.x (pixi.lock: 2.6.6), and
@@ -82,18 +102,6 @@ class RelativeEarlyStopping(EarlyStopping):
         best = float(self.best_score)
         self.min_delta = -self.min_rel_delta * best if math.isfinite(best) else 0.0
         return super()._evaluate_stopping_criteria(current)
-
-    # Lightning latches trainer.should_stop, so under Trainer(min_epochs) a stop
-    # signalled inside the grace period would still end the run at min_epochs
-    # after it escaped the plateau. Withdrawing this callback's own earlier
-    # signal lets only the latest check decide; without a grace period the
-    # first signal stops the run, so nothing is ever withdrawn. Same private
-    # hook caveat as above.
-    def _run_early_stopping_check(self, trainer: lightning_module.Trainer) -> None:
-        if self.stopping_reason != EarlyStoppingReason.NOT_STOPPED:
-            trainer.should_stop = False
-            self.stopping_reason = EarlyStoppingReason.NOT_STOPPED
-        super()._run_early_stopping_check(trainer)
 
 
 @dataclass
@@ -373,15 +381,6 @@ class TrainingInterface:
         if extra_callbacks:
             callbacks.extend(extra_callbacks)
 
-        # Required, no default: S1 runs sat at the zero-output plateau for up
-        # to ~15 epochs before escaping, so the grace changes what gets published.
-        min_epochs = self.config.training_config['convergence']['min_epochs']
-        if not isinstance(min_epochs, int) or min_epochs < 0:
-            raise ValueError(
-                f'training.convergence.min_epochs must be an int >= 0, got '
-                f'{min_epochs!r}'
-            )
-
         # Get accelerator and device settings from config
         accelerator = self.config.training_config['accelerator']
         devices = self.config.training_config['devices']
@@ -395,7 +394,6 @@ class TrainingInterface:
 
         return lightning_module.Trainer(
             max_epochs=self.config.training_config['max_epochs'],
-            min_epochs=min_epochs,
             callbacks=callbacks,
             logger=loggers,
             check_val_every_n_epoch=check_val_every_n_epoch,
@@ -429,6 +427,14 @@ class TrainingInterface:
                 f'loss.sign_invariant={self.config.loss_config["sign_invariant"]} '
                 f'requires {expected!r}'
             )
+        # Required, no default: S1 runs sat at the zero-output plateau for up
+        # to ~15 epochs before escaping, so the grace changes what gets published.
+        min_epochs = convergence['min_epochs']
+        if not isinstance(min_epochs, int) or min_epochs < 0:
+            raise ValueError(
+                f'training.convergence.min_epochs must be an int >= 0, got '
+                f'{min_epochs!r}'
+            )
         checks = math.ceil(convergence['patience_epochs'] / check_val_every_n_epoch)
         if checks < MIN_PATIENCE_CHECKS:
             raise ValueError(
@@ -441,6 +447,7 @@ class TrainingInterface:
             monitor=monitor,
             min_rel_delta=float(convergence['min_rel_delta']),
             patience=checks,
+            min_epochs=min_epochs,
         )
         return self.convergence_callback
 

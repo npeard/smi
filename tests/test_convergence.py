@@ -34,22 +34,30 @@ def _feed(callback: RelativeEarlyStopping, values: list[float]) -> list[bool]:
 
 
 def test_improvement_below_relative_delta_counts_as_no_improvement():
-    cb = RelativeEarlyStopping(monitor=SIGNED, min_rel_delta=0.1, patience=2)
+    cb = RelativeEarlyStopping(
+        monitor=SIGNED, min_rel_delta=0.1, patience=2, min_epochs=0
+    )
     # 1.0 -> 0.95 is a 5% gain (< 10%): not an improvement, so two waits stop.
     assert _feed(cb, [1.0, 0.95, 0.94]) == [False, False, True]
 
 
 def test_improvement_above_relative_delta_resets_patience():
-    cb = RelativeEarlyStopping(monitor=SIGNED, min_rel_delta=0.1, patience=2)
+    cb = RelativeEarlyStopping(
+        monitor=SIGNED, min_rel_delta=0.1, patience=2, min_epochs=0
+    )
     assert _feed(cb, [1.0, 0.95, 0.8, 0.79]) == [False, False, False, False]
     assert cb.best_score == pytest.approx(0.8)
 
 
 def test_relative_delta_scales_with_the_best_value():
     # A fixed 0.05 absolute gain is 50% of 0.1 but 5% of 1.0.
-    small = RelativeEarlyStopping(monitor=SIGNED, min_rel_delta=0.1, patience=1)
+    small = RelativeEarlyStopping(
+        monitor=SIGNED, min_rel_delta=0.1, patience=1, min_epochs=0
+    )
     assert _feed(small, [0.1, 0.05]) == [False, False]
-    large = RelativeEarlyStopping(monitor=SIGNED, min_rel_delta=0.1, patience=1)
+    large = RelativeEarlyStopping(
+        monitor=SIGNED, min_rel_delta=0.1, patience=1, min_epochs=0
+    )
     assert _feed(large, [1.0, 0.95]) == [False, True]
 
 
@@ -246,10 +254,10 @@ def test_missing_min_epochs_is_an_error():
         TrainingInterface(config=config)
 
 
-def test_min_epochs_reaches_the_trainer():
+def test_min_epochs_reaches_the_convergence_callback():
     config = _config(SIGNED, sign_invariant=False, max_epochs=40)
     config.training_config['convergence']['min_epochs'] = 7
-    assert TrainingInterface(config=config).trainer.fit_loop.min_epochs == 7
+    assert TrainingInterface(config=config).convergence_callback.min_epochs == 7
 
 
 def test_plateau_waits_for_min_epochs(beats_zero_predictor):
@@ -257,7 +265,9 @@ def test_plateau_waits_for_min_epochs(beats_zero_predictor):
     config.training_config['convergence'].update(min_rel_delta=0.5, min_epochs=12)
     interface = _run(config)
     assert interface.converged is True
-    assert interface.epochs_run == 12
+    # The first check is at epoch 12 (0-based) and sets the best; patience then
+    # runs out 5 checks later, at epoch 17, the 18th epoch run.
+    assert interface.epochs_run == 18
 
 
 def test_stall_inside_grace_period_does_not_stop_a_run_that_escapes(monkeypatch):
