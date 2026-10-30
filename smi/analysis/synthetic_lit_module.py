@@ -101,6 +101,7 @@ class SyntheticLitModule(LitModule):
         *,
         sim: dict[str, Any],
         train_crop_length: int | None,
+        restoring_checkpoint: bool,
     ):
         """Initialize SyntheticLitModule with hyperparameter configuration.
 
@@ -118,9 +119,14 @@ class SyntheticLitModule(LitModule):
             validation shot is cut to after simulating the full shot (the
             trajectory spectrum needs the full length); ``None`` keeps the
             full shot. Evaluation never crops.
+        restoring_checkpoint: True when a checkpoint's state dict will be
+            loaded next: the baked stats then come from it, so NaN
+            placeholders stand in for the 256-shot simulation (and make a
+            module never actually restored fail loudly). Not saved.
         """
-        # _make_model runs inside LitModule.__init__ and needs the config.
+        # _make_model runs inside LitModule.__init__ and needs both.
         self.sim_config = SimConfig(**sim)
+        self._restoring_checkpoint = restoring_checkpoint
         if len(self.sim_config.wavelengths_um) != model_hparams['in_channels']:
             raise ValueError(
                 f'{len(self.sim_config.wavelengths_um)} wavelengths but '
@@ -136,7 +142,7 @@ class SyntheticLitModule(LitModule):
         )
         self.steps_per_epoch = steps_per_epoch
         self.train_crop_length = train_crop_length
-        self.save_hyperparameters(ignore=['model'])
+        self.save_hyperparameters(ignore=['model', 'restoring_checkpoint'])
         logger.info(f'SyntheticLitModule sim config {self.sim_config.hash()}')
 
     @override
@@ -147,10 +153,21 @@ class SyntheticLitModule(LitModule):
                 'synthetic normalization scales the velocity target, '
                 f'not {self.target!r}'
             )
-        return Model(
-            inner,
-            **normalization_stats(self.sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED),
-        )
+        if self._restoring_checkpoint:
+            # Two tensors: Model keeps them as buffers without copying, and a
+            # shared storage would let loading one overwrite the other.
+            n_ch = len(self.sim_config.wavelengths_um)
+            stats = {
+                'input_mean': torch.full((n_ch,), torch.nan),
+                'input_std': torch.full((n_ch,), torch.nan),
+                'output_mean': torch.nan,
+                'output_std': torch.nan,
+            }
+        else:
+            stats = normalization_stats(
+                self.sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED
+            )
+        return Model(inner, **stats)
 
     def _generate_synthetic_batch(
         self,

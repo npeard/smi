@@ -306,6 +306,7 @@ class TrainingInterface:
                 steps_per_epoch=syn['steps_per_epoch'],
                 sim=syn['sim'],
                 train_crop_length=syn['train_crop_length'],
+                restoring_checkpoint=False,
             )
 
         return LitModule(**common_kwargs)

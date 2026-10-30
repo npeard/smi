@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import torch
 
+from smi.analysis import synthetic_lit_module
 from smi.analysis.datasets import VelocityDataset, select_pd_keys
 from smi.analysis.evaluate import (
     CheckpointEstimator,
@@ -169,7 +170,7 @@ def test_velocity_dataset_selects_channels_by_wavelength(tmp_path):
 
 
 def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
-    tmp_path, michelson_set
+    tmp_path, michelson_set, monkeypatch
 ):
     module = SyntheticLitModule(
         model_hparams=dict(
@@ -197,12 +198,19 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
         steps_per_epoch=1,
         train_crop_length=None,
         sim=dataclasses.asdict(_michelson()),
+        restoring_checkpoint=False,
     )
     ckpt = tmp_path / 'm.ckpt'
     torch.save(
         {'hyper_parameters': dict(module.hparams), 'state_dict': module.state_dict()},
         ckpt,
     )
+
+    # Restoring overwrites the buffers, so the 256-shot stats are not re-run.
+    def refuse(*_args):
+        pytest.fail('normalization_stats ran on restore')
+
+    monkeypatch.setattr(synthetic_lit_module, 'normalization_stats', refuse)
     est = CheckpointEstimator(ckpt, 'cpu')
     assert est.causal
     assert est.receptive_field == module._inner_model.receptive_field
@@ -251,6 +259,7 @@ def test_recurrent_checkpoint_records_unbounded_receptive_field(
         steps_per_epoch=1,
         train_crop_length=None,
         sim=dataclasses.asdict(_michelson()),
+        restoring_checkpoint=False,
     )
     ckpt = tmp_path / 'lstm.ckpt'
     torch.save(

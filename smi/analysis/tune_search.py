@@ -412,7 +412,11 @@ def export_best_model(best_result: Any, output_path: str) -> str:
         ]
         if not ckpt_files:
             raise ValueError(f'No Lightning checkpoint found under {ckpt_dir}')
-        lit = module_cls.load_from_checkpoint(str(ckpt_files[0]), map_location='cpu')
+        # The synthetic module's baked stats come from the state dict.
+        restore = {'restoring_checkpoint': True} if is_synthetic else {}
+        lit = module_cls.load_from_checkpoint(
+            str(ckpt_files[0]), map_location='cpu', **restore
+        )
 
     # torch.compile (GPU runs) wraps the model; unwrap to the raw Model.
     model = getattr(lit.model, '_orig_mod', lit.model)

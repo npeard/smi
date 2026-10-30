@@ -94,8 +94,11 @@ def load_lit_module(path: str | Path, device: str = 'cpu') -> LitModule:
     """
     ckpt = torch.load(path, weights_only=False, map_location='cpu')
     hparams = ckpt['hyper_parameters']
-    cls = SyntheticLitModule if 'sim' in hparams else LitModule
-    module = cls(**hparams)
+    module = (
+        SyntheticLitModule(**hparams, restoring_checkpoint=True)
+        if 'sim' in hparams
+        else LitModule(**hparams)
+    )
     module.load_state_dict(
         {k.replace('._orig_mod.', '.'): v for k, v in ckpt['state_dict'].items()}
     )

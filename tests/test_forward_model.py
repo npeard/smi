@@ -292,6 +292,7 @@ def test_full_model_causal_with_baked_normalization():
         steps_per_epoch=1,
         train_crop_length=None,
         sim=dataclasses.asdict(_noise_free()),
+        restoring_checkpoint=False,
     )
     model = module.model.eval()
     # Baked stats, not identity: velocity std is the synthetic motion scale.

@@ -69,6 +69,7 @@ def _lit_module() -> SyntheticLitModule:
         steps_per_epoch=2,
         sim=_sim(),
         train_crop_length=CROP,
+        restoring_checkpoint=False,
     )
 
 
