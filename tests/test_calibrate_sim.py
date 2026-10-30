@@ -17,6 +17,7 @@ import pytest
 from smi.analysis.calibrate_sim import calibrate, main
 from smi.synthetic.forward import (
     NOMINAL_ALPHA,
+    NOMINAL_DRIVE_GAIN,
     NOMINAL_FEEDBACK_C,
     NOMINAL_SWEEPS,
     SimConfig,
@@ -27,24 +28,70 @@ RIG_WAVELENGTHS = (0.635, 0.6748, 0.515)
 N_SHOTS = 256
 REL_TOL = 0.2
 SNR_TOL_DB = 1.0
-# Not identifiable from the real schema at the published phase drift; see the
-# calibrate_sim module doc for why each one is None.
-NOT_IDENTIFIABLE = (
+# No estimator meets the bar at the published phase drift for these; see the
+# calibrate_sim module doc.
+UNCALIBRATED = (
     'amplitude_drift_rel',
     'contrast_drift_rel',
     'dc_offset_range',
     'shot_noise',
 )
+KNOBS = (
+    'drive_gain',
+    'snr_db',
+    'phase_drift_rad_per_sqrt_s',
+    'feedback_c',
+    'alpha',
+    'pd_bandwidth_hz',
+    'visibility_range',
+)
 # The volts test's DC level; any positive value works.
 DC_VOLTS = 0.5
 
 
-def _known(pd_bandwidth_hz: float) -> SimConfig:
+def _known(pd_bandwidth_hz: float, **changes) -> SimConfig:
     # Nominal, except a visibility top below 1 so both bounds are tested.
     nominal = SimConfig.nominal(RIG_WAVELENGTHS, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
     return dataclasses.replace(
-        nominal, visibility_range=(0.5, 0.9), pd_bandwidth_hz=pd_bandwidth_hz
+        nominal, visibility_range=(0.5, 0.9), pd_bandwidth_hz=pd_bandwidth_hz, **changes
     )
+
+
+# Off-nominal points, each moving one knob (100 kHz PD, read from the knee).
+OFF_NOMINAL = {
+    'gain_x2': {'drive_gain': 2 * NOMINAL_DRIVE_GAIN},
+    'snr_20': {'snr_db': 20.0},
+    'snr_40': {'snr_db': 40.0},
+    'drift_21.5': {'phase_drift_rad_per_sqrt_s': 21.5},
+    'drift_58': {'phase_drift_rad_per_sqrt_s': 58.0},
+    'c_0.4': {'feedback_c': 0.4},
+    'alpha_5': {'alpha': 5.0},
+}
+# (point, knob) that miss the bar, with the measured worst per-channel error
+# (256 shots, seed 0). Recorded as limits, not widened tolerances.
+LIMITS = {
+    ('snr_20', 'pd_bandwidth_hz'): 'None: the noise-band knee is buried',
+    ('drift_58', 'feedback_c'): 'worst -32% (0.135 for 0.2)',
+    ('drift_58', 'alpha'): 'worst +23% (3.7 for 3)',
+    ('drift_58', 'pd_bandwidth_hz'): 'worst +59% (158.8 kHz for 100 kHz)',
+    ('c_0.4', 'pd_bandwidth_hz'): 'worst +59% (158.8 kHz for 100 kHz)',
+}
+
+
+@pytest.fixture(scope='module')
+def calibrated(tmp_path_factory):
+    """Calibrate each off-nominal frozen set once, however many tests read it."""
+    cache = {}
+
+    def get(point):
+        if point not in cache:
+            cfg = _known(100e3, **OFF_NOMINAL[point])
+            path = tmp_path_factory.mktemp(point) / 'known.h5'
+            write_frozen_set(cfg, 0, N_SHOTS, path)
+            cache[point] = (cfg, calibrate(path, N_SHOTS, 'signal'))
+        return cache[point]
+
+    return get
 
 
 # 100 kHz is read from the noise-band knee; 5 kHz from the amplitude roll-off.
@@ -59,34 +106,60 @@ def _close(got: float | None, want: float) -> bool:
     return got is not None and abs(got - want) <= REL_TOL * abs(want)
 
 
+def _assert_knob(name: str, cfg: SimConfig, result: dict) -> None:
+    """One knob within the bar on every channel (drive_gain is file-level)."""
+    if name == 'drive_gain':
+        assert _close(result[name], cfg.drive_gain), result[name]
+        return
+    for key, ch in result['channels'].items():
+        got, want = ch[name], getattr(cfg, name)
+        if name == 'snr_db':
+            assert got is not None
+            assert abs(got - want) <= SNR_TOL_DB, (key, got)
+        elif name == 'visibility_range':
+            assert got is not None
+            assert all(_close(g, w) for g, w in zip(got, want, strict=True)), (key, got)
+        else:
+            assert _close(got, want), (key, name, got)
+
+
 def test_round_trip_recovers_known_knobs(known_set):
     cfg, path = known_set
     result = calibrate(path, N_SHOTS, 'signal')
-    assert _close(result['drive_gain'], cfg.drive_gain), result['drive_gain']
+    for name in KNOBS:
+        _assert_knob(name, cfg, result)
     assert result['adc_bits'] == cfg.adc_bits
-    for key, ch in result['channels'].items():
-        assert ch['snr_db'] is not None
-        assert abs(ch['snr_db'] - cfg.snr_db) <= SNR_TOL_DB, (key, ch['snr_db'])
-        for name in (
-            'phase_drift_rad_per_sqrt_s',
-            'feedback_c',
-            'alpha',
-            'pd_bandwidth_hz',
-        ):
-            assert _close(ch[name], getattr(cfg, name)), (key, name, ch[name])
-        for got, want in zip(ch['visibility_range'], cfg.visibility_range, strict=True):
-            assert _close(got, want), (key, ch['visibility_range'])
-        for name in NOT_IDENTIFIABLE:
-            assert ch[name] is None, f'{name} is not identifiable, got {ch[name]}'
+    for ch in result['channels'].values():
+        for name in UNCALIBRATED:
+            assert ch[name] is None, f'{name} has no estimator, got {ch[name]}'
         assert ch['adc_full_scale'] is None, 'a signal-units file carries no volts'
 
     rebuilt = SimConfig.from_calibration(result, cfg.wavelengths_um)
     assert abs(rebuilt.snr_db - cfg.snr_db) <= SNR_TOL_DB
     for name in ('drive_gain', 'feedback_c', 'alpha', 'pd_bandwidth_hz'):
         assert _close(getattr(rebuilt, name), getattr(cfg, name)), name
-    # Unidentified knobs fall back to the nominal (here equal to the truth).
-    for name in NOT_IDENTIFIABLE:
+    # Uncalibrated knobs fall back to the nominal (here equal to the truth).
+    for name in UNCALIBRATED:
         assert getattr(rebuilt, name) == getattr(cfg, name)
+
+
+@pytest.mark.parametrize(
+    ('point', 'knob'),
+    [(p, k) for p in OFF_NOMINAL for k in KNOBS if (p, k) not in LIMITS],
+)
+def test_round_trip_tracks_off_nominal_knob(calibrated, point, knob):
+    """Each knob holds the bar at moved settings, not only at the nominal."""
+    _assert_knob(knob, *calibrated(point))
+
+
+@pytest.mark.parametrize(
+    ('point', 'knob'), [pytest.param(p, k, id=f'{p}-{k}') for (p, k) in LIMITS]
+)
+def test_round_trip_known_limits(calibrated, point, knob, request):
+    request.applymarker(
+        pytest.mark.xfail(strict=True, reason=f'{point}: {LIMITS[(point, knob)]}')
+    )
+    _assert_knob(knob, *calibrated(point))
 
 
 def test_volts_file_calibrates_like_its_signal_units(known_set, tmp_path):

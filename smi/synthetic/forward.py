@@ -107,7 +107,10 @@ _SHOT_S = (
 # sec 5.1), measured as the peak-to-peak of the windowed phase. One fringe is
 # 2 pi rad of phase; a random walk of D rad/sqrt(s) has mean range
 # sqrt(8 T / pi) D over a shot of T s, so N fringes -> 2 pi N / sqrt(8 T / pi).
-# Nominal at the geometric middle, sqrt(1 * 2.7) = 1.64 fringes.
+# Nominal at the geometric middle, sqrt(1 * 2.7) = 1.64 fringes. The
+# published figure comes through the windowed estimator, which reads ~7% low at
+# the nominal D (finite windows smooth the walk) while this conversion uses the
+# continuous Brownian range, so the nominal is a lower bound on the true D.
 _FRINGES_TO_RAD_PER_SQRT_S = 2 * math.pi / math.sqrt(8 * _SHOT_S / math.pi)
 NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S = math.sqrt(2.7) * _FRINGES_TO_RAD_PER_SQRT_S
 

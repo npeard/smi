@@ -17,8 +17,7 @@ each channel is divided by its mean level and 1 subtracted. That treats the
 whole mean as nominal light: a DC offset (ambient light, electronic offset) is
 absorbed into the scale and is not separately identifiable from volts.
 
-Identifiability, knob by knob (None in the output means "not identifiable
-from this data", never zero):
+Knob by knob (None in the output means "no estimate", never zero):
 
 * ``drive_gain``: ratio of the file's mean per-shot drive RMS to the
   simulator's at unit gain -- the drive voltage is recorded directly.
@@ -49,16 +48,27 @@ from this data", never zero):
   SMI fundamental, the PD and the within-window coherence loss (same W / 2W
   extrapolation), moment-matched to U(lo, hi) after removing estimation
   scatter.
-* ``amplitude_drift_rel``, ``contrast_drift_rel``: None. Their natural
-  statistics (windowed DC and log-amplitude increments) are dominated by the
-  within-window phase drift: at the nominal drift they read ~13x and ~17x the
-  truth, and they are near-unbiased only when the phase drift is ~0, which the
-  published 1-2.7 fringes rules out.
+* ``amplitude_drift_rel``, ``contrast_drift_rel``: None. No estimator meets
+  the bar at the published drift: the windowed-DC increment statistic reads
+  13x the truth at the nominal phase drift (0.65-0.72 for 0.05; 0.054 at zero
+  drift) and the windowed log-amplitude increment statistic reads 17x (1.20
+  against 0.071 combined; 0.084 at zero drift), because the within-window
+  phase drift (D, rad/sqrt(s)) leaks into both. Both are near-unbiased only
+  as D -> 0, which the published 1-2.7 fringes per shot rules out.
 * ``adc_bits``: the board constant, not estimated. ``adc_full_scale``: the
   board's input range over the channel's DC level in volts; None for
   ``units='signal'`` files, which carry no volts.
-* ``dc_offset_range``, ``shot_noise``: None (see Units; shot noise is not
-  estimated).
+* ``dc_offset_range``: None (absorbed into the scale, see Units).
+  ``shot_noise``: None, not estimated.
+
+Known limits of the round trip (256 shots, 100 kHz PD, other knobs nominal;
+each is an expected-failure test in ``tests/test_calibrate_sim.py`` with the
+measured error): at D = 58 rad/sqrt(s) the within-window drift blurs the
+harmonics, so ``feedback_c`` reads up to -32%, ``alpha`` up to +23% and the PD
+knee up to +59%; at C = 0.4 the PD knee reads +19% to +59%; at snr_db = 20
+the noise-band knee is buried and ``pd_bandwidth_hz`` is None. Every other
+knob holds the bar at those points, and all knobs hold it at drive_gain x2,
+snr_db 40, D = 21.5 and alpha = 5.
 """
 
 import argparse
@@ -149,7 +159,12 @@ def _shot_arrays(
 
 
 def _drive_gain(voltage: np.ndarray, sample_rate: float) -> float:
-    """File drive RMS over the simulator's at unit gain, on the rig's band."""
+    """File drive RMS over the simulator's at unit gain.
+
+    Assumes the rig's 1-1000 Hz drive band (``NOMINAL_DRIVE_BAND_HZ``): the
+    acquisition schema records no band, so a file driven over another band
+    would read a wrong gain.
+    """
     waveform = Waveform(*NOMINAL_DRIVE_BAND_HZ)
     if waveform.acq_sample_rate != sample_rate:
         raise ValueError(
@@ -377,7 +392,7 @@ def _channel(
             'visibility_range',
         )
     )
-    # Not identifiable at the published phase drift (module doc, report).
+    # No estimator meets the bar at the published phase drift (module doc).
     out['amplitude_drift_rel'] = out['contrast_drift_rel'] = None
     if not h_short:
         return out
