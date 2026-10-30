@@ -39,16 +39,12 @@ from smi.analysis.metrics import (
     sign_invariant_rmse,
     summarize_per_shot,
 )
-from smi.analysis.results_artifact import RunRecord, append_results
+from smi.analysis.results_artifact import RunRecord
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.forward import MAX_SPEED_UM_PER_MS, SimConfig
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_RESULTS_PATH = (
-    Path(__file__).resolve().parent / 'data' / 'synthetic_results.json'
-)
 
 # Shots per estimator call: bounds memory on 16384-sample shots; the result
 # does not depend on it.
@@ -427,18 +423,3 @@ def _table_from_sums(sums: np.ndarray, edges: np.ndarray) -> list[dict[str, floa
         }
         for i in range(N_BINS)
     ]
-
-
-def evaluate_to_artifact(
-    est: Estimator,
-    dataset: Path,
-    wavelengths_um: tuple[float, ...],
-    n_shots: int | None,
-    converged: bool,
-    train_seed: int | None,
-    results_path: Path,
-) -> EvalRecord:
-    """:func:`evaluate`, then append the record to the results artifact."""
-    result = evaluate(est, dataset, wavelengths_um, n_shots, converged, train_seed)
-    append_results(results_path, [result.record])
-    return result

@@ -11,14 +11,14 @@ import torch
 
 from smi.analysis import synthetic_lit_module
 from smi.analysis.datasets import VelocityDataset, select_pd_keys
-from smi.analysis.evaluate import (
-    CheckpointEstimator,
-    InverseFitEstimator,
-    evaluate,
-    evaluate_to_artifact,
-)
+from smi.analysis.evaluate import CheckpointEstimator, InverseFitEstimator, evaluate
 from smi.analysis.metrics import sign_invariant_rmse
-from smi.analysis.results_artifact import RunRecord, read_results, write_results
+from smi.analysis.results_artifact import (
+    RunRecord,
+    append_results,
+    read_results,
+    write_results,
+)
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.synthetic import frozen
 from smi.synthetic.forward import SIMULATOR_VERSION
@@ -211,8 +211,8 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
         est.predict_velocity(x, RIG[::-1])
 
     out = tmp_path / 'results.json'
-    evaluate_to_artifact(est, michelson_set, RIG, 2, **TRAINED, results_path=out)
-    evaluate_to_artifact(est, michelson_set, RIG, 2, **TRAINED, results_path=out)
+    for _ in range(2):
+        append_results(out, [evaluate(est, michelson_set, RIG, 2, **TRAINED).record])
     records = read_results(out)
     assert len(records) == 2
     assert records[0].estimator.startswith('TCN:')
@@ -254,14 +254,10 @@ def test_recurrent_checkpoint_records_unbounded_receptive_field(
         ckpt,
     )
     out = tmp_path / 'results.json'
-    evaluate_to_artifact(
-        CheckpointEstimator(ckpt, 'cpu'),
-        michelson_set,
-        RIG,
-        2,
-        **TRAINED,
-        results_path=out,
+    result = evaluate(
+        CheckpointEstimator(ckpt, 'cpu'), michelson_set, RIG, 2, **TRAINED
     )
+    append_results(out, [result.record])
     (record,) = read_results(out)
     assert record.receptive_field is None
     assert (
@@ -380,9 +376,8 @@ def test_fringe_distance_bin_uses_shortest_wavelength_phase_column(tmp_path):
 def test_record_labels_training_and_test_seeds_and_finiteness(tmp_path, michelson_set):
     est = _Truth(michelson_set, scale=float('nan'))
     out = tmp_path / 'r.json'
-    evaluate_to_artifact(
-        est, michelson_set, RIG, 2, converged=False, train_seed=11, results_path=out
-    )
+    result = evaluate(est, michelson_set, RIG, 2, converged=False, train_seed=11)
+    append_results(out, [result.record])
     entry = next(iter(json.loads(out.read_text())['datasets'].values()))[0]
     assert entry['train_seed'] == 11
     assert entry['test_seed'] == 3
