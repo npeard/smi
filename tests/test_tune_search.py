@@ -15,7 +15,7 @@ import yaml
 
 ray = pytest.importorskip('ray')
 
-from ray import tune  # noqa: E402  (after importorskip)
+from ray import tune  # noqa: E402  # ty: ignore[unresolved-import]
 
 from smi.analysis.tune_search import (  # noqa: E402
     SEARCH_METRIC,

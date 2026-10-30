@@ -22,11 +22,20 @@ from typing import Any
 import lightning as lightning_module
 import torch
 import yaml
-from ray import tune
-from ray.tune import CheckpointConfig, RunConfig, TuneConfig, Tuner
-from ray.tune.integration.pytorch_lightning import TuneReportCheckpointCallback
-from ray.tune.schedulers import ASHAScheduler
-from ray.tune.search.optuna import OptunaSearch
+
+# ray is in no environment until it ships cp315 wheels, so ty cannot resolve it.
+from ray import tune  # ty: ignore[unresolved-import]
+from ray.tune import (  # ty: ignore[unresolved-import]
+    CheckpointConfig,
+    RunConfig,
+    TuneConfig,
+    Tuner,
+)
+from ray.tune.integration.pytorch_lightning import (  # ty: ignore[unresolved-import]
+    TuneReportCheckpointCallback,
+)
+from ray.tune.schedulers import ASHAScheduler  # ty: ignore[unresolved-import]
+from ray.tune.search.optuna import OptunaSearch  # ty: ignore[unresolved-import]
 from torch.utils.data import DataLoader
 
 from smi.analysis.datamodule import VelocityDataModule

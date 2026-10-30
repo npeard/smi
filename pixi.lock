@@ -3620,7 +3620,7 @@ packages:
   - numba>=0.68
   - torch>=2.14
   - lightning>=2.6
-  - h5py
+  - h5py>=3.16
   - tqdm
   - pyyaml
   - scipy>=1.18

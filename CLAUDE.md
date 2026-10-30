@@ -120,8 +120,12 @@ import order.
 **h5py is built from its PyPI sdist against conda's `hdf5`** (`HDF5_DIR` in
 `[tool.pixi.activation.env]`), because h5py has no cp315 wheel and conda-forge's
 h5py would drag in conda numpy and an openmp-linked openblas. Verified on
-osx-arm64 only; win-64 needs a C compiler for the build. Drop `hdf5` and
-`HDF5_DIR` once h5py ships cp315 wheels.
+osx-arm64 only: the linux-64 and win-64 source builds are NOT yet verified
+(CI on linux will be the first compile). win-64 needs MSVC Build Tools (or a
+conda compiler package such as `vs2022_win-64`) on the machine. h5py's build
+embeds an rpath to `$HDF5_DIR/lib` in the extension, so libhdf5 is found at
+runtime without `LD_LIBRARY_PATH`. Drop `hdf5` and `HDF5_DIR` once h5py ships
+cp315 wheels.
 
 **Torch comes from the `cu130` PyPI index** because the default win-64
 wheel is CPU-only, and because cu124 publishes no cp312/win-64 wheel past

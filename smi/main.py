@@ -213,9 +213,7 @@ def main():
     if args.search:
         if not args.config:
             raise ValueError('Config file is required for search mode')
-        # Imported here, not at module top: ray is an optional extra (no cp315
-        # wheels yet), and only --search needs it.
-        from smi.analysis.tune_search import (  # noqa: PLC0415
+        from smi.analysis.tune_search import (  # noqa: PLC0415 -- ray has no cp315 wheel; only --search needs it
             export_best_model,
             run_search,
         )

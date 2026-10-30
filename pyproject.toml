@@ -20,7 +20,7 @@ dependencies = [
     "numba>=0.68",
     "torch>=2.14",
     "lightning>=2.6",
-    "h5py",
+    "h5py>=3.16",
     "tqdm",
     "pyyaml",
     "scipy>=1.18",
@@ -200,7 +200,9 @@ codespell = "*"
 # above). So h5py builds from its PyPI sdist against conda's libhdf5, which
 # links no OpenMP and no numpy; HDF5_DIR (see [tool.pixi.activation.env]) points
 # the build at it. Drop both once h5py ships cp315 wheels.
-hdf5 = "*"
+# Floor is the oldest HDF5 h5py 3.16 supports; no cap, since the build was
+# verified against HDF5 2.2.0 (osx-arm64).
+hdf5 = ">=1.14"
 
 # The PyPI lightgbm macOS wheel does not bundle libomp and looks for
 # @rpath/libomp.dylib (Homebrew's copy, absent here). A second runtime next to
@@ -355,14 +357,6 @@ invalid-method-override = "ignore"
 not-subscriptable = "ignore"
 invalid-type-form = "ignore"
 possibly-missing-submodule = "ignore"
-
-# ray is in no environment until it ships cp315 wheels (see the `tune` feature),
-# so its imports cannot resolve in the two files that use it. Remove with it.
-[[tool.ty.overrides]]
-include = ["smi/analysis/tune_search.py", "tests/test_tune_search.py"]
-
-[tool.ty.overrides.rules]
-unresolved-import = "ignore"
 
 [tool.coverage.run]
 source = ["smi"]
