@@ -52,7 +52,7 @@ synthetic:
     sample_rate: 488281.25  # 125 MHz / decimation 256
     start_freq_hz: 1.0
     end_freq_hz: 1000.0
-    drive_gain: 0.002879  # NOMINAL_DRIVE_GAIN
+    drive_gain: 0.002454  # NOMINAL_DRIVE_GAIN
     feedback_c: 0.0
     alpha: 0.0
     snr_db: null

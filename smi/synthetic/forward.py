@@ -15,20 +15,21 @@ from smi.synthetic.waveform import Waveform
 # (CoilDriver.sample(normalize_gain=True), driven by RedPitayaManager at
 # generator amplitude 1.0, manager.py:286-290). The code chain alone does not
 # reproduce the rig's velocity scale (it depends strongly on the Waveform
-# range and is ~350x too large at the rig default 1-1000 Hz), so this is set
-# so the MEDIAN per-shot velocity std over 256 seeded shots (Waveform
-# 1-1000 Hz, generator seed 0; 153 um/ms at drive_gain=1) is 0.44 um/ms, the
-# typical per-shot velocity std already published in report/report.typ
-# sec 4.1 (no acquisition file was opened). The gain is therefore partly a
-# compensation for the generator-vs-acquisition time-base mismatch in the rig
-# path (see sample_trajectory), not a purely physical analog gain.
-NOMINAL_DRIVE_GAIN = 0.002879
+# range and is ~400x too large at the rig default 1-1000 Hz), so this is set
+# so the MEDIAN per-shot velocity RMS over 256 seeded shots (Waveform
+# 1-1000 Hz, generator seed 0; 152.8 um/ms at drive_gain=1) is 0.375 um/ms,
+# the middle of the median true velocity RMS already published for the two
+# acquisitions, 0.373 and 0.377 um/ms (report/report.typ sec 5.1; no
+# acquisition file was opened). The gain is therefore partly a compensation
+# for the generator-vs-acquisition time-base mismatch in the rig path (see
+# sample_trajectory), not a purely physical analog gain.
+NOMINAL_DRIVE_GAIN = 0.002454
 
 # Evaluator limit for baseline_fit.inverse_fit(max_speed_um_per_ms=...):
 # measured 99.9th percentile |v| at drive_gain = 4 x NOMINAL_DRIVE_GAIN (the
 # top of the sweep) over the same 256 shots, times a margin of 1.5, rounded up.
-# Measured 12.75 um/ms, x1.5 = 19.13, rounded up.
-MAX_SPEED_UM_PER_MS = 20.0
+# Measured 10.87 um/ms, x1.5 = 16.30, rounded up.
+MAX_SPEED_UM_PER_MS = 17.0
 
 
 def sample_trajectory(

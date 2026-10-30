@@ -1,5 +1,6 @@
 """Synthetic motion must come from the rig's drive path through the coil."""
 
+import math
 import types
 
 import numpy as np
@@ -18,8 +19,9 @@ from tests._dtype_guard import no_float64
 
 SAMPLE_RATE = Waveform.SAMPLE_RATE_DEC1 / 256
 CPU = torch.device('cpu')
-# Published per-shot velocity std (report/report.typ sec 4.1), um/ms.
-TARGET_MEDIAN_STD = 0.44
+# Published median per-shot true velocity RMS, 0.373 and 0.377 um/ms for the
+# two acquisitions (report/report.typ sec 5.1), um/ms.
+TARGET_MEDIAN_RMS = 0.375
 
 
 def _waveform() -> Waveform:
@@ -74,14 +76,18 @@ def test_trajectory_matches_numpy_coil_path():
 
 
 def test_nominal_gain_gives_published_velocity_scale():
-    median_std = _shots(NOMINAL_DRIVE_GAIN).std(dim=-1).median().item()
-    assert median_std == pytest.approx(TARGET_MEDIAN_STD, rel=0.01)
+    velocity = _shots(NOMINAL_DRIVE_GAIN)
+    median_rms = velocity.pow(2).mean(dim=-1).sqrt().median().item()
+    assert median_rms == pytest.approx(TARGET_MEDIAN_RMS, rel=0.01)
 
 
 def test_velocity_range_within_inverse_fit_limit():
     velocity = _shots(4 * NOMINAL_DRIVE_GAIN)
     p999 = torch.quantile(velocity.abs().flatten(), 0.999).item()
     assert p999 < MAX_SPEED_UM_PER_MS, f'p99.9 |v| = {p999:.2f} um/ms'
+    # The limit is that percentile x1.5 rounded up, not an arbitrary ceiling:
+    # a stale limit far above it would let inverse_fit search needlessly wide.
+    assert math.ceil(1.5 * p999) >= MAX_SPEED_UM_PER_MS
 
 
 def test_off_grid_min_freq_raises_clear_error():
