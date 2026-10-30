@@ -32,6 +32,8 @@ sims:
      override: {adc_full_scale: 2.0},
      sweep: {adc_bits: [14, 12, 10, 8]}}
   - {name: nominal, preset: nominal, feedback_c: 0.2, alpha: 3.0}
+  # best C of the noise-free curve (monotone in C up to 0.9, q3_s0c_ceiling)
+  - {name: nominal-c0.9, preset: nominal, feedback_c: 0.9, alpha: 3.0}
 
 seeds: [0]
 oracle: false
