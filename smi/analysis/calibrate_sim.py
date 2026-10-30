@@ -84,7 +84,11 @@ import numpy as np
 import torch
 from scipy.signal import periodogram
 
-from smi.analysis.baseline_fit import DRIVE_KEY, window_fringe_coefficients
+from smi.analysis.baseline_fit import (
+    DRIVE_KEY,
+    fit_window_basis,
+    window_fringe_coefficients,
+)
 from smi.analysis.datasets import file_pd_channels
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
@@ -210,6 +214,14 @@ def _invert_harmonic(ratio: complex) -> tuple[float, float]:
     return float(c_grid[i]), float(alpha_grid[j])
 
 
+def _harmonic_basis(psi: np.ndarray) -> np.ndarray:
+    """``[cos, sin, cos 2, sin 2, 1]`` columns for per-window phases."""
+    return np.stack(
+        [np.cos(psi), np.sin(psi), np.cos(2 * psi), np.sin(2 * psi), np.ones_like(psi)],
+        axis=2,
+    )
+
+
 def _windows(x: np.ndarray, theta: np.ndarray, window: int) -> tuple[np.ndarray, ...]:
     """Per-window first and second fringe harmonics of one shot.
 
@@ -226,15 +238,8 @@ def _windows(x: np.ndarray, theta: np.ndarray, window: int) -> tuple[np.ndarray,
     th = theta[: n_win * window].reshape(n_win, -1)
     ok = np.ptp(th, axis=1) / (2 * np.pi) >= MIN_WINDOW_FRINGES
     phase = np.arctan2(-coeffs[:, 1], coeffs[:, 0])
-    psi = th + phase[:, None]
-    design = np.stack(
-        [np.cos(psi), np.sin(psi), np.cos(2 * psi), np.sin(2 * psi), np.ones_like(psi)],
-        axis=2,
-    )
-    blocks = x[: n_win * window].reshape(n_win, -1)
-    gram = design.transpose(0, 2, 1) @ design
-    rhs = design.transpose(0, 2, 1) @ blocks[:, :, None]
-    c1, s1, c2, s2, _ = np.linalg.solve(gram, rhs)[:, :, 0].T
+    psi = (th + phase[:, None]).ravel()
+    c1, s1, c2, s2, _ = fit_window_basis(x, psi, window, _harmonic_basis).T
     return ok, phase, c1 - 1j * s1, c2 - 1j * s2
 
 
@@ -246,8 +251,11 @@ def _pooled_ratio(
 
     A PD of known bandwidth passes the second harmonic at 2f as H(2f) while
     the fitted phase has absorbed H(f)'s lag, so each window's ratio is
-    multiplied back by ``|H(f)| exp(2i arg H(f)) / H(2f)`` (analog one-pole,
-    signed fringe rate f).
+    multiplied back by ``|H(f)| exp(2i arg H(f)) / H(2f)`` (signed fringe
+    rate f). H is the analog one-pole here because the correction is only
+    needed at fringe rates far below the sample rate, where it matches the
+    simulator's discrete pole to second order in f / fs;
+    ``_one_pole_power`` integrates to Nyquist, where they differ.
     """
     h1 = np.concatenate([h[0] for h in harmonics])
     h2 = np.concatenate([h[1] for h in harmonics])
@@ -262,7 +270,11 @@ def _pooled_ratio(
 def _one_pole_power(
     freqs: np.ndarray, cutoff_hz: float | None, fs: float
 ) -> np.ndarray:
-    """|H(f)|^2 of ``forward.pd_lowpass``; 1 for an unlimited bandwidth."""
+    """|H(f)|^2 of ``forward.pd_lowpass``; 1 for an unlimited bandwidth.
+
+    The discrete pole, not the analog one used in ``_pooled_ratio``: the noise
+    floor model spans the whole band up to Nyquist, where the two differ.
+    """
     if cutoff_hz is None:
         return np.ones_like(freqs)
     p = one_pole_coefficient(cutoff_hz, fs)

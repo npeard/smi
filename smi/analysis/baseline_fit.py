@@ -81,7 +81,7 @@ import itertools
 import json
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -807,6 +807,41 @@ class PhaseDrift:
     n_windows: int
 
 
+def fringe_basis(thetas: np.ndarray) -> np.ndarray:
+    """``[cos, sin, 1]`` columns for per-window phases ``(n_windows, w)``."""
+    return np.stack([np.cos(thetas), np.sin(thetas), np.ones_like(thetas)], axis=2)
+
+
+def fit_window_basis(
+    signal: np.ndarray,
+    theta: np.ndarray,
+    window_samples: int,
+    basis: Callable[[np.ndarray], np.ndarray],
+) -> np.ndarray:
+    """Batched least squares of ``signal`` on ``basis(theta)`` in each whole window.
+
+    Trailing samples that do not fill a window are dropped. The normal
+    equations of every window are solved in one batched call.
+
+    Args:
+        signal: Samples for one shot, shape ``(n,)``.
+        theta: Phase for the same samples (radians), shape ``(n,)``.
+        window_samples: Window length in samples.
+        basis: Maps phases ``(n_windows, w)`` to a design ``(n_windows, w, k)``.
+
+    Returns:
+        ``(n_windows, k)`` coefficients per window.
+    """
+    n_windows = signal.size // int(window_samples)
+    usable = n_windows * int(window_samples)
+    blocks = np.asarray(signal[:usable], dtype=np.float64).reshape(n_windows, -1)
+    thetas = np.asarray(theta[:usable], dtype=np.float64).reshape(n_windows, -1)
+    design = basis(thetas)
+    gram = design.transpose(0, 2, 1) @ design
+    rhs = design.transpose(0, 2, 1) @ blocks[:, :, None]
+    return np.linalg.solve(gram, rhs)[:, :, 0]
+
+
 def window_fringe_coefficients(
     signal: np.ndarray, theta: np.ndarray, window_samples: int
 ) -> np.ndarray:
@@ -825,14 +860,7 @@ def window_fringe_coefficients(
     Returns:
         ``(n_windows, 3)`` array of ``[a, b, c]`` per window.
     """
-    n_windows = signal.size // int(window_samples)
-    usable = n_windows * int(window_samples)
-    blocks = np.asarray(signal[:usable], dtype=np.float64).reshape(n_windows, -1)
-    thetas = np.asarray(theta[:usable], dtype=np.float64).reshape(n_windows, -1)
-    design = np.stack([np.cos(thetas), np.sin(thetas), np.ones_like(thetas)], axis=2)
-    gram = design.transpose(0, 2, 1) @ design
-    rhs = design.transpose(0, 2, 1) @ blocks[:, :, None]
-    return np.linalg.solve(gram, rhs)[:, :, 0]
+    return fit_window_basis(signal, theta, window_samples, fringe_basis)
 
 
 def measure_phase_drift(
