@@ -78,7 +78,7 @@ class Estimator(Protocol):
         ...
 
 
-def load_lit_module(path: str | Path, device: str = 'cpu') -> LitModule:
+def load_lit_module(path: str | Path, *, device: str) -> LitModule:
     """Rebuild a checkpoint's Lightning module with its weights.
 
     The checkpoint's own ``Model`` wrapper carries the normalization buffers,
@@ -117,10 +117,10 @@ class CheckpointEstimator:
     """A trained network, evaluated through its own normalizing wrapper."""
 
     def __init__(self, path: str | Path, device: str) -> None:
-        self.module = load_lit_module(path, device)
+        self.module = load_lit_module(path, device=device)
         self.device = device
         hp = self.module.model_hparams
-        inner = self.module._inner_model
+        inner = self.module.inner_model
         self.model_type = hp['type']
         self.name = f'{self.model_type}:{Path(path).stem}'
         self.wavelengths_um = _checkpoint_wavelengths(self.module)

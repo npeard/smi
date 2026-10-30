@@ -143,6 +143,11 @@ class LitModule(lightning_module.LightningModule):
         self.model_hparams = model_hparams
         self.save_hyperparameters(ignore=['model'])
 
+    @property
+    def inner_model(self) -> nn.Module:
+        """The bare architecture inside the normalizing wrapper."""
+        return self._inner_model
+
     def _make_model(self, inner: nn.Module) -> Model:
         """Wrap the inner network with baked input/output normalization.
 

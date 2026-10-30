@@ -78,7 +78,7 @@ def _(checkpoint_path, load_lit_module, mo):
     mo.stop(not checkpoint_path.value, mo.md('Enter a checkpoint path above.'))
     # The evaluator's loader rebuilds the checkpoint's own wrapped model, so the
     # normalization baked into its buffers is used, never re-derived.
-    model = load_lit_module(checkpoint_path.value)
+    model = load_lit_module(checkpoint_path.value, device='cpu')
     ckpt_hparams = dict(model.hparams)
     in_channels = model.hparams['model_hparams']['in_channels']
     return ckpt_hparams, in_channels, model

@@ -213,7 +213,7 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
     monkeypatch.setattr(synthetic_lit_module, 'normalization_stats', refuse)
     est = CheckpointEstimator(ckpt, 'cpu')
     assert est.causal
-    assert est.receptive_field == module._inner_model.receptive_field
+    assert est.receptive_field == module.inner_model.receptive_field
     x = torch.randn(2, 3, 512)
     with torch.no_grad():
         expected = module.eval().model(x)[:, 0]
