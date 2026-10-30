@@ -143,6 +143,8 @@ allow-dict-calls-with-keyword-arguments = true
 "tests/test_report_build.py" = ["S603"]
 # Same shape: the subprocess argv is sys.executable plus a literal probe.
 "tests/test_platform.py" = ["S603"]
+# Same shape: argv is sys.executable plus this repo's runner module and tmp paths.
+"tests/test_experiments.py" = ["S603"]
 # Marimo notebooks define imports inside reactive cells (PLC0415 is expected).
 "notebooks/**.py" = ["T201", "ANN", "INP001", "E501", "B018", "PLR0915", "PTH123", "F841", "PLC0415"]
 "*.ipynb" = ["ALL"]
@@ -292,6 +294,8 @@ precommit = "pre-commit run --all-files"
 # --check-updates weekly rather than per session (a network round trip per
 # hook repo).
 preflight = "preflight"
+# Resumable synthetic-program grid runner: `pixi run experiments <grid.yaml>`.
+experiments = "python -m smi.analysis.experiments"
 
 [tool.pixi.feature.dev.tasks]
 typecheck = "ty check"

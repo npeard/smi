@@ -1,0 +1,39 @@
+# Q3: noise-free accuracy ceiling vs feedback strength C, on all three
+# channels. Michelson (C = 0) cannot show direction, so it trains and is
+# scored with the sign-invariant loss; every C > 0 sim with alpha != 0 can.
+# Run: python -m smi.analysis.experiments smi/analysis/experiments/q3_noise_free.yaml
+families:
+  - {name: tcn-matched, config: ../models/configs/matched/tcn-matched.yaml}
+  - {name: scnn-matched, config: ../models/configs/matched/scnn-matched.yaml}
+  # Families added by later tasks (Task 19 matched configs) go here, e.g.
+  # - {name: barland-matched, config: ../models/configs/matched/barland-matched.yaml}
+
+channel_subsets:
+  - [0.635, 0.6748, 0.515]
+
+sims:
+  - {name: michelson, preset: noise_free, feedback_c: 0.0, alpha: 0.0, sign_invariant: true}
+  - name: smi
+    preset: noise_free
+    feedback_c: 0.2
+    alpha: 3.0
+    sweep: {feedback_c: [0.05, 0.1, 0.2, 0.4, 0.7, 0.9]}
+
+seeds: [0, 1, 2]
+oracle: true
+
+loss:
+  sign_invariant: false  # default for sims that do not set their own
+
+# PROVISIONAL budget: the TCN-only pilot (Task 14) sizes these.
+synthetic:
+  steps_per_epoch: 200
+  val_steps: 20
+  train_crop_length: 4096
+
+training:
+  accelerator: mps
+  devices: 1
+  precision: 32-true
+
+test_set: {seed: 1000, n_shots: 64}

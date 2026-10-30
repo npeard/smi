@@ -52,6 +52,11 @@ class RunRecord:
         sim_config_hash: ``SimConfig.hash()`` of the evaluated frozen set.
         binned: Per-sample errors binned by ``|v|`` quantile and by distance to
             the nearest fringe extremum, keyed by binning name.
+        cell_key: Experiment-runner cell identifier; its presence in the
+            artifact is what makes a grid resumable.
+        sim_name: Name of the runner's sim entry, with any swept value.
+        wall_clock_s: Seconds the runner spent on the cell (training plus
+            evaluation), for sizing a full grid from a pilot.
 
     ``causal`` is the negation of ``sees_future``; it is a property so the one
     stored flag cannot disagree with it, and :func:`write_results` also writes
@@ -77,6 +82,9 @@ class RunRecord:
     finite_predictions: bool | None = None
     sim_config_hash: str | None = None
     binned: dict[str, list[dict[str, float]]] | None = None
+    cell_key: str | None = None
+    sim_name: str | None = None
+    wall_clock_s: float | None = None
 
     @property
     def causal(self) -> bool:
@@ -103,9 +111,13 @@ def write_results(path: str | Path, records: list[RunRecord]) -> None:
         datasets.setdefault(record.dataset, []).append(entry)
 
     payload = {'schema_version': SCHEMA_VERSION, 'datasets': datasets}
-    Path(path).write_text(
+    # Rename over the target so a killed runner never leaves a truncated
+    # artifact that resume would then fail to read.
+    tmp = Path(f'{path}.tmp')
+    tmp.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8'
     )
+    tmp.replace(path)
 
 
 def append_results(path: str | Path, records: list[RunRecord]) -> None:

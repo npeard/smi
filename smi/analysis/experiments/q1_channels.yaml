@@ -1,0 +1,40 @@
+# Q1: which photodiode channels carry the information. Every non-empty subset
+# of the three rig lasers, at the nominal weak-feedback SMI point, noise-free
+# (ceiling) and with the nominal noise model.
+# Run: python -m smi.analysis.experiments smi/analysis/experiments/q1_channels.yaml
+families:
+  - {name: tcn-matched, config: ../models/configs/matched/tcn-matched.yaml}
+  - {name: scnn-matched, config: ../models/configs/matched/scnn-matched.yaml}
+  # Families added by later tasks (Task 19 matched configs) go here.
+
+channel_subsets:
+  - [0.635]
+  - [0.6748]
+  - [0.515]
+  - [0.635, 0.6748]
+  - [0.635, 0.515]
+  - [0.6748, 0.515]
+  - [0.635, 0.6748, 0.515]
+
+sims:
+  - {name: noise-free, preset: noise_free, feedback_c: 0.2, alpha: 3.0}
+  - {name: nominal, preset: nominal, feedback_c: 0.2, alpha: 3.0}
+
+seeds: [0, 1, 2]
+oracle: true
+
+loss:
+  sign_invariant: false
+
+# PROVISIONAL budget: the TCN-only pilot (Task 14) sizes these.
+synthetic:
+  steps_per_epoch: 200
+  val_steps: 20
+  train_crop_length: 4096
+
+training:
+  accelerator: mps
+  devices: 1
+  precision: 32-true
+
+test_set: {seed: 1000, n_shots: 64}

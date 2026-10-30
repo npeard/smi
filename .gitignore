@@ -165,3 +165,11 @@ scratch/
 # report/figures/*.py and the .typ sources via `pixi run report`.
 report/build/
 report/.snakemake/
+
+# Per-cell checkpoints written by smi.analysis.experiments (named by cell key).
+runs/
+
+# The synthetic-program results table is the committed evidence for the
+# report, like the baseline files above. Regenerate with
+# `python -m smi.analysis.experiments <grid.yaml>`.
+!smi/analysis/data/synthetic_results.json
