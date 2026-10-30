@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor, nn
 
+from .base import SequenceModel
 from .cross_attention_block import CrossAttentionBlock
 from .tcn import TCN, TCNConfig
 
@@ -101,7 +102,7 @@ def _make_decoder_tcn(config: TCANConfig) -> TCN:
     return TCN(tcn_config)
 
 
-class TCAN(nn.Module):
+class TCAN(SequenceModel):
     """Temporal Convolutional Attention Network.
 
     Architecture:
@@ -152,6 +153,12 @@ class TCAN(nn.Module):
         to avoid counting the shared centre twice.
         """
         return self.siamese_encoder.receptive_field + self.decoder.receptive_field - 1
+
+    @property
+    @torch.jit.unused
+    def causal(self) -> bool:
+        """Built from causal TCNs; the attention is same-time-step only."""
+        return True
 
     @property
     @torch.jit.unused

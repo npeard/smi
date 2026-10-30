@@ -14,14 +14,11 @@ import yaml
 
 from smi.analysis.metrics import count_parameters
 from smi.analysis.models.base import Model
-from smi.analysis.models.factory import MODEL_REGISTRY, create_model, is_causal
+from smi.analysis.models.factory import MODEL_REGISTRY, create_model
+from smi.analysis.models.sliding_window import SlidingWindowModel
 from smi.analysis.training_interface import MIN_PATIENCE_CHECKS, TrainingConfig
 from smi.synthetic.forward import SimConfig
-from tests.test_receptive_field import (
-    measure_worst_phase_field,
-    phase_period,
-    roundoff_tolerance,
-)
+from tests.test_receptive_field import measure_worst_phase_field, phase_period
 
 MATCHED = (
     Path(__file__).parents[1] / 'smi' / 'analysis' / 'models' / 'configs' / 'matched'
@@ -46,14 +43,14 @@ def _expected_crop(hparams: dict) -> int | None:
     gives them one meaning. (lstm-bidir is unbounded too but shift-invariant,
     so it crops like the rest.)
     """
-    if hparams['type'] == 'NeuralOperator' and not is_causal(hparams):
+    if hparams['type'] == 'NeuralOperator' and not create_model(hparams).causal:
         return None
     return 4096
 
 
 def _field(model_hparams: dict) -> int | None:
     """Receptive field of the built model; None when it is unbounded."""
-    return getattr(create_model(model_hparams), 'receptive_field', None)
+    return create_model(model_hparams).receptive_field
 
 
 # One-sided lookback every causal convolutional/attention family is held to
@@ -103,14 +100,14 @@ def test_parameter_count_within_band(path):
 def test_context_rule_follows_the_column(path):
     config = _load(path)
     hparams = config['model']
-    field = _field(hparams)
-    if hparams.get('receptive_field') == 'unbounded':
-        # Recurrent state has no finite lookback, so only parameters match.
-        assert field is None
+    model = create_model(hparams)
+    field = model.receptive_field
+    if field is None:
+        # No finite lookback (recurrent state, whole-input spectral
+        # convolution), so only parameters match.
         assert config['synthetic']['train_crop_length'] == _expected_crop(hparams)
         return
-    assert field is not None
-    if is_causal(hparams):
+    if model.causal:
         assert field == CAUSAL_FIELD
     else:
         assert abs(field / OFFLINE_FIELD - 1) <= FIELD_BAND
@@ -150,24 +147,21 @@ def test_forward_preserves_length(path):
         assert model(x).shape == (1, 1, 512)
 
 
-# The offline neural operator is excluded by its unbounded marker: its field
-# is the whole input (tests/test_receptive_field.py checks that directly).
-CONV_ATTENTION = [
+# Unbounded fields are excluded: the whole input (tests/test_receptive_field.py
+# checks the offline neural operator directly). So are windowed families,
+# whose overlap averaging makes the probed footprint wider than the window by
+# construction.
+BOUNDED_FIELD = [
     p
     for p in CONFIGS
-    if _load(p)['model']['type']
-    in ('TCN', 'SCNN', 'TCAN', 'PatchTransformer', 'UNetTransformer', 'NeuralOperator')
-    and _load(p)['model'].get('receptive_field') != 'unbounded'
+    if (model := create_model(_load(p)['model'])).receptive_field is not None
+    and not isinstance(model, SlidingWindowModel)
 ]
 
 
-@pytest.mark.parametrize('path', CONV_ATTENTION, ids=lambda p: p.stem)
+@pytest.mark.parametrize('path', BOUNDED_FIELD, ids=lambda p: p.stem)
 def test_measured_field_agrees_with_property(path):
-    """The gradient probe is ground truth; the property is only a formula.
-
-    Windowed families (Barland, MLP) are excluded: their overlap averaging
-    makes the probed footprint wider than the window by construction.
-    """
+    """The gradient probe is ground truth; the property is only a formula."""
     hparams = _load(path)['model']
     torch.manual_seed(0)  # the NeuralOperator floor is relative to the init
     model = create_model(hparams)
@@ -176,7 +170,7 @@ def test_measured_field_agrees_with_property(path):
         hparams['in_channels'],
         length=2048,
         period=phase_period(hparams),
-        rel_tol=roundoff_tolerance(hparams),
+        rel_tol=model.probe_rel_tol,
     )
     assert measured == model.receptive_field
-    assert sees_future == (not is_causal(hparams))
+    assert sees_future == (not model.causal)

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor, nn
 
+from .base import SequenceModel
 from .temporal_block import TemporalBlock
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class TCNConfig:
             )
 
 
-class TCN(nn.Module):
+class TCN(SequenceModel):
     """Temporal Convolutional Network with dilated convolutions.
 
     A stack of TemporalBlocks with exponentially increasing dilations,
@@ -180,6 +181,12 @@ class TCN(nn.Module):
         dilations = torch.tensor(self.config.temporal_dilations)
         per_block = 2 * (self.config.kernel_size - 1) * dilations
         return int(torch.sum(per_block).item()) + 1
+
+    @property
+    @torch.jit.unused
+    def causal(self) -> bool:
+        """Left-padded blocks; SCNN overrides ``_causal`` for symmetric ones."""
+        return self._causal
 
     @property
     @torch.jit.unused

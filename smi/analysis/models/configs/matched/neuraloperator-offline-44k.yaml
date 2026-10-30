@@ -1,9 +1,9 @@
 # neuraloperator-offline-44k: matched budget of 44,000 parameters (+/-10%, test_matched_configs.py).
 # Offline column, unbounded context: the spectral convolution spans the whole
 # input (8 retained modes), so every output sees every sample and context
-# cannot be matched; only the parameter budget is (like lstm-bidir). The test
-# pins the marker below. Same width, depth and modes as the causal variant,
-# hence the same parameter count.
+# cannot be matched; only the parameter budget is (like lstm-bidir); the model
+# reports receptive_field None. Same width, depth and modes as the causal
+# variant, hence the same parameter count.
 # Trains on full shots (train_crop_length: null), so a step carries ~4x the
 # samples of the 4096-crop siblings: a training-budget confound, to be quoted
 # with the "matched on budget only" caveat.
@@ -15,8 +15,6 @@ model:
   n_layers: 4
   modes: 8
   kernel_len: null
-  causal: false
-  receptive_field: unbounded  # see the header
 
 training:
   max_epochs: 30

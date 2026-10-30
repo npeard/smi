@@ -1,6 +1,6 @@
 # mamba-19k: matched budget of 19,329 parameters (+/-10%, test_matched_configs.py).
 # Lookback is unbounded (recurrent state), so context cannot be matched; only
-# the parameter budget is. The test pins the marker below. Causal.
+# the parameter budget is; the model reports receptive_field None. Causal.
 model:
   type: "Mamba"
   sequence_length: 16384
@@ -11,7 +11,6 @@ model:
   expand: 2
   num_layers: 2
   use_layer_norm: true
-  receptive_field: unbounded  # see the header
 
 training:
   max_epochs: 30

@@ -19,31 +19,13 @@ from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
 from smi.analysis.models.unet_transformer import UNetTransformer, UNetTransformerConfig
 
-#: Gradient below this fraction of the largest counts as untouched, for the
-#: one family that needs it. The neural operator convolves by FFT, which is
-#: causal and finite-support in exact arithmetic but spreads float32
-#: round-off over every sample; a zero tolerance would read that as an
-#: unbounded, future-seeing field. On the matched geometry (5 seeds, both
-#: widths) round-off peaks at 2e-7 of the largest gradient and the weakest
-#: real path is 6.5e-4, so 1e-5 sits some 50x clear of each.
-FFT_ROUNDOFF = 1e-5
-
-
-def roundoff_tolerance(hparams: dict) -> float:
-    """Relative gradient (or response) floor below which a probe sees nothing.
-
-    Exact zero for every family computed in the time domain; only FFT
-    convolution needs a floor.
-    """
-    return FFT_ROUNDOFF if hparams['type'] == 'NeuralOperator' else 0.0
-
 
 def measure_receptive_field(
     model: torch.nn.Module, in_channels: int, length: int
 ) -> tuple[int, bool]:
     """Measure the true receptive field by gradient flow at the centre sample.
 
-    Exact: for the time-domain families only (see ``roundoff_tolerance``).
+    Exact: for the time-domain families only (see ``probe_rel_tol``).
 
     Returns:
         (field_width, sees_future) where field_width is the number of input
@@ -92,7 +74,7 @@ def measure_receptive_field_at(
     """Measure the receptive field of output sample ``probe`` by gradient flow.
 
     An input sample counts as touched when its gradient exceeds ``rel_tol``
-    times the largest one (``roundoff_tolerance``).
+    times the largest one (the model's ``probe_rel_tol``).
     """
     model.eval()
     x = torch.zeros(1, in_channels, length, requires_grad=True)
@@ -342,7 +324,6 @@ def _neural_operator(
             n_layers=n_layers,
             modes=modes,
             kernel_len=kernel_len,
-            causal=kernel_len is not None,
         )
     )
 
@@ -361,7 +342,7 @@ def test_causal_neural_operator_lookback_matches_measurement(
     """Stacked kernels on lags 0..K-1 reach back n_layers (K - 1) + 1 samples."""
     model = _neural_operator(n_layers, modes, kernel_len)
     measured, sees_future = measure_worst_phase_field(
-        model, in_channels=3, length=2048, period=1, rel_tol=FFT_ROUNDOFF
+        model, in_channels=3, length=2048, period=1, rel_tol=model.probe_rel_tol
     )
     assert model.receptive_field == measured
     assert not sees_future
@@ -377,7 +358,7 @@ def test_offline_neural_operator_field_is_the_whole_input():
     assert model.receptive_field is None
     for length in (512, 2048):
         measured, sees_future = measure_worst_phase_field(
-            model, in_channels=3, length=length, period=1, rel_tol=FFT_ROUNDOFF
+            model, in_channels=3, length=length, period=1, rel_tol=model.probe_rel_tol
         )
         assert measured == length
         assert sees_future

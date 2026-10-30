@@ -38,6 +38,7 @@ import numpy as np
 import torch
 from torch.utils.data import Subset
 
+from smi.analysis.baselines import CAUSAL as TABULAR_CAUSAL
 from smi.analysis.baselines import (
     SupportsPredict,
     fit_lightgbm,
@@ -47,7 +48,7 @@ from smi.analysis.baselines import (
 )
 from smi.analysis.datamodule import VelocityDataModule
 from smi.analysis.metrics import displacement_from_velocity, summarize_per_shot
-from smi.analysis.models.factory import create_model, is_causal
+from smi.analysis.models.factory import create_model
 from smi.analysis.results_artifact import RunRecord, write_results
 from smi.analysis.training_interface import TrainingConfig, TrainingInterface
 from smi.synthetic.coil_driver import MS_PER_S
@@ -322,7 +323,8 @@ def run_torch_config(
 
     probe = create_model(model_hparams)
     total_params = sum(p.numel() for p in probe.parameters() if p.requires_grad)
-    receptive_field = int(probe.receptive_field)
+    receptive_field = probe.receptive_field
+    causal = probe.causal
     del probe
 
     record_config = dict(model_hparams)
@@ -389,7 +391,7 @@ def run_torch_config(
         config=record_config,
         total_params=total_params,
         receptive_field=receptive_field,
-        sees_future=not is_causal(model_hparams),
+        sees_future=not causal,
         seed=seed,
         device=device_name(settings.device),
         dataset=dataset,
@@ -562,7 +564,7 @@ def run_tabular(
         config=record_config,
         total_params=total_params,
         receptive_field=TABULAR_WINDOW,
-        sees_future=not is_causal({'type': kind}),
+        sees_future=not TABULAR_CAUSAL,
         seed=seed,
         device='cpu',
         dataset=dataset,

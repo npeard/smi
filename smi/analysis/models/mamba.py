@@ -18,6 +18,8 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional
 
+from .base import SequenceModel
+
 logger = logging.getLogger(__name__)
 
 
@@ -227,7 +229,7 @@ class MambaConfig:
             raise ValueError(f'expand must be >= 1, got {self.expand}')
 
 
-class Mamba(nn.Module):
+class Mamba(SequenceModel):
     """Stacked Mamba selective state-space model.
 
     Takes multi-channel input of shape [batch, in_channels, seq_len] and
@@ -314,6 +316,18 @@ class Mamba(nn.Module):
             x = layer(x)
         x = self.final_norm(x)  # [batch, d_model, seq_len]
         return self.projection(x)  # [batch, 1, seq_len]
+
+    @property
+    @torch.jit.unused
+    def causal(self) -> bool:
+        """The scan and its depthwise conv are left-to-right only."""
+        return True
+
+    @property
+    @torch.jit.unused
+    def receptive_field(self) -> int | None:
+        """Recurrent state has no finite lookback."""
+        return None
 
     @property
     @torch.jit.unused

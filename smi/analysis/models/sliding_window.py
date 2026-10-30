@@ -13,11 +13,13 @@ per-window head.
 import math
 
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 from torch.nn import functional
 
+from .base import SequenceModel
 
-class SlidingWindowModel(nn.Module):
+
+class SlidingWindowModel(SequenceModel):
     """Applies a fixed-window head across a full sequence.
 
     Subclasses implement :meth:`_forward_windows`, which maps a batch of
@@ -121,6 +123,12 @@ class SlidingWindowModel(nn.Module):
 
         # Remove the height dim and trim to exact signal_length
         return averaged.squeeze(2)[:, :, :signal_length]  # [batch, 1, signal_length]
+
+    @property
+    @torch.jit.unused
+    def causal(self) -> bool:
+        """Each window is labelled at its centre, so it uses lookahead."""
+        return False
 
     @property
     @torch.jit.unused

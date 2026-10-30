@@ -24,6 +24,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional
 
+from .base import SequenceModel
 from .patch_transformer import TransformerLayer
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ class UNetTransformerConfig:
             )
 
 
-class UNetTransformer(nn.Module):
+class UNetTransformer(SequenceModel):
     """UNet encoder/decoder around a banded-attention Transformer bottleneck.
 
     Levels 0..D with D = len(channels) - 1; level i runs at 1 / pool**i of the
@@ -231,6 +232,12 @@ class UNetTransformer(nn.Module):
             return (k - 1) * (g + s) + (n + 2) * period - 1
         bottleneck_tokens = -(-((k - 1) * g) // period) + 1
         return (bottleneck_tokens + 2 * n) * period + (k - 1) * s
+
+    @property
+    @torch.jit.unused
+    def causal(self) -> bool:
+        """Chosen by the config."""
+        return self.config.causal
 
     @property
     @torch.jit.unused

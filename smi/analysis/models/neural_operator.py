@@ -36,6 +36,8 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional
 
+from .base import SequenceModel
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,9 +53,9 @@ class NeuralOperatorConfig:
         n_layers: Operator layers.
         modes: Complex Fourier coefficients per channel pair and layer: the
             retained modes of the input (offline) or of the kernel (causal).
-        kernel_len: Kernel support in samples, lags 0..kernel_len - 1, when
-            causal; None when offline, whose operator spans the whole input.
-        causal: True for the causal-convolution operator.
+        kernel_len: Kernel support in samples, lags 0..kernel_len - 1, for
+            the causal operator; None for the offline one, whose operator
+            spans the whole input.
     """
 
     sequence_length: int
@@ -62,24 +64,17 @@ class NeuralOperatorConfig:
     n_layers: int
     modes: int
     kernel_len: int | None
-    causal: bool
 
     def __post_init__(self):
         """Validate what the operator and its receptive field rely on.
 
         Raises:
-            ValueError: If ``kernel_len`` disagrees with ``causal``, if the
-                depth or modes are below one, or if a causal kernel grid has
-                fewer than ``modes`` non-Nyquist bins (the excess coefficients
-                would never reach the kernel).
+            ValueError: If the depth or modes are below one, or if a causal
+                kernel grid has fewer than ``modes`` non-Nyquist bins (the
+                excess coefficients would never reach the kernel).
         """
         if self.n_layers < 1 or self.modes < 1:
             raise ValueError('n_layers and modes must both be >= 1')
-        if self.causal != (self.kernel_len is not None):
-            raise ValueError(
-                'kernel_len must be set exactly when causal (got '
-                f'kernel_len={self.kernel_len}, causal={self.causal})'
-            )
         if self.kernel_len is not None and self.modes > (self.kernel_len + 1) // 2:
             raise ValueError(
                 f'modes {self.modes} exceeds the {(self.kernel_len + 1) // 2} '
@@ -185,8 +180,15 @@ class NeuralOperatorLayer(nn.Module):
         return functional.gelu(self.spectral(x) + self.pointwise(x))
 
 
-class NeuralOperator(nn.Module):
+class NeuralOperator(SequenceModel):
     """Lift, stacked operator layers, project; see the module docstring."""
+
+    # FFT convolution is causal and finite-support in exact arithmetic but
+    # spreads float32 round-off over every sample; a zero floor would read
+    # that as an unbounded, future-seeing field. On the matched geometry (5
+    # seeds, both widths) round-off peaks at 2e-7 of the largest gradient and
+    # the weakest real path is 6.5e-4, so 1e-5 sits some 50x clear of each.
+    probe_rel_tol = 1e-5
 
     def __init__(self, config: NeuralOperatorConfig):
         super().__init__()
@@ -234,6 +236,12 @@ class NeuralOperator(nn.Module):
         if c.kernel_len is None:
             return None
         return c.n_layers * (c.kernel_len - 1) + 1
+
+    @property
+    @torch.jit.unused
+    def causal(self) -> bool:
+        """Only the finite causal kernel is; truncated input modes are not."""
+        return self.config.kernel_len is not None
 
     @property
     @torch.jit.unused

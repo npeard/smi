@@ -1,7 +1,7 @@
 # lstm-bidir-44k: matched budget of 44,000 parameters (+/-10%, test_matched_configs.py).
 # Lookback is unbounded (recurrent state), so context cannot be matched; only
-# the parameter budget is. The test pins the marker below. Bidirectional, so
-# offline.
+# the parameter budget is; the model reports receptive_field None.
+# Bidirectional, so offline.
 model:
   type: "LSTM"
   sequence_length: 16384
@@ -10,7 +10,6 @@ model:
   num_layers: 2
   dropout: 0.0
   bidirectional: true
-  receptive_field: unbounded  # see the header
 
 training:
   max_epochs: 30

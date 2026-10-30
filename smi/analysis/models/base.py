@@ -22,6 +22,35 @@ import torch
 from torch import Tensor, nn
 
 
+class SequenceModel(nn.Module):
+    """Base of every registered architecture: it reports its own time structure.
+
+    A results record's ``causal`` and ``receptive_field`` are read off the built
+    model, so they cannot drift from the code that defines them.
+
+    Attributes:
+        probe_rel_tol: Relative gradient (or response) floor below which a
+            causality or receptive-field probe counts an input as untouched.
+            Exact zero for a model computed in the time domain; only FFT
+            convolution, which spreads float32 round-off over every sample,
+            needs one.
+    """
+
+    probe_rel_tol: float = 0.0
+
+    @property
+    @torch.jit.unused
+    def causal(self) -> bool:
+        """Whether the output at t uses only inputs at or before t."""
+        raise NotImplementedError
+
+    @property
+    @torch.jit.unused
+    def receptive_field(self) -> int | None:
+        """Receptive field in input samples; None when unbounded."""
+        raise NotImplementedError
+
+
 class FeatureMap(nn.Module):
     """Input feature transform baked into the model (currently identity).
 

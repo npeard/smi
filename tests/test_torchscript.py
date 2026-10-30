@@ -203,7 +203,6 @@ MODEL_CONFIGS = [
             n_layers=2,
             modes=4,
             kernel_len=None,
-            causal=False,
         ),
         # Odd: the rfft/irfft lengths must round-trip in the scripted graph.
         SEQ_LEN - 3,
@@ -219,7 +218,6 @@ MODEL_CONFIGS = [
             n_layers=2,
             modes=4,
             kernel_len=9,
-            causal=True,
         ),
         SEQ_LEN - 3,
     ),

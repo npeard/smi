@@ -14,13 +14,13 @@ import pytest
 import torch
 
 from smi.analysis.models.base import Model
-from smi.analysis.models.factory import MODEL_REGISTRY, create_model, is_causal
+from smi.analysis.models.factory import MODEL_REGISTRY, create_model
 from smi.analysis.models.lstm import LSTM, LSTMConfig
 from smi.analysis.models.mamba import Mamba, MambaConfig
 from smi.analysis.models.scnn import SCNN, SCNNConfig
 from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
-from tests.test_receptive_field import phase_period, roundoff_tolerance
+from tests.test_receptive_field import phase_period
 
 SEQUENCE_LENGTH = 256
 IN_CHANNELS = 3
@@ -361,7 +361,7 @@ class TestTCANCausality:
 
 
 # Smallest viable hparams per registry type, by the same probe the classes
-# above use: is_causal must agree with what the network actually does.
+# above use: each model's ``causal`` must agree with what it actually does.
 REGISTRY_HPARAMS: dict[str, dict] = {
     'Barland': dict(
         type='Barland',
@@ -467,7 +467,6 @@ REGISTRY_HPARAMS: dict[str, dict] = {
         n_layers=2,
         modes=4,
         kernel_len=9,
-        causal=True,
     ),
     'Mamba': dict(
         type='Mamba',
@@ -484,11 +483,7 @@ REGISTRY_HPARAMS: dict[str, dict] = {
 LSTM_BIDIRECTIONAL = {**REGISTRY_HPARAMS['LSTM'], 'bidirectional': True}
 PATCH_OFFLINE = {**REGISTRY_HPARAMS['PatchTransformer'], 'causal': False}
 UNET_OFFLINE = {**REGISTRY_HPARAMS['UNetTransformer'], 'causal': False}
-NEURAL_OPERATOR_OFFLINE = {
-    **REGISTRY_HPARAMS['NeuralOperator'],
-    'kernel_len': None,
-    'causal': False,
-}
+NEURAL_OPERATOR_OFFLINE = {**REGISTRY_HPARAMS['NeuralOperator'], 'kernel_len': None}
 
 
 def test_registry_hparams_cover_every_model_type():
@@ -512,21 +507,24 @@ def test_registry_hparams_cover_every_model_type():
         'NeuralOperator-offline',
     ],
 )
-def test_is_causal_agrees_with_the_empirical_probe(hparams):
+def test_causal_agrees_with_the_empirical_probe(hparams):
     torch.manual_seed(0)  # the NeuralOperator floor is relative to the init
     model = create_model(hparams).eval()
     baseline, outputs = _get_step_outputs(
         model, STEP_POSITIONS, SEQUENCE_LENGTH, IN_CHANNELS, BLOCK_SIZE
     )
     rate, _, _ = _causal_violation_rate(
-        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, roundoff_tolerance(hparams)
+        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, model.probe_rel_tol
     )
-    assert is_causal(hparams) == (rate == 0.0)
+    assert model.causal == (rate == 0.0)
 
 
-def test_is_causal_covers_the_tabular_baselines():
-    assert not is_causal({'type': 'LightGBM'})
-    assert not is_causal({'type': 'Ridge'})
+@pytest.mark.parametrize('hparams', REGISTRY_HPARAMS.values(), ids=REGISTRY_HPARAMS)
+def test_every_registry_model_reports_its_time_structure(hparams):
+    model = create_model(hparams)
+    assert isinstance(model.causal, bool)
+    field = model.receptive_field
+    assert field is None or (isinstance(field, int) and field >= 1)
 
 
 STRIDED = [
@@ -564,8 +562,9 @@ def test_wrapped_two_way_model_leaks_only_when_offline(hparams):
     normalization stats make sure the baked buffers are included.
     """
     torch.manual_seed(0)  # the NeuralOperator floor is relative to the init
+    inner = create_model(hparams)
     model = Model(
-        create_model(hparams),
+        inner,
         input_mean=torch.tensor([0.1, -0.2, 0.3]),
         input_std=torch.tensor([1.5, 0.5, 2.0]),
         output_mean=0.4,
@@ -575,9 +574,9 @@ def test_wrapped_two_way_model_leaks_only_when_offline(hparams):
         model, STEP_POSITIONS, SEQUENCE_LENGTH, IN_CHANNELS, BLOCK_SIZE
     )
     rate, n_violations, _ = _causal_violation_rate(
-        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, roundoff_tolerance(hparams)
+        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, inner.probe_rel_tol
     )
-    if hparams['causal']:
+    if inner.causal:
         assert n_violations == 0
     else:
         assert rate > 0.0

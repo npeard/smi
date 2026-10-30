@@ -26,7 +26,7 @@ except ImportError:
 from smi.analysis.features import default_registry
 from smi.analysis.features.normalization import NORMALIZATION_STATS
 from smi.analysis.metrics import apply_best_sign, best_sign, velocity_rmse
-from smi.analysis.models.base import Model
+from smi.analysis.models.base import Model, SequenceModel
 from smi.analysis.models.factory import create_model
 from smi.analysis.models.vicreg import VicRegLoss
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
@@ -132,7 +132,7 @@ class LitModule(lightning_module.LightningModule):
 
         # Include model size metrics in logged hyperparameters
         total_params = getattr(self._inner_model, 'total_params', None)
-        receptive_field = getattr(self._inner_model, 'receptive_field', None)
+        receptive_field = inner.receptive_field
         if total_params is not None:
             model_hparams = {**(model_hparams or {}), 'total_params': int(total_params)}
         if receptive_field is not None:
@@ -144,7 +144,7 @@ class LitModule(lightning_module.LightningModule):
         self.save_hyperparameters(ignore=['model'])
 
     @property
-    def inner_model(self) -> nn.Module:
+    def inner_model(self) -> SequenceModel:
         """The bare architecture inside the normalizing wrapper."""
         return self._inner_model
 

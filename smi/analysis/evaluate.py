@@ -34,7 +34,6 @@ from smi.analysis.baseline_fit import PD_WAVELENGTHS_UM, inverse_fit
 from smi.analysis.datasets import file_pd_channels, select_pd_keys
 from smi.analysis.lit_module import LitModule
 from smi.analysis.metrics import best_sign, sign_invariant_rmse, summarize_per_shot
-from smi.analysis.models.factory import is_causal
 from smi.analysis.results_artifact import RunRecord, append_results
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
@@ -124,11 +123,10 @@ class CheckpointEstimator:
         self.model_type = hp['type']
         self.name = f'{self.model_type}:{Path(path).stem}'
         self.wavelengths_um = _checkpoint_wavelengths(self.module)
-        self.causal = is_causal(hp)
-        # Recurrent models have no finite window; recording the shot length
-        # instead would read as a 16384-sample lookback, so it stays None.
-        field = getattr(inner, 'receptive_field', None)
-        self.receptive_field = None if field is None else int(field)
+        self.causal = inner.causal
+        # None for recurrent models: recording the shot length instead would
+        # read as a 16384-sample lookback.
+        self.receptive_field = inner.receptive_field
         self.total_params = sum(p.numel() for p in inner.parameters())
         self.config = {
             k: v for k, v in hp.items() if k not in ('total_params', 'receptive_field')

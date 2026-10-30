@@ -390,7 +390,6 @@ def _neural_operator_config(causal: bool) -> NeuralOperatorConfig:
         n_layers=2,
         modes=4,
         kernel_len=9 if causal else None,
-        causal=causal,
     )
 
 
@@ -406,30 +405,6 @@ class TestNeuralOperatorForward:
         assert torch.isfinite(out).all()
 
 
-def test_neural_operator_kernel_len_follows_the_direction():
-    """A causal operator needs a kernel length; an offline one has none."""
-    with pytest.raises(ValueError, match='kernel_len'):
-        NeuralOperatorConfig(
-            sequence_length=SEQUENCE_LENGTH,
-            in_channels=IN_CHANNELS,
-            width=8,
-            n_layers=2,
-            modes=4,
-            kernel_len=None,
-            causal=True,
-        )
-    with pytest.raises(ValueError, match='kernel_len'):
-        NeuralOperatorConfig(
-            sequence_length=SEQUENCE_LENGTH,
-            in_channels=IN_CHANNELS,
-            width=8,
-            n_layers=2,
-            modes=4,
-            kernel_len=9,
-            causal=False,
-        )
-
-
 def test_neural_operator_rejects_modes_the_kernel_cannot_hold():
     """Modes past the kernel grid's (K + 1) // 2 would be dead parameters."""
     with pytest.raises(ValueError, match='modes 6 exceeds'):
@@ -440,7 +415,6 @@ def test_neural_operator_rejects_modes_the_kernel_cannot_hold():
             n_layers=2,
             modes=6,
             kernel_len=9,
-            causal=True,
         )
 
 

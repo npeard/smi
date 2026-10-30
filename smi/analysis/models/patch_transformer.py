@@ -22,6 +22,8 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional
 
+from .base import SequenceModel
+
 logger = logging.getLogger(__name__)
 
 
@@ -168,7 +170,7 @@ class TransformerLayer(nn.Module):
         return x + self.dropout(self.ffn(self.norm2(x)))
 
 
-class PatchTransformer(nn.Module):
+class PatchTransformer(SequenceModel):
     """Patch-token Transformer with banded attention and per-sample output.
 
     Geometry, with P = patch_len, S = stride, N = n_layers * attention_span.
@@ -272,6 +274,12 @@ class PatchTransformer(nn.Module):
         if c.causal:
             return (n + 1) * c.stride + c.patch_len - 1
         return 2 * n * c.stride + c.patch_len
+
+    @property
+    @torch.jit.unused
+    def causal(self) -> bool:
+        """Chosen by the config."""
+        return self.config.causal
 
     @property
     @torch.jit.unused
