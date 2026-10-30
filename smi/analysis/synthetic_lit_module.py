@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import logging
+from collections.abc import Callable
 from typing import Any, override
 
 import torch
@@ -26,6 +27,34 @@ NORM_STATS_SEED = 0
 # seed, because Lightning runs the validation hook before epoch 0 and after each.
 VAL_SEED = 42
 TEST_SEED = 4242
+
+
+class HeldOutReplay:
+    """Simulate a held-out batch once, then replay it on later epochs.
+
+    A held-out batch is a pure function of its generator's state and the
+    request, so it is keyed by both and the generator is left in the state the
+    simulation would have left it: replay is indistinguishable from
+    re-simulating, whatever mix of cached and new batches an epoch asks for
+    (Lightning's sanity check runs only the first few). The training stream
+    (generator None) is never cached. Memory: every distinct batch stays on
+    the device, val_steps * B * (C + 2) * L * 4 bytes for validation (52 MB at
+    20 steps of 32 three-channel 4096-sample shots).
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[tuple, tuple[Any, torch.Tensor]] = {}
+
+    def __call__(
+        self, generator: torch.Generator, request: tuple, simulate: Callable[[], Any]
+    ) -> Any:
+        """``simulate()``'s result for ``generator``'s current state and ``request``."""
+        key = (generator.get_state().numpy().tobytes(), *request)
+        if key not in self._cache:
+            self._cache[key] = (simulate(), generator.get_state())
+        out, state_after = self._cache[key]
+        generator.set_state(state_after)
+        return out
 
 
 def random_crop(
@@ -142,6 +171,7 @@ class SyntheticLitModule(LitModule):
         )
         self.steps_per_epoch = steps_per_epoch
         self.train_crop_length = train_crop_length
+        self._held_out_replay = HeldOutReplay()
         self.save_hyperparameters(ignore=['model', 'restoring_checkpoint'])
         logger.info(f'SyntheticLitModule sim config {self.sim_config.hash()}')
 
@@ -182,13 +212,21 @@ class SyntheticLitModule(LitModule):
             generator: Generator on ``self.device``, or None for the global RNG.
             crop_length: Window length per shot; None keeps the full shot.
         """
-        batch = simulate_batch(self.sim_config, batch_size, self.device, generator)
-        return random_crop(
-            crop_length,
-            batch.signals,
-            batch.velocity,
-            batch.displacement,
-            generator=generator,
+
+        def simulate() -> tuple[torch.Tensor, ...]:
+            batch = simulate_batch(self.sim_config, batch_size, self.device, generator)
+            return random_crop(
+                crop_length,
+                batch.signals,
+                batch.velocity,
+                batch.displacement,
+                generator=generator,
+            )
+
+        if generator is None:
+            return simulate()
+        return self._held_out_replay(
+            generator, (batch_size, crop_length, self.device), simulate
         )
 
     @override

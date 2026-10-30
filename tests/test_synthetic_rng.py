@@ -15,7 +15,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from smi.analysis.ensemble import SyntheticEnsembleModule
-from smi.analysis.synthetic_lit_module import SyntheticIndexDataset, SyntheticLitModule
+from smi.analysis.synthetic_lit_module import (
+    VAL_SEED,
+    SyntheticIndexDataset,
+    SyntheticLitModule,
+)
 from tests._devices import devices
 from tests._sims import WAVELENGTHS_UM, michelson_sim
 
@@ -182,3 +186,26 @@ def test_no_global_reseed_in_construction_or_eval_hooks(make, method, monkeypatc
     trainer.validate(module, loader, verbose=False)
     if isinstance(module, SyntheticLitModule):
         trainer.test(module, loader, verbose=False)
+
+
+def test_replayed_held_out_batches_are_the_simulated_ones():
+    """A sanity-check-sized prefix is cached, then a longer epoch extends it.
+
+    Replay must leave the generator where simulation would have, or the first
+    uncached batch after a cached prefix would repeat the stream's start.
+    """
+
+    def epoch(module, n_batches: int) -> list[torch.Tensor]:
+        gen = torch.Generator().manual_seed(VAL_SEED)
+        return [
+            module._generate_synthetic_batch(BATCH, gen, CROP)[0]
+            for _ in range(n_batches)
+        ]
+
+    replaying = _lit_module()
+    epoch(replaying, 2)
+    replayed = epoch(replaying, 3)
+    simulated = epoch(_lit_module(), 3)
+    for a, b in zip(replayed, simulated, strict=True):
+        assert torch.equal(a, b)
+    assert not torch.equal(replayed[2], replayed[0])

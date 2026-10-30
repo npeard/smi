@@ -44,6 +44,7 @@ from smi.analysis.synthetic_lit_module import (
     NORM_STATS_SEED,
     NORM_STATS_SHOTS,
     VAL_SEED,
+    HeldOutReplay,
 )
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
@@ -585,13 +586,23 @@ class SyntheticEnsembleModule(EnsembleModule):
             **ensemble_kwargs,
         )
         self.sim_config = sim_config
+        self._held_out_replay = HeldOutReplay()
 
     def _shared_batch(
         self, batch: Tensor, generator: torch.Generator | None
     ) -> tuple[Tensor, Tensor, Tensor]:
-        """Simulate one synthetic batch (shared across all members) on-device."""
-        out = simulate_batch(self.sim_config, len(batch), self.device, generator)
-        return out.signals, out.velocity, out.displacement
+        """Simulate one synthetic batch (shared across all members) on-device.
+
+        A seeded (validation) batch is simulated once and replayed after.
+        """
+
+        def simulate() -> tuple[Tensor, Tensor, Tensor]:
+            out = simulate_batch(self.sim_config, len(batch), self.device, generator)
+            return out.signals, out.velocity, out.displacement
+
+        if generator is None:
+            return simulate()
+        return self._held_out_replay(generator, (len(batch), self.device), simulate)
 
     @override
     def training_step(self, batch: Tensor, batch_idx: int) -> Tensor:
