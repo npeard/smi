@@ -54,6 +54,46 @@ def sign_invariant_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tenso
     return torch.minimum(plus, minus)
 
 
+def best_sign(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Per-shot global sign s in {+1, -1} minimizing ``||s * pred - target||``.
+
+    Args:
+        pred: Predicted velocity, ``[batch, length]``.
+        target: Ground-truth velocity, same shape.
+
+    Returns:
+        ``[batch, 1]`` signs, detached: the choice carries no gradient, the
+        chosen branch does.
+    """
+    # sign(pred . target); ties go to +1.
+    dot = (pred * target).sum(dim=-1, keepdim=True).detach()
+    return torch.where(dot >= 0, 1.0, -1.0).to(pred.dtype)
+
+
+def apply_best_sign(
+    velocity_hat: torch.Tensor,
+    displacement_hat: torch.Tensor,
+    velocity_target: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Flip each shot's velocity and displacement prediction by one shared sign.
+
+    The sign is chosen on velocity, the quantity the model is trained on;
+    displacement is its integral, so it must follow the same choice rather
+    than pick its own. Both training losses (``LitModule`` and the vmap
+    ensemble) call this, so the choice lives in one place.
+
+    Args:
+        velocity_hat: Predicted velocity, ``[batch, length]``.
+        displacement_hat: Predicted displacement, same shape.
+        velocity_target: Ground-truth velocity, same shape.
+
+    Returns:
+        ``(sign * velocity_hat, sign * displacement_hat)``.
+    """
+    sign = best_sign(velocity_hat, velocity_target)
+    return sign * velocity_hat, sign * displacement_hat
+
+
 def displacement_from_velocity(velocity: torch.Tensor, dt_ms: float) -> torch.Tensor:
     """Integrate a velocity waveform to displacement in um.
 

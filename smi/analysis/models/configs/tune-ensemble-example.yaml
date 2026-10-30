@@ -32,6 +32,7 @@ training:
 loss:
   velocity_loss_weight: 1.0
   displacement_loss_weight: 0.1
+  sign_invariant: false
 
 synthetic:
   use_synthetic_training: true

@@ -34,6 +34,7 @@ loss:
   dynamic: false # enable dynamic loss weighting, overrides weights below, usually not better than fixed weights
   velocity_loss_weight: 1.0
   displacement_loss_weight: [0, 0.1]
+  sign_invariant: false
 
 data:
   data_dir: "./analysis/data"

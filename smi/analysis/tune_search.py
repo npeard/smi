@@ -217,6 +217,7 @@ def _train_ensemble(config: dict[str, dict[str, Any]]) -> None:
         ),
         dropouts=ensemble.get('dropouts'),
         per_member_lr=ensemble.get('per_member_lr'),
+        sign_invariant=bool(loss['sign_invariant']),
     )
     batch_size = int(training['batch_size'])
 

@@ -285,6 +285,7 @@ def test_full_model_causal_with_baked_normalization():
             'dynamic': False,
             'velocity_loss_weight': 1.0,
             'displacement_loss_weight': 1.0,
+            'sign_invariant': False,
         },
         training_hparams={'target': 'velocity'},
         data_hparams={},

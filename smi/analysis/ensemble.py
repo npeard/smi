@@ -37,6 +37,7 @@ import torch
 from torch import Tensor, nn
 from torch.func import functional_call, stack_module_state
 
+from smi.analysis.metrics import apply_best_sign
 from smi.analysis.models.base import Model
 from smi.analysis.models.factory import create_model
 from smi.analysis.synthetic_lit_module import NORM_STATS_SEED, NORM_STATS_SHOTS
@@ -54,6 +55,7 @@ def physics_loss(
     target: str,
     velocity_loss_weight: float,
     displacement_loss_weight: float,
+    sign_invariant: bool,
 ) -> dict[str, Tensor]:
     """Physics-informed velocity/displacement loss for a single member.
 
@@ -71,6 +73,8 @@ def physics_loss(
         target: Either ``'velocity'`` or ``'displacement'``.
         velocity_loss_weight: Weight on the velocity MSE term.
         displacement_loss_weight: Weight on the displacement MSE term.
+        sign_invariant: Score each shot under its better global sign (see
+            :func:`smi.analysis.metrics.apply_best_sign`).
 
     Returns:
         Dict with keys ``'velocity'``, ``'displacement'``, ``'total_unweighted'``
@@ -90,6 +94,11 @@ def physics_loss(
         velocity_hat = CoilDriver.derivative_displacement(displacement_hat, sample_rate)
     else:
         raise ValueError(f'Unknown target: {target}')
+
+    if sign_invariant:
+        velocity_hat, displacement_hat = apply_best_sign(
+            velocity_hat, displacement_hat, velocity_target
+        )
 
     # No unit conversion here: velocity is already um/ms as stored (converted
     # once at the CoilDriver boundary), matching LitModule.loss_function.
@@ -187,6 +196,8 @@ class EnsembleModule(lightning_module.LightningModule):
         per_member_lr: Optional per-member learning rate list (length ``K``).
             When provided, manual optimization with a per-member-scaled Adam
             update is used instead of the shared-lr optimizer.
+        sign_invariant: Score each shot under its better global sign (required,
+            the same flag as ``loss.sign_invariant`` for ``LitModule``).
     """
 
     def __init__(
@@ -201,9 +212,11 @@ class EnsembleModule(lightning_module.LightningModule):
         per_member_lr: list[float] | None = None,
         *,
         norm_stats: dict[str, Tensor] | None,
+        sign_invariant: bool,
     ) -> None:
         super().__init__()
         self.norm_stats = norm_stats
+        self.sign_invariant = sign_invariant
         self.model_hparams = model_hparams
         self.seeds = list(seeds)
         self.num_members = len(self.seeds)
@@ -359,6 +372,7 @@ class EnsembleModule(lightning_module.LightningModule):
                 target=self.target,
                 velocity_loss_weight=float(self.velocity_weight_vec[i]),
                 displacement_loss_weight=float(self.displacement_weight_vec[i]),
+                sign_invariant=self.sign_invariant,
             )
             loss_dicts.append(loss_dict)
             totals.append(loss_dict['total'])

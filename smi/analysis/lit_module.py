@@ -25,7 +25,7 @@ except ImportError:
 
 from smi.analysis.features import default_registry
 from smi.analysis.features.normalization import NORMALIZATION_STATS
-from smi.analysis.metrics import velocity_rmse
+from smi.analysis.metrics import apply_best_sign, best_sign, velocity_rmse
 from smi.analysis.models.base import Model
 from smi.analysis.models.factory import create_model
 from smi.analysis.models.vicreg import VicRegLoss
@@ -105,6 +105,8 @@ class LitModule(lightning_module.LightningModule):
         if 'dynamic' not in self.loss_hparams:
             raise KeyError("'dynamic' key must be specified in loss_hparams config")
         self.dynamic_weighting = self.loss_hparams['dynamic']
+        # Required, no default: whether the loss forgives a per-shot global sign.
+        self.sign_invariant = bool(self.loss_hparams['sign_invariant'])
 
         if self.dynamic_weighting:
             # Initialize learnable weight parameters for homoscedastic uncertainty
@@ -348,6 +350,11 @@ class LitModule(lightning_module.LightningModule):
         else:
             raise ValueError(f'Unknown target: {self.target}')
 
+        if self.sign_invariant:
+            velocity_hat, displacement_hat = apply_best_sign(
+                velocity_hat, displacement_hat, velocity_target
+            )
+
         # No unit conversion here. Velocity is um/ms and displacement is um as
         # stored, converted once at the CoilDriver boundary, so the logged
         # velocity loss is the MSE of exactly the quantities predict_step
@@ -479,9 +486,20 @@ class LitModule(lightning_module.LightningModule):
 
         # RMSE in stored units, so a run is directly comparable to the
         # analytic baseline without a separate evaluation pass.
+        velocity_hat = self._velocity_prediction(prediction)
         self.log(
             'val/velocity_rmse_um_per_ms',
-            velocity_rmse(self._velocity_prediction(prediction), velocity_target),
+            velocity_rmse(velocity_hat, velocity_target),
+            sync_dist=torch.distributed.is_available()
+            and torch.distributed.is_initialized(),
+        )
+        # Logged beside the signed RMSE so a sign collapse is visible in the
+        # curves: signed stays near std(v) while this one keeps falling.
+        self.log(
+            'val/velocity_rmse_sign_invariant_um_per_ms',
+            velocity_rmse(
+                best_sign(velocity_hat, velocity_target) * velocity_hat, velocity_target
+            ),
             sync_dist=torch.distributed.is_available()
             and torch.distributed.is_initialized(),
         )

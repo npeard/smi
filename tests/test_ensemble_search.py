@@ -49,6 +49,7 @@ def test_synthetic_ensemble_reports_search_metric():
     module = SyntheticEnsembleModule(
         dict(MODEL_HPARAMS),
         seeds=[0, 1, 2],
+        sign_invariant=False,
         sim=dataclasses.asdict(
             SimConfig.noise_free(
                 wavelengths_um=(0.635, 0.6748, 0.515),

@@ -36,6 +36,7 @@ loss:
   dynamic: false
   velocity_loss_weight: 1.0
   displacement_loss_weight: 0.0
+  sign_invariant: false
 
 data:
   data_dir: "./analysis/data"

@@ -188,6 +188,7 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
             'dynamic': False,
             'velocity_loss_weight': 1.0,
             'displacement_loss_weight': 1.0,
+            'sign_invariant': False,
         },
         training_hparams={'target': 'velocity'},
         data_hparams={},

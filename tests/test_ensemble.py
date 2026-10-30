@@ -48,6 +48,7 @@ def _make_ensemble(**kwargs) -> EnsembleModule:
         target='velocity',
         lr=1e-3,
         norm_stats=None,
+        sign_invariant=False,
     )
     defaults.update(kwargs)
     return EnsembleModule(**defaults)
@@ -177,6 +178,7 @@ def test_physics_loss_matches_litmodule_logic():
         target='velocity',
         velocity_loss_weight=2.0,
         displacement_loss_weight=3.0,
+        sign_invariant=False,
     )
     expected = 2.0 * out['velocity'] + 3.0 * out['displacement']
     assert torch.allclose(out['total'], expected)
@@ -206,7 +208,9 @@ def test_synthetic_batch_sharing():
     # One batch, shared across an ensemble whose seq_len matches the batch.
     hparams = _tcn_hparams()
     hparams['sequence_length'] = signals.shape[-1]
-    ens = EnsembleModule(model_hparams=hparams, seeds=[0, 1, 2], norm_stats=None)
+    ens = EnsembleModule(
+        model_hparams=hparams, seeds=[0, 1, 2], norm_stats=None, sign_invariant=False
+    )
     out = ens(signals)
     assert out.shape == (K, BATCH, signals.shape[-1])
 
@@ -214,7 +218,11 @@ def test_synthetic_batch_sharing():
 def test_synthetic_ensemble_bakes_simulator_stats():
     """Members carry the same fixed stats as SyntheticLitModule, not identity."""
     ens = SyntheticEnsembleModule(
-        _tcn_hparams(), [0, 1], sim=dataclasses.asdict(_sim()), target='velocity'
+        _tcn_hparams(),
+        [0, 1],
+        sim=dataclasses.asdict(_sim()),
+        target='velocity',
+        sign_invariant=False,
     )
     expected = normalization_stats(_sim(), NORM_STATS_SHOTS, NORM_STATS_SEED)
     member = ens.best_member_model(0)
@@ -229,4 +237,22 @@ def test_synthetic_ensemble_rejects_displacement_target():
             [0, 1],
             sim=dataclasses.asdict(_sim()),
             target='displacement',
+            sign_invariant=False,
         )
+
+
+def test_physics_loss_sign_invariant_ignores_target_sign():
+    """The ensemble loss honours the same per-shot sign choice as LitModule."""
+    pred = torch.randn(BATCH, SEQ_LEN)
+    vel = torch.randn(BATCH, SEQ_LEN)
+    disp = torch.randn(BATCH, SEQ_LEN)
+    flip = torch.tensor([1.0, -1.0, 1.0, -1.0][:BATCH]).unsqueeze(1)
+    kwargs = dict(
+        target='velocity',
+        velocity_loss_weight=1.0,
+        displacement_loss_weight=1.0,
+        sign_invariant=True,
+    )
+    kept = physics_loss(pred, vel, disp, **kwargs)
+    flipped = physics_loss(pred, flip * vel, flip * disp, **kwargs)
+    torch.testing.assert_close(kept['total'], flipped['total'])
