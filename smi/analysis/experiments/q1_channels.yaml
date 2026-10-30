@@ -16,6 +16,8 @@ families:
   - {name: patchtransformer-offline-44k, config: ../models/configs/matched/patchtransformer-offline-44k.yaml}
   - {name: unettransformer-causal-44k, config: ../models/configs/matched/unettransformer-causal-44k.yaml}
   - {name: unettransformer-offline-44k, config: ../models/configs/matched/unettransformer-offline-44k.yaml}
+  - {name: neuraloperator-causal-44k, config: ../models/configs/matched/neuraloperator-causal-44k.yaml}
+  - {name: neuraloperator-offline-44k, config: ../models/configs/matched/neuraloperator-offline-44k.yaml}
 
 channel_subsets:
   - [0.635]

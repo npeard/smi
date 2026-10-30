@@ -140,7 +140,8 @@ Inside `smi/`:
     and the **generated, version-controlled** per-feature mean/std
     (`normalization.py` - do not hand-edit; regenerate with the script).
   - `models/` - architectures (`tcn`, `scnn`, `tcan`, `lstm`, `mamba`,
-    `barland_cnn`) plus `base.py`, which defines `Model(nn.Module)` (the
+    `barland_cnn`, `patch_transformer`, `unet_transformer`,
+    `neural_operator`) plus `base.py`, which defines `Model(nn.Module)` (the
     normalization wrapper) and `FeatureMap`.
   - `datamodule.py` - `VelocityDataModule` (LightningDataModule).
   - `datasets.py`, `lit_module.py`, `synthetic_lit_module.py`, `training_interface.py`.

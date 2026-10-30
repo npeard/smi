@@ -17,7 +17,11 @@ from smi.analysis.models.base import Model
 from smi.analysis.models.factory import MODEL_REGISTRY, create_model, is_causal
 from smi.analysis.training_interface import MIN_PATIENCE_CHECKS, TrainingConfig
 from smi.synthetic.forward import SimConfig
-from tests.test_receptive_field import measure_worst_phase_field, phase_period
+from tests.test_receptive_field import (
+    measure_worst_phase_field,
+    phase_period,
+    roundoff_tolerance,
+)
 
 MATCHED = (
     Path(__file__).parents[1] / 'smi' / 'analysis' / 'models' / 'configs' / 'matched'
@@ -132,11 +136,14 @@ def test_forward_preserves_length(path):
         assert model(x).shape == (1, 1, 512)
 
 
+# The offline neural operator is excluded by its unbounded marker: its field
+# is the whole input (tests/test_receptive_field.py checks that directly).
 CONV_ATTENTION = [
     p
     for p in CONFIGS
     if _load(p)['model']['type']
-    in ('TCN', 'SCNN', 'TCAN', 'PatchTransformer', 'UNetTransformer')
+    in ('TCN', 'SCNN', 'TCAN', 'PatchTransformer', 'UNetTransformer', 'NeuralOperator')
+    and _load(p)['model'].get('receptive_field') != 'unbounded'
 ]
 
 
@@ -150,7 +157,11 @@ def test_measured_field_agrees_with_property(path):
     hparams = _load(path)['model']
     model = create_model(hparams)
     measured, sees_future = measure_worst_phase_field(
-        model, hparams['in_channels'], length=2048, period=phase_period(hparams)
+        model,
+        hparams['in_channels'],
+        length=2048,
+        period=phase_period(hparams),
+        rel_tol=roundoff_tolerance(hparams),
     )
     assert measured == model.receptive_field
     assert sees_future == (not is_causal(hparams))

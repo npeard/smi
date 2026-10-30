@@ -20,7 +20,7 @@ from smi.analysis.models.mamba import Mamba, MambaConfig
 from smi.analysis.models.scnn import SCNN, SCNNConfig
 from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
-from tests.test_receptive_field import phase_period
+from tests.test_receptive_field import phase_period, roundoff_tolerance
 
 SEQUENCE_LENGTH = 256
 IN_CHANNELS = 3
@@ -459,6 +459,16 @@ REGISTRY_HPARAMS: dict[str, dict] = {
         dropout=0.0,
         causal=True,
     ),
+    'NeuralOperator': dict(
+        type='NeuralOperator',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        width=8,
+        n_layers=2,
+        modes=4,
+        kernel_len=9,
+        causal=True,
+    ),
     'Mamba': dict(
         type='Mamba',
         sequence_length=SEQUENCE_LENGTH,
@@ -474,6 +484,11 @@ REGISTRY_HPARAMS: dict[str, dict] = {
 LSTM_BIDIRECTIONAL = {**REGISTRY_HPARAMS['LSTM'], 'bidirectional': True}
 PATCH_OFFLINE = {**REGISTRY_HPARAMS['PatchTransformer'], 'causal': False}
 UNET_OFFLINE = {**REGISTRY_HPARAMS['UNetTransformer'], 'causal': False}
+NEURAL_OPERATOR_OFFLINE = {
+    **REGISTRY_HPARAMS['NeuralOperator'],
+    'kernel_len': None,
+    'causal': False,
+}
 
 
 def test_registry_hparams_cover_every_model_type():
@@ -482,12 +497,19 @@ def test_registry_hparams_cover_every_model_type():
 
 @pytest.mark.parametrize(
     'hparams',
-    [*REGISTRY_HPARAMS.values(), LSTM_BIDIRECTIONAL, PATCH_OFFLINE, UNET_OFFLINE],
+    [
+        *REGISTRY_HPARAMS.values(),
+        LSTM_BIDIRECTIONAL,
+        PATCH_OFFLINE,
+        UNET_OFFLINE,
+        NEURAL_OPERATOR_OFFLINE,
+    ],
     ids=[
         *REGISTRY_HPARAMS,
         'LSTM-bidirectional',
         'PatchTransformer-offline',
         'UNetTransformer-offline',
+        'NeuralOperator-offline',
     ],
 )
 def test_is_causal_agrees_with_the_empirical_probe(hparams):
@@ -496,7 +518,7 @@ def test_is_causal_agrees_with_the_empirical_probe(hparams):
         model, STEP_POSITIONS, SEQUENCE_LENGTH, IN_CHANNELS, BLOCK_SIZE
     )
     rate, _, _ = _causal_violation_rate(
-        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, VIOLATION_THRESHOLD
+        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, roundoff_tolerance(hparams)
     )
     assert is_causal(hparams) == (rate == 0.0)
 
@@ -527,14 +549,18 @@ def test_step_positions_cover_every_phase(hparams):
     assert {s % period for s in STEP_POSITIONS} == set(range(period))
 
 
-@pytest.mark.parametrize('hparams', STRIDED, ids=STRIDED_IDS)
-def test_wrapped_strided_model_leaks_only_when_offline(hparams):
+@pytest.mark.parametrize(
+    'hparams',
+    [*STRIDED, REGISTRY_HPARAMS['NeuralOperator'], NEURAL_OPERATOR_OFFLINE],
+    ids=[*STRIDED_IDS, 'NeuralOperator-causal', 'NeuralOperator-offline'],
+)
+def test_wrapped_two_way_model_leaks_only_when_offline(hparams):
     """The probe runs on the full ``Model``, not the inner network.
 
-    Tokenisation or pooling, positional bias, skip connections and the
-    per-sample upsampling are each a place a future sample could enter; only
-    the wrapped model shows them all. Non-trivial normalization stats make
-    sure the baked buffers are included.
+    Tokenisation or pooling, positional bias, skip connections, the
+    per-sample upsampling and the FFT padding are each a place a future
+    sample could enter; only the wrapped model shows them all. Non-trivial
+    normalization stats make sure the baked buffers are included.
     """
     model = Model(
         create_model(hparams),
@@ -547,7 +573,7 @@ def test_wrapped_strided_model_leaks_only_when_offline(hparams):
         model, STEP_POSITIONS, SEQUENCE_LENGTH, IN_CHANNELS, BLOCK_SIZE
     )
     rate, n_violations, _ = _causal_violation_rate(
-        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, VIOLATION_THRESHOLD
+        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, roundoff_tolerance(hparams)
     )
     if hparams['causal']:
         assert n_violations == 0

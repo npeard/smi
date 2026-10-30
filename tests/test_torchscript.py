@@ -194,6 +194,36 @@ MODEL_CONFIGS = [
         SEQ_LEN - 3,
     ),
     (
+        'NeuralOperator-offline',
+        dict(
+            type='NeuralOperator',
+            sequence_length=SEQ_LEN,
+            in_channels=IN_CHANNELS,
+            width=8,
+            n_layers=2,
+            modes=4,
+            kernel_len=None,
+            causal=False,
+        ),
+        # Odd: the rfft/irfft lengths must round-trip in the scripted graph.
+        SEQ_LEN - 3,
+    ),
+    (
+        # Last of its type, so test_precision's by-type fixture is the causal one.
+        'NeuralOperator-causal',
+        dict(
+            type='NeuralOperator',
+            sequence_length=SEQ_LEN,
+            in_channels=IN_CHANNELS,
+            width=8,
+            n_layers=2,
+            modes=4,
+            kernel_len=9,
+            causal=True,
+        ),
+        SEQ_LEN - 3,
+    ),
+    (
         'Mamba',
         dict(
             type='Mamba',

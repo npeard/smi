@@ -1,5 +1,6 @@
 # unettransformer-offline-19k: matched budget of 19,329 parameters (+/-10%, test_matched_configs.py).
-# Offline column: symmetric field of 85 samples, -6.6% of Barland's 91:
+# Offline column: total width 81..85 over phase, right-heavy by 8..12 samples
+# (even K); the worst phase, 85, is -6.6% of Barland's 91:
 # (ceil((K - 1) G / P) + 1 + 2N) P + (K - 1) S = (3 + 1 + 12) * 4 + 3 * 7,
 # with the causal variant's K, pool and levels and N = 2 * 3. Span 3, not 6,
 # since both sides are attended; the window (7 tokens) and so the parameter

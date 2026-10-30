@@ -9,6 +9,7 @@ from .barland_cnn import BarlandCNN, BarlandCNNConfig
 from .lstm import LSTM, LSTMConfig
 from .mamba import Mamba, MambaConfig
 from .mlp import MLP, MLPConfig
+from .neural_operator import NeuralOperator, NeuralOperatorConfig
 from .patch_transformer import PatchTransformer, PatchTransformerConfig
 from .scnn import SCNN, SCNNConfig
 from .tcan import TCAN, TCANConfig
@@ -30,6 +31,7 @@ MODEL_REGISTRY: dict[str, tuple[type, type[nn.Module]]] = {
     'Mamba': (MambaConfig, Mamba),
     'PatchTransformer': (PatchTransformerConfig, PatchTransformer),
     'UNetTransformer': (UNetTransformerConfig, UNetTransformer),
+    'NeuralOperator': (NeuralOperatorConfig, NeuralOperator),
 }
 
 
@@ -72,7 +74,9 @@ def create_model(model_hparams: dict[str, Any]) -> nn.Module:
 #: and Ridge are tabular baselines outside MODEL_REGISTRY.
 _NONCAUSAL_TYPES = frozenset({'SCNN', 'Barland', 'MLP', 'LightGBM', 'Ridge'})
 #: Model types built in both directions, chosen by their ``causal`` field.
-_CAUSAL_FLAG_TYPES = frozenset({'PatchTransformer', 'UNetTransformer'})
+_CAUSAL_FLAG_TYPES = frozenset(
+    {'PatchTransformer', 'UNetTransformer', 'NeuralOperator'}
+)
 
 
 def is_causal(model_hparams: dict[str, Any]) -> bool:
@@ -84,8 +88,8 @@ def is_causal(model_hparams: dict[str, Any]) -> bool:
 
     Args:
         model_hparams: Hyperparameters with a ``type`` key; an LSTM also needs
-            its ``bidirectional`` flag, a PatchTransformer or UNetTransformer
-            its ``causal`` flag.
+            its ``bidirectional`` flag, a type in ``_CAUSAL_FLAG_TYPES`` its
+            ``causal`` flag.
 
     Returns:
         True if the model is causal.

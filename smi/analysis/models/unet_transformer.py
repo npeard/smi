@@ -214,6 +214,9 @@ class UNetTransformer(nn.Module):
         holding an encoder footprint of P + (K - 1) S. Width, maximum:
         (ceil((K - 1) G / P) + 1 + 2N) P + (K - 1) S; the minimum is P less
         when P does not divide (K - 1) G, and equal otherwise.
+        Not symmetric about t when K is even: for the matched offline configs
+        (K = 4) the total width is 81..85 over phase, right-heavy by 8..12
+        samples.
 
         ``tests/test_receptive_field.py`` checks both against a gradient probe
         swept over the phase.

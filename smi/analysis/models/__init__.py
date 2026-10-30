@@ -8,6 +8,7 @@ from .cross_attention_block import CrossAttentionBlock
 from .lstm import LSTM
 from .mamba import Mamba
 from .mlp import MLP
+from .neural_operator import NeuralOperator
 from .patch_transformer import PatchTransformer
 from .scnn import SCNN
 from .sliding_window import SlidingWindowModel
@@ -27,6 +28,7 @@ __all__ = [
     'Chomp1d',
     'CrossAttentionBlock',
     'Mamba',
+    'NeuralOperator',
     'PatchTransformer',
     'SlidingWindowModel',
     'TemporalBlock',
