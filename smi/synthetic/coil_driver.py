@@ -422,6 +422,9 @@ class CoilDriver:
             Tuple of (complex displacement spectrum with the same shape as the
             input, 1-D frequency tensor in Hz).
         """
+        if not voltage_waveform.is_floating_point():
+            # fftfreq has no integer dtype; float32 keeps the MPS path usable.
+            voltage_waveform = voltage_waveform.to(torch.float32)
         n = voltage_waveform.shape[-1]
         # Stay in the input dtype (float32/complex64): MPS has no float64, and
         # promoting here would make the on-device path unusable there.

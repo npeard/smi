@@ -156,3 +156,18 @@ def test_torch_physics_is_float32_on_device(device):
     assert spectrum.dtype == torch.complex64
     assert freq.dtype == torch.float32
     assert velocity.device.type == tensor.device.type
+
+
+def test_integer_voltage_matches_its_float32_cast():
+    """Integer inputs (e.g. DAC codes) are promoted, not used as freq dtype."""
+    driver = CoilDriver()
+    codes = torch.from_numpy(np.round(100 * _make_batch()).astype(np.int32))
+    velocity, displacement = driver.get_velocity_and_displacement_torch(
+        codes, SAMPLE_RATE
+    )
+    expected_v, expected_d = driver.get_velocity_and_displacement_torch(
+        codes.float(), SAMPLE_RATE
+    )
+    assert velocity.dtype == displacement.dtype == torch.float32
+    torch.testing.assert_close(velocity, expected_v)
+    torch.testing.assert_close(displacement, expected_d)
