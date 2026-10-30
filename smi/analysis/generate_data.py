@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
+from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.redpitaya.manager import RedPitayaManager
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
@@ -52,7 +53,8 @@ def generate_synthetic_test_data(
     batch_size: int = 64,
     start_freq: float = 1.0,
     end_freq: float = 1000.0,
-    max_displacement_um: float = 5.0,
+    *,
+    drive_gain: float,
 ) -> DataLoader:
     """Generate synthetic test data and return as a DataLoader.
 
@@ -65,7 +67,7 @@ def generate_synthetic_test_data(
         batch_size: Batch size for the returned DataLoader
         start_freq: Lower bound of displacement spectrum frequency range (Hz)
         end_freq: Upper bound of displacement spectrum frequency range (Hz)
-        max_displacement_um: Peak displacement amplitude in microns
+        drive_gain: Drive voltage scale relative to the rig's waveform
         seed: Random seed for reproducibility
 
     Returns:
@@ -81,35 +83,15 @@ def generate_synthetic_test_data(
         [w / 1000.0 for w in wavelengths_nm], dtype=torch.float32
     ).view(1, -1, 1)
 
-    num_channels = len(wavelengths_nm)
-
-    # Generate all samples
-    displacement = waveform.generate_batch_torch(num_samples, 'cpu')
-
-    # Apply random amplitude scaling per sample
-    scale = torch.rand(num_samples, 1) * max_displacement_um
-    displacement = displacement * scale
-
-    # Normalize each waveform to have unit max amplitude before scaling
-    max_abs = displacement.abs().amax(dim=-1, keepdim=True).clamp(min=1e-10)
-    displacement = displacement / max_abs * scale
-
-    # Random interferometer phases per sample per channel
-    random_phases = torch.rand(num_samples, num_channels, 1) * 2.0 * torch.pi
-
-    # Compute interferometer signals
-    signals = torch.cos(
-        2.0 * torch.pi / wavelengths_um * 2.0 * displacement.unsqueeze(1)
-        + random_phases
+    signals, velocity, displacement = SyntheticLitModule.generate_synthetic_batch(
+        num_samples,
+        torch.device('cpu'),
+        waveform,
+        wavelengths_um,
+        CoilDriver(),
+        drive_gain,
+        acq_sample_rate,
     )
-
-    # Per-sample per-channel z-score normalization
-    signals_mean = signals.mean(dim=-1, keepdim=True)
-    signals_std = signals.std(dim=-1, keepdim=True).clamp(min=1e-8)
-    signals = (signals - signals_mean) / signals_std
-
-    # Compute velocity (um/ms) from displacement (um)
-    velocity = CoilDriver.derivative_displacement(displacement, acq_sample_rate)
 
     dataset = TensorDataset(signals, velocity, displacement)
     return DataLoader(dataset, batch_size=batch_size, shuffle=False)

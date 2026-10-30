@@ -11,6 +11,7 @@ from torch.func import functional_call
 from smi.analysis.ensemble import EnsembleModule, physics_loss
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.synthetic.coil_driver import CoilDriver
+from smi.synthetic.forward import NOMINAL_DRIVE_GAIN
 from smi.synthetic.waveform import Waveform
 
 K = 3
@@ -181,7 +182,7 @@ def test_synthetic_batch_sharing():
         waveform=waveform,
         wavelengths_um=wavelengths_um,
         coil=CoilDriver(),
-        max_drive_v=1.0,
+        drive_gain=NOMINAL_DRIVE_GAIN,
         acq_sample_rate=Waveform.SAMPLE_RATE_DEC1 / 256,
     )
     assert signals.shape[0] == BATCH

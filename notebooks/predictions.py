@@ -102,14 +102,14 @@ def _(
         )
         _start_freq = ckpt_hparams.get('start_freq', 1.0)
         _end_freq = ckpt_hparams.get('end_freq', 1000.0)
-        _max_displacement_um = ckpt_hparams.get('max_displacement_um', 5.0)
+        _drive_gain = ckpt_hparams['drive_gain']
         test_loader = generate_synthetic_test_data(
             num_samples=batch_size.value * 4,
             wavelengths_nm=_wavelengths_nm,
             batch_size=batch_size.value,
             start_freq=_start_freq,
             end_freq=_end_freq,
-            max_displacement_um=_max_displacement_um,
+            drive_gain=_drive_gain,
         )
     else:
         _, _, test_loader = get_data_loaders(

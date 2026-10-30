@@ -444,6 +444,49 @@ class CoilDriver:
         )
         return velocity.to(out_dtype), displacement.to(out_dtype)
 
+    def precompensate_torch(
+        self, spectrum_voltage: torch.Tensor, sample_rate: float, min_freq: float
+    ) -> torch.Tensor:
+        """Batched float32 torch port of the ``normalize_gain=True`` branch of
+        :meth:`sample`, without its random U(0, 1) power scaling.
+
+        Divides the waveform's spectrum by the velocity transfer function
+        (normalized by its magnitude at ``min_freq`` and the same extra factor
+        of 10), so the resulting drive voltage produces a velocity spectrum
+        shaped like the input. Bins where the velocity transfer is zero (DC)
+        are set to 1, exactly as in the numpy branch.
+
+        Args:
+            spectrum_voltage: Real ``(batch, time)`` waveform whose FFT is the
+                spectrum to pre-compensate (``Waveform.generate_batch_torch``
+                output).
+            sample_rate: Rate of the waveform's own time base (Hz); on the
+                rig this is the generator rate, as ``sample`` reads it from ``t``.
+            min_freq: Lowest valid waveform frequency (Hz), the normalization
+                reference (``waveform.valid_freqs[0]`` in :meth:`sample`).
+
+        Returns:
+            Pre-compensated drive voltage, same shape/dtype, circularly shifted
+            with ``fftshift`` as :meth:`sample` does.
+        """
+        n = spectrum_voltage.shape[-1]
+        freq = torch.fft.fftfreq(
+            n, d=1.0 / sample_rate, dtype=torch.float32, device=spectrum_voltage.device
+        )
+        velocity_transfer = self.get_transfer_function_torch(freq) * (2j * np.pi * freq)
+        ref = torch.tensor(
+            [min_freq], dtype=torch.float32, device=spectrum_voltage.device
+        )
+        scaling_factor = (self.get_transfer_function_torch(ref) * 2 * np.pi * ref).abs()
+        velocity_transfer = velocity_transfer / (scaling_factor * 10)
+
+        spectrum = torch.fft.fft(spectrum_voltage, dim=-1, norm='ortho')
+        nonzero = velocity_transfer != 0
+        out = torch.ones_like(spectrum)
+        out[:, nonzero] = spectrum[:, nonzero] / velocity_transfer[nonzero]
+        voltage = torch.fft.ifft(out, dim=-1, norm='ortho').real
+        return torch.fft.fftshift(voltage, dim=-1)
+
     @staticmethod
     def integrate_velocity(
         velocity_waveform: np.ndarray | torch.Tensor, sample_rate: float

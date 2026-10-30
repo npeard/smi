@@ -63,7 +63,7 @@ class SyntheticLitModule(LitModule):
         end_freq: float = 1000.0,
         steps_per_epoch: int = 1000,
         *,
-        max_drive_v: float,
+        drive_gain: float,
     ):
         """Initialize SyntheticLitModule with hyperparameter configuration.
 
@@ -78,8 +78,8 @@ class SyntheticLitModule(LitModule):
         start_freq: Lower bound of displacement spectrum frequency range (Hz)
         end_freq: Upper bound of displacement spectrum frequency range (Hz)
         steps_per_epoch: Number of training batches per epoch
-        max_drive_v: Peak drive voltage ceiling (V); see
-            ``smi.synthetic.forward.MAX_DRIVE_V``
+        drive_gain: Drive voltage scale relative to the rig's pre-compensated
+            waveform; see ``smi.synthetic.forward.NOMINAL_DRIVE_GAIN``
         """
         super().__init__(
             model_hparams=model_hparams,
@@ -99,7 +99,7 @@ class SyntheticLitModule(LitModule):
         )
 
         self.steps_per_epoch = steps_per_epoch
-        self.max_drive_v = max_drive_v
+        self.drive_gain = drive_gain
         self.coil = CoilDriver()
         self.acq_sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
 
@@ -141,7 +141,7 @@ class SyntheticLitModule(LitModule):
         waveform: Waveform,
         wavelengths_um: torch.Tensor,
         coil: CoilDriver,
-        max_drive_v: float,
+        drive_gain: float,
         acq_sample_rate: float,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Generate one batch of synthetic interferometer data on the given device.
@@ -159,7 +159,7 @@ class SyntheticLitModule(LitModule):
             wavelengths_um: Interferometer wavelengths in microns, shape
                 ``[1, C, 1]`` for broadcasting with ``[B, 1, L]`` displacement.
             coil: Speaker transfer function turning drive voltage into motion.
-            max_drive_v: Peak drive voltage ceiling (V).
+            drive_gain: Drive voltage scale relative to the rig's waveform.
             acq_sample_rate: Acquisition sample rate (Hz) used to derive velocity.
 
         Returns:
@@ -170,7 +170,7 @@ class SyntheticLitModule(LitModule):
         """
         # 1. Drive voltage through the coil, as on the rig
         _, velocity, displacement = sample_trajectory(
-            batch_size, waveform, coil, max_drive_v, acq_sample_rate, device, None
+            batch_size, waveform, coil, drive_gain, acq_sample_rate, device, None
         )
 
         # 2. Random interferometer phases per sample per channel [B, C, 1]
@@ -217,7 +217,7 @@ class SyntheticLitModule(LitModule):
             self.waveform,
             self.wavelengths_um,
             self.coil,
-            self.max_drive_v,
+            self.drive_gain,
             self.acq_sample_rate,
         )
 

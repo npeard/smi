@@ -258,7 +258,7 @@ class TrainingInterface:
                 start_freq=syn.get('start_freq', 1.0),
                 end_freq=syn.get('end_freq', 1000.0),
                 steps_per_epoch=syn['steps_per_epoch'],
-                max_drive_v=syn['max_drive_v'],
+                drive_gain=syn['drive_gain'],
             )
 
         return LitModule(**common_kwargs)

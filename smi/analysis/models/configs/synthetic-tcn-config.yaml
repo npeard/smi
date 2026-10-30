@@ -48,4 +48,4 @@ synthetic:
   end_freq: 1000
   steps_per_epoch: 1000
   val_steps: 200
-  max_drive_v: 1.0
+  drive_gain: 0.002879
