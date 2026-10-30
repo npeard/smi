@@ -21,7 +21,7 @@ def _():
     from torch.utils.data import DataLoader
 
     from smi.analysis.datasets import VelocityDataset, get_data_loaders
-    from smi.analysis.lit_module import LitModule
+    from smi.analysis.evaluate import load_lit_module
     from smi.redpitaya.redpitaya_config import RedPitayaConfig
     from smi.synthetic.forward import SimConfig
     from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
@@ -33,10 +33,10 @@ def _():
         CHANNEL_NAMES,
         DEFAULT_ROOT,
         DataLoader,
-        LitModule,
         SimConfig,
         VelocityDataset,
         get_data_loaders,
+        load_lit_module,
         load_or_create,
     )
 
@@ -74,19 +74,12 @@ def _(best_fiber_model, mmfiber_datapath, mo):
 
 
 @app.cell
-def _(LitModule, checkpoint_path, mo, torch):
+def _(checkpoint_path, load_lit_module, mo):
     mo.stop(not checkpoint_path.value, mo.md('Enter a checkpoint path above.'))
-    _map_location = 'cpu' if not torch.cuda.is_available() else None
-    # Manual loading to strip torch.compile _orig_mod. key prefixes
-    _ckpt = torch.load(
-        checkpoint_path.value, weights_only=False, map_location=_map_location
-    )
-    ckpt_hparams = _ckpt.get('hyper_parameters', {})
-    _state_dict = {
-        k.replace('._orig_mod.', '.'): v for k, v in _ckpt['state_dict'].items()
-    }
-    model = LitModule(**ckpt_hparams)
-    model.load_state_dict(_state_dict)
+    # The evaluator's loader rebuilds the checkpoint's own wrapped model, so the
+    # normalization baked into its buffers is used, never re-derived.
+    model = load_lit_module(checkpoint_path.value)
+    ckpt_hparams = dict(model.hparams)
     in_channels = model.hparams['model_hparams']['in_channels']
     return ckpt_hparams, in_channels, model
 

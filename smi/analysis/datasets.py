@@ -8,10 +8,50 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from smi.analysis.baseline_fit import PD_WAVELENGTHS_UM
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
+from smi.synthetic.frozen import RIG_WAVELENGTH_TOL_UM, pd_keys
 
 logger = logging.getLogger(__name__)
+
+
+def file_pd_channels(f: h5py.File) -> dict[str, float]:
+    """Photodiode dataset key -> laser wavelength (um) for an open file.
+
+    Frozen synthetic sets record their wavelengths in the ``pd_wavelengths_um``
+    attr; acquired files do not, and are the rig's three lasers by
+    construction, so they fall back to the rig constants.
+    """
+    if 'pd_wavelengths_um' not in f.attrs:
+        return dict(PD_WAVELENGTHS_UM)
+    wavelengths = tuple(float(w) for w in f.attrs['pd_wavelengths_um'])
+    return dict(zip(pd_keys(wavelengths), wavelengths, strict=True))
+
+
+def select_pd_keys(f: h5py.File, wavelengths_um: tuple[float, ...]) -> list[str]:
+    """Photodiode keys for the requested wavelengths, in the requested order.
+
+    Matching is by wavelength (to ``RIG_WAVELENGTH_TOL_UM``), not by position:
+    a model trained on a channel subset must see exactly those channels.
+
+    Raises:
+        ValueError: If a wavelength matches no channel of the file.
+    """
+    channels = file_pd_channels(f)
+    keys = []
+    for wavelength in wavelengths_um:
+        matches = [
+            k
+            for k, w in channels.items()
+            if abs(w - wavelength) <= RIG_WAVELENGTH_TOL_UM
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f'{wavelength} um matches {matches} among file channels {channels}'
+            )
+        keys.append(matches[0])
+    return keys
 
 
 class VelocityDataset(Dataset):
@@ -40,10 +80,16 @@ class VelocityDataset(Dataset):
         file_path: Path to HDF5 file
         num_pd_channels: Number of photodiode channels to use (1-3)
         cache_size: Number of items to cache in memory (0 for no caching)
+        wavelengths_um: If set, select channels by wavelength instead of taking
+            the first ``num_pd_channels`` rig channels.
     """
 
     def __init__(
-        self, file_path: str | Path, num_pd_channels: int = 3, cache_size: int = 0
+        self,
+        file_path: str | Path,
+        num_pd_channels: int = 3,
+        cache_size: int = 0,
+        wavelengths_um: tuple[float, ...] | None = None,
     ):
         self.file_path = file_path
         self.num_pd_channels = min(max(1, num_pd_channels), 3)  # Ensure between 1 and 3
@@ -65,6 +111,8 @@ class VelocityDataset(Dataset):
 
         # Validate file and get dataset info
         with h5py.File(self.file_path, 'r') as f:
+            if wavelengths_um is not None:
+                self.pd_channel_keys = select_pd_keys(f, wavelengths_um)
             self._validate_file_structure(f)
             self.length = self._get_dataset_length(f)
 
@@ -196,6 +244,8 @@ class GPUResidentDataset(Dataset):
             never guesses a device.
         num_pd_channels: Number of photodiode channels to load (1-3).
         max_shots: If set, load only the first ``max_shots`` shots.
+        wavelengths_um: If set, select channels by wavelength instead of taking
+            the first ``num_pd_channels`` rig channels.
     """
 
     #: Shots per batched physics call during construction. See __init__.
@@ -207,15 +257,18 @@ class GPUResidentDataset(Dataset):
         device: torch.device | str,
         num_pd_channels: int = 3,
         max_shots: int | None = None,
+        wavelengths_um: tuple[float, ...] | None = None,
     ) -> None:
         self.file_path = Path(file_path)
         self.device = torch.device(device)
         self.num_pd_channels = min(max(1, num_pd_channels), 3)
-        pd_keys = ['RP1_CH2', 'RP2_CH1', 'RP2_CH2'][: self.num_pd_channels]
+        channel_keys = ['RP1_CH2', 'RP2_CH1', 'RP2_CH2'][: self.num_pd_channels]
 
         coil_driver = CoilDriver()
         with h5py.File(self.file_path, 'r') as f:
-            for key in [*pd_keys, 'RP1_CH1']:
+            if wavelengths_um is not None:
+                channel_keys = select_pd_keys(f, wavelengths_um)
+            for key in [*channel_keys, 'RP1_CH1']:
                 if key not in f:
                     raise ValueError(f"Channel key '{key}' not found in file")
             total = len(f['RP1_CH1'])
@@ -226,7 +279,8 @@ class GPUResidentDataset(Dataset):
                 self.sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
                 logger.warning('Using default sample rate of %.2f Hz', self.sample_rate)
             signals = np.stack(
-                [np.asarray(f[key][:n], dtype=np.float32) for key in pd_keys], axis=1
+                [np.asarray(f[key][:n], dtype=np.float32) for key in channel_keys],
+                axis=1,
             )
             voltage = np.asarray(f['RP1_CH1'][:n], dtype=np.float32)
 

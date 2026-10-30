@@ -35,6 +35,25 @@ def velocity_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return torch.sqrt(torch.mean((pred - target) ** 2))
 
 
+def sign_invariant_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Per-shot RMSE after the best global sign: min over s in {+1, -1}.
+
+    A Michelson interferometer cannot tell the direction of motion, so a
+    prediction is correct up to one sign per shot. The sign is chosen per shot,
+    not per sample, so a decoder that flips sign mid-shot is still penalized.
+
+    Args:
+        pred: Predicted velocity, ``[batch, length]``.
+        target: Ground-truth velocity, same shape.
+
+    Returns:
+        ``[batch]`` RMSE in the units of the inputs.
+    """
+    plus = torch.sqrt(torch.mean((pred - target) ** 2, dim=-1))
+    minus = torch.sqrt(torch.mean((pred + target) ** 2, dim=-1))
+    return torch.minimum(plus, minus)
+
+
 def displacement_from_velocity(velocity: torch.Tensor, dt_ms: float) -> torch.Tensor:
     """Integrate a velocity waveform to displacement in um.
 

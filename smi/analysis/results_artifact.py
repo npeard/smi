@@ -36,6 +36,18 @@ class RunRecord:
             or 'mmfiber').
         metrics: Metric name -> summary, each summary using the six keys from
             :func:`smi.analysis.metrics.summarize_per_shot`.
+        estimator: Estimator name when the record comes from
+            :mod:`smi.analysis.evaluate` (``model_type`` then names the
+            architecture or ``inverse_fit``); absent from older records.
+        wavelengths_um: Channel subset, in the order the estimator saw it.
+        precision: Numeric precision of the evaluation, e.g. ``'32-true'``.
+        converged: Whether the evaluation produced finite predictions.
+        sim_config_hash: ``SimConfig.hash()`` of the evaluated frozen set.
+        binned: Per-sample errors binned by ``|v|`` quantile and by distance to
+            the nearest fringe extremum, keyed by binning name.
+
+    ``causal`` is the negation of ``sees_future``; it is a property so the one
+    stored flag cannot disagree with it.
     """
 
     model_type: str
@@ -47,6 +59,18 @@ class RunRecord:
     device: str
     dataset: str
     metrics: dict[str, dict[str, float]]
+    # Optional so learned_results.json (schema 1, without them) still reads.
+    estimator: str | None = None
+    wavelengths_um: list[float] | None = None
+    precision: str | None = None
+    converged: bool | None = None
+    sim_config_hash: str | None = None
+    binned: dict[str, list[dict[str, float]]] | None = None
+
+    @property
+    def causal(self) -> bool:
+        """Whether the estimator uses only past and present samples."""
+        return not self.sees_future
 
 
 def write_results(path: str | Path, records: list[RunRecord]) -> None:
@@ -69,6 +93,13 @@ def write_results(path: str | Path, records: list[RunRecord]) -> None:
     Path(path).write_text(
         json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8'
     )
+
+
+def append_results(path: str | Path, records: list[RunRecord]) -> None:
+    """Add records to the artifact at ``path``, creating it if absent."""
+    path = Path(path)
+    existing = read_results(path) if path.exists() else []
+    write_results(path, [*existing, *records])
 
 
 def read_results(path: str | Path) -> list[RunRecord]:
