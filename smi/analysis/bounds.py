@@ -8,7 +8,7 @@ channel k reads ``V_k F(theta_k) + noise`` with ``theta_k = 4 pi d / lambda_k
 Gauss-Markov surrogate prior (``motion_prior``), with genie per-channel phases
 and visibilities; drifts, DC offset, PD low-pass and ADC are omitted. They are
 not a floor for the full simulator: ``sample_trajectory`` is a finite line
-spectrum (about 33 in-band lines, per-shot U(0, 1) power), which an estimator
+spectrum (about 33 in-band lines, per-shot U(0, 1) amplitude), which an estimator
 that knows the line structure can exploit beyond the surrogate, and amplitude
 or contrast drift raise E[a^2 V^2] above the value used here.
 
@@ -357,7 +357,7 @@ def motion_prior(cfg: SimConfig) -> StateSpace:
 
     The in-band velocity line powers of 256 seeded shots are matched in log10
     by a third-order model (one real pole, one resonance), whose slow pole
-    also matches the displacement variance. The per-shot U(0, 1) power draw
+    also matches the displacement variance. The per-shot U(0, 1) amplitude draw
     makes the true motion a Gaussian scale mixture; the prior keeps only its
     mean PSD, so bounds under it are bounds for that second-order surrogate.
     """

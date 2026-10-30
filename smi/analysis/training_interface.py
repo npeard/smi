@@ -67,6 +67,9 @@ class RelativeEarlyStopping(EarlyStopping):
         super().__init__(monitor=monitor, patience=patience, mode='min', **kwargs)
         self.min_rel_delta = min_rel_delta
 
+    # Overrides a private Lightning hook (no public one exists for a relative
+    # delta); written against lightning 2.6.x (pixi.lock: 2.6.6), and
+    # pyproject.toml sets no upper bound, so re-check it on an upgrade.
     def _evaluate_stopping_criteria(
         self, current: torch.Tensor
     ) -> tuple[bool, str | None]:

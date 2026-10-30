@@ -332,7 +332,7 @@ def test_lock_held_by_live_process_survives_an_emptied_lockfile(tmp_path):
     )
     try:
         assert holder.stdout.readline().strip() == 'held'
-        # The window the old pidfile had: a live holder, a file with no PID.
+        # Invariant: a live holder keeps the lock even when its file holds no PID.
         lock.write_text('')
         with pytest.raises(RunnerLockedError), runner_lock(lock):
             pass

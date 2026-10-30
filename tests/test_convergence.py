@@ -24,6 +24,8 @@ SIGNED = 'val/velocity_rmse_um_per_ms'
 INVARIANT = 'val/velocity_rmse_sign_invariant_um_per_ms'
 
 
+# Calls the private hook that RelativeEarlyStopping overrides (see its comment
+# for the lightning 2.6.x dependency); the real loop is exercised below.
 def _feed(callback: RelativeEarlyStopping, values: list[float]) -> list[bool]:
     return [callback._evaluate_stopping_criteria(torch.tensor(v))[0] for v in values]
 
@@ -151,7 +153,7 @@ def test_patience_stops_after_that_many_epochs_at_a_coarser_cadence():
     config.training_config['convergence'].update(min_rel_delta=0.5, patience_epochs=10)
     interface = _run(config)
     assert interface.converged is True
-    assert interface.trainer.current_epoch <= 14
+    assert 10 <= interface.trainer.current_epoch <= 14
 
 
 def test_patience_spanning_too_few_checks_is_rejected():

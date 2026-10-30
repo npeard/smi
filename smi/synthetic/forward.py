@@ -54,8 +54,8 @@ def sample_trajectory(
 
     Mirrors ``CoilDriver.sample(normalize_gain=True)``: the random waveform
     spectrum is pre-compensated by the velocity transfer function and scaled by
-    a per-shot U(0, 1) power draw, then multiplied by ``drive_gain`` before the
-    coil transfer function.
+    a per-shot U(0, 1) AMPLITUDE draw (voltage, not power), then multiplied by
+    ``drive_gain`` before the coil transfer function.
 
     Args:
         batch_size: Number of shots.
@@ -114,8 +114,8 @@ _SHOT_S = (
 # 2 pi rad of phase; a random walk of D rad/sqrt(s) has mean range
 # sqrt(8 T / pi) D over a shot of T s, so N fringes -> 2 pi N / sqrt(8 T / pi).
 # Nominal at the geometric middle, sqrt(1 * 2.7) = 1.64 fringes. The
-# published figure comes through the windowed estimator, which reads ~7% low at
-# the nominal D (finite windows smooth the walk) while this conversion uses the
+# published figure comes through the windowed estimator, which reads somewhat
+# low at the nominal D (finite windows smooth the walk) while this conversion uses the
 # continuous Brownian range, so the nominal is a lower bound on the true D.
 _FRINGES_TO_RAD_PER_SQRT_S = 2 * math.pi / math.sqrt(8 * _SHOT_S / math.pi)
 NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S = math.sqrt(2.7) * _FRINGES_TO_RAD_PER_SQRT_S
@@ -520,7 +520,7 @@ def simulate_batch(
     """Simulate one batch: trajectory -> phase -> fringe -> detector.
 
     Order: trajectory, optical phase (+ phase drift), fringe (Michelson or
-    SMI), visibility / contrast / amplitude, PD low-pass, additive / shot
+    SMI), visibility / contrast / amplitude, DC offset, PD low-pass, additive / shot
     noise, ADC. Random draws follow that order and a knob that is off draws
     nothing, so no knob shifts the motion, phi_k or visibility (all drawn
     first). The remaining coupling: each ON knob's draws shift the draws after

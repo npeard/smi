@@ -420,7 +420,10 @@ def _train(
     interface = TrainingInterface(config=config, experiment_name=cell.key)
     converged = interface.train()
     if not interface.best_model_path:
-        raise RuntimeError(f'{cell.key}: no finite validation value to checkpoint on')
+        raise RuntimeError(
+            f'{cell.key}: no checkpoint was saved (no epoch produced a finite '
+            'monitored validation value)'
+        )
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(interface.best_model_path, checkpoint)
     fields = {

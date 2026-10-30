@@ -50,10 +50,10 @@ Knob by knob (None in the output means "no estimate", never zero):
   scatter.
 * ``amplitude_drift_rel``, ``contrast_drift_rel``: None. No estimator meets
   the bar at the published drift: the windowed-DC increment statistic reads
-  13x the truth at the nominal phase drift (0.65-0.72 for 0.05; 0.054 at zero
-  drift) and the windowed log-amplitude increment statistic reads 17x (1.20
-  against 0.071 combined; 0.084 at zero drift), because the within-window
-  phase drift (D, rad/sqrt(s)) leaks into both. Both are near-unbiased only
+  many times the truth at the nominal phase drift and the windowed
+  log-amplitude increment statistic reads far above it too (neither is a
+  committed measurement), because the within-window phase drift
+  (D, rad/sqrt(s)) leaks into both. Both are near-unbiased only
   as D -> 0, which the published 1-2.7 fringes per shot rules out.
 * ``adc_bits``: the board constant, not estimated. ``adc_full_scale``: the
   board's input range over the channel's DC level in volts; None for
