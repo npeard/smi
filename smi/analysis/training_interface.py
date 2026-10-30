@@ -430,7 +430,8 @@ class TrainingInterface:
         # Required, no default: S1 runs sat at the zero-output plateau for up
         # to ~15 epochs before escaping, so the grace changes what gets published.
         min_epochs = convergence['min_epochs']
-        if not isinstance(min_epochs, int) or min_epochs < 0:
+        # bool is an int subclass; reject it so `min_epochs: true` is an error.
+        if type(min_epochs) is not int or min_epochs < 0:
             raise ValueError(
                 f'training.convergence.min_epochs must be an int >= 0, got '
                 f'{min_epochs!r}'

@@ -270,6 +270,22 @@ def test_plateau_waits_for_min_epochs(beats_zero_predictor):
     assert interface.epochs_run == 18
 
 
+def test_plateau_waits_for_min_epochs_when_checking_on_validation_end(
+    beats_zero_predictor,
+):
+    # At cadence 2 Lightning checks in on_validation_end, not on_train_epoch_end.
+    # Validation runs at epochs 1, 3, ...: the first check past the grace is at
+    # epoch 13, and 5 checks of patience end the run at epoch 23.
+    config = _config(SIGNED, sign_invariant=False, max_epochs=40)
+    config.training_config['check_val_every_n_epoch'] = 2
+    config.training_config['convergence'].update(
+        min_rel_delta=0.5, patience_epochs=10, min_epochs=12
+    )
+    interface = _run(config)
+    assert interface.converged is True
+    assert interface.epochs_run == 24
+
+
 def test_stall_inside_grace_period_does_not_stop_a_run_that_escapes(monkeypatch):
     # Flat for 8 epochs (patience 5 runs out at epoch 5, inside the grace),
     # then 10% better per epoch to epoch 20, then flat: the run must keep
