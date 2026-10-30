@@ -17,18 +17,12 @@ from smi.synthetic.frozen import (
     pd_keys,
     write_frozen_set,
 )
+from tests._sims import SAMPLE_RATE, WAVELENGTHS_UM
 
-SAMPLE_RATE = 125e6 / 256
-RIG_WAVELENGTHS = (0.635, 0.6748, 0.515)
-
-
-@pytest.fixture(autouse=True)
-def small_chunks(monkeypatch):
-    # Real chunks are 256 shots of 16384 samples; the logic is chunk-size free.
-    monkeypatch.setattr(frozen, 'CHUNK_SHOTS', 4)
+pytestmark = pytest.mark.usefixtures('small_chunks')
 
 
-def _cfg(wavelengths=RIG_WAVELENGTHS, feedback_c=0.5, alpha=3.0) -> SimConfig:
+def _cfg(wavelengths=WAVELENGTHS_UM, feedback_c=0.5, alpha=3.0) -> SimConfig:
     return SimConfig(
         wavelengths_um=wavelengths,
         sample_rate=SAMPLE_RATE,
@@ -115,7 +109,7 @@ def test_schema_attrs_and_layout(tmp_path):
         assert f.attrs['sample_rate'] == SAMPLE_RATE
         assert f.attrs['seed'] == 11
         assert f.attrs['simulator_version'] == SIMULATOR_VERSION
-        np.testing.assert_array_equal(f.attrs['pd_wavelengths_um'], RIG_WAVELENGTHS)
+        np.testing.assert_array_equal(f.attrs['pd_wavelengths_um'], WAVELENGTHS_UM)
         assert SimConfig(**json.loads(f.attrs['sim_config'])) == cfg
         length = f['RP1_CH1'].shape[1]
         for key in ('RP1_CH1', 'RP1_CH2', 'RP2_CH1', 'RP2_CH2', 'velocity'):
@@ -131,7 +125,7 @@ def test_schema_attrs_and_layout(tmp_path):
 
 
 def test_pd_keys():
-    assert pd_keys(RIG_WAVELENGTHS) == ['RP1_CH2', 'RP2_CH1', 'RP2_CH2']
+    assert pd_keys(WAVELENGTHS_UM) == ['RP1_CH2', 'RP2_CH1', 'RP2_CH2']
     assert pd_keys((0.635, 0.675, 0.515)) == ['RP1_CH2', 'RP2_CH1', 'RP2_CH2']
     assert pd_keys((0.635, 0.515, 0.6748)) == ['PD_0', 'PD_1', 'PD_2']
     assert pd_keys((0.635, 0.6748)) == ['PD_0', 'PD_1']

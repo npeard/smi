@@ -13,12 +13,8 @@ from torch.func import functional_call
 
 from smi.analysis.ensemble import EnsembleModule, SyntheticEnsembleModule, physics_loss
 from smi.analysis.synthetic_lit_module import NORM_STATS_SEED, NORM_STATS_SHOTS
-from smi.synthetic.forward import (
-    NOMINAL_DRIVE_GAIN,
-    SimConfig,
-    normalization_stats,
-    simulate_batch,
-)
+from smi.synthetic.forward import SimConfig, normalization_stats, simulate_batch
+from tests._sims import michelson_sim
 
 K = 3
 IN_CHANNELS = 3
@@ -185,15 +181,7 @@ def test_physics_loss_matches_litmodule_logic():
 
 
 def _sim() -> SimConfig:
-    return SimConfig.noise_free(
-        wavelengths_um=(0.635, 0.6748, 0.515),
-        sample_rate=125e6 / 256,
-        start_freq_hz=100.0,
-        end_freq_hz=1000.0,
-        drive_gain=NOMINAL_DRIVE_GAIN,
-        feedback_c=0.0,
-        alpha=0.0,
-    )
+    return dataclasses.replace(michelson_sim(), start_freq_hz=100.0)
 
 
 def test_synthetic_batch_sharing():

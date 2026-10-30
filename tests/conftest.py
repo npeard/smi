@@ -22,3 +22,8 @@ for _var in (
     'NUMEXPR_NUM_THREADS',
 ):
     os.environ.setdefault(_var, '1')
+
+
+# A plugin, not an import: pytest loads it after this module has run, so torch
+# loads only once the thread pins above are in the environment.
+pytest_plugins = ['tests._sims']

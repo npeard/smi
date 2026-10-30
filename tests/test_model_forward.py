@@ -21,6 +21,7 @@ from smi.analysis.models.scnn import SCNN, SCNNConfig
 from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
 from smi.analysis.models.unet_transformer import UNetTransformer, UNetTransformerConfig
+from tests._devices import devices
 
 SEQUENCE_LENGTH = 256
 IN_CHANNELS = 3
@@ -418,11 +419,7 @@ def test_neural_operator_rejects_modes_the_kernel_cannot_hold():
         )
 
 
-def _devices() -> list[str]:
-    return ['cpu', 'mps'] if torch.backends.mps.is_available() else ['cpu']
-
-
-@pytest.mark.parametrize('device', _devices())
+@pytest.mark.parametrize('device', devices())
 @pytest.mark.parametrize(('length', 'kernel_len'), [(100, 22), (7, 22), (64, 1)])
 def test_causal_operator_matches_direct_conv(device, length, kernel_len):
     """The zero-padded FFT product is the linear, left-padded convolution.

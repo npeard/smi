@@ -19,7 +19,7 @@ pytest.importorskip('ray')
 from smi.analysis.ensemble import SyntheticEnsembleModule
 from smi.analysis.synthetic_lit_module import SyntheticIndexDataset
 from smi.analysis.tune_search import SEARCH_METRIC, run_search
-from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SimConfig
+from tests._sims import michelson_sim
 
 CONFIG = (
     Path(__file__).parent.parent
@@ -50,17 +50,7 @@ def test_synthetic_ensemble_reports_search_metric():
         dict(MODEL_HPARAMS),
         seeds=[0, 1, 2],
         sign_invariant=False,
-        sim=dataclasses.asdict(
-            SimConfig.noise_free(
-                wavelengths_um=(0.635, 0.6748, 0.515),
-                sample_rate=125e6 / 256,
-                start_freq_hz=1.0,
-                end_freq_hz=1000.0,
-                drive_gain=NOMINAL_DRIVE_GAIN,
-                feedback_c=0.0,
-                alpha=0.0,
-            )
-        ),
+        sim=dataclasses.asdict(michelson_sim()),
         target='velocity',
         per_member_lr=[1e-3, 5e-4, 1e-4],
     )

@@ -16,24 +16,16 @@ from smi.synthetic.forward import (
     simulate_batch,
     smi_excess_phase,
 )
+from tests._devices import devices
 from tests._dtype_guard import no_float64
+from tests._sims import SAMPLE_RATE, WAVELENGTHS_UM, michelson_sim
 
-SAMPLE_RATE = 125e6 / 256
-WAVELENGTHS_UM = (0.635, 0.6748, 0.515)
 CPU = torch.device('cpu')
 BATCH = 8
 
 
 def _noise_free(feedback_c: float = 0.0, alpha: float = 0.0) -> SimConfig:
-    return SimConfig.noise_free(
-        wavelengths_um=WAVELENGTHS_UM,
-        sample_rate=SAMPLE_RATE,
-        start_freq_hz=1.0,
-        end_freq_hz=1000.0,
-        drive_gain=NOMINAL_DRIVE_GAIN,
-        feedback_c=feedback_c,
-        alpha=alpha,
-    )
+    return dataclasses.replace(michelson_sim(), feedback_c=feedback_c, alpha=alpha)
 
 
 def _simulate(cfg: SimConfig, seed: int = 0, batch: int = BATCH, device=CPU):
@@ -42,19 +34,7 @@ def _simulate(cfg: SimConfig, seed: int = 0, batch: int = BATCH, device=CPU):
         return simulate_batch(cfg, batch, torch.device(device), gen)
 
 
-def _devices() -> list:
-    return [
-        'cpu',
-        pytest.param(
-            'mps',
-            marks=pytest.mark.skipif(
-                not torch.backends.mps.is_available(), reason='requires MPS'
-            ),
-        ),
-    ]
-
-
-@pytest.mark.parametrize('device', _devices())
+@pytest.mark.parametrize('device', devices())
 def test_noise_free_michelson_matches_cosine(device):
     out = _simulate(_noise_free(), device=device)
     assert out.signals.device.type == torch.device(device).type

@@ -6,6 +6,7 @@ import torch
 from smi.analysis.models.base import Model
 from smi.analysis.models.factory import MODEL_REGISTRY, create_model
 from smi.analysis.training_interface import TrainingConfig, TrainingInterface
+from tests._devices import devices
 from tests._dtype_guard import no_float64
 from tests.test_torchscript import MODEL_CONFIGS
 
@@ -15,18 +16,11 @@ _MAX_LEN = 256
 _CONFIG_BY_TYPE = {hp['type']: (hp, n) for _, hp, n in MODEL_CONFIGS}
 
 
-def _devices() -> list[str]:
-    devices = ['cpu']
-    if torch.backends.mps.is_available():
-        devices.append('mps')
-    return devices
-
-
 def test_every_registered_model_has_a_precision_fixture():
     assert set(MODEL_REGISTRY) <= set(_CONFIG_BY_TYPE)
 
 
-@pytest.mark.parametrize('device', _devices())
+@pytest.mark.parametrize('device', devices())
 @pytest.mark.parametrize('model_type', sorted(MODEL_REGISTRY))
 def test_no_float64_in_any_registered_model(model_type: str, device: str):
     hparams, length = _CONFIG_BY_TYPE[model_type]

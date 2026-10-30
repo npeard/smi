@@ -16,26 +16,16 @@ from torch.utils.data import DataLoader
 
 from smi.analysis.ensemble import SyntheticEnsembleModule
 from smi.analysis.synthetic_lit_module import SyntheticIndexDataset, SyntheticLitModule
-from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SimConfig
+from tests._devices import devices
+from tests._sims import WAVELENGTHS_UM, michelson_sim
 
-WAVELENGTHS_UM = (0.635, 0.6748, 0.515)
 CROP = 256
 BATCH = 2
 EPOCHS = 3
 
 
 def _sim() -> dict:
-    return dataclasses.asdict(
-        SimConfig.noise_free(
-            wavelengths_um=WAVELENGTHS_UM,
-            sample_rate=125e6 / 256,
-            start_freq_hz=1.0,
-            end_freq_hz=1000.0,
-            drive_gain=NOMINAL_DRIVE_GAIN,
-            feedback_c=0.0,
-            alpha=0.0,
-        )
-    )
+    return dataclasses.asdict(michelson_sim())
 
 
 def _tcn() -> dict:
@@ -119,18 +109,6 @@ def _fit(make, method: str, seed: int, device: str) -> dict:
     return seen
 
 
-def _devices() -> list:
-    return [
-        'cpu',
-        pytest.param(
-            'mps',
-            marks=pytest.mark.skipif(
-                not torch.backends.mps.is_available(), reason='requires MPS'
-            ),
-        ),
-    ]
-
-
 def _train_key(seen: dict, epoch: int) -> tuple:
     return next(k for k in seen if k[1] == epoch and 'train' in k[0])
 
@@ -145,7 +123,7 @@ MODULES = [
 ]
 
 
-@pytest.mark.parametrize('device', _devices())
+@pytest.mark.parametrize('device', devices())
 @pytest.mark.parametrize(('make', 'method'), MODULES)
 def test_training_batches_fresh_each_epoch_and_validation_fixed(make, method, device):
     seen = _fit(make, method, 0, device)
@@ -160,7 +138,7 @@ def test_training_batches_fresh_each_epoch_and_validation_fixed(make, method, de
             torch.testing.assert_close(a, b, atol=0, rtol=0)
 
 
-@pytest.mark.parametrize('device', _devices())
+@pytest.mark.parametrize('device', devices())
 @pytest.mark.parametrize(('make', 'method'), MODULES)
 def test_grid_seeds_draw_different_training_data(make, method, device):
     a = _fit(make, method, 0, device)

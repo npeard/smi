@@ -21,30 +21,16 @@ from smi.analysis.metrics import sign_invariant_rmse
 from smi.analysis.results_artifact import RunRecord, read_results, write_results
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.synthetic import frozen
-from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SIMULATOR_VERSION, SimConfig
+from smi.synthetic.forward import SIMULATOR_VERSION
 from smi.synthetic.frozen import pd_keys, write_frozen_set
+from tests._sims import SAMPLE_RATE, SMALL_CHUNK_SHOTS, michelson_sim
+from tests._sims import WAVELENGTHS_UM as RIG
 
-SAMPLE_RATE = 125e6 / 256
 # What a runner passes from training; the oracle's convention is (True, None).
 TRAINED = {'converged': True, 'train_seed': 3}
-RIG = (0.635, 0.6748, 0.515)
 
 
-@pytest.fixture(autouse=True)
-def small_chunks(monkeypatch):
-    monkeypatch.setattr(frozen, 'CHUNK_SHOTS', 4)
-
-
-def _michelson() -> SimConfig:
-    return SimConfig.noise_free(
-        wavelengths_um=RIG,
-        sample_rate=SAMPLE_RATE,
-        start_freq_hz=1.0,
-        end_freq_hz=1000.0,
-        drive_gain=NOMINAL_DRIVE_GAIN,
-        feedback_c=0.0,
-        alpha=0.0,
-    )
+pytestmark = pytest.mark.usefixtures('small_chunks')
 
 
 class _Truth:
@@ -79,8 +65,8 @@ def michelson_set(tmp_path_factory):
     path = tmp_path_factory.mktemp('frozen') / 'michelson.h5'
     # Module scope runs before the function-scoped autouse monkeypatch.
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(frozen, 'CHUNK_SHOTS', 4)
-        return write_frozen_set(_michelson(), 3, 4, path)
+        mp.setattr(frozen, 'CHUNK_SHOTS', SMALL_CHUNK_SHOTS)
+        return write_frozen_set(michelson_sim(), 3, 4, path)
 
 
 def test_sign_invariant_rmse_per_shot():
@@ -96,7 +82,7 @@ def test_perfect_estimator_scores_zero(michelson_set):
         assert summary['max'] == 0.0, key
     assert result.record.converged
     assert result.record.causal
-    assert result.record.sim_config_hash == _michelson().hash()
+    assert result.record.sim_config_hash == michelson_sim().hash()
     assert result.record.simulator_version == SIMULATOR_VERSION
 
 
@@ -198,7 +184,7 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
         data_hparams={},
         steps_per_epoch=1,
         train_crop_length=None,
-        sim=dataclasses.asdict(_michelson()),
+        sim=dataclasses.asdict(michelson_sim()),
         restoring_checkpoint=False,
     )
     ckpt = tmp_path / 'm.ckpt'
@@ -259,7 +245,7 @@ def test_recurrent_checkpoint_records_unbounded_receptive_field(
         data_hparams={},
         steps_per_epoch=1,
         train_crop_length=None,
-        sim=dataclasses.asdict(_michelson()),
+        sim=dataclasses.asdict(michelson_sim()),
         restoring_checkpoint=False,
     )
     ckpt = tmp_path / 'lstm.ckpt'
@@ -443,7 +429,7 @@ def test_records_without_new_fields_still_read_and_serialize_causal(tmp_path):
 
 
 def test_inverse_fit_noise_free_oracle(tmp_path):
-    path = write_frozen_set(_michelson(), 7, ORACLE_SHOTS, tmp_path / 'oracle.h5')
+    path = write_frozen_set(michelson_sim(), 7, ORACLE_SHOTS, tmp_path / 'oracle.h5')
     est = InverseFitEstimator.for_dataset(path, None)
     result = evaluate(est, path, RIG, None, converged=True, train_seed=None)
     nrmse = result.record.metrics['velocity_nrmse_sign_invariant']['mean']

@@ -11,6 +11,7 @@ import pytest
 import torch
 
 from smi.synthetic.coil_driver import CoilDriver
+from tests._devices import devices
 from tests._dtype_guard import no_float64
 
 SAMPLE_RATE = 488281.25
@@ -125,20 +126,7 @@ def test_shared_spectrum_matches_separate_calls():
     np.testing.assert_array_equal(displacement, expected_d)
 
 
-def _available_devices() -> list:
-    """Cpu always; mps only where present (it has no float64)."""
-    return [
-        'cpu',
-        pytest.param(
-            'mps',
-            marks=pytest.mark.skipif(
-                not torch.backends.mps.is_available(), reason='requires MPS'
-            ),
-        ),
-    ]
-
-
-@pytest.mark.parametrize('device', _available_devices())
+@pytest.mark.parametrize('device', devices())
 def test_torch_physics_is_float32_on_device(device):
     """MPS has no float64, so the physics must never promote."""
     driver = CoilDriver()

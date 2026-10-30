@@ -20,14 +20,12 @@ from smi.analysis.experiments import (
 from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import read_results
 from smi.analysis.training_interface import SIGNED_RMSE_KEY
-from smi.synthetic import frozen
 
 MATCHED = experiments.ANALYSIS_DIR / 'models' / 'configs' / 'matched'
 
 
 @pytest.fixture(autouse=True)
-def small_simulations(monkeypatch):
-    monkeypatch.setattr(frozen, 'CHUNK_SHOTS', 2)
+def small_simulations(small_chunks, monkeypatch):
     monkeypatch.setattr(synthetic_lit_module, 'NORM_STATS_SHOTS', 2)
 
 
