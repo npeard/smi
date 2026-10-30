@@ -18,6 +18,7 @@ model:
   # the comparison. Stride 1 would be exact but costs ~6 min per epoch
   # (memory-bound on the unfold).
   window_stride: 8
+  channels: [16, 32, 64, 64]
 
 training:
   max_epochs: 30

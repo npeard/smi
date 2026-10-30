@@ -367,6 +367,7 @@ REGISTRY_HPARAMS: dict[str, dict] = {
         dropout=0.0,
         use_weight_norm=False,
         window_stride=SEQUENCE_LENGTH // 2,
+        channels=[16, 32, 64, 64],
     ),
     'TCN': dict(
         type='TCN',

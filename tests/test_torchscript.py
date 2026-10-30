@@ -65,6 +65,7 @@ MODEL_CONFIGS = [
             dropout=0.0,
             use_weight_norm=False,
             window_stride=256,
+            channels=[16, 32, 64, 64],
         ),
         512,
     ),

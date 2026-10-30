@@ -75,6 +75,7 @@ BARLAND_HPARAMS = {
     'dropout': 0.1,
     'use_weight_norm': False,
     'window_stride': 64,
+    'channels': [16, 32, 64, 64],
 }
 
 

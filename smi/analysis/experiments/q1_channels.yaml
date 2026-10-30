@@ -2,10 +2,16 @@
 # of the three rig lasers, at the nominal weak-feedback SMI point, noise-free
 # (ceiling) and with the nominal noise model.
 # Run: python -m smi.analysis.experiments smi/analysis/experiments/q1_channels.yaml
+# Every existing family at the 44k budget (Task 19); later families extend this.
 families:
-  - {name: tcn-matched, config: ../models/configs/matched/tcn-matched.yaml}
-  - {name: scnn-matched, config: ../models/configs/matched/scnn-matched.yaml}
-  # Families added by later tasks (Task 19 matched configs) go here.
+  - {name: tcn-44k, config: ../models/configs/matched/tcn-44k.yaml}
+  - {name: scnn-44k, config: ../models/configs/matched/scnn-44k.yaml}
+  - {name: barland-44k, config: ../models/configs/matched/barland-44k.yaml}
+  - {name: tcan-44k, config: ../models/configs/matched/tcan-44k.yaml}
+  - {name: lstm-44k, config: ../models/configs/matched/lstm-44k.yaml}
+  - {name: lstm-bidir-44k, config: ../models/configs/matched/lstm-bidir-44k.yaml}
+  - {name: mamba-44k, config: ../models/configs/matched/mamba-44k.yaml}
+  - {name: mlp-44k, config: ../models/configs/matched/mlp-44k.yaml}
 
 channel_subsets:
   - [0.635]

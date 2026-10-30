@@ -22,6 +22,11 @@ class BarlandCNNConfig:
 
     # BarlandCNN specific parameters
     window_stride: int  # controls the sliding window stride in the forward pass
+    # Output widths of the four conv layers; [16, 32, 64, 64] is the published
+    # network (57,153 parameters at one channel). Exposed so the model can be
+    # held to the matched parameter budgets without altering its depth, kernel
+    # sizes or 91-sample receptive field.
+    channels: list[int]
 
 
 class BarlandCNN(SlidingWindowModel):
@@ -29,32 +34,33 @@ class BarlandCNN(SlidingWindowModel):
         super().__init__(config.window_size, config.window_stride)
         self.config = config
         self.in_channels = config.in_channels
+        c1, c2, c3, c4 = config.channels
         self.conv_layers = nn.Sequential(
-            nn.Conv1d(self.in_channels, 16, kernel_size=7),
+            nn.Conv1d(self.in_channels, c1, kernel_size=7),
             # Lout = 250, given L = 256
             act_fn_by_name[config.activation],
             nn.MaxPool1d(2),
             # Lout = 125, given L = 250
-            nn.Conv1d(16, 32, kernel_size=7),
+            nn.Conv1d(c1, c2, kernel_size=7),
             # Lout = 119, given L = 125
             act_fn_by_name[config.activation],
             nn.MaxPool1d(2),
             # Lout = 59, given L = 119
-            nn.Conv1d(32, 64, kernel_size=7),
+            nn.Conv1d(c2, c3, kernel_size=7),
             # Lout = 53, given L = 59
             act_fn_by_name[config.activation],
             nn.MaxPool1d(2),
             # Lout = 26, given L = 53
             nn.Dropout(config.dropout),
-            nn.Conv1d(64, 64, kernel_size=7),
+            nn.Conv1d(c3, c4, kernel_size=7),
             # Lout = 20, given L = 26
             act_fn_by_name[config.activation],
             nn.MaxPool1d(2),
             # Lout = 10, given L = 20
         )
         self.fc_layers = nn.Sequential(
-            # length of input = 64 filters * 10 remaining time steps
-            nn.Linear(640, 16),
+            # length of input = c4 filters * 10 remaining time steps
+            nn.Linear(c4 * 10, 16),
             act_fn_by_name[config.activation],
             nn.Linear(16, 1),
         )
