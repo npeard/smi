@@ -38,7 +38,7 @@ oracle: true
 loss:
   sign_invariant: false
 
-# PROVISIONAL budget: the TCN-only pilot (Task 14) sizes these.
+# Each family's own schedule (30 epochs, T_0 = 30), not S1's T_0 = 90.
 synthetic:
   steps_per_epoch: 200
   val_steps: 20

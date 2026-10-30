@@ -30,6 +30,7 @@ training:
   accelerator: mps
   devices: 1
   precision: 32-true
-  max_epochs: 100  # SCHEDULE: set from S0b
+  # The family schedule (T_0 = 30) under a 100-epoch cap, not S1's T_0 = 90.
+  max_epochs: 100
 
 test_set: {seed: 1000, n_shots: 64}

@@ -1,10 +1,8 @@
-# Q3 stage S0c-long (one cell, 270-epoch schedule; see q3_s0c_ceiling.yaml): the headline accuracy-vs-C curve at the adopted 90-epoch cosine
-# schedule (S0b showed the 30-epoch plateau is schedule-limited), plus one
-# 270-epoch run of the C = 0.2 cell as evidence of how far the fixed-budget
-# "ceiling" still moves. TCN-44k, all three channels, noise-free, alpha = 3,
-# with the alpha = 0 and alpha = 5 controls at C = 0.2. Michelson and C = 0.2
-# at T_0 = 90 already exist from S0b (same cell keys, skipped).
-# Run: python -m smi.analysis.experiments smi/analysis/experiments/q3_s0c_ceiling.yaml \
+# Q3 stage S0c-long: one 270-epoch run (T_0 = 270, 400-epoch cap) of the
+# C = 0.2 cell of q3_s0c_ceiling.yaml (TCN-44k, all three channels,
+# noise-free, alpha = 3), as evidence of how far the fixed-budget "ceiling"
+# still moves past the adopted 90-epoch schedule.
+# Run: python -m smi.analysis.experiments smi/analysis/experiments/q3_s0c_long.yaml \
 #        --out smi/analysis/data/synthetic_results.json
 families:
   - {name: tcn-44k-T270, config: ../models/configs/matched/tcn-44k.yaml}
