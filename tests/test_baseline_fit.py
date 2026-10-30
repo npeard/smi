@@ -852,3 +852,16 @@ class TestEnvelopeFit:
 
         with pytest.raises(ValueError, match='degree must be'):
             envelope_forward_model_residual(signal, displacement, 0.635, degree=-1)
+
+
+@pytest.mark.parametrize('shape', [(257,), (5, 64)])
+@pytest.mark.parametrize('dtype', [np.float64, np.float32])
+def test_fringe_basis_is_the_inline_design_bit_for_bit(shape, dtype):
+    """The four fits that once stacked [cos, sin, 1] inline must not move."""
+    theta = np.random.default_rng(0).normal(scale=20.0, size=shape).astype(dtype)
+    inline = np.stack(
+        [np.cos(theta), np.sin(theta), np.ones_like(theta)], axis=len(shape)
+    )
+    out = fringe_basis(theta)
+    assert out.dtype == inline.dtype
+    np.testing.assert_array_equal(out, inline)

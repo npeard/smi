@@ -91,6 +91,7 @@ import numpy as np
 import torch
 from scipy.signal import savgol_filter
 
+from smi.analysis.metrics import summarize_per_shot
 from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
 
 logger = logging.getLogger(__name__)
@@ -186,7 +187,7 @@ def fit_phase_amplitude(signal: np.ndarray, theta: np.ndarray) -> PhaseAmplitude
             f'got {signal.shape} and {theta.shape}'
         )
 
-    design = np.stack([np.cos(theta), np.sin(theta), np.ones_like(theta)], axis=1)
+    design = fringe_basis(theta)
     coeffs, *_ = np.linalg.lstsq(design, signal, rcond=None)
     a_cos, b_sin, offset = (float(c) for c in coeffs)
 
@@ -348,7 +349,7 @@ def windowed_forward_model_residual(
         )
 
     bounds = _window_bounds(signal.size, window_samples)
-    design = np.stack([np.cos(theta), np.sin(theta), np.ones_like(theta)], axis=1)
+    design = fringe_basis(theta)
 
     # The global fit measures variance about the whole record's mean, so the
     # pooled total sum of squares must use that same mean. Summing each
@@ -502,22 +503,13 @@ def _joint_residual_at_gain(
         signal = signals[channel]
         fits.append(fit_phase_amplitude(signal, theta))
         if window_samples is None:
-            design = np.stack(
-                [np.cos(theta), np.sin(theta), np.ones_like(theta)], axis=1
-            )
+            design = fringe_basis(theta)
             coeffs, *_ = np.linalg.lstsq(design, signal, rcond=None)
             residual_ss += float(np.sum((signal - design @ coeffs) ** 2))
         else:
             for begin, end in _window_bounds(signal.size, window_samples):
                 block, block_theta = signal[begin:end], theta[begin:end]
-                design = np.stack(
-                    [
-                        np.cos(block_theta),
-                        np.sin(block_theta),
-                        np.ones_like(block_theta),
-                    ],
-                    axis=1,
-                )
+                design = fringe_basis(block_theta)
                 coeffs, *_ = np.linalg.lstsq(design, block, rcond=None)
                 residual_ss += float(np.sum((block - design @ coeffs) ** 2))
     return residual_ss, fits
@@ -775,9 +767,7 @@ def envelope_forward_model_residual(
         if design.shape[0] <= design.shape[1]:
             # More parameters than samples fits exactly and would inflate R^2
             # for free. Fall back to the constant envelope on such a tail.
-            design = np.stack(
-                [np.cos(block_theta), np.sin(block_theta), np.ones_like(block)], axis=1
-            )
+            design = fringe_basis(block_theta)
         coeffs, *_ = np.linalg.lstsq(design, block, rcond=None)
         residual_ss += float(np.sum((block - design @ coeffs) ** 2))
 
@@ -808,8 +798,8 @@ class PhaseDrift:
 
 
 def fringe_basis(thetas: np.ndarray) -> np.ndarray:
-    """``[cos, sin, 1]`` columns for per-window phases ``(n_windows, w)``."""
-    return np.stack([np.cos(thetas), np.sin(thetas), np.ones_like(thetas)], axis=2)
+    """``[cos, sin, 1]`` columns on a new last axis, for phases of any shape."""
+    return np.stack([np.cos(thetas), np.sin(thetas), np.ones_like(thetas)], axis=-1)
 
 
 def fit_window_basis(
@@ -1354,19 +1344,6 @@ class DatasetBaseline:
     runtime_s: float = 0.0
 
 
-def _summary(values: np.ndarray) -> dict[str, float]:
-    """Mean/median/quartile summary of a 1-D array of per-shot scores."""
-    values = np.asarray(values, dtype=np.float64)
-    return {
-        'mean': float(values.mean()),
-        'median': float(np.median(values)),
-        'p25': float(np.percentile(values, 25)),
-        'p75': float(np.percentile(values, 75)),
-        'min': float(values.min()),
-        'max': float(values.max()),
-    }
-
-
 # Bin edges in microns peak-to-peak. Fixed rather than quantile-derived so
 # the bins mean the same thing across datasets and across reruns with a
 # different --n-shots, which is the whole point of persisting them.
@@ -1475,16 +1452,16 @@ def _method1_channel(
             'p25': float(np.percentile(resolved_w, 25)),
             'p75': float(np.percentile(resolved_w, 75)),
         },
-        'residual_rmse_volts': _summary(rmses),
-        'residual_rmse_fraction_of_signal_rms': _summary(rel),
-        'r_squared': _summary(r2s),
+        'residual_rmse_volts': summarize_per_shot(rmses),
+        'residual_rmse_fraction_of_signal_rms': summarize_per_shot(rel),
+        'r_squared': summarize_per_shot(r2s),
         # The windowed refit measures model/data agreement and the global
         # single-window fit is the contrast that motivates windowing, so both
         # are reported side by side. The control is not optional -- short
         # windows can fit almost anything, so a windowed R^2 reported without
         # it is not evidence.
-        'r_squared_windowed': _summary(windowed_r2s),
-        'r_squared_windowed_scrambled': _summary(control_r2s),
+        'r_squared_windowed': summarize_per_shot(windowed_r2s),
+        'r_squared_windowed_scrambled': summarize_per_shot(control_r2s),
         # Binned by drive excursion because the aggregate R^2 hides the trend
         # that matters: the forward model tracks small excursions better than
         # large ones. Persisted rather than left to an ad-hoc session, so the
@@ -1683,18 +1660,24 @@ def evaluate_dataset(
         sample_rate_hz=sample_rate,
         method1=m1,
         method2={
-            'displacement_rmse_um': _summary(disp_rmse),
-            'velocity_rmse_um_per_ms': _summary(vel_rmse),
-            'displacement_correlation': _summary(disp_corr),
-            'displacement_nrmse': _summary(disp_rmse / np.std(m2_disp, axis=1)),
-            'velocity_nrmse': _summary(vel_rmse / np.std(m2_vel, axis=1)),
+            'displacement_rmse_um': summarize_per_shot(disp_rmse),
+            'velocity_rmse_um_per_ms': summarize_per_shot(vel_rmse),
+            'displacement_correlation': summarize_per_shot(disp_corr),
+            'displacement_nrmse': summarize_per_shot(
+                disp_rmse / np.std(m2_disp, axis=1)
+            ),
+            'velocity_nrmse': summarize_per_shot(vel_rmse / np.std(m2_vel, axis=1)),
         },
         signal_scale={
             # Over method 1's N, which is the larger subset, so these scales
             # describe the cohort the R^2 tables are computed on.
-            'true_displacement_rms_um': _summary(np.std(true_disp_centered, axis=1)),
-            'true_velocity_rms_um_per_ms': _summary(np.std(true_vel, axis=1)),
-            'true_displacement_ptp_um': _summary(np.ptp(true_disp_centered, axis=1)),
+            'true_displacement_rms_um': summarize_per_shot(
+                np.std(true_disp_centered, axis=1)
+            ),
+            'true_velocity_rms_um_per_ms': summarize_per_shot(np.std(true_vel, axis=1)),
+            'true_displacement_ptp_um': summarize_per_shot(
+                np.ptp(true_disp_centered, axis=1)
+            ),
         },
         # Derived from this subset's ground truth at run time, so they vary
         # with --n-shots and with the file. They set the decode grid's extent
