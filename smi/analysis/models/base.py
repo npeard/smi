@@ -129,7 +129,7 @@ class Model(nn.Module):
         input_feature_names: list[str],
         target_name: str,
         stats: dict[str, dict[str, float]],
-    ) -> 'Model':
+    ) -> Model:
         """Build a ``Model`` from a normalization-stats mapping.
 
         Args:
@@ -151,7 +151,7 @@ class Model(nn.Module):
         )
 
     @classmethod
-    def identity(cls, inner: nn.Module, in_channels: int) -> 'Model':
+    def identity(cls, inner: nn.Module, in_channels: int) -> Model:
         """Build a ``Model`` whose normalization is a no-op (mean 0, std 1).
 
         Used when input/output statistics do not apply (e.g. on-device synthetic

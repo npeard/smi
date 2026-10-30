@@ -97,7 +97,7 @@ class TrainingConfig:
     synthetic_config: dict[str, Any] | None = None
 
     @classmethod
-    def from_yaml(cls, config_path: str) -> 'TrainingConfig':
+    def from_yaml(cls, config_path: str) -> TrainingConfig:
         """Load a single training configuration from a YAML file.
 
         List-valued fields (if any) are passed through verbatim; this method no

@@ -8,7 +8,6 @@ import lightning as lightning_module
 
 from smi.analysis.generate_data import generate_dataset_from_rp
 from smi.analysis.training_interface import TrainingConfig, TrainingInterface
-from smi.analysis.tune_search import export_best_model, run_search
 from smi.redpitaya.manager import RedPitayaManager
 
 
@@ -214,6 +213,13 @@ def main():
     if args.search:
         if not args.config:
             raise ValueError('Config file is required for search mode')
+        # Imported here, not at module top: ray is an optional extra (no cp315
+        # wheels yet), and only --search needs it.
+        from smi.analysis.tune_search import (  # noqa: PLC0415
+            export_best_model,
+            run_search,
+        )
+
         logger.info('Starting Ray Tune search with config: %s', args.config)
         best = run_search(
             args.config,

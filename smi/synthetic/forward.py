@@ -273,7 +273,7 @@ class SimConfig:
     @classmethod
     def nominal(
         cls, wavelengths_um: tuple[float, ...], feedback_c: float, alpha: float
-    ) -> 'SimConfig':
+    ) -> SimConfig:
         """Blinded nominal rig configuration; see NOMINAL_SWEEPS for ranges."""
         return cls(
             wavelengths_um=wavelengths_um,
@@ -315,7 +315,7 @@ class SimConfig:
     @classmethod
     def from_calibration(
         cls, calibration: dict, wavelengths_um: tuple[float, ...]
-    ) -> 'SimConfig':
+    ) -> SimConfig:
         """Config from ``smi.analysis.calibrate_sim.calibrate`` output.
 
         Per-channel estimates are pooled by the median across channels (the
@@ -362,7 +362,7 @@ class SimConfig:
         drive_gain: float,
         feedback_c: float,
         alpha: float,
-    ) -> 'SimConfig':
+    ) -> SimConfig:
         """Config with every detector knob at its exact-identity value."""
         return cls(
             wavelengths_um=wavelengths_um,

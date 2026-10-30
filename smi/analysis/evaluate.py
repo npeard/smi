@@ -176,7 +176,7 @@ class InverseFitEstimator:
         }
 
     @classmethod
-    def for_dataset(cls, dataset: Path, n_shots: int | None) -> 'InverseFitEstimator':
+    def for_dataset(cls, dataset: Path, n_shots: int | None) -> InverseFitEstimator:
         """Size the search grid from the stored displacement of the shots scored."""
         with h5py.File(dataset, 'r') as f:
             disp = np.asarray(f['displacement'][:n_shots], dtype=np.float64)

@@ -84,7 +84,7 @@ def windowize(
 
 def fit_lightgbm(
     x_train: np.ndarray, y_train: np.ndarray, params: dict[str, Any]
-) -> 'lgb.Booster':
+) -> lgb.Booster:
     """Fit a gradient-boosted regression tree ensemble.
 
     Args:
