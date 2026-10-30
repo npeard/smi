@@ -73,6 +73,10 @@ class RunRecord:
         lr: Peak learning rate of the cell; with the five above, the training
             budget behind the cell, so cells are comparable and a resumed grid
             can tell a recorded cell from a changed one.
+        run_fingerprint: Hash of the cell's whole resolved training config,
+            test set and ``SIMULATOR_VERSION``; resume skips a cell only when
+            it matches. ``fingerprint_blocks`` holds the per-block hashes so a
+            mismatch names the changed blocks.
 
     ``causal`` is the negation of ``sees_future``; it is a property so the one
     stored flag cannot disagree with it, and :func:`write_results` also writes
@@ -112,6 +116,8 @@ class RunRecord:
     max_epochs: int | None = None
     T_0: int | None = None
     lr: float | None = None
+    run_fingerprint: str | None = None
+    fingerprint_blocks: dict[str, str] | None = None
     # Explicit alongside the null field so a reader never has to infer
     # "unbounded" from a missing number; False for records predating it.
     receptive_field_unbounded: bool = False

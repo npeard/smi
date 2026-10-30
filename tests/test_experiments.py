@@ -120,9 +120,41 @@ def test_resume_refuses_a_key_recorded_under_another_budget(tmp_path):
         'use_logging': False,
     }
     path = _grid(tmp_path, seeds=[0], training=budget)
-    with pytest.raises(ValueError, match='max_epochs'):
+    with pytest.raises(ValueError, match=r'differing blocks.*training'):
         _run(path, tmp_path)
     assert len(read_results(tmp_path / 'results.json')) == 1
+
+
+def test_resume_refuses_a_key_recorded_under_another_unbudgeted_setting(tmp_path):
+    """Settings outside the six budget fields still change what a cell trained."""
+    path = _one_cell(tmp_path)
+    grid = yaml.safe_load(path.read_text())
+    grid['training']['weight_decay'] = 0.123
+    path.write_text(yaml.safe_dump(grid))
+    with pytest.raises(ValueError, match=r'differing blocks.*training'):
+        _run(path, tmp_path)
+    grid['training'].pop('weight_decay')
+    grid['test_set']['n_shots'] = 3
+    path.write_text(yaml.safe_dump(grid))
+    with pytest.raises(ValueError, match=r'differing blocks.*test_set'):
+        _run(path, tmp_path)
+    assert len(read_results(tmp_path / 'results.json')) == 1
+
+
+def test_resume_refuses_a_key_recorded_under_another_architecture(tmp_path):
+    path = _one_cell(tmp_path)
+    family = yaml.safe_load((tmp_path / 'tiny-tcn.yaml').read_text())
+    family['model']['temporal_channels'] = [4, 8]
+    (tmp_path / 'tiny-tcn.yaml').write_text(yaml.safe_dump(family))
+    with pytest.raises(ValueError, match=r'differing blocks.*model'):
+        _run(path, tmp_path)
+
+
+def test_resume_skips_an_unchanged_cell_by_fingerprint(tmp_path):
+    path = _one_cell(tmp_path)
+    (record,) = read_results(tmp_path / 'results.json')
+    assert record.run_fingerprint
+    assert _run(path, tmp_path) == 0
 
 
 def test_resume_refuses_a_key_recorded_under_another_sim(tmp_path):
@@ -222,6 +254,7 @@ def test_oracle_cell_is_untrained_and_converged(tmp_path, monkeypatch):
     assert record.converged is True
     assert record.train_seed is None
     assert not (tmp_path / 'runs').exists()  # nothing trained, no checkpoint
+    assert _run(path, tmp_path) == 0  # the oracle's record resumes too
 
 
 def test_sweep_and_subsets_expand_to_stable_readable_keys(tmp_path):

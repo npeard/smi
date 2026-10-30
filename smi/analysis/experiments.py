@@ -5,10 +5,11 @@ optional classical oracle per ``sim x subset``). Each cell trains one network on
 its own simulator config, then scores it on the frozen test set of that config
 through :func:`smi.analysis.evaluate.evaluate`. A cell's record carries its
 ``cell_key``, ``sim_config_hash``, ``simulator_version`` and training budget
-(``BUDGET_FIELDS``); a cell recorded with all of them matching is skipped, so
-an interrupted grid resumes where it stopped. A recorded key whose sim,
-simulator or budget has since changed raises rather than mixing the two in one
-table.
+(``BUDGET_FIELDS``), plus a ``run_fingerprint`` hashing the whole resolved
+training config and test set; a cell recorded with sim, simulator and
+fingerprint matching is skipped, so an interrupted grid resumes where it
+stopped. A recorded key whose setup has since changed raises, naming the
+differing config blocks, rather than mixing the two in one table.
 
 Grid YAML keys (all required except where noted):
 
@@ -37,6 +38,8 @@ import argparse
 import dataclasses
 import fcntl
 import fnmatch
+import hashlib
+import json
 import logging
 import os
 import shutil
@@ -329,37 +332,75 @@ def _budget(config: TrainingConfig) -> dict[str, Any]:
 
 
 def _fingerprint(cell: Cell, grid: dict[str, Any]) -> dict[str, Any]:
-    """Sim hash, simulator version and budget, as the cell's record carries them."""
+    """What a cell trained and was scored on, as its record carries it.
+
+    ``run_fingerprint`` hashes every top-level block of the resolved training
+    config plus the test set, because the six ``BUDGET_FIELDS`` miss e.g. the
+    architecture, weight decay and loss weights; ``fingerprint_blocks`` keeps
+    the per-block hashes so a mismatch can name what changed. The oracle has no
+    training config, so its blocks are the sim and test set only.
+    """
+    test = grid['test_set']
+    blocks: dict[str, Any] = {'test_set': test}
     if cell.seed is None:
         budget = dict.fromkeys(BUDGET_FIELDS)
+        blocks['sim'] = dataclasses.asdict(cell.sim)
     else:
-        budget = _budget(_training_config(cell, grid))
+        config = _training_config(cell, grid)
+        budget = _budget(config)
+        blocks.update(
+            model=config.model_config,
+            training=config.training_config,
+            data=config.data_config,
+            loss=config.loss_config,
+            synthetic=config.synthetic_config,
+        )
+    block_hashes = {k: _stable_hash(v) for k, v in blocks.items()}
     return {
         'sim_config_hash': cell.sim.hash(),
         'simulator_version': SIMULATOR_VERSION,
+        'run_fingerprint': _stable_hash([block_hashes, SIMULATOR_VERSION]),
+        'fingerprint_blocks': block_hashes,
         **budget,
     }
 
 
+def _stable_hash(value: object) -> str:
+    """Short sha1 of the JSON form of ``value`` (YAML-loaded, so JSON-safe)."""
+    blob = json.dumps(value, sort_keys=True, default=str)
+    return hashlib.sha1(blob.encode(), usedforsecurity=False).hexdigest()[:16]
+
+
 def _is_done(cell: Cell, grid: dict[str, Any], records: list[RunRecord]) -> bool:
-    """Whether ``cell`` is recorded under its current sim and budget.
+    """Whether ``cell`` is recorded under its current sim, simulator and setup.
 
     Raises:
-        ValueError: If its key is recorded only under another sim or budget.
+        ValueError: If its key is recorded only under another setup.
     """
     recorded = [r for r in records if r.cell_key == cell.key]
     if not recorded:
         return False
     want = _fingerprint(cell, grid)
-    for r in recorded:
-        if all(getattr(r, k) == v for k, v in want.items()):
-            return True
-    have = {k: getattr(recorded[0], k) for k in want}
-    diff = {k: (have[k], want[k]) for k in want if have[k] != want[k]}
+    comparable = ('sim_config_hash', 'simulator_version', 'run_fingerprint')
+    if any(all(getattr(r, k) == want[k] for k in comparable) for r in recorded):
+        return True
+    have = recorded[0]
+    old_blocks = have.fingerprint_blocks or {}
+    differing = sorted(
+        b
+        for b in old_blocks.keys() | want['fingerprint_blocks'].keys()
+        if old_blocks.get(b) != want['fingerprint_blocks'].get(b)
+    )
+    diff = {
+        k: (getattr(have, k), want[k])
+        for k in ('sim_config_hash', 'simulator_version', *BUDGET_FIELDS)
+        if getattr(have, k) != want[k]
+    }
     raise ValueError(
-        f'{cell.key} is recorded under a different sim or budget '
-        f'(field: (recorded, grid)) {diff}; write to another --out or remove '
-        'those records rather than mixing them'
+        f'{cell.key} is recorded under a different setup: differing blocks '
+        f'{differing or "(record predates fingerprints)"}; readable fields '
+        f'(recorded, grid) {diff}; write to another --out or remove those '
+        'records rather than mixing them'
     )
 
 
@@ -399,13 +440,17 @@ def run_cell(
     dataset = load_or_create(cell.sim, test['seed'], test['n_shots'], frozen_root)
     start = time.perf_counter()
     est: Estimator
-    extra: dict[str, Any] = {}
+    fingerprint = _fingerprint(cell, grid)
+    extra: dict[str, Any] = {
+        k: fingerprint[k] for k in ('run_fingerprint', 'fingerprint_blocks')
+    }
     if cell.seed is None:
         est = InverseFitEstimator.for_dataset(dataset, test['n_shots'])
         converged = True
     else:
         ckpt = runs_dir / f'{cell.key}.ckpt'
-        converged, device, extra = _train(cell, grid, ckpt)
+        converged, device, trained = _train(cell, grid, ckpt)
+        extra.update(trained)
         est = CheckpointEstimator(ckpt, device)
     result = evaluate(
         est, dataset, cell.wavelengths_um, test['n_shots'], converged, cell.seed
