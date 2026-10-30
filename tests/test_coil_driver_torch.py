@@ -11,6 +11,7 @@ import pytest
 import torch
 
 from smi.synthetic.coil_driver import CoilDriver
+from tests._dtype_guard import no_float64
 
 SAMPLE_RATE = 488281.25
 SIGNAL_LENGTH = 4096
@@ -143,10 +144,12 @@ def test_torch_physics_is_float32_on_device(device):
     driver = CoilDriver()
     tensor = torch.from_numpy(_make_batch().astype(np.float32)).to(device)
 
-    velocity, displacement = driver.get_velocity_and_displacement_torch(
-        tensor, SAMPLE_RATE, 5000.0
-    )
-    spectrum, freq = driver.get_displacement_spectrum_torch(tensor, SAMPLE_RATE)
+    with no_float64():
+        velocity, displacement = driver.get_velocity_and_displacement_torch(
+            tensor, SAMPLE_RATE, 5000.0
+        )
+        spectrum, freq = driver.get_displacement_spectrum_torch(tensor, SAMPLE_RATE)
+        driver.get_transfer_function_torch(freq, 5000.0)
 
     assert torch.get_default_dtype() == torch.float32
     assert velocity.dtype == displacement.dtype == torch.float32

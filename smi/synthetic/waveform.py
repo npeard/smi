@@ -241,9 +241,9 @@ class Waveform:
         freq_t = torch.fft.fftfreq(N, d=1.0 / self.acq_sample_rate, device=device)
 
         # Valid positive frequency mask
-        valid_freqs_t = torch.tensor(
-            self.valid_freqs, dtype=torch.float32, device=device
-        )
+        # Cast in numpy: torch.tensor(float64_array, dtype=float32) still
+        # materializes a float64 tensor first, which MPS cannot hold.
+        valid_freqs_t = torch.from_numpy(self.valid_freqs.astype(np.float32)).to(device)
         pos_mask = freq_t > 0
         pos_freqs = freq_t[pos_mask]
 
@@ -310,6 +310,11 @@ class Waveform:
             Float32 displacement tensor of shape [batch_size, BUFFER_SIZE]
         """
         device = torch.device(device) if isinstance(device, str) else device
+        if generator is not None and generator.device != device:
+            raise ValueError(
+                f'generator is on {generator.device} but device is {device}; '
+                'generate on CPU with a CPU generator and move the result.'
+            )
 
         # Initialize or update torch cache if needed
         if not hasattr(self, '_torch_cache') or self._torch_cache['device'] != device:
