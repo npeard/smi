@@ -121,6 +121,59 @@ def test_sign_information_increases_with_c():
     assert values[0] < values[1] < values[2]
 
 
+@pytest.mark.parametrize('wavelengths_um', [RIG[:1], RIG])
+@pytest.mark.parametrize('alpha', [3.0, 5.0])
+def test_sign_information_matches_leading_order(wavelengths_um, alpha):
+    """At small C, sign_information equals its O(C^2) form shot by shot.
+
+    The residual V C sin(beta) sin(2 theta) off the tangent span {1, cos theta,
+    sin theta} of (a, b, phi'), per realization: with uniform phase coverage
+    that is L C^2 V^2 sin^2(beta) / (4 sigma^2) per channel, but the low-power
+    shots of the U(0, 1) mixture span few fringes, so the closed form's
+    expectation is only reached on average. Neglected terms are O(C^2)
+    relative: measured 2e-4 at C = 0.02, 2e-3 at C = 0.05.
+    """
+    feedback_c, n_shots = 0.02, 4
+    cfg = _cfg(wavelengths_um, feedback_c, alpha)
+    shots = bounds.ideal_shots(cfg, n_shots, 0)
+    sigma = noise_std(cfg.snr_db)
+    sin_beta = math.sin(math.atan(alpha))
+    total = 0.0
+    for theta, vis in zip(
+        shots.theta.flatten(0, 1), shots.visibility.flatten(), strict=True
+    ):
+        residual = vis * feedback_c * sin_beta * torch.sin(2 * theta)
+        tangent = torch.stack([torch.ones_like(theta), theta.cos(), theta.sin()], 1)
+        fit = torch.linalg.lstsq(tangent, residual[:, None]).solution[:, 0]
+        off = residual - tangent @ fit
+        total += float(off @ off) / (2 * sigma**2)
+    got = bounds.sign_information(cfg, n_shots, 0)
+    assert got == pytest.approx(total / n_shots, rel=1e-3)
+
+
+@pytest.mark.parametrize(('feedback_c', 'alpha'), [(0.2, 3.0), (0.7, 5.0)])
+def test_k1_warped_mirror_reproduces_signal(feedback_c, alpha):
+    """Theta'' = phi_F + C sin(phi_F - beta) gives F(-theta'') = F(theta).
+
+    So with the trajectory free, one channel's fringe shape carries no sign
+    evidence; sign_information's fixed-trajectory value is an upper bound.
+    """
+    shots = bounds.ideal_shots(_cfg(RIG[:1], feedback_c, alpha), 1, 0)
+    theta = shots.theta[0, 0]
+    delta, _ = smi_excess_phase(theta, feedback_c, alpha)
+    phi_f = theta + delta
+    warped = phi_f + feedback_c * torch.sin(phi_f - math.atan(alpha))
+    torch.testing.assert_close(
+        fringe(-warped, feedback_c, alpha),
+        fringe(theta, feedback_c, alpha),
+        rtol=0,
+        atol=1e-12,
+    )
+    # The warp is a fringe-rate one, of depth 2 C sin(beta) in phase.
+    depth = float((warped - theta).abs().max())
+    assert depth == pytest.approx(2 * feedback_c * math.sin(math.atan(alpha)), rel=1e-3)
+
+
 def test_motion_prior_matches_trajectory_psd(prior):
     """The fitted prior reproduces the in-band line powers of sample_trajectory."""
     assert prior.psd_rms_db < 1.0
@@ -134,7 +187,8 @@ def test_motion_prior_matches_trajectory_psd(prior):
 def _dense_posterior(prior, info, n_steps):
     """Velocity posterior variances by joint Gaussian conditioning, no Riccati.
 
-    Measurement z_n = d_n + e_n, var(e_n) = 1 / info. The joint prior
+    Measurement z_n = d_n + e_n, var(e_n) = 1 / info[n]; a sample with
+    info[n] = 0 is not measured at all. The joint prior
     covariance of (x_0 .. x_{L-1}) is cov(x_i, x_j) = F^(i-j) P_j for i >= j.
     """
     f, n = prior.transition, prior.transition.shape[0]
@@ -152,8 +206,9 @@ def _dense_posterior(prior, info, n_steps):
     cv = prior.velocity_row
 
     def velocity_var(rows):
+        rows = [r for r in rows if info[r] > 0]
         hs = h[rows]
-        gain = np.linalg.solve(hs @ sig @ hs.T + np.eye(len(rows)) / info, hs @ sig)
+        gain = np.linalg.solve(hs @ sig @ hs.T + np.diag(1 / info[rows]), hs @ sig)
         post = sig - sig @ hs.T @ gain
         return np.array(
             [
@@ -167,21 +222,24 @@ def _dense_posterior(prior, info, n_steps):
     return causal, smooth
 
 
-def test_pcrb_equals_kalman_for_linear_measurement(prior):
-    info = 2.0e3  # per um^2: a linear d-measurement with 0.022 um noise
+# Per um^2: a linear d-measurement with 0.022 um noise; and a time-varying one
+# with blind samples (info 0), the shape realization_bounds feeds in.
+_CONSTANT_INFO = np.full(40, 2.0e3)
+_VARYING_INFO = 2.0e3 * np.sin(np.arange(40) * 0.4) ** 2
+_VARYING_INFO[[0, 7, 8, 20]] = 0.0
+
+
+@pytest.mark.parametrize('info', [_CONSTANT_INFO, _VARYING_INFO])
+def test_pcrb_equals_kalman_for_linear_measurement(prior, info):
     causal, _ = _dense_posterior(prior, info, 40)
-    got, _ = bounds.information_bounds(
-        prior, torch.full((40,), info, dtype=torch.float64)
-    )
+    got, _ = bounds.information_bounds(prior, torch.from_numpy(info))
     np.testing.assert_allclose(got.numpy(), causal, rtol=1e-7)
 
 
-def test_smoother_matches_dense_information_inverse(prior):
-    info = 2.0e3
+@pytest.mark.parametrize('info', [_CONSTANT_INFO, _VARYING_INFO])
+def test_smoother_matches_dense_information_inverse(prior, info):
     _, smooth = _dense_posterior(prior, info, 40)
-    _, got = bounds.information_bounds(
-        prior, torch.full((40,), info, dtype=torch.float64)
-    )
+    _, got = bounds.information_bounds(prior, torch.from_numpy(info))
     np.testing.assert_allclose(got.numpy(), smooth, rtol=1e-7)
 
 

@@ -4,13 +4,15 @@ Analysis tools (report section 1), float64 on CPU; nothing here belongs on a
 training path. The measurement model is the ideal one of ``simulate_batch``:
 channel k reads ``V_k F(theta_k) + noise`` with ``theta_k = 4 pi d / lambda_k
 + phi_k``, ``F = forward.fringe`` and white Gaussian noise of std
-``forward.noise_std(snr_db)``. The detector nuisances (DC offset, amplitude,
-contrast and phase drift, PD low-pass, ADC) are left out, and phi_k and V_k are
-known to the bound (a genie), so every bound here is a lower bound for the full
-simulator too: each omitted term only adds unknowns or noise.
+``forward.noise_std(snr_db)``. The velocity bounds are bounds for the fitted
+Gauss-Markov surrogate prior (``motion_prior``), with genie per-channel phases
+and visibilities; drifts, DC offset, PD low-pass and ADC are omitted. They are
+not a floor for the full simulator: ``sample_trajectory`` is a finite line
+spectrum (about 33 in-band lines, per-shot U(0, 1) power), which an estimator
+that knows the line structure can exploit beyond the surrogate, and amplitude
+or contrast drift raise E[a^2 V^2] above the value used here.
 
-Derivations, with each step's warrant, are in the Task 12 report; the
-docstrings below state results.
+The key derivation steps are kept in the docstrings below.
 """
 
 import functools
@@ -78,8 +80,14 @@ def fisher_single(
 def phase_factor(feedback_c: float, alpha: float) -> float:
     """E over uniform theta of F'(theta)^2; 1/2 for Michelson.
 
-    Closed form [1 - cos(2 atan(alpha)) (1 - s) / (1 + s)] / (2 s), with
-    s = sqrt(1 - C^2) (report, step 2): above 1/2 and rising with C for
+    Closed form [1 - cos(2 beta) (1 - s) / (1 + s)] / (2 s), with
+    s = sqrt(1 - C^2), beta = atan(alpha). Steps: substitute theta -> phi_F,
+    dtheta = (1 + C cos(phi_F + beta)) dphi_F (monotone for C < 1), giving
+    <sin^2(phi_F) / (1 + C cos(phi_F + beta))> over uniform phi_F; with
+    u = phi_F + beta, sin^2(u - beta) = (1 - cos 2u cos 2beta - sin 2u
+    sin 2beta) / 2, the sin 2u term averages to zero (odd), <1 / (1 + C cos u)>
+    = 1/s (Gradshteyn-Ryzhik 3.613) and <cos 2u / (1 + C cos u)> = (1 - s)^2 /
+    (s C^2) = (1 - s) / (s (1 + s)). Above 1/2 and rising with C for
     |alpha| > 1, so feedback adds magnitude information at the rig's alpha.
     """
     s = math.sqrt(1 - feedback_c**2)
@@ -100,7 +108,7 @@ def expected_information(cfg: SimConfig) -> float:
 
     Expectation over the uniform fringe phase (closed form, ``phase_factor``)
     and V ~ U(visibility_range), at unit amplitude. Channels add because their
-    noises are independent (report, step 3).
+    noises are independent, so their log-likelihoods and Fisher information add.
     """
     sigma = _check_noise(cfg)
     lo, hi = cfg.visibility_range
@@ -145,30 +153,51 @@ def _mirror_mismatch(
     feedback_c: float,
     alpha: float,
 ) -> torch.Tensor:
-    """Energy of ``target`` [L] off span{1, F(mirror + phi)}, for each phi [G]."""
+    """Least-squares residual energy of ``target`` [L] by a + b F(mirror + phi).
+
+    One value per phi [G]; offset a is free, gain b >= 0 (``sign_information``).
+    """
     shape = fringe(
         mirror + torch.as_tensor(phi, dtype=_F64).reshape(-1, 1), feedback_c, alpha
     )
     g = shape - shape.mean(-1, keepdim=True)
     t = target - target.mean()
-    proj = (g @ t) ** 2 / (g * g).sum(-1).clamp(min=1e-300)
+    proj = (g @ t).clamp(min=0) ** 2 / (g * g).sum(-1).clamp(min=1e-300)
     return (t * t).sum() - proj
 
 
 def sign_information(cfg: SimConfig, n_shots: int, seed: int) -> float:
-    """Mean evidence (nats) a shot carries against its own mirror image.
+    """Upper bound on the sign evidence (nats) of one full shot, mean over shots.
 
-    For each shot and channel, the Kullback-Leibler divergence between the
-    noise distribution under the true mean ``V F(theta)`` and the closest
-    mean of the mirrored hypothesis d -> -d: ``a + b F(-4 pi d / lambda +
-    phi')`` with offset a, gain b and phase phi' free (least squares in a, b;
-    grid then Brent in phi'). Channels add (they share the trajectory, each
-    has its own nuisances). Zero means p(signals | v) = p(signals | -v) up to
-    those nuisances, so no estimator can tell the sign: exactly so for C = 0
-    (phi' = -phi) and for alpha = 0 (F is then even in theta). It is the
-    expected log-likelihood ratio of a sign test against the exact mirror
-    only, so an upper bound on the evidence against every sign-flipped
-    alternative.
+    Per full shot of the cfg's length L, so it scales as L / sigma^2; the
+    per-sample value is this / L. For each shot and channel: the KL
+    divergence between the noise law under the true mean ``V F(theta)`` and
+    the closest mean ``a + b F(-4 pi d / lambda + phi')`` of the sign-flipped
+    hypothesis on the same trajectory, with offset a free, gain b >= 0 (least
+    squares) and phase phi' free (grid, then Brent). Channels add. Gain b is
+    kept >= 0 because photodiode polarity is a fixed, known property of the
+    rig and the learned models see a fixed (not per-shot) normalization, so an
+    inverted fringe is not a nuisance an estimator faces. A free b would fit
+    b ~ -1, phi' + pi and leave C cos(beta) instead of C sin(beta).
+
+    Zero exactly for C = 0 (phi' = -phi) and alpha = 0 (F even in theta).
+    Leading order in C: F = cos(theta) + C sin(theta) sin(theta + beta) +
+    O(C^2), so the b = 1, phi' = -phi mirror leaves the residual V C sin(beta)
+    sin(2 theta); (a, b, phi') move only along {1, cos, sin}, which is
+    orthogonal to it under uniform phase coverage, so to O(C^4)
+    I = sum_k L C^2 E[V^2] alpha^2 / (4 sigma^2 (1 + alpha^2)).
+
+    It is the expected log-likelihood ratio against the composite sign-flipped
+    hypothesis with the trajectory held fixed, so an UPPER bound on sign
+    evidence: freeing the trajectory removes it for K = 1, where the warped
+    trajectory theta'' = phi_F + C sin(phi_F - beta) (a fringe-rate warp
+    theta'' - theta = -2 C sin(beta) cos(phi_F), i.e. a displacement warp of
+    depth C sin(beta) lambda / (2 pi)) gives F(-theta'') = F(theta) exactly.
+    Single-channel sign evidence therefore comes only from the motion
+    prior's penalty on that warp, not from the fringe shape. For K >= 2 the
+    per-channel warps differ (they depend on each channel's phi_F and
+    lambda), so no common trajectory mirrors all channels: the evidence is
+    real but smaller than this fixed-trajectory value.
     """
     sigma = _check_noise(cfg)
     shots = ideal_shots(cfg, n_shots, seed)
@@ -365,10 +394,22 @@ def information_bounds(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Causal (filtering) and offline (smoothing) velocity MSE bounds, (um/ms)^2.
 
-    ``info[n]`` is the displacement information of sample n (1/um^2). The
-    smoothing bound is the velocity block of the inverse of the block-
-    tridiagonal Bayesian information matrix, evaluated by the RTS backward
-    pass, which yields exactly those diagonal blocks (report, step 5).
+    ``info[n]`` is the displacement information of sample n (1/um^2).
+
+    Causal: the Tichavsky-Muravchik-Nehorai (1998) posterior-CRB recursion
+    J_{n+1} = D22 - D21 (J_n + D11)^{-1} D12 with D11 = F^T Q^{-1} F,
+    D12 = -F^T Q^{-1}, D22 = Q^{-1} + info c_d c_d^T reduces, by the matrix
+    inversion lemma, to J_{n+1} = (Q + F J_n^{-1} F^T)^{-1} + info c_d c_d^T:
+    the Kalman covariance recursion of a linear d-measurement (``_riccati``).
+    Offline: the Bayesian (Van Trees) information matrix is block-tridiagonal
+    (Gauss-Markov prior information plus blockdiag(info c_d c_d^T)); it equals
+    the information matrix of that linear-Gaussian surrogate, so its inverse
+    diagonal blocks are the surrogate's RTS smoother covariances.
+
+    Both bounds are local and sign-resolved: they see neither the global sign
+    nor the fringe order. At C = 0 (or alpha = 0), where the sign is
+    unobservable, they stay finite while the signed-MSE floor is the prior
+    variance; compare them there with a sign-invariant RMSE.
     """
     filt, pred = _riccati(prior, info.to(_F64).numpy())
     smooth = filt.copy()
@@ -386,16 +427,24 @@ def information_bounds(
 def pcrb_filter(prior: StateSpace, cfg: SimConfig, n_steps: int) -> torch.Tensor:
     """Causal Bayesian CRB on velocity, (um/ms)^2, per sample [n_steps].
 
-    Tichavsky posterior-CRB recursion, with the measurement term averaged over
-    the trajectory and uniform phase: that average is the same for every
-    sample (``expected_information``), so it is exact without Monte Carlo.
+    Tichavsky posterior-CRB recursion (``information_bounds``; local and
+    sign-resolved, see there), with the measurement term averaged over the
+    trajectory and uniform phase: theta mod 2 pi is uniform whatever d is, so
+    that average is the same for every sample (``expected_information``) and
+    exact without Monte Carlo. Averaging J over the genie phase gives
+    (E J)^{-1} <= E[J^{-1}] by Jensen, so this is still a valid, slightly
+    looser, bound than the phase-conditioned one.
     """
     info = torch.full((n_steps,), expected_information(cfg), dtype=_F64)
     return information_bounds(prior, info)[0]
 
 
 def bcrb_smoother(prior: StateSpace, cfg: SimConfig, n_steps: int) -> torch.Tensor:
-    """Offline Bayesian CRB on velocity, (um/ms)^2, per sample [n_steps]."""
+    """Offline Bayesian CRB on velocity, (um/ms)^2, per sample [n_steps].
+
+    Smoothing counterpart of ``pcrb_filter``, same phase-averaged information;
+    local and sign-resolved (``information_bounds``).
+    """
     info = torch.full((n_steps,), expected_information(cfg), dtype=_F64)
     return information_bounds(prior, info)[1]
 
