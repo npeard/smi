@@ -5,9 +5,9 @@ Implements the Mamba architecture from:
     Gu, A. & Dao, T. (2023). Mamba: Linear-Time Sequence Modeling with
     Selective State Spaces. arXiv:2312.00752.
 
-This implementation uses the parallel associative-scan formulation so it
-runs on any device (CPU or CUDA) without the custom CUDA kernels required
-by the original ``mamba-ssm`` package.
+This implementation uses a chunked scan in plain tensor ops, so it runs on
+any device (CPU, CUDA or MPS) and scripts with TorchScript, without the
+custom CUDA kernels required by the original ``mamba-ssm`` package.
 """
 
 import logging
@@ -24,14 +24,83 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Selective scan (parallel prefix-sum / associative scan)
+# Selective scan
 # ---------------------------------------------------------------------------
+
+
+def _block_scan(a: Tensor, b: Tensor) -> tuple[Tensor, Tensor]:
+    """Inclusive scan of h_t = a_t * h_{t-1} + b_t, h_{-1} = 0, along dim -2.
+
+    The time axis is -2 (length T, small) so each step touches a contiguous
+    [..., n] slab holding every block at once. Returns (P, H): the running
+    product of a and the local h, both [..., T, n].
+    """
+    a_steps = a.unbind(-2)
+    b_steps = b.unbind(-2)
+    p = a_steps[0]
+    h = b_steps[0]
+    ps = [p]
+    hs = [h]
+    for t in range(1, len(a_steps)):
+        h = torch.addcmul(b_steps[t], a_steps[t], h)
+        p = p * a_steps[t]
+        ps.append(p)
+        hs.append(h)
+    return torch.stack(ps, -2), torch.stack(hs, -2)
+
+
+def diagonal_linear_scan(a: Tensor, b: Tensor) -> Tensor:
+    """Solve h_t = a_t * h_{t-1} + b_t (h_{-1} = 0) along the last dim.
+
+    A chunked scan replacing the O(L) per-sample loop, whose one small kernel
+    launch per sample dominated MPS step time. Each level scans blocks of
+    ``block`` samples sequentially, every block at once, and hands the
+    block-end values (a block's total decay and local state) up as a
+    ``block``-times shorter recurrence; the way down adds each block's
+    carry-in, h_local + P * h_prev_block_end. Every operation is a product of
+    the a_t or an a*h + b update, as in the sequential loop, so nothing is
+    divided by a decay or exponentiated out of range: a cumulative-sum form
+    (exp(S_t) * cumsum(exp(-S_s) b_s)) would overflow float32 once a block's
+    total log-decay passes about -88. Causal, since padding is appended
+    after the sequence as identity steps (a = 1, b = 0).
+    """
+    # Block length. The step count is about block * log_block(seq_len): 32
+    # gives 96 sequential steps at 4096 samples instead of 4096. On MPS 8, 16
+    # and 32 tied for training at 4096 samples and 32 was fastest for
+    # evaluation at 16384. A local, not a module constant: TorchScript cannot
+    # read a Python global int.
+    block = 32
+    # Way up: per level, the (P, H) needed on the way down and its length.
+    levels: list[tuple[Tensor, Tensor, int]] = []
+    while a.shape[-1] > block:
+        length = a.shape[-1]
+        pad = (-length) % block
+        if pad > 0:
+            a = functional.pad(a, (0, pad), value=1.0)
+            b = functional.pad(b, (0, pad), value=0.0)
+        # contiguous(): MPS runs each step's elementwise op on a strided
+        # [..., n] slice about 2x slower than on a contiguous one.
+        p, h = _block_scan(
+            a.unflatten(-1, (-1, block)).transpose(-1, -2).contiguous(),
+            b.unflatten(-1, (-1, block)).transpose(-1, -2).contiguous(),
+        )
+        levels.append((p, h, length))
+        a = p[..., -1, :]
+        b = h[..., -1, :]
+    h = _block_scan(a.unsqueeze(-1), b.unsqueeze(-1))[1].squeeze(-1)
+    # Way down: h now holds the true state at each block end of the level.
+    for i in range(len(levels) - 1, -1, -1):
+        p, h_local, length = levels[i]
+        carry = functional.pad(h[..., :-1], (1, 0)).unsqueeze(-2)
+        h = torch.addcmul(h_local, p, carry).transpose(-1, -2).flatten(-2)
+        h = h[..., :length]
+    return h
 
 
 def selective_scan(
     u: Tensor, delta: Tensor, A: Tensor, B: Tensor, C: Tensor, D: Tensor
 ) -> Tensor:
-    """Parallel selective scan (ZOH discretisation).
+    """Selective scan (ZOH discretisation).
 
     Args:
         u:     [batch, d_model, seq_len]   input
@@ -44,33 +113,16 @@ def selective_scan(
     Returns:
         y: [batch, d_model, seq_len]
     """
-    batch, d_model, seq_len = u.shape
-    d_state = A.shape[1]
-
     # ZOH discretisation: A_bar = exp(delta * A), B_bar = delta * B (simplified Euler)
-    # delta: [batch, d_model, seq_len] -> unsqueeze for state dim
-    # A:     [d_model, d_state]
     delta_A = torch.exp(
         delta.unsqueeze(2) * A.unsqueeze(0).unsqueeze(-1)
     )  # [batch, d_model, d_state, seq_len]
-
-    # B: [batch, d_state, seq_len], delta: [batch, d_model, seq_len]
     delta_B_u = (
         delta.unsqueeze(2) * B.unsqueeze(1) * u.unsqueeze(2)
     )  # [batch, d_model, d_state, seq_len]
-
-    # Sequential scan over time -- O(L) but simple and correct
-    # For moderate seq_len this is the bottleneck; a parallel scan would be
-    # O(L log L) but requires more complex code.
-    h = torch.zeros(batch, d_model, d_state, device=u.device, dtype=u.dtype)
-    ys = []
-    for t in range(seq_len):
-        h = delta_A[..., t] * h + delta_B_u[..., t]
-        # y_t = C_t * h_t  summed over state dim
-        y_t = (C[:, :, t].unsqueeze(1) * h).sum(dim=2)  # [batch, d_model]
-        ys.append(y_t)
-
-    y = torch.stack(ys, dim=2)  # [batch, d_model, seq_len]
+    h = diagonal_linear_scan(delta_A, delta_B_u)
+    # y_t = C_t * h_t summed over the state dim
+    y = (C.unsqueeze(1) * h).sum(dim=2)  # [batch, d_model, seq_len]
     return y + D.unsqueeze(0).unsqueeze(-1) * u
 
 
