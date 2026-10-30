@@ -1,0 +1,148 @@
+"""Convergence-based stopping: relative plateau criterion and the converged flag.
+
+The research report's noise-free ceilings must come from runs trained to a
+plateau, and every record must say whether its run got there.
+"""
+
+import pytest
+import torch
+import yaml
+
+from smi.analysis.training_interface import (
+    RelativeEarlyStopping,
+    TrainingConfig,
+    TrainingInterface,
+    convergence_monitor,
+)
+from tests.test_synthetic_train_cli import CONFIG
+
+SIGNED = 'val/velocity_rmse_um_per_ms'
+INVARIANT = 'val/velocity_rmse_sign_invariant_um_per_ms'
+
+
+def _feed(callback: RelativeEarlyStopping, values: list[float]) -> list[bool]:
+    return [callback._evaluate_stopping_criteria(torch.tensor(v))[0] for v in values]
+
+
+def test_improvement_below_relative_delta_counts_as_no_improvement():
+    cb = RelativeEarlyStopping(monitor=SIGNED, min_rel_delta=0.1, patience=2)
+    # 1.0 -> 0.95 is a 5% gain (< 10%): not an improvement, so two waits stop.
+    assert _feed(cb, [1.0, 0.95, 0.94]) == [False, False, True]
+
+
+def test_improvement_above_relative_delta_resets_patience():
+    cb = RelativeEarlyStopping(monitor=SIGNED, min_rel_delta=0.1, patience=2)
+    assert _feed(cb, [1.0, 0.95, 0.8, 0.79]) == [False, False, False, False]
+    assert cb.best_score == pytest.approx(0.8)
+
+
+def test_relative_delta_scales_with_the_best_value():
+    # A fixed 0.05 absolute gain is 50% of 0.1 but 5% of 1.0.
+    small = RelativeEarlyStopping(monitor=SIGNED, min_rel_delta=0.1, patience=1)
+    assert _feed(small, [0.1, 0.05]) == [False, False]
+    large = RelativeEarlyStopping(monitor=SIGNED, min_rel_delta=0.1, patience=1)
+    assert _feed(large, [1.0, 0.95]) == [False, True]
+
+
+@pytest.mark.parametrize(('flag', 'key'), [(False, SIGNED), (True, INVARIANT)])
+def test_monitor_follows_loss_sign_invariance(flag, key):
+    assert convergence_monitor({'sign_invariant': flag}) == key
+
+
+def _config(monitor: str, *, sign_invariant: bool, max_epochs: int) -> TrainingConfig:
+    return TrainingConfig(
+        model_config={
+            'type': 'TCN',
+            'sequence_length': 64,
+            'activation': 'GELU',
+            'use_layer_norm': False,
+            'use_weight_norm': False,
+            'kernel_size': 3,
+            'temporal_channels': [4, 4],
+            'dilation_base': 2,
+            'dropout': 0.0,
+        },
+        training_config={
+            'max_epochs': max_epochs,
+            'warmup_epochs': 0,
+            'T_0': 10,
+            'T_mult': 1,
+            'batch_size': 2,
+            'optimizer': 'Adam',
+            'weight_decay': 0.0,
+            'momentum': 0.9,
+            'learning_rate': 0.0,  # frozen weights: validation RMSE is flat
+            'eta_min': 0.0,
+            'accelerator': 'cpu',
+            'precision': '32-true',
+            'devices': 1,
+            'use_logging': False,
+            'target': 'velocity',
+            'convergence': {
+                'monitor': monitor,
+                'patience_epochs': 2,
+                'min_rel_delta': 0.01,
+            },
+        },
+        data_config={},
+        loss_config={
+            'dynamic': False,
+            'velocity_loss_weight': 1.0,
+            'displacement_loss_weight': 0.0,
+            'sign_invariant': sign_invariant,
+        },
+        synthetic_config={
+            'use_synthetic_training': True,
+            'steps_per_epoch': 2,
+            'val_steps': 1,
+            'sim': _sim(),
+        },
+    )
+
+
+def _sim() -> dict:
+    return yaml.safe_load(CONFIG.read_text())['synthetic']['sim']
+
+
+def _run(config: TrainingConfig, check_val_every_n_epoch: int = 1) -> TrainingInterface:
+    interface = TrainingInterface(
+        config=config, check_val_every_n_epoch=check_val_every_n_epoch
+    )
+    interface.train()
+    return interface
+
+
+def test_plateau_stops_early_and_reports_converged():
+    # Flat validation RMSE with fixed validation data is not exactly constant
+    # under a synthetic generator, so use a plateau patience that stops the
+    # run well before max_epochs, and assert the flag, not a specific epoch.
+    config = _config(SIGNED, sign_invariant=False, max_epochs=40)
+    config.training_config['convergence']['min_rel_delta'] = 0.5
+    interface = _run(config)
+    assert interface.converged is True
+    assert interface.trainer.current_epoch < 40
+
+
+def test_hitting_max_epochs_reports_not_converged():
+    config = _config(SIGNED, sign_invariant=False, max_epochs=2)
+    config.training_config['convergence']['patience_epochs'] = 100
+    interface = _run(config)
+    assert interface.converged is False
+    assert interface.trainer.current_epoch == 2
+
+
+def test_patience_counts_epochs_not_validation_checks():
+    config = _config(SIGNED, sign_invariant=False, max_epochs=40)
+    config.training_config['convergence'].update(min_rel_delta=0.5, patience_epochs=6)
+    interface = _run(config, check_val_every_n_epoch=3)
+    stopper = next(
+        cb
+        for cb in interface.trainer.callbacks
+        if isinstance(cb, RelativeEarlyStopping)
+    )
+    assert stopper.patience == 2
+
+
+def test_monitor_not_matching_loss_sign_invariance_is_rejected():
+    with pytest.raises(ValueError, match=INVARIANT):
+        _run(_config(SIGNED, sign_invariant=True, max_epochs=1))

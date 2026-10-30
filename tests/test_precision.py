@@ -47,8 +47,17 @@ def test_no_float64_in_any_registered_model(model_type: str, device: str):
 def test_missing_precision_names_the_field():
     cfg = TrainingConfig(
         model_config={},
-        training_config={'accelerator': 'cpu', 'devices': 1, 'use_logging': False},
-        loss_config={},
+        training_config={
+            'accelerator': 'cpu',
+            'devices': 1,
+            'use_logging': False,
+            'convergence': {
+                'monitor': 'val/velocity_rmse_um_per_ms',
+                'patience_epochs': 1,
+                'min_rel_delta': 0.01,
+            },
+        },
+        loss_config={'sign_invariant': False},
         data_config={},
     )
     iface = TrainingInterface.__new__(TrainingInterface)

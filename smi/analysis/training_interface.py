@@ -2,6 +2,7 @@
 
 import contextlib
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,12 @@ from typing import Any
 import lightning as lightning_module
 import torch
 import yaml
-from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
+from lightning.pytorch.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
+from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 from lightning.pytorch.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
@@ -18,6 +24,52 @@ from smi.analysis.lit_module import LitModule
 from smi.analysis.synthetic_lit_module import SyntheticIndexDataset, SyntheticLitModule
 
 logger = logging.getLogger(__name__)
+
+SIGNED_RMSE_KEY = 'val/velocity_rmse_um_per_ms'
+SIGN_INVARIANT_RMSE_KEY = 'val/velocity_rmse_sign_invariant_um_per_ms'
+
+
+def convergence_monitor(loss_config: dict[str, Any]) -> str:
+    """Validation metric a run must plateau on, decided by the loss.
+
+    A sign-invariant (Michelson) run never drives the signed RMSE down, so
+    monitoring it would never converge.
+
+    Args:
+        loss_config: The ``loss`` section; ``sign_invariant`` is required.
+
+    Returns:
+        The validation metric key to monitor.
+    """
+    if loss_config['sign_invariant']:
+        return SIGN_INVARIANT_RMSE_KEY
+    return SIGNED_RMSE_KEY
+
+
+class RelativeEarlyStopping(EarlyStopping):
+    """Early stopping whose improvement threshold is relative to the best value.
+
+    Lightning's ``min_delta`` is absolute, which makes one patience setting
+    mean different things at different RMSE scales (noise-free ceilings are an
+    order of magnitude below noisy runs). Here a value improves only when it
+    beats the best by more than ``min_rel_delta * best``. Minimizing only,
+    since the monitored quantity is an RMSE.
+    """
+
+    def __init__(
+        self, monitor: str, min_rel_delta: float, patience: int, **kwargs: Any
+    ):
+        super().__init__(monitor=monitor, patience=patience, mode='min', **kwargs)
+        self.min_rel_delta = min_rel_delta
+
+    def _evaluate_stopping_criteria(
+        self, current: torch.Tensor
+    ) -> tuple[bool, str | None]:
+        # Lightning stores min_delta pre-negated for 'min' mode and compares
+        # monitor_op(current - min_delta, best); the first check has best=inf.
+        best = float(self.best_score)
+        self.min_delta = -self.min_rel_delta * best if math.isfinite(best) else 0.0
+        return super()._evaluate_stopping_criteria(current)
 
 
 @dataclass
@@ -270,7 +322,7 @@ class TrainingInterface:
                 logging callbacks (e.g. Ray Tune's report callback).
             check_val_every_n_epoch: How often (in epochs) to run validation.
         """
-        callbacks = []
+        callbacks = [self._convergence_callback(check_val_every_n_epoch)]
         # Add WandB logger if configured
         if self.config.training_config['use_logging']:
             loggers = [
@@ -319,8 +371,57 @@ class TrainingInterface:
             precision=precision,
         )
 
-    def train(self):
-        """Train the model."""
+    def _convergence_callback(
+        self, check_val_every_n_epoch: int
+    ) -> RelativeEarlyStopping:
+        """Build the plateau-stopping callback from ``training.convergence``.
+
+        ``training.max_epochs`` stays the single epoch cap; the convergence
+        block only says when to stop sooner.
+
+        Args:
+            check_val_every_n_epoch: Validation cadence, to convert the
+                epoch-denominated patience into validation checks.
+
+        Raises:
+            ValueError: If the configured monitor does not match the loss.
+        """
+        convergence = self.config.training_config['convergence']
+        monitor = convergence['monitor']
+        expected = convergence_monitor(self.config.loss_config)
+        if monitor != expected:
+            raise ValueError(
+                f'training.convergence.monitor is {monitor!r} but '
+                f'loss.sign_invariant={self.config.loss_config["sign_invariant"]} '
+                f'requires {expected!r}'
+            )
+        self.convergence_callback = RelativeEarlyStopping(
+            monitor=monitor,
+            min_rel_delta=float(convergence['min_rel_delta']),
+            patience=math.ceil(
+                convergence['patience_epochs'] / check_val_every_n_epoch
+            ),
+        )
+        return self.convergence_callback
+
+    @property
+    def converged(self) -> bool:
+        """Whether the last :meth:`train` stopped on a plateau (not max_epochs).
+
+        False for a run that hit ``training.max_epochs`` or whose monitored
+        metric went non-finite. Pass it to ``evaluate(..., converged=...)``.
+        """
+        return (
+            self.convergence_callback.stopping_reason
+            == EarlyStoppingReason.PATIENCE_EXHAUSTED
+        )
+
+    def train(self) -> bool:
+        """Train the model.
+
+        Returns:
+            :attr:`converged` for this run.
+        """
         # Real data uses the DataModule; synthetic uses index dataloaders.
         if getattr(self, 'datamodule', None) is not None:
             self.trainer.fit(self.lightning_module, datamodule=self.datamodule)
@@ -330,6 +431,7 @@ class TrainingInterface:
                 train_dataloaders=self.train_loader,
                 val_dataloaders=self.val_loader,
             )
+        return self.converged
 
     def test(self):
         """Test the model using best checkpoint."""
