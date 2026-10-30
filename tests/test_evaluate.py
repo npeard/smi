@@ -222,6 +222,57 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
     assert json.loads(out.read_text())['schema_version'] == 1
 
 
+def test_recurrent_checkpoint_records_unbounded_receptive_field(
+    tmp_path, michelson_set
+):
+    module = SyntheticLitModule(
+        model_hparams=dict(
+            type='LSTM',
+            sequence_length=1024,
+            in_channels=3,
+            hidden_size=4,
+            num_layers=1,
+            dropout=0.0,
+            bidirectional=True,
+            receptive_field='unbounded',
+        ),
+        optimizer_hparams={'name': 'Adam', 'lr': 1e-3, 'weight_decay': 0.0},
+        scheduler_hparams={},
+        loss_hparams={
+            'dynamic': False,
+            'velocity_loss_weight': 1.0,
+            'displacement_loss_weight': 1.0,
+            'sign_invariant': False,
+        },
+        training_hparams={'target': 'velocity'},
+        data_hparams={},
+        steps_per_epoch=1,
+        train_crop_length=None,
+        sim=dataclasses.asdict(_michelson()),
+    )
+    ckpt = tmp_path / 'lstm.ckpt'
+    torch.save(
+        {'hyper_parameters': dict(module.hparams), 'state_dict': module.state_dict()},
+        ckpt,
+    )
+    out = tmp_path / 'results.json'
+    evaluate_to_artifact(
+        CheckpointEstimator(ckpt, 'cpu'),
+        michelson_set,
+        RIG,
+        2,
+        **TRAINED,
+        results_path=out,
+    )
+    (record,) = read_results(out)
+    assert record.receptive_field is None
+    assert record.receptive_field_unbounded
+    assert (
+        json.loads(out.read_text())['datasets'][record.dataset][0]['receptive_field']
+        is None
+    )
+
+
 def _per_shot_nrmse_reference(pred, target):
     rmse = np.sqrt(np.mean((pred - target) ** 2, axis=-1))
     return rmse / np.std(target, axis=-1)

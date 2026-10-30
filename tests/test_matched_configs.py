@@ -17,6 +17,7 @@ from smi.analysis.models.base import Model
 from smi.analysis.models.factory import MODEL_REGISTRY, create_model, is_causal
 from smi.analysis.training_interface import MIN_PATIENCE_CHECKS, TrainingConfig
 from smi.synthetic.forward import SimConfig
+from tests.test_receptive_field import measure_receptive_field
 
 MATCHED = (
     Path(__file__).parents[1] / 'smi' / 'analysis' / 'models' / 'configs' / 'matched'
@@ -42,7 +43,10 @@ def _field(model_hparams: dict) -> int | None:
 CAUSAL_FIELD = _field(_load(MATCHED / 'tcn-44k.yaml')['model'])
 # Symmetric field every offline family is held to: Barland's, because its
 # depth and kernels are fixed by the published network while the others can be
-# tuned to it.
+# tuned to it. Offline families match it within FIELD_BAND, not exactly: SCNN
+# needs an odd kernel (symmetric padding cannot preserve length otherwise),
+# which puts its fields at 85 or 169, never 91.
+FIELD_BAND = 0.10
 OFFLINE_FIELD = _field(_load(MATCHED / 'barland-44k.yaml')['model'])
 
 
@@ -87,8 +91,10 @@ def test_context_rule_follows_the_column(path):
         assert field is None
         return
     assert field is not None
-    expected = CAUSAL_FIELD if is_causal(hparams) else OFFLINE_FIELD
-    assert field == expected
+    if is_causal(hparams):
+        assert field == CAUSAL_FIELD
+    else:
+        assert abs(field / OFFLINE_FIELD - 1) <= FIELD_BAND
     crop = config['synthetic']['train_crop_length']
     assert field * MARGIN <= crop
 
@@ -114,3 +120,33 @@ def test_config_loads_and_follows_training_rules(path):
     sim = SimConfig(**synthetic['sim'])
     assert len(sim.wavelengths_um) == config.model_config['in_channels']
     assert create_model(config.model_config) is not None
+
+
+@pytest.mark.parametrize('path', CONFIGS, ids=lambda p: p.stem)
+def test_forward_preserves_length(path):
+    hparams = _load(path)['model']
+    model = create_model(hparams).eval()
+    x = torch.randn(1, hparams['in_channels'], 512)
+    with torch.no_grad():
+        assert model(x).shape == (1, 1, 512)
+
+
+CONV_ATTENTION = [
+    p for p in CONFIGS if _load(p)['model']['type'] in ('TCN', 'SCNN', 'TCAN')
+]
+
+
+@pytest.mark.parametrize('path', CONV_ATTENTION, ids=lambda p: p.stem)
+def test_measured_field_agrees_with_property(path):
+    """The gradient probe is ground truth; the property is only a formula.
+
+    Windowed families (Barland, MLP) are excluded: their overlap averaging
+    makes the probed footprint wider than the window by construction.
+    """
+    hparams = _load(path)['model']
+    model = create_model(hparams)
+    measured, sees_future = measure_receptive_field(
+        model, hparams['in_channels'], length=2048
+    )
+    assert measured == model.receptive_field
+    assert sees_future == (not is_causal(hparams))

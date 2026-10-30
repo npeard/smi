@@ -66,7 +66,7 @@ class Estimator(Protocol):
     name: str
     model_type: str
     causal: bool
-    receptive_field: int
+    receptive_field: int | None  # None: unbounded lookback
     total_params: int
     device: str
     config: dict[str, Any]
@@ -122,10 +122,10 @@ class CheckpointEstimator:
         self.name = f'{self.model_type}:{Path(path).stem}'
         self.wavelengths_um = _checkpoint_wavelengths(self.module)
         self.causal = is_causal(hp)
-        # Recurrent models have no finite window: they see the whole shot.
-        self.receptive_field = int(
-            getattr(inner, 'receptive_field', None) or hp['sequence_length']
-        )
+        # Recurrent models have no finite window; recording the shot length
+        # instead would read as a 16384-sample lookback, so it stays None.
+        field = getattr(inner, 'receptive_field', None)
+        self.receptive_field = None if field is None else int(field)
         self.total_params = sum(p.numel() for p in inner.parameters())
         self.config = {
             k: v for k, v in hp.items() if k not in ('total_params', 'receptive_field')
@@ -164,12 +164,11 @@ class InverseFitEstimator:
     # float64 numpy/torch; MPS has no float64.
     device = 'cpu'
 
-    def __init__(
-        self, sample_rate: float, displacement_limit_um: float, shot_length: int
-    ) -> None:
+    def __init__(self, sample_rate: float, displacement_limit_um: float) -> None:
         self.sample_rate = sample_rate
         self.displacement_limit_um = displacement_limit_um
-        self.receptive_field = shot_length
+        # The search fits the whole shot at once: no finite lookback.
+        self.receptive_field: int | None = None
         self.config = {
             'displacement_limit_um': displacement_limit_um,
             'max_speed_um_per_ms': MAX_SPEED_UM_PER_MS,
@@ -183,7 +182,7 @@ class InverseFitEstimator:
             sample_rate = float(f.attrs['sample_rate'])
         centered = disp - disp.mean(axis=1, keepdims=True)
         limit = float(np.abs(centered).max()) * DISPLACEMENT_LIMIT_MARGIN
-        return cls(sample_rate, limit, disp.shape[1])
+        return cls(sample_rate, limit)
 
     def predict_velocity(
         self, signals: Tensor, wavelengths_um: tuple[float, ...]
@@ -380,6 +379,7 @@ def evaluate(
         config=est.config,
         total_params=est.total_params,
         receptive_field=est.receptive_field,
+        receptive_field_unbounded=est.receptive_field is None,
         sees_future=not est.causal,
         seed=-1 if train_seed is None else train_seed,
         device=est.device,

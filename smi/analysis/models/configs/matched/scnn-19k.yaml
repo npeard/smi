@@ -1,7 +1,7 @@
 # scnn-19k: matched budget of 19,329 parameters (+/-10%, test_matched_configs.py).
-# Offline column: symmetric field of 91 samples, Barland's. Barland's depth
-# and kernels are fixed by the published network, so every other offline
-# family is set to it.
+# Offline column: symmetric field of 85 samples (kernel 7, dilations 1-2-4),
+# within 10% of Barland's 91, which is fixed by the published network. An
+# odd kernel is required: symmetric padding cannot preserve length otherwise.
 model:
   type: "SCNN"
   sequence_length: 16384
@@ -9,8 +9,8 @@ model:
   activation: "GELU"
   use_layer_norm: true
   use_weight_norm: false
-  kernel_size: 4
-  temporal_channels: [12, 16, 32, 32]
+  kernel_size: 7
+  temporal_channels: [16, 16, 32]  # dilations 1-2-4, as tcn-19k
   dilation_base: 2
   dropout: 0.0
 

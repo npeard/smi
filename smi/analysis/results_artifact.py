@@ -28,7 +28,8 @@ class RunRecord:
         model_type: Architecture name as passed to ``create_model``.
         config: The model hyperparameters the run used.
         total_params: Trainable parameter count.
-        receptive_field: Receptive field in samples.
+        receptive_field: Receptive field in samples; ``None`` when the model
+            has no finite lookback (recurrent state, whole-shot estimators).
         sees_future: Whether the model uses samples after the predicted one.
         seed: Random seed the run was trained with; records from
             :mod:`smi.analysis.evaluate` use ``-1`` when the estimator has none.
@@ -75,7 +76,7 @@ class RunRecord:
     model_type: str
     config: dict[str, Any]
     total_params: int
-    receptive_field: int
+    receptive_field: int | None
     sees_future: bool
     seed: int
     device: str
@@ -101,6 +102,9 @@ class RunRecord:
     train_crop_length: int | None = None
     steps_per_epoch: int | None = None
     batch_size: int | None = None
+    # Explicit alongside the null field so a reader never has to infer
+    # "unbounded" from a missing number; False for records predating it.
+    receptive_field_unbounded: bool = False
 
     @property
     def causal(self) -> bool:
