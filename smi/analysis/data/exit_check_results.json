@@ -1,0 +1,60 @@
+{
+ "provenance": "Task 10 phase exit check (diagnostic), run by scratch/t10_exit_check.py after commit a9ddab5; copied from scratch/t10/{A_smi_signed,B_michelson_sign_inv,C_michelson_signed}.json with the training curves and binned errors dropped. Training on MPS; evaluation on CPU.",
+ "model": "causal TCN, smi/analysis/models/configs/matched/tcn-matched.yaml",
+ "wavelengths_um": [
+  0.635,
+  0.6748,
+  0.515
+ ],
+ "noise": "noise-free (SimConfig.noise_free)",
+ "training": "20 epochs x 200 steps, train seed 0, not converged",
+ "test_set": "frozen, seed 1234, 64 shots",
+ "runs": {
+  "A_smi_signed": {
+   "interferometer": "SMI",
+   "feedback_c": 0.2,
+   "alpha": 3.0,
+   "loss_sign_invariant": false,
+   "total_params": 44049,
+   "receptive_field": 85,
+   "precision": "32-true",
+   "sim_config_hash": "bb59ed212637e6cbfdffc3bdc05ee58bc683bc57",
+   "converged": false,
+   "velocity_rmse": 0.09351897984743118,
+   "velocity_rmse_sign_invariant": 0.09291889518499374,
+   "velocity_nrmse": 0.40949738025665283,
+   "velocity_nrmse_sign_invariant": 0.3938811421394348
+  },
+  "C_michelson_signed": {
+   "interferometer": "Michelson",
+   "feedback_c": 0.0,
+   "alpha": 0.0,
+   "loss_sign_invariant": false,
+   "total_params": 44049,
+   "receptive_field": 85,
+   "precision": "32-true",
+   "sim_config_hash": "ad4c7f0906402c7664d7641b174030e57f12870c",
+   "converged": false,
+   "velocity_rmse": 0.3710203766822815,
+   "velocity_rmse_sign_invariant": 0.3680941164493561,
+   "velocity_nrmse": 1.0037707090377808,
+   "velocity_nrmse_sign_invariant": 0.9935683012008667
+  },
+  "B_michelson_sign_inv": {
+   "interferometer": "Michelson",
+   "feedback_c": 0.0,
+   "alpha": 0.0,
+   "loss_sign_invariant": true,
+   "total_params": 44049,
+   "receptive_field": 85,
+   "precision": "32-true",
+   "sim_config_hash": "ad4c7f0906402c7664d7641b174030e57f12870c",
+   "converged": false,
+   "velocity_rmse": 0.39294058084487915,
+   "velocity_rmse_sign_invariant": 0.1738215684890747,
+   "velocity_nrmse": 1.1058669090270996,
+   "velocity_nrmse_sign_invariant": 0.45812755823135376
+  }
+ },
+ "std_v_um_per_ms": 0.3712881082411556
+}

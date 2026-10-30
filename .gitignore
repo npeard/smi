@@ -155,6 +155,11 @@ dmypy.json
 # recompute. Regenerate with `python -m smi.analysis.run_baseline_sweep`.
 !smi/analysis/data/learned_results.json
 
+# The synthetic exit check (report/synthetic.typ section 1.1): a few hundred
+# bytes copied from a diagnostic run whose outputs live in scratch/, so the
+# report build does not depend on an uncommitted directory.
+!smi/analysis/data/exit_check_results.json
+
 # Session-scoped agent scaffolding (specs, plans) -- durable rationale goes
 # in commit messages and code comments instead.
 docs/superpowers/

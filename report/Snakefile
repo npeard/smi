@@ -35,6 +35,12 @@ DOCUMENT_FIGURES = {
         "freespace_vs_fiber",
         "model_comparison",
     ],
+    "synthetic": [
+        "exit_check",
+        "sign_information",
+        "fisher_phase",
+        "velocity_bounds",
+    ],
 }
 
 # The figure registry: stem <name> maps to figures/plot_<name>.py ->
@@ -60,6 +66,16 @@ RESULTS = [
     str(DATA_DIR / "baseline_results.json"),
     str(DATA_DIR / "gain_sweep_results.json"),
     str(DATA_DIR / "learned_results.json"),
+    str(DATA_DIR / "exit_check_results.json"),
+]
+
+# The library modules the synthetic figures compute from rather than read, so
+# a change to the bounds or to the forward model rebuilds them. Listed for all
+# figures for the same reason as RESULTS.
+SMI_DIR = REPORT_DIR.parent / "smi"
+ANALYSIS_CODE = [
+    str(SMI_DIR / "analysis" / "bounds.py"),
+    str(SMI_DIR / "synthetic" / "forward.py"),
 ]
 
 # Without this, the unconstrained {document} wildcard in `rule document` also
@@ -86,6 +102,7 @@ rule figure:
         script="figures/plot_{name}.py",
         common="figures/_figcommon.py",
         results=RESULTS,
+        code=ANALYSIS_CODE,
     output:
         f"{FIGDIR}/{{name}}.pdf",
     shell:
@@ -97,6 +114,7 @@ rule document:
     input:
         source="{document}.typ",
         theme=THEME,
+        bib="refs.bib",
         figures=lambda wildcards: figure_pdfs(wildcards.document),
     output:
         f"{BUILD}/{{document}}.pdf",
