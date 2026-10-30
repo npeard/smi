@@ -75,6 +75,7 @@ KNOBS = {
     'snr_db': {'snr_db': 20.0},
     'shot_noise': {'snr_db': 20.0, 'shot_noise': True},
     'visibility_range': {'visibility_range': (0.5, 0.9)},
+    'dc_offset_range': {'dc_offset_range': (-0.2, 0.3)},
     'amplitude_drift_rel': {'amplitude_drift_rel': 0.1},
     'phase_drift_rad_per_sqrt_s': {'phase_drift_rad_per_sqrt_s': 5.0},
     'contrast_drift_rel': {'contrast_drift_rel': 0.1},
@@ -97,6 +98,18 @@ def test_each_knob_off_is_identity(knob):
     # A knob never shifts the random stream that draws the motion.
     for name in ('voltage', 'velocity', 'displacement'):
         assert torch.equal(getattr(on, name), getattr(base, name))
+    # Only phase drift moves the optical phase (hence phi_k stays put too).
+    if knob != 'phase_drift_rad_per_sqrt_s':
+        assert torch.equal(on.optical_phase, base.optical_phase)
+
+
+def test_phase_drift_does_not_change_visibility_draw():
+    cfg = dataclasses.replace(_noise_free(), visibility_range=(0.5, 0.9))
+    # A negligible drift leaves the signal equal only if V is the same draw.
+    tiny = dataclasses.replace(cfg, phase_drift_rad_per_sqrt_s=1e-6)
+    torch.testing.assert_close(
+        _simulate(cfg).signals, _simulate(tiny).signals, atol=1e-3, rtol=0
+    )
 
 
 @pytest.mark.parametrize('snr_db', [0.0, 10.0, 20.0, 40.0])
@@ -231,6 +244,24 @@ def test_hash_is_stable_and_field_sensitive():
     assert (
         _noise_free().hash() != dataclasses.replace(_noise_free(), snr_db=20.0).hash()
     )
+
+
+def test_hash_ignores_int_vs_float_spelling():
+    float_cfg = _noise_free()
+    int_cfg = SimConfig.noise_free(
+        wavelengths_um=list(WAVELENGTHS_UM),
+        sample_rate=SAMPLE_RATE,
+        start_freq_hz=1,
+        end_freq_hz=1000,
+        drive_gain=NOMINAL_DRIVE_GAIN,
+        feedback_c=0,
+        alpha=0,
+    )
+    assert int_cfg == float_cfg
+    assert int_cfg.hash() == float_cfg.hash()
+    ints = dataclasses.replace(float_cfg, snr_db=20, visibility_range=[1, 1])
+    floats = dataclasses.replace(float_cfg, snr_db=20.0, visibility_range=(1.0, 1.0))
+    assert ints.hash() == floats.hash()
 
 
 def test_full_model_causal_with_baked_normalization():

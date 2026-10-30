@@ -50,6 +50,7 @@ synthetic:
     snr_db: null
     shot_noise: false
     visibility_range: [1.0, 1.0]
+    dc_offset_range: [0.0, 0.0]
     amplitude_drift_rel: 0.0
     phase_drift_rad_per_sqrt_s: 0.0
     contrast_drift_rel: 0.0

@@ -7,6 +7,7 @@ exercises the same code path used on GPU.
 
 import dataclasses
 
+import pytest
 import torch
 from torch.func import functional_call
 
@@ -219,3 +220,13 @@ def test_synthetic_ensemble_bakes_simulator_stats():
     member = ens.best_member_model(0)
     for name, value in expected.items():
         torch.testing.assert_close(getattr(member, name).flatten(), value.flatten())
+
+
+def test_synthetic_ensemble_rejects_displacement_target():
+    with pytest.raises(ValueError, match='velocity'):
+        SyntheticEnsembleModule(
+            _tcn_hparams(),
+            [0, 1],
+            sim=dataclasses.asdict(_sim()),
+            target='displacement',
+        )

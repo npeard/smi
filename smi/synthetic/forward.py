@@ -105,12 +105,17 @@ class SimConfig:
         shot_noise: Scale the noise std by sqrt(intensity) (same mean power);
             requires ``snr_db``.
         visibility_range: Per-shot, per-channel fringe visibility ~ U(lo, hi).
-        amplitude_drift_rel: Within-shot relative drift of ``a``; a random
-            walk whose std reaches this value at the end of the shot.
+        dc_offset_range: Per-shot, per-channel additive DC level ~ U(lo, hi) in
+            signal units, added to the optical intensity (so it passes through
+            the PD low-pass); (0, 0) is off and draws nothing.
+        amplitude_drift_rel: Within-shot relative drift of ``a``: a random
+            walk with per-sample step ``scale / sqrt(length)``, i.e. its std
+            reaches ``scale`` at the end of a shot of THIS length (the scale is
+            relative-per-shot, not per-sample).
         phase_drift_rad_per_sqrt_s: Within-shot phase random walk, independent
             per channel (rad / sqrt(s)).
-        contrast_drift_rel: Within-shot relative drift of ``V``, shaped as
-            ``amplitude_drift_rel``.
+        contrast_drift_rel: Within-shot relative drift of ``V``, scaled per shot
+            as ``amplitude_drift_rel``; ``V * (1 + walk)`` is clamped to [0, 1].
         pd_bandwidth_hz: -3 dB frequency of the causal one-pole photodiode
             low-pass; None is unlimited.
         adc_bits: Quantizer bits; None is unquantized.
@@ -128,6 +133,7 @@ class SimConfig:
     snr_db: float | None
     shot_noise: bool
     visibility_range: tuple[float, float]
+    dc_offset_range: tuple[float, float]
     amplitude_drift_rel: float
     phase_drift_rad_per_sqrt_s: float
     contrast_drift_rel: float
@@ -135,16 +141,40 @@ class SimConfig:
     adc_bits: int | None
     adc_full_scale: float
 
+    def _coerce(self) -> None:
+        # YAML gives lists and ints; the frozen config's hash must not depend on
+        # the spelling (json writes 1 vs 1.0), so coerce to tuples of floats.
+        for name in ('wavelengths_um', 'visibility_range', 'dc_offset_range'):
+            value = tuple(float(x) for x in getattr(self, name))
+            object.__setattr__(self, name, value)
+        for name in (
+            'sample_rate',
+            'start_freq_hz',
+            'end_freq_hz',
+            'drive_gain',
+            'feedback_c',
+            'alpha',
+            'amplitude_drift_rel',
+            'phase_drift_rad_per_sqrt_s',
+            'contrast_drift_rel',
+            'adc_full_scale',
+        ):
+            object.__setattr__(self, name, float(getattr(self, name)))
+        for name in ('snr_db', 'pd_bandwidth_hz'):
+            if getattr(self, name) is not None:
+                object.__setattr__(self, name, float(getattr(self, name)))
+
     def __post_init__(self) -> None:
-        # YAML gives lists; the frozen config (and its hash) wants tuples.
-        object.__setattr__(self, 'wavelengths_um', tuple(self.wavelengths_um))
-        object.__setattr__(self, 'visibility_range', tuple(self.visibility_range))
+        self._coerce()
         _check_feedback(self.feedback_c)
         lo, hi = self.visibility_range
         if not 0.0 <= lo <= hi <= 1.0:
             raise ValueError(
                 f'visibility_range must satisfy 0 <= lo <= hi <= 1: {lo, hi}'
             )
+        dc_lo, dc_hi = self.dc_offset_range
+        if dc_lo > dc_hi:
+            raise ValueError(f'dc_offset_range must satisfy lo <= hi: {dc_lo, dc_hi}')
         drifts = (
             self.amplitude_drift_rel,
             self.phase_drift_rad_per_sqrt_s,
@@ -194,6 +224,7 @@ class SimConfig:
             snr_db=None,
             shot_noise=False,
             visibility_range=(1.0, 1.0),
+            dc_offset_range=(0.0, 0.0),
             amplitude_drift_rel=0.0,
             phase_drift_rad_per_sqrt_s=0.0,
             contrast_drift_rel=0.0,
@@ -212,7 +243,7 @@ class SimBatch:
     voltage: torch.Tensor  # [B, L] drive voltage
     velocity: torch.Tensor  # [B, L] um/ms
     displacement: torch.Tensor  # [B, L] um
-    optical_phase: torch.Tensor  # [B, C, L] rad, before noise
+    optical_phase: torch.Tensor  # [B, C, L] rad: phi_0 (pre-feedback) + phase drift
 
 
 def _check_feedback(feedback_c: float) -> None:
@@ -261,8 +292,9 @@ def fringe(phase: torch.Tensor, feedback_c: float, alpha: float) -> torch.Tensor
     Sign convention: displacement d increasing (v > 0) increases the phase.
     For C > 0 and alpha > 0 the fringe then rises slowly and falls steeply,
     so the third moment of dI/dt over whole fringes is negative; v < 0
-    mirrors it. With alpha = 0 the fringe is tilted but even under
-    (phase -> -phase), so direction is observable only for C > 0 AND alpha != 0.
+    mirrors it. With alpha = 0 the fringe is even under (phase -> -phase): the
+    low point is narrowed and the peak broadened, which carries no direction, so
+    direction is observable only for C > 0 AND alpha != 0.
     """
     if feedback_c == 0.0:
         return torch.cos(phase)
@@ -326,7 +358,10 @@ def simulate_batch(
     Order: trajectory, optical phase (+ phase drift), fringe (Michelson or
     SMI), visibility / contrast / amplitude, PD low-pass, additive / shot
     noise, ADC. Random draws follow that order and a knob that is off draws
-    nothing, so no knob shifts the motion or phi_k drawn before it.
+    nothing, so no knob shifts the motion, phi_k or visibility (all drawn
+    first). The remaining coupling: each ON knob's draws shift the draws after
+    it (phase drift, contrast drift, amplitude drift, DC offset, noise), so
+    turning one on re-rolls the later ones' realizations.
 
     Args:
         cfg: Simulator configuration.
@@ -358,22 +393,27 @@ def simulate_batch(
 
     lam = torch.tensor(cfg.wavelengths_um, device=sim_device).view(1, -1, 1)
     phi_k = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
+    lo, hi = cfg.visibility_range
+    u = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
+    visibility = lo + (hi - lo) * u
     phase = 4 * math.pi * displacement[:, None] / lam + 2 * math.pi * phi_k
     if cfg.phase_drift_rad_per_sqrt_s > 0:
         sigma = cfg.phase_drift_rad_per_sqrt_s / math.sqrt(cfg.sample_rate)
         phase = phase + sigma * _walk(full, sim_device, generator)
 
-    lo, hi = cfg.visibility_range
-    u = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
-    visibility = lo + (hi - lo) * u
     # Drift walks are scaled so their std reaches the stated value at shot end.
     if cfg.contrast_drift_rel > 0:
         rel = cfg.contrast_drift_rel / math.sqrt(length)
-        visibility = visibility * (1 + rel * _walk(full, sim_device, generator))
+        walk = _walk(full, sim_device, generator)
+        visibility = (visibility * (1 + rel * walk)).clamp(0.0, 1.0)
     intensity = 1 + visibility * fringe(phase, cfg.feedback_c, cfg.alpha)
     if cfg.amplitude_drift_rel > 0:
         rel = cfg.amplitude_drift_rel / math.sqrt(length)
         intensity = intensity * (1 + rel * _walk(full, sim_device, generator))
+    if cfg.dc_offset_range != (0.0, 0.0):
+        dc_lo, dc_hi = cfg.dc_offset_range
+        dc = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
+        intensity = intensity + dc_lo + (dc_hi - dc_lo) * dc
     if cfg.pd_bandwidth_hz is not None:
         intensity = pd_lowpass(intensity, cfg.pd_bandwidth_hz, cfg.sample_rate)
 

@@ -540,6 +540,11 @@ class SyntheticEnsembleModule(EnsembleModule):
         sim: dict[str, Any],
         **ensemble_kwargs: Any,
     ) -> None:
+        if ensemble_kwargs.get('target', 'velocity') != 'velocity':
+            raise ValueError(
+                'synthetic normalization scales the velocity target, '
+                f'not {ensemble_kwargs["target"]!r}'
+            )
         sim_config = SimConfig(**sim)
         if len(sim_config.wavelengths_um) != model_hparams['in_channels']:
             raise ValueError(
