@@ -447,6 +447,11 @@ def fringe(phase: torch.Tensor, feedback_c: float, alpha: float) -> torch.Tensor
     return torch.cos(phase + delta)
 
 
+def noise_std(snr_db: float) -> float:
+    """Additive noise std for ``snr_db``: nominal-fringe power 0.5 over noise power."""
+    return math.sqrt(0.5 * 10 ** (-snr_db / 10))
+
+
 def one_pole_coefficient(cutoff_hz: float, sample_rate: float) -> float:
     """Pole p of the one-pole low-pass whose discrete response is -3 dB at cutoff."""
     b = 2.0 - math.cos(2 * math.pi * cutoff_hz / sample_rate)
@@ -569,8 +574,9 @@ def simulate_batch(
 
     signals = intensity - 1
     if cfg.snr_db is not None:
-        sigma = math.sqrt(0.5 * 10 ** (-cfg.snr_db / 10))
-        noise = sigma * torch.randn(full, device=sim_device, generator=generator)
+        noise = noise_std(cfg.snr_db) * torch.randn(
+            full, device=sim_device, generator=generator
+        )
         if cfg.shot_noise:
             noise = noise * intensity.clamp(min=0).sqrt()
         signals = signals + noise
