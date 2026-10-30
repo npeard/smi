@@ -28,9 +28,11 @@ def _waveform() -> Waveform:
 
 def _shots(gain: float, n: int = 256) -> torch.Tensor:
     gen = torch.Generator().manual_seed(0)
-    return sample_trajectory(n, _waveform(), CoilDriver(), gain, SAMPLE_RATE, CPU, gen)[
-        1
-    ]
+    with no_float64():
+        _, velocity, _ = sample_trajectory(
+            n, _waveform(), CoilDriver(), gain, SAMPLE_RATE, CPU, gen
+        )
+    return velocity
 
 
 def test_precompensation_matches_numpy_sample(monkeypatch: pytest.MonkeyPatch):

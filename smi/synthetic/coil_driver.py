@@ -52,6 +52,39 @@ class CoilDriver:
         else:
             self.params = calibration_params
 
+    def normalized_velocity_transfer(
+        self, freq: np.ndarray, min_freq: float
+    ) -> np.ndarray:
+        """Velocity transfer function used to pre-compensate drive spectra.
+
+        Shared by :meth:`sample` and :meth:`precompensate_torch` so the two
+        cannot diverge. It depends only on the frequency grid, so the torch
+        path evaluates it here in float64 and casts the result.
+
+        Args:
+            freq: Frequency grid (Hz), as from ``fftfreq``.
+            min_freq: Lowest valid waveform frequency (Hz); the bin where
+                ``freq == min_freq`` is the normalization reference.
+
+        Returns:
+            Complex transfer * j*2*pi*f, divided by 10 times its magnitude at
+            the reference bin.
+        """
+        # Compensation for the velocity transform (because velocity is the
+        # quantity we care about, we'd like for its spectrum to be the same
+        # shape as the original waveform (flat)
+        velocity_transfer = self.get_transfer_function(freq) * 1j * 2 * np.pi * freq
+        # We apply a scaling factor here so that we don't have to apply large
+        # amounts of gain to the original spectrum. This is OK because
+        # ultimately we just want the shape of the velocity spectrum to match
+        # the original waveform (flat) and we don't care so much about the
+        # overall scaling as long as it is within the hardware constraints and
+        # allows us to scan over multiple fringes
+        scaling_factor = np.abs(velocity_transfer[freq == min_freq])
+        # The extra factor of 10 here is manually selected and seems to produce
+        # voltages in a compatible range
+        return velocity_transfer / (scaling_factor * 10)
+
     def sample(
         self,
         waveform: Waveform,
@@ -106,22 +139,9 @@ class CoilDriver:
         n = len(t)
         freq = fftfreq(n, d=1 / sample_rate)
 
-        # Get the complex transfer function
-        transfer_function = self.get_transfer_function(freq)
-
-        # Compute compensation for velocity transform (because velocity is the quantity
-        # we care about, we'd like for its spectrum to be the same shape as the original
-        # waveform (flat)
-        velocity_transfer = transfer_function * 1j * 2 * np.pi * freq
-        # We apply a scaling factor here so that we don't have to apply large amounts of
-        # gain to the original spectrum. This is OK because ultimately we just want the
-        # shape of the velocity spectrum to match the original waveform (flat) and we
-        # don't care so much about the overall scaling as long as it is within the
-        # hardware constraints and allows us to scan over multiple fringes
-        scaling_factor = np.abs(velocity_transfer[freq == waveform.valid_freqs[0]])
-        # The extra factor of 10 here is manually selected and seems to produce voltages
-        # in a compatible range
-        velocity_transfer /= scaling_factor * 10
+        velocity_transfer = self.normalized_velocity_transfer(
+            freq, waveform.valid_freqs[0]
+        )
 
         # Pre-compensate the spectrum by dividing by the complex transfer function
         nonzero_mask = velocity_transfer != 0
@@ -450,10 +470,9 @@ class CoilDriver:
         """Batched float32 torch port of the ``normalize_gain=True`` branch of
         :meth:`sample`, without its random U(0, 1) power scaling.
 
-        Divides the waveform's spectrum by the velocity transfer function
-        (normalized by its magnitude at ``min_freq`` and the same extra factor
-        of 10), so the resulting drive voltage produces a velocity spectrum
-        shaped like the input. Bins where the velocity transfer is zero (DC)
+        Divides the waveform's spectrum by :meth:`normalized_velocity_transfer`, so the
+        resulting drive voltage produces a velocity spectrum shaped like the
+        input. Bins where the velocity transfer is zero (DC)
         are set to 1, exactly as in the numpy branch.
 
         Args:
@@ -469,16 +488,10 @@ class CoilDriver:
             Pre-compensated drive voltage, same shape/dtype, circularly shifted
             with ``fftshift`` as :meth:`sample` does.
         """
-        n = spectrum_voltage.shape[-1]
-        freq = torch.fft.fftfreq(
-            n, d=1.0 / sample_rate, dtype=torch.float32, device=spectrum_voltage.device
-        )
-        velocity_transfer = self.get_transfer_function_torch(freq) * (2j * np.pi * freq)
-        ref = torch.tensor(
-            [min_freq], dtype=torch.float32, device=spectrum_voltage.device
-        )
-        scaling_factor = (self.get_transfer_function_torch(ref) * 2 * np.pi * ref).abs()
-        velocity_transfer = velocity_transfer / (scaling_factor * 10)
+        freq = np.fft.fftfreq(spectrum_voltage.shape[-1], d=1.0 / sample_rate)
+        velocity_transfer = torch.from_numpy(
+            self.normalized_velocity_transfer(freq, min_freq).astype(np.complex64)
+        ).to(spectrum_voltage.device)
 
         spectrum = torch.fft.fft(spectrum_voltage, dim=-1, norm='ortho')
         nonzero = velocity_transfer != 0

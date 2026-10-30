@@ -102,6 +102,11 @@ def _(
         )
         _start_freq = ckpt_hparams.get('start_freq', 1.0)
         _end_freq = ckpt_hparams.get('end_freq', 1000.0)
+        if 'drive_gain' not in ckpt_hparams:
+            raise ValueError(
+                'checkpoint has no drive_gain hyperparameter (it predates '
+                'drive-voltage synthetic data); retrain or set drive_gain'
+            )
         _drive_gain = ckpt_hparams['drive_gain']
         test_loader = generate_synthetic_test_data(
             num_samples=batch_size.value * 4,

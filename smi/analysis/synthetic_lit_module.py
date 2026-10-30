@@ -149,8 +149,9 @@ class SyntheticLitModule(LitModule):
         This is the reusable core of synthetic data generation, factored out so
         that both ``SyntheticLitModule`` and the vmap ensemble
         (``smi.analysis.ensemble``) can produce one batch and -- in the
-        ensemble's case -- share it across all members. The numerics are
-        identical to the historical in-module implementation.
+        ensemble's case -- share it across all members.  Motion comes from
+        :func:`smi.synthetic.forward.sample_trajectory` (drive voltage through
+        the coil), not from a random displacement spectrum.
 
         Args:
             batch_size: Number of samples to generate.

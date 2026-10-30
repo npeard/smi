@@ -9,11 +9,13 @@ from smi.synthetic.waveform import Waveform
 # (CoilDriver.sample(normalize_gain=True), driven by RedPitayaManager at
 # generator amplitude 1.0, manager.py:286-290). The code chain alone does not
 # reproduce the rig's velocity scale (it depends strongly on the Waveform
-# range and is ~350x too large at the rig default 1-1000 Hz), so this is set so the
-# MEDIAN per-shot velocity std over 256 seeded shots
-# (Waveform 1-1000 Hz, generator seed 0; 153 um/ms at drive_gain=1) is
-# 0.44 um/ms, the typical per-shot velocity std already
-# published in report/report.typ sec 4.1. No acquisition file was opened.
+# range and is ~350x too large at the rig default 1-1000 Hz), so this is set
+# so the MEDIAN per-shot velocity std over 256 seeded shots (Waveform
+# 1-1000 Hz, generator seed 0; 153 um/ms at drive_gain=1) is 0.44 um/ms, the
+# typical per-shot velocity std already published in report/report.typ
+# sec 4.1 (no acquisition file was opened). The gain is therefore partly a
+# compensation for the generator-vs-acquisition time-base mismatch in the rig
+# path (see sample_trajectory), not a purely physical analog gain.
 NOMINAL_DRIVE_GAIN = 0.002879
 
 # Evaluator limit for baseline_fit.inverse_fit(max_speed_um_per_ms=...):
