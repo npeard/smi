@@ -25,9 +25,10 @@ Grid YAML keys (all required except where noted):
 * ``seeds``: training seeds.
 * ``oracle``: also score ``InverseFitEstimator`` on every (sim, subset).
 * ``loss: {sign_invariant}``: the default for every sim.
-* ``synthetic: {steps_per_epoch, val_steps, train_crop_length}``. A family
-  YAML's own ``synthetic.train_crop_length`` (``null`` = full shots) wins over
-  the grid's for that family; the record's ``train_crop_length`` reports it.
+* ``synthetic: {steps_per_epoch, val_steps, train_crop_length}``. A model
+  whose ``requires_full_length`` is set trains on full shots
+  (``train_crop_length`` ``None``) whatever the grid says; the record's
+  ``train_crop_length`` reports what it trained on.
 * ``training``: shallow overrides of the family's ``training`` block (device,
   epoch cap). ``convergence.monitor`` is derived from the sim's sign
   invariance, so one family YAML serves Michelson and SMI sims.
@@ -62,6 +63,7 @@ from smi.analysis.evaluate import (
     InverseFitEstimator,
     evaluate,
 )
+from smi.analysis.models.factory import create_model
 from smi.analysis.results_artifact import RunRecord, append_results, read_results
 from smi.analysis.training_interface import (
     TrainingConfig,
@@ -302,14 +304,8 @@ def _training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
         **grid['synthetic'],
         'sim': dataclasses.asdict(cell.sim),
     }
-    # The one family-level override of the grid's synthetic block: a family
-    # whose design needs full-length shots (the offline neural operator, whose
-    # truncated modes are index-based) states ``train_crop_length: null``; an
-    # absent key leaves the grid's value.
-    # A family YAML may have no ``synthetic`` block at all: legal, no override.
-    family_synthetic = family.get('synthetic', {})
-    if 'train_crop_length' in family_synthetic:
-        synthetic['train_crop_length'] = family_synthetic['train_crop_length']
+    if create_model(family['model']).requires_full_length:
+        synthetic['train_crop_length'] = None
     return TrainingConfig(
         model_config=family['model'],
         training_config=training,

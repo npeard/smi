@@ -36,16 +36,11 @@ def _load(path: Path) -> dict:
 
 
 def _expected_crop(hparams: dict) -> int | None:
-    """Training window the config must declare.
-
-    The offline neural operator keeps the full shot: its truncated modes are
-    indexed by frequency bin, so only the 16384-sample grid it is evaluated on
-    gives them one meaning. (lstm-bidir is unbounded too but shift-invariant,
-    so it crops like the rest.)
+    """Training window the config must declare: the full shot only for a model
+    that requires it (lstm-bidir is unbounded too but shift-invariant, so it
+    crops like the rest).
     """
-    if hparams['type'] == 'NeuralOperator' and not create_model(hparams).causal:
-        return None
-    return 4096
+    return None if create_model(hparams).requires_full_length else 4096
 
 
 def _field(model_hparams: dict) -> int | None:

@@ -50,6 +50,12 @@ class SequenceModel(nn.Module):
         """Receptive field in input samples; None when unbounded."""
         raise NotImplementedError
 
+    @property
+    @torch.jit.unused
+    def requires_full_length(self) -> bool:
+        """Whether the model must train on whole shots, never on crops."""
+        return False
+
 
 class FeatureMap(nn.Module):
     """Input feature transform baked into the model (currently identity).

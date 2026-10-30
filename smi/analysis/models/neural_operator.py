@@ -245,6 +245,15 @@ class NeuralOperator(SequenceModel):
 
     @property
     @torch.jit.unused
+    def requires_full_length(self) -> bool:
+        """Offline: truncated modes are indexed by frequency bin, so they mean
+        one physical band only on the 16384-sample grid it is evaluated on; a
+        crop would train a different operator.
+        """
+        return self.config.kernel_len is None
+
+    @property
+    @torch.jit.unused
     def total_params(self) -> int:
         """Calculate the total number of parameters in the model."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)

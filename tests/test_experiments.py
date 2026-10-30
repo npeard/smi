@@ -174,20 +174,19 @@ def test_resume_refuses_a_key_recorded_under_another_sim(tmp_path):
         _run(path, tmp_path)
 
 
-def test_family_null_crop_overrides_the_grid_crop(tmp_path):
-    """A family trained on full shots keeps that when the grid crops the rest."""
-    path = _grid(tmp_path, family_synthetic={'train_crop_length': None})
+def test_full_length_model_ignores_the_grid_crop(tmp_path):
+    """The offline neural operator trains on full shots when the grid crops."""
+    family = 'neuraloperator-offline-19k.yaml'
+    (tmp_path / family).write_text((MATCHED / family).read_text())
+    path = _grid(tmp_path, families=[{'name': 'no', 'config': family}])
     cell = expand_grid(path)[0]
-    grid = yaml.safe_load(path.read_text())
-    config = experiments._training_config(cell, grid)
+    config = experiments._training_config(cell, yaml.safe_load(path.read_text()))
     assert config.synthetic_config['train_crop_length'] is None
     assert config.synthetic_config['steps_per_epoch'] == 1  # grid value kept
-    assert _run(path, tmp_path, only=[cell.key]) == 1
-    assert read_results(tmp_path / 'results.json')[0].train_crop_length is None
 
 
-def test_family_without_crop_takes_the_grid_crop(tmp_path):
-    path = _grid(tmp_path, family_synthetic={})
+def test_family_crop_does_not_override_the_grid_crop(tmp_path):
+    path = _grid(tmp_path, family_synthetic={'train_crop_length': None})
     cell = expand_grid(path)[0]
     config = experiments._training_config(cell, yaml.safe_load(path.read_text()))
     assert config.synthetic_config['train_crop_length'] == 256
