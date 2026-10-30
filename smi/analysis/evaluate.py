@@ -33,7 +33,7 @@ from torch import Tensor
 from smi.analysis.baseline_fit import PD_WAVELENGTHS_UM, inverse_fit
 from smi.analysis.datasets import file_pd_channels, select_pd_keys
 from smi.analysis.lit_module import LitModule
-from smi.analysis.metrics import sign_invariant_rmse, summarize_per_shot
+from smi.analysis.metrics import best_sign, sign_invariant_rmse, summarize_per_shot
 from smi.analysis.models.factory import is_causal
 from smi.analysis.results_artifact import RunRecord, append_results
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
@@ -346,10 +346,12 @@ def evaluate(
             ):
                 per_shot[key].append(value)
 
-            # The sign minimizing ||s*p - t|| is sign(p . t).
-            sign = torch.where((pred * velocity).sum(-1, keepdim=True) >= 0, 1.0, -1.0)
             sq = ((pred - velocity) ** 2).numpy().astype(np.float64)
-            sq_si = ((sign * pred - velocity) ** 2).numpy().astype(np.float64)
+            sq_si = (
+                ((best_sign(pred, velocity) * pred - velocity) ** 2)
+                .numpy()
+                .astype(np.float64)
+            )
             half = np.abs(phase - np.pi * np.round(phase / np.pi))
             for name, idx in (
                 ('v', np.digitize(velocity.abs().numpy(), v_edges[1:-1])),

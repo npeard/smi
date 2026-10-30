@@ -84,11 +84,8 @@ import numpy as np
 import torch
 from scipy.signal import periodogram
 
-from smi.analysis.baseline_fit import (
-    DRIVE_KEY,
-    PD_WAVELENGTHS_UM,
-    window_fringe_coefficients,
-)
+from smi.analysis.baseline_fit import DRIVE_KEY, window_fringe_coefficients
+from smi.analysis.datasets import file_pd_channels
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.forward import (
@@ -98,7 +95,6 @@ from smi.synthetic.forward import (
     sample_trajectory,
     smi_excess_phase,
 )
-from smi.synthetic.frozen import pd_keys
 from smi.synthetic.waveform import Waveform
 
 logger = logging.getLogger(__name__)
@@ -145,11 +141,7 @@ def _shot_arrays(
     """PD signals and wavelengths by key, drive voltage and sample rate."""
     with h5py.File(path, 'r') as f:
         sample_rate = float(f.attrs['sample_rate'])
-        if 'pd_wavelengths_um' in f.attrs:
-            lams = tuple(float(w) for w in f.attrs['pd_wavelengths_um'])
-            wavelengths = dict(zip(pd_keys(lams), lams, strict=True))
-        else:
-            wavelengths = dict(PD_WAVELENGTHS_UM)
+        wavelengths = file_pd_channels(f)
         available = int(f[DRIVE_KEY].shape[0])
         if n_shots > available:
             raise ValueError(f'{path} holds {available} shots, asked for {n_shots}')
