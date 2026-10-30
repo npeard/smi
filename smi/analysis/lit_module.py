@@ -485,7 +485,10 @@ class LitModule(lightning_module.LightningModule):
             )
 
         # RMSE in stored units, so a run is directly comparable to the
-        # analytic baseline without a separate evaluation pass.
+        # analytic baseline without a separate evaluation pass. With
+        # loss.sign_invariant=True, val/velocity_loss is sign-invariant but this
+        # signed RMSE deliberately is not: its collapse near std(v) is the
+        # visible symptom of a Michelson model that cannot see direction.
         velocity_hat = self._velocity_prediction(prediction)
         self.log(
             'val/velocity_rmse_um_per_ms',

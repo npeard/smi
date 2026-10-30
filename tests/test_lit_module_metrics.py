@@ -128,3 +128,18 @@ def test_sign_invariant_loss_equal_for_flipped_target():
             'velocity'
         ],
     )
+
+
+def test_sign_invariant_velocity_loss_is_the_square_of_the_invariant_rmse(monkeypatch):
+    """With the flag on, val/velocity_loss is sign invariant while the signed
+    RMSE stays signed, so the two RMSE keys differ exactly when the sign matters.
+    """
+    logged: dict[str, torch.Tensor] = {}
+    monkeypatch.setattr(
+        LitModule, 'log', lambda _self, name, value, **_kw: logged.update({name: value})
+    )
+    _module(sign_invariant=True).validation_step(_batch(), 0)
+    torch.testing.assert_close(
+        torch.sqrt(logged['val/velocity_loss']),
+        logged['val/velocity_rmse_sign_invariant_um_per_ms'],
+    )

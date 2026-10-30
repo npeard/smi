@@ -49,9 +49,10 @@ def sign_invariant_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tenso
     Returns:
         ``[batch]`` RMSE in the units of the inputs.
     """
-    plus = torch.sqrt(torch.mean((pred - target) ** 2, dim=-1))
-    minus = torch.sqrt(torch.mean((pred + target) ** 2, dim=-1))
-    return torch.minimum(plus, minus)
+    # Shares best_sign with the training loss so validation and evaluation can
+    # never disagree on which sign a shot gets.
+    signed = best_sign(pred, target) * pred
+    return torch.sqrt(torch.mean((signed - target) ** 2, dim=-1))
 
 
 def best_sign(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
