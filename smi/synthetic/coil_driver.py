@@ -393,12 +393,14 @@ class CoilDriver:
             input, 1-D frequency tensor in Hz).
         """
         n = voltage_waveform.shape[-1]
-        # Do the physics in float64/complex128 so the result matches the numpy
-        # path to float32 tolerance even for float32 inputs.
-        work = voltage_waveform.to(torch.float64)
-        spectrum = torch.fft.fft(work, dim=-1, norm='ortho')
+        # Stay in the input dtype (float32/complex64): MPS has no float64, and
+        # promoting here would make the on-device path unusable there.
+        spectrum = torch.fft.fft(voltage_waveform, dim=-1, norm='ortho')
         freq = torch.fft.fftfreq(
-            n, d=1.0 / sample_rate, device=voltage_waveform.device, dtype=torch.float64
+            n,
+            d=1.0 / sample_rate,
+            device=voltage_waveform.device,
+            dtype=voltage_waveform.dtype,
         )
         transfer = self.get_transfer_function_torch(freq, max_freq)
 

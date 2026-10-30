@@ -9,6 +9,7 @@ import logging
 
 import numpy as np
 import pytest
+import torch
 from plot_waveforms import calculate_fft
 
 from smi.synthetic.waveform import Waveform
@@ -386,3 +387,16 @@ def test_waveform_spectrum_hermitian():
 if __name__ == '__main__':
     # Run the tests
     pytest.main(['-xvs', __file__])
+
+
+def test_generate_batch_torch_seeded():
+    """A seeded CPU generator makes generate_batch_torch reproducible."""
+    waveform = Waveform(10, 1000)
+    batches = [
+        waveform.generate_batch_torch(
+            2, 'cpu', generator=torch.Generator().manual_seed(0)
+        )
+        for _ in range(2)
+    ]
+    assert batches[0].dtype == torch.float32
+    assert torch.equal(batches[0], batches[1])

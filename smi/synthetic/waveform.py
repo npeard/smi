@@ -242,7 +242,7 @@ class Waveform:
 
         # Valid positive frequency mask
         valid_freqs_t = torch.tensor(
-            self.valid_freqs, dtype=torch.float64, device=device
+            self.valid_freqs, dtype=torch.float32, device=device
         )
         pos_mask = freq_t > 0
         pos_freqs = freq_t[pos_mask]
@@ -279,7 +279,10 @@ class Waveform:
         }
 
     def generate_batch_torch(
-        self, batch_size: int, device: torch.device | str = 'cpu'
+        self,
+        batch_size: int,
+        device: torch.device | str = 'cpu',
+        generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Generate a batch of random displacement waveforms using PyTorch on GPU.
 
@@ -298,9 +301,13 @@ class Waveform:
         Args:
             batch_size: Number of waveforms to generate
             device: Target device ('cpu', 'cuda', etc.)
+            generator: Optional generator for reproducible output. A
+                ``torch.Generator`` is bound to one device, so the seeded path
+                is CPU: build the generator on CPU, generate on CPU and move
+                the result (frozen sets are made this way).
 
         Returns:
-            Displacement tensor of shape [batch_size, BUFFER_SIZE]
+            Float32 displacement tensor of shape [batch_size, BUFFER_SIZE]
         """
         device = torch.device(device) if isinstance(device, str) else device
 
@@ -318,15 +325,21 @@ class Waveform:
         # 1. Generate Rayleigh-distributed amplitudes for valid positive frequencies
         # Rayleigh(scale) = scale * sqrt(-2 * ln(U)), U ~ Uniform(0, 1)
         # scale = sqrt(S(f) * delta_f), with S(f) ~ Uniform(0, 1) for valid freqs
-        u_amp = torch.rand(batch_size, N, device=device).clamp(min=1e-10)
-        s_f = torch.rand(batch_size, N, device=device)  # power spectral density
+        u_amp = torch.rand(batch_size, N, device=device, generator=generator).clamp(
+            min=1e-10
+        )
+        s_f = torch.rand(
+            batch_size, N, device=device, generator=generator
+        )  # power spectral density
         scale = torch.sqrt(s_f * delta_f)
         amplitudes = scale * torch.sqrt(-2.0 * torch.log(u_amp))
         # Zero out non-valid frequencies
         amplitudes[:, ~valid_pos_mask] = 0.0
 
         # 2. Random uniform phases in [0, 2*pi)
-        phases = torch.rand(batch_size, N, device=device) * (2.0 * torch.pi)
+        phases = torch.rand(batch_size, N, device=device, generator=generator) * (
+            2.0 * torch.pi
+        )
 
         # 3. Build complex spectrum for positive frequencies
         spectrum = torch.zeros(batch_size, N, dtype=torch.cfloat, device=device)

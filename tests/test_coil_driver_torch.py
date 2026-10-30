@@ -122,3 +122,34 @@ def test_shared_spectrum_matches_separate_calls():
 
     np.testing.assert_array_equal(velocity, expected_v)
     np.testing.assert_array_equal(displacement, expected_d)
+
+
+def _available_devices() -> list:
+    """Cpu always; mps only where present (it has no float64)."""
+    return [
+        'cpu',
+        pytest.param(
+            'mps',
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason='requires MPS'
+            ),
+        ),
+    ]
+
+
+@pytest.mark.parametrize('device', _available_devices())
+def test_torch_physics_is_float32_on_device(device):
+    """MPS has no float64, so the physics must never promote."""
+    driver = CoilDriver()
+    tensor = torch.from_numpy(_make_batch().astype(np.float32)).to(device)
+
+    velocity, displacement = driver.get_velocity_and_displacement_torch(
+        tensor, SAMPLE_RATE, 5000.0
+    )
+    spectrum, freq = driver.get_displacement_spectrum_torch(tensor, SAMPLE_RATE)
+
+    assert torch.get_default_dtype() == torch.float32
+    assert velocity.dtype == displacement.dtype == torch.float32
+    assert spectrum.dtype == torch.complex64
+    assert freq.dtype == torch.float32
+    assert velocity.device.type == tensor.device.type
