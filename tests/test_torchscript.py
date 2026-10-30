@@ -118,6 +118,43 @@ MODEL_CONFIGS = [
         SEQ_LEN,
     ),
     (
+        'PatchTransformer-offline',
+        dict(
+            type='PatchTransformer',
+            sequence_length=SEQ_LEN,
+            in_channels=IN_CHANNELS,
+            patch_len=8,
+            stride=5,
+            d_model=16,
+            n_heads=2,
+            n_layers=2,
+            ffn_dim=32,
+            attention_span=2,
+            dropout=0.0,
+            causal=False,
+        ),
+        SEQ_LEN,
+    ),
+    (
+        # Last of its type, so test_precision's by-type fixture is the causal one.
+        'PatchTransformer-causal',
+        dict(
+            type='PatchTransformer',
+            sequence_length=SEQ_LEN,
+            in_channels=IN_CHANNELS,
+            patch_len=8,
+            stride=5,
+            d_model=16,
+            n_heads=2,
+            n_layers=2,
+            ffn_dim=32,
+            attention_span=2,
+            dropout=0.0,
+            causal=True,
+        ),
+        SEQ_LEN,
+    ),
+    (
         'Mamba',
         dict(
             type='Mamba',

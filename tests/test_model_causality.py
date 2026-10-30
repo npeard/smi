@@ -13,6 +13,7 @@ lookahead (i.e. it has causal violations).
 import pytest
 import torch
 
+from smi.analysis.models.base import Model
 from smi.analysis.models.factory import MODEL_REGISTRY, create_model, is_causal
 from smi.analysis.models.lstm import LSTM, LSTMConfig
 from smi.analysis.models.mamba import Mamba, MambaConfig
@@ -427,6 +428,20 @@ REGISTRY_HPARAMS: dict[str, dict] = {
         dropout=0.0,
         window_stride=SEQUENCE_LENGTH // 4,
     ),
+    'PatchTransformer': dict(
+        type='PatchTransformer',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        patch_len=8,
+        stride=5,
+        d_model=16,
+        n_heads=2,
+        n_layers=2,
+        ffn_dim=32,
+        attention_span=2,
+        dropout=0.0,
+        causal=True,
+    ),
     'Mamba': dict(
         type='Mamba',
         sequence_length=SEQUENCE_LENGTH,
@@ -440,6 +455,7 @@ REGISTRY_HPARAMS: dict[str, dict] = {
     ),
 }
 LSTM_BIDIRECTIONAL = {**REGISTRY_HPARAMS['LSTM'], 'bidirectional': True}
+PATCH_OFFLINE = {**REGISTRY_HPARAMS['PatchTransformer'], 'causal': False}
 
 
 def test_registry_hparams_cover_every_model_type():
@@ -448,8 +464,8 @@ def test_registry_hparams_cover_every_model_type():
 
 @pytest.mark.parametrize(
     'hparams',
-    [*REGISTRY_HPARAMS.values(), LSTM_BIDIRECTIONAL],
-    ids=[*REGISTRY_HPARAMS, 'LSTM-bidirectional'],
+    [*REGISTRY_HPARAMS.values(), LSTM_BIDIRECTIONAL, PATCH_OFFLINE],
+    ids=[*REGISTRY_HPARAMS, 'LSTM-bidirectional', 'PatchTransformer-offline'],
 )
 def test_is_causal_agrees_with_the_empirical_probe(hparams):
     model = create_model(hparams).eval()
@@ -465,3 +481,34 @@ def test_is_causal_agrees_with_the_empirical_probe(hparams):
 def test_is_causal_covers_the_tabular_baselines():
     assert not is_causal({'type': 'LightGBM'})
     assert not is_causal({'type': 'Ridge'})
+
+
+@pytest.mark.parametrize(
+    'hparams',
+    [REGISTRY_HPARAMS['PatchTransformer'], PATCH_OFFLINE],
+    ids=['causal', 'offline'],
+)
+def test_wrapped_patch_transformer_leaks_only_when_offline(hparams):
+    """The probe runs on the full ``Model``, not the inner network.
+
+    Patch embedding, positional bias and the per-sample upsampling are each a
+    place a future sample could enter; only the wrapped model shows all three.
+    Non-trivial normalization stats make sure the baked buffers are included.
+    """
+    model = Model(
+        create_model(hparams),
+        input_mean=torch.tensor([0.1, -0.2, 0.3]),
+        input_std=torch.tensor([1.5, 0.5, 2.0]),
+        output_mean=0.4,
+        output_std=3.0,
+    ).eval()
+    baseline, outputs = _get_step_outputs(
+        model, STEP_POSITIONS, SEQUENCE_LENGTH, IN_CHANNELS, BLOCK_SIZE
+    )
+    rate, n_violations, _ = _causal_violation_rate(
+        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, VIOLATION_THRESHOLD
+    )
+    if hparams['causal']:
+        assert n_violations == 0
+    else:
+        assert rate > 0.0

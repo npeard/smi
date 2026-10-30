@@ -17,7 +17,7 @@ from smi.analysis.models.base import Model
 from smi.analysis.models.factory import MODEL_REGISTRY, create_model, is_causal
 from smi.analysis.training_interface import MIN_PATIENCE_CHECKS, TrainingConfig
 from smi.synthetic.forward import SimConfig
-from tests.test_receptive_field import measure_receptive_field
+from tests.test_receptive_field import measure_worst_phase_field
 
 MATCHED = (
     Path(__file__).parents[1] / 'smi' / 'analysis' / 'models' / 'configs' / 'matched'
@@ -39,7 +39,8 @@ def _field(model_hparams: dict) -> int | None:
     return getattr(create_model(model_hparams), 'receptive_field', None)
 
 
-# One-sided lookback every causal convolutional/attention family is held to.
+# One-sided lookback every causal convolutional/attention family is held to
+# (the patch Transformer's worst phase; see its receptive_field).
 CAUSAL_FIELD = _field(_load(MATCHED / 'tcn-44k.yaml')['model'])
 # Symmetric field every offline family is held to: Barland's, because its
 # depth and kernels are fixed by the published network while the others can be
@@ -132,8 +133,19 @@ def test_forward_preserves_length(path):
 
 
 CONV_ATTENTION = [
-    p for p in CONFIGS if _load(p)['model']['type'] in ('TCN', 'SCNN', 'TCAN')
+    p
+    for p in CONFIGS
+    if _load(p)['model']['type'] in ('TCN', 'SCNN', 'TCAN', 'PatchTransformer')
 ]
+
+
+def _phase_period(hparams: dict) -> int:
+    """Output positions one probe must sweep to see the widest field.
+
+    The patch Transformer's field depends on where a sample sits inside a
+    stride; the convolutional families are translation invariant.
+    """
+    return hparams['stride'] if hparams['type'] == 'PatchTransformer' else 1
 
 
 @pytest.mark.parametrize('path', CONV_ATTENTION, ids=lambda p: p.stem)
@@ -145,8 +157,8 @@ def test_measured_field_agrees_with_property(path):
     """
     hparams = _load(path)['model']
     model = create_model(hparams)
-    measured, sees_future = measure_receptive_field(
-        model, hparams['in_channels'], length=2048
+    measured, sees_future = measure_worst_phase_field(
+        model, hparams['in_channels'], length=2048, period=_phase_period(hparams)
     )
     assert measured == model.receptive_field
     assert sees_future == (not is_causal(hparams))

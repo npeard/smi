@@ -7,6 +7,10 @@ import torch
 from smi.analysis.models.barland_cnn import BarlandCNN, BarlandCNNConfig
 from smi.analysis.models.lstm import LSTM, LSTMConfig
 from smi.analysis.models.mamba import Mamba, MambaConfig
+from smi.analysis.models.patch_transformer import (
+    PatchTransformer,
+    PatchTransformerConfig,
+)
 from smi.analysis.models.scnn import SCNN, SCNNConfig
 from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
@@ -280,4 +284,46 @@ class TestSCNNForward:
         with torch.no_grad():
             out = scnn_model(x)
         assert out.shape == (BATCH_SIZE, 1, SEQUENCE_LENGTH)
+        assert torch.isfinite(out).all()
+
+
+def _patch_transformer(causal: bool) -> PatchTransformer:
+    config = PatchTransformerConfig(
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        patch_len=8,
+        stride=5,
+        d_model=16,
+        n_heads=2,
+        n_layers=2,
+        ffn_dim=32,
+        attention_span=2,
+        dropout=0.0,
+        causal=causal,
+    )
+    return PatchTransformer(config).eval()
+
+
+@pytest.mark.parametrize('causal', [True, False], ids=['causal', 'offline'])
+class TestPatchTransformerForward:
+    # 253 is not a multiple of the stride: the last token is partial, and the
+    # upsampled output must still be cropped back to the input length.
+    @pytest.mark.parametrize('length', [SEQUENCE_LENGTH, 253])
+    def test_output_shape(self, causal, length):
+        x = torch.randn(BATCH_SIZE, IN_CHANNELS, length)
+        with torch.no_grad():
+            out = _patch_transformer(causal)(x)
+        assert out.shape == (BATCH_SIZE, 1, length)
+
+    def test_output_is_finite(self, causal):
+        x = torch.randn(BATCH_SIZE, IN_CHANNELS, SEQUENCE_LENGTH)
+        with torch.no_grad():
+            out = _patch_transformer(causal)(x)
+        assert torch.isfinite(out).all()
+
+    def test_input_shorter_than_one_patch(self, causal):
+        x = torch.randn(BATCH_SIZE, IN_CHANNELS, 3)
+        with torch.no_grad():
+            out = _patch_transformer(causal)(x)
+        assert out.shape == (BATCH_SIZE, 1, 3)
         assert torch.isfinite(out).all()

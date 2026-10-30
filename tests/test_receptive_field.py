@@ -9,6 +9,10 @@ gradient -- ground truth the formula cannot talk its way around.
 import pytest
 import torch
 
+from smi.analysis.models.patch_transformer import (
+    PatchTransformer,
+    PatchTransformerConfig,
+)
 from smi.analysis.models.scnn import SCNN, SCNNConfig
 from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
@@ -17,17 +21,39 @@ from smi.analysis.models.tcn import TCN, TCNConfig
 def measure_receptive_field(
     model: torch.nn.Module, in_channels: int, length: int
 ) -> tuple[int, bool]:
-    """Measure the true receptive field by gradient flow.
+    """Measure the true receptive field by gradient flow at the centre sample.
 
     Returns:
         (field_width, sees_future) where field_width is the number of input
         timesteps with nonzero gradient, and sees_future reports whether any
         timestep strictly after the probed output index received gradient.
     """
+    return measure_receptive_field_at(model, in_channels, length, length // 2)
+
+
+def measure_worst_phase_field(
+    model: torch.nn.Module, in_channels: int, length: int, period: int
+) -> tuple[int, bool]:
+    """Widest measured field over one period of output positions.
+
+    A strided model is periodic, not translation invariant: its field depends
+    on where the probed sample falls inside a stride, so one probe can land on
+    a narrow phase. The reported field is the worst case over the period.
+    """
+    probes = [
+        measure_receptive_field_at(model, in_channels, length, length // 2 + j)
+        for j in range(period)
+    ]
+    return max(w for w, _ in probes), any(f for _, f in probes)
+
+
+def measure_receptive_field_at(
+    model: torch.nn.Module, in_channels: int, length: int, probe: int
+) -> tuple[int, bool]:
+    """Measure the receptive field of output sample ``probe`` by gradient flow."""
     model.eval()
     x = torch.zeros(1, in_channels, length, requires_grad=True)
     out = model(x)
-    probe = length // 2
     model.zero_grad()
     out[0, 0, probe].backward()
 
@@ -140,3 +166,46 @@ def test_config_accepts_dilation_base_within_the_kernel_span(
     model = TCN(_config(kernel_size, dilation_base, [8, 16]))
     measured, _ = measure_receptive_field(model, in_channels=3, length=2048)
     assert model.receptive_field == measured
+
+
+def _patch_transformer(
+    patch_len: int, stride: int, n_layers: int, span: int, causal: bool
+) -> PatchTransformer:
+    return PatchTransformer(
+        PatchTransformerConfig(
+            sequence_length=2048,
+            in_channels=3,
+            patch_len=patch_len,
+            stride=stride,
+            d_model=8,
+            n_heads=2,
+            n_layers=n_layers,
+            ffn_dim=16,
+            attention_span=span,
+            dropout=0.0,
+            causal=causal,
+        )
+    )
+
+
+PATCH_GEOMETRIES = [(16, 10, 2, 3), (8, 8, 1, 1), (8, 5, 2, 2), (11, 10, 2, 2)]
+
+
+@pytest.mark.parametrize(('patch_len', 'stride', 'n_layers', 'span'), PATCH_GEOMETRIES)
+@pytest.mark.parametrize('causal', [True, False], ids=['causal', 'offline'])
+def test_patch_transformer_field_matches_worst_phase_measurement(
+    patch_len, stride, n_layers, span, causal
+):
+    """The property is the worst case over the stride, and it is finite."""
+    model = _patch_transformer(patch_len, stride, n_layers, span, causal)
+    measured, sees_future = measure_worst_phase_field(
+        model, in_channels=3, length=2048, period=stride
+    )
+    assert model.receptive_field == measured
+    assert sees_future == (not causal)
+
+
+def test_patch_transformer_rejects_gapped_patches():
+    """A stride longer than the patch skips samples no token ever sees."""
+    with pytest.raises(ValueError, match='stride 9 exceeds patch_len 8'):
+        _patch_transformer(8, 9, 1, 1, causal=True)

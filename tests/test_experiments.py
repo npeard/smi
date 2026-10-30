@@ -190,10 +190,11 @@ def test_sweep_and_subsets_expand_to_stable_readable_keys(tmp_path):
 
 
 def test_shipped_grids_expand_and_name_existing_configs():
-    # 8 families (LSTM counted once per direction) x 3 seeds, plus the oracle.
+    # 10 families (LSTM and PatchTransformer counted once per direction) x 3
+    # seeds, plus the oracle.
     for name, n_cells in (
-        ('q3_noise_free', 7 * (3 * 8 + 1)),
-        ('q1_channels', 14 * (3 * 8 + 1)),
+        ('q3_noise_free', 7 * (3 * 10 + 1)),
+        ('q1_channels', 14 * (3 * 10 + 1)),
     ):
         path = experiments.ANALYSIS_DIR / 'experiments' / f'{name}.yaml'
         cells = expand_grid(path)

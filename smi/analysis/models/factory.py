@@ -9,6 +9,7 @@ from .barland_cnn import BarlandCNN, BarlandCNNConfig
 from .lstm import LSTM, LSTMConfig
 from .mamba import Mamba, MambaConfig
 from .mlp import MLP, MLPConfig
+from .patch_transformer import PatchTransformer, PatchTransformerConfig
 from .scnn import SCNN, SCNNConfig
 from .tcan import TCAN, TCANConfig
 from .tcn import TCN, TCNConfig
@@ -26,6 +27,7 @@ MODEL_REGISTRY: dict[str, tuple[type, type[nn.Module]]] = {
     'LSTM': (LSTMConfig, LSTM),
     'MLP': (MLPConfig, MLP),
     'Mamba': (MambaConfig, Mamba),
+    'PatchTransformer': (PatchTransformerConfig, PatchTransformer),
 }
 
 
@@ -78,11 +80,13 @@ def is_causal(model_hparams: dict[str, Any]) -> bool:
 
     Args:
         model_hparams: Hyperparameters with a ``type`` key; an LSTM also needs
-            its ``bidirectional`` flag.
+            its ``bidirectional`` flag, a PatchTransformer its ``causal`` flag.
 
     Returns:
         True if the model is causal.
     """
     if model_hparams['type'] in _NONCAUSAL_TYPES:
         return False
+    if model_hparams['type'] == 'PatchTransformer':
+        return model_hparams['causal']
     return not model_hparams.get('bidirectional', False)
