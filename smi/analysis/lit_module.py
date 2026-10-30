@@ -340,14 +340,14 @@ class LitModule(lightning_module.LightningModule):
             # Auxiliary loss: displacement (physics-informed, derived from velocity)
             displacement_hat = CoilDriver.integrate_velocity(velocity_hat, sample_rate)
             # Shift displacements to start at 0 for fair comparison
-            displacement_hat -= displacement_hat[:, 0:1]
-            displacement_target -= displacement_target[:, 0:1]
+            displacement_hat = displacement_hat - displacement_hat[:, :1]
+            displacement_target = displacement_target - displacement_target[:, :1]
         elif self.target == 'displacement':
             # Model predicts displacement
             displacement_hat = prediction
             # Shift displacements to start at 0 for fair comparison
-            displacement_hat -= displacement_hat[:, 0:1]
-            displacement_target -= displacement_target[:, 0:1]
+            displacement_hat = displacement_hat - displacement_hat[:, :1]
+            displacement_target = displacement_target - displacement_target[:, :1]
             # Auxiliary loss: velocity (physics-informed, derived from displacement)
             velocity_hat = CoilDriver.derivative_displacement(
                 displacement_hat, sample_rate
@@ -586,8 +586,8 @@ class LitModule(lightning_module.LightningModule):
             )
 
         # Shift all displacements to start at zero for easy comparison
-        displacement_hat -= displacement_hat[:, 0:1]
-        displacement_target -= displacement_target[:, 0:1]
+        displacement_hat = displacement_hat - displacement_hat[:, :1]
+        displacement_target = displacement_target - displacement_target[:, :1]
 
         return (
             velocity_hat,
