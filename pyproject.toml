@@ -6,11 +6,11 @@ authors = [
     {name = "Nolan Peard", email = "nolan.peard@gmail.com"},
 ]
 readme = "README.md"
-requires-python = ">=3.15"
+requires-python = ">=3.14"
 license = {text = "MIT"}
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.15",
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
@@ -181,7 +181,7 @@ platforms = [
 ]
 
 [tool.pixi.dependencies]
-python = ">=3.15,<3.16"
+python = ">=3.14,<3.15"
 polars = ">=2.1"
 # numpy and numba deliberately come from PyPI (via [project.dependencies]),
 # NOT conda. Conda-forge numpy links libomp.dll while the PyPI CUDA torch
@@ -195,14 +195,6 @@ polars = ">=2.1"
 # pinned, lockfile-backed tools instead of whatever happens to be on PATH.
 ruff = ">=0.15,<0.16"
 codespell = "*"
-# h5py publishes no cp315 wheel on PyPI, and conda-forge's h5py would pull in
-# conda numpy plus an openmp-linked openblas (the OpenMP collision described
-# above). So h5py builds from its PyPI sdist against conda's libhdf5, which
-# links no OpenMP and no numpy; HDF5_DIR (see [tool.pixi.activation.env]) points
-# the build at it. Drop both once h5py ships cp315 wheels.
-# Floor is the oldest HDF5 h5py 3.16 supports; no cap, since the build was
-# verified against HDF5 2.2.0 (osx-arm64).
-hdf5 = ">=1.14"
 
 # The PyPI lightgbm macOS wheel does not bundle libomp and looks for
 # @rpath/libomp.dylib (Homebrew's copy, absent here). A second runtime next to
@@ -258,12 +250,9 @@ pytest-xdist = ">=2.5"
 pytest-benchmark = "*"
 coverage = { version = "*", extras = ["toml"] }
 
-# Hyperparameter / architecture search (smi/analysis/tune_search.py). Not in any
-# environment: ray (2.59.0, PyPI and conda-forge) publishes no cp315 wheel, so
-# listing it would make the lockfile unsolvable. Re-add "tune" to the
-# environments below once ray ships cp315; tests/test_tune_search.py and
-# tests/test_ensemble_search.py importorskip ray and skip meanwhile.
-# See docs/hyperparameter-search-pipeline-design.md.
+# Hyperparameter / architecture search (smi/analysis/tune_search.py). Included
+# in every test-running env so the search pathway is exercised on CPU in CI as
+# well as on the GPU rig. See docs/hyperparameter-search-pipeline-design.md.
 [tool.pixi.feature.tune.pypi-dependencies]
 ray = { version = ">=2.9", extras = ["tune"] }
 optuna = "*"
@@ -284,11 +273,11 @@ scikit-learn = ">=1.9"
 [tool.pixi.environments]
 # The default env includes the test feature so the `test`/`all` tasks (defined
 # under [tool.pixi.tasks], which run in the default env) have pytest available.
-# `simple` is everywhere so the non-torch baselines are import- and test-able in
-# CI. `tune` is absent until ray ships cp315 wheels (see the feature above).
-default = { features = ["test", "simple"], solve-group = "default" }
-dev = { features = ["dev", "test", "simple"], solve-group = "default" }
-test = { features = ["test", "simple"], solve-group = "default" }
+# `tune` and `simple` are everywhere so the Ray search path and the non-torch
+# baselines are import- and test-able in CI.
+default = { features = ["test", "tune", "simple"], solve-group = "default" }
+dev = { features = ["dev", "test", "tune", "simple"], solve-group = "default" }
+test = { features = ["test", "tune", "simple"], solve-group = "default" }
 report = { features = ["report"], solve-group = "default" }
 
 [tool.pixi.tasks]
@@ -334,7 +323,7 @@ toolgaps = "python ../Projects/agent-config/scripts/toolgaps.py"
 benchmark-loading = "python -m smi.analysis.benchmark_loading"
 
 [tool.ty.environment]
-python-version = "3.15"
+python-version = "3.14"
 # Resolve third-party imports against the dev pixi environment explicitly, so
 # `ty` is deterministic whether invoked via `pixi run typecheck` (env activated)
 # or directly by the pre-commit hook (`.pixi/envs/dev/bin/ty`, env not active).
@@ -404,6 +393,3 @@ report-dry = { cmd = "snakemake --cores all --scheduler greedy -n", cwd = "repor
 report-clean = { cmd = "snakemake --cores 1 clean", cwd = "report" }
 report-only = { cmd = "snakemake --cores all --scheduler greedy build/report.pdf", cwd = "report" }
 report-synthetic = { cmd = "snakemake --cores all --scheduler greedy build/synthetic.pdf", cwd = "report" }
-
-[tool.pixi.activation.env]
-HDF5_DIR = "$CONDA_PREFIX"

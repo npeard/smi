@@ -98,7 +98,7 @@ the torch>=2.14 wheels require; its target tables use that name. The stack is
 `torch>=2.14` / `numpy>=2`.
 
 **Keep OpenMP runtimes from colliding; the numeric stack comes from PyPI.** `numpy`,
-`numba` and `matplotlib` resolve from PyPI (via
+`numba`, `matplotlib` and `h5py` resolve from PyPI (via
 `[project.dependencies]`), *not* conda. Conda-forge numpy links
 `libomp.dll` while the PyPI CUDA torch wheel bundles Intel's
 `libiomp5md.dll`; loading both aborts the process with "OMP: Error #15",
@@ -117,19 +117,9 @@ into the env instead. `tests/test_platform.py` guards this by running
 threaded torch, lightgbm and scikit-learn work in one subprocess, in either
 import order.
 
-**h5py is built from its PyPI sdist against conda's `hdf5`** (`HDF5_DIR` in
-`[tool.pixi.activation.env]`), because h5py has no cp315 wheel and conda-forge's
-h5py would drag in conda numpy and an openmp-linked openblas. Verified on
-osx-arm64 only: the linux-64 and win-64 source builds are NOT yet verified
-(CI on linux will be the first compile). win-64 needs MSVC Build Tools (or a
-conda compiler package such as `vs2022_win-64`) on the machine. h5py's build
-embeds an rpath to `$HDF5_DIR/lib` in the extension, so libhdf5 is found at
-runtime without `LD_LIBRARY_PATH`. Drop `hdf5` and `HDF5_DIR` once h5py ships
-cp315 wheels.
-
 **Torch comes from the `cu130` PyPI index** because the default win-64
 wheel is CPU-only, and because cu124 publishes no cp312/win-64 wheel past
-torch 2.6.0 -- reaching 2.14 means CUDA 13.0. The index carries cp315 win/linux wheels only
+torch 2.6.0 -- reaching 2.14 means CUDA 13.0. The index carries cp314 win/linux wheels only
 through torch 2.14.1 (2.15.0 is on cu132), so those platforms resolve 2.14.1
 while macOS resolves 2.15.0. CUDA 13 drops Maxwell/Pascal/
 Volta but keeps sm_75, so both cards here (RTX 3090 Ti sm_86, Quadro RTX 4000
@@ -197,9 +187,8 @@ Two-level search (design: `docs/hyperparameter-search-pipeline-design.md`):
   sweeps; both it and `SyntheticLitModule` draw batches from
   `smi.synthetic.forward.simulate_batch` and bake `normalization_stats`.
 
-Deps live in the `tune` pixi feature (`ray[tune]`, `optuna`), which is in no
-environment while ray has no cp315 wheel; `test_tune_search.py` and
-`test_ensemble_search.py` skip until it is re-added.
+Deps live in the `tune` pixi feature (`ray[tune]`, `optuna`), included in all
+test-running envs so the search path is CPU-tested in CI as well as on the GPU rig.
 
 ## Reports (`report/`)
 
@@ -262,7 +251,7 @@ These override defaults; follow them unless explicitly told otherwise.
 ## Code Quality
 
 - Ruff formatting and linting with Google-style docstrings
-- Type hints required (Python 3.15)
+- Type hints required (Python 3.14)
 - Pre-commit hooks: ruff, ty, check-ascii, codespell, nbstripout, standard checks
 - Spell checking with codespell
 
