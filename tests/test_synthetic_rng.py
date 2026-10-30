@@ -183,3 +183,24 @@ def test_test_stage_uses_full_shots_and_differs_from_validation():
     assert val.shape[-1] == CROP
     assert test.shape[-1] > CROP
     assert not torch.equal(val, test[..., :CROP])
+
+
+@pytest.mark.parametrize(('make', 'method'), MODULES)
+def test_no_global_reseed_in_construction_or_eval_hooks(make, method, monkeypatch):
+    """CPU-runnable guard (CI has no MPS) for the reseed bug the MPS tests catch.
+
+    Reseeding the global RNG anywhere in a module's construction or its
+    validation/test hooks replays the same training batches every epoch.
+    """
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError('global torch RNG reseeded')
+
+    monkeypatch.setattr(torch, 'manual_seed', forbidden)
+    monkeypatch.setattr(torch.random, 'manual_seed', forbidden)
+    module = make()
+    loader = DataLoader(SyntheticIndexDataset(BATCH), batch_size=BATCH)
+    trainer = _trainer('cpu')
+    trainer.validate(module, loader, verbose=False)
+    if isinstance(module, SyntheticLitModule):
+        trainer.test(module, loader, verbose=False)
