@@ -5,10 +5,12 @@ The document reads this JSON at compile time, so a change to
 smi.analysis.bounds (or to the results artifacts) rebuilds the quoted values
 with the figures instead of leaving the prose stale. Learned-model values
 come from the runner's records in synthetic_results.json, through the same
-cell lookup as plot_exit_check.py and plot_feedback_curve.py. Each value is written as
-the string the document prints, at the precision it quotes; the calls repeat
-the figure scripts' (plot_velocity_bounds.py, plot_sign_information.py,
-plot_fisher_phase.py) so the prose and the plotted points agree. It lives
+cell lookup as plot_exit_check.py and plot_feedback_curve.py; the one
+exception, the zero predictor's error, reads the alpha = 0 control's frozen
+test set. Each value is written as the string the document prints, at the
+precision it quotes; the calls repeat the figure scripts'
+(plot_velocity_bounds.py, plot_sign_information.py, plot_fisher_phase.py) so
+the prose and the plotted points agree. It lives
 beside them for their shared ``_figcommon`` but is not a figure, so it is not
 named ``plot_*``.
 
@@ -23,6 +25,9 @@ import json
 import math
 import sys
 from pathlib import Path
+
+import h5py
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -40,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from smi.analysis import bounds
 from smi.analysis.results_artifact import RunRecord
 from smi.synthetic.forward import NOMINAL_ALPHA, SimConfig
+from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
 # Matches plot_velocity_bounds.py and plot_sign_information.py.
 N_STEPS = 2000
@@ -99,6 +105,32 @@ def test_shots(record: RunRecord) -> int:
     return int(record.dataset.rsplit('_n', 1)[1])
 
 
+def zero_predictor_rmse(record: RunRecord) -> float:
+    """Test RMSE of predicting zero velocity on the alpha = 0 control's test set.
+
+    That is each shot's velocity RMS, averaged over shots. The frozen set is
+    looked up (or rebuilt) from the noise-free config the runner builds for
+    the control; the hash check stops a drift between the two from scoring
+    another set.
+    """
+    nominal = SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, NOMINAL_C, NOMINAL_ALPHA)
+    cfg = SimConfig.noise_free(
+        wavelengths_um=SYNTHETIC_WAVELENGTHS_UM,
+        sample_rate=nominal.sample_rate,
+        start_freq_hz=nominal.start_freq_hz,
+        end_freq_hz=nominal.end_freq_hz,
+        drive_gain=nominal.drive_gain,
+        feedback_c=NOMINAL_C,
+        alpha=0.0,
+    )
+    assert cfg.hash() == record.sim_config_hash, record.cell_key
+    assert record.test_seed is not None
+    path = load_or_create(cfg, record.test_seed, test_shots(record), DEFAULT_ROOT)
+    with h5py.File(path, 'r') as f:
+        velocity = f['velocity'][:]
+    return float(np.sqrt((velocity**2).mean(axis=1)).mean())
+
+
 def alpha_factor(alpha: float) -> float:
     """The alpha dependence of the leading-order sign information."""
     return alpha**2 / (1 + alpha**2)
@@ -145,32 +177,83 @@ def q3_values(records: dict[str, RunRecord]) -> dict[str, str | bool]:
     others = [n for c, n in t30_epochs.items() if c != 0.4 and n is not None]
     long = synthetic_cell(records, 'tcn-44k-T270', c02)
 
-    # Michelson's error by |v| decile against the top-C cell's: the first and
-    # last bins of the binned sign-invariant RMSE.
-    def decile_ends(sim: str) -> tuple[float, float]:
-        bins = synthetic_cell(records, t90, sim).binned
-        assert bins is not None
-        rows = bins['abs_velocity']
-        return rows[0]['rmse_sign_invariant'], rows[-1]['rmse_sign_invariant']
+    # Per shot (NRMSE) the low-C cells do not beat Michelson; the text names
+    # the largest such C per budget, which only reads as a range if the worse
+    # cells are the lowest ones.
+    def nrmse_worse(family: str) -> str:
+        ref = rmse(family, 'michelson', 'velocity_nrmse_sign_invariant')
+        worse = [n > ref for n in sweep(family, 'velocity_nrmse')]
+        n_worse = worse.index(False)
+        assert n_worse > 0, (family, worse)
+        assert not any(worse[n_worse:]), (family, worse)
+        return f'{Q3_FEEDBACK_C[n_worse - 1]:g}'
 
-    mich_lo, mich_hi = decile_ends('michelson')
-    top_lo, top_hi = decile_ends(top)
+    curve_n = sweep(t90, 'velocity_nrmse')
+    curve_n_si = sweep(t90, 'velocity_nrmse_sign_invariant')
+    n_gaps = [s / i - 1 for s, i in zip(curve_n, curve_n_si, strict=True)]
+    worst = [
+        synthetic_cell(records, t90, f'smi-a3-feedback_c={c}').metrics[
+            'velocity_nrmse'
+        ]['max']
+        for c in Q3_FEEDBACK_C
+    ]
+    # A sign-flipped zero-mean shot scores NRMSE 2. The text says the worst
+    # shot reaches it from some C upward, so that C must start a suffix.
+    flipped = [w >= 2 for w in worst]
+    n_flip = flipped.index(True)
+    assert all(flipped[n_flip:]), worst
+
+    def median_metric(sim: str, metric: str) -> float:
+        return synthetic_cell(records, t90, sim).metrics[metric]['median']
+
+    def slowest(family: str) -> list[float]:
+        """Slowest-|v|-decile sign-invariant RMSE of Michelson and each C."""
+        sims = ('michelson', *(f'smi-a3-feedback_c={c}' for c in Q3_FEEDBACK_C))
+        bins = [synthetic_cell(records, family, sim).binned for sim in sims]
+        return [b['abs_velocity'][0]['rmse_sign_invariant'] for b in bins if b]
+
+    slow = slowest(t90)
+    t90_epochs = [
+        synthetic_cell(records, t90, f'smi-a3-feedback_c={c}').epochs_run or 0
+        for c in Q3_FEEDBACK_C
+    ]
+    a0_t90 = synthetic_cell(records, t90, 'smi-a0')
+    zero_gap = abs(
+        mean_metric(a0_t90, 'velocity_rmse') / zero_predictor_rmse(a0_t90) - 1
+    )
     return {
-        # The text claims the 90-epoch curve falls monotonically; the document
-        # asserts this, so a regenerated artifact that breaks it fails the build.
+        # The text claims the 90-epoch curve falls monotonically in RMSE; the
+        # document asserts this, so a regenerated artifact that breaks it
+        # fails the build.
         'q3_monotone': all(b < a for a, b in itertools.pairwise(curve)),
         'q3_c_top': f'{Q3_FEEDBACK_C[-1]:g}',
         'q3_gain_top': sig(michelson / curve[-1], 2),
         'q3_gain_top_nrmse': sig(michelson_n / rmse(t90, top, 'velocity_nrmse'), 2),
+        'q3_gain_top_nrmse_median': sig(
+            median_metric('michelson', 'velocity_nrmse_sign_invariant')
+            / median_metric(top, 'velocity_nrmse'),
+            2,
+        ),
         'q3_sign_gap_pct': pct(
             max((s - i) / i for s, i in zip(curve, curve_si, strict=True))
         ),
-        'q3_mich_lo': sig(mich_lo, 2),
-        'q3_mich_hi': sig(mich_hi, 2),
-        'q3_top_lo': sig(top_lo, 2),
-        'q3_top_hi': sig(top_hi, 2),
+        'q3_nrmse_worse_t90': nrmse_worse(t90),
+        'q3_nrmse_worse_t30': nrmse_worse(t30),
+        'q3_n_sign_gap_max_pct': pct(max(n_gaps)),
+        'q3_n_sign_gap_max_c': f'{Q3_FEEDBACK_C[n_gaps.index(max(n_gaps))]:g}',
+        'q3_n_worst_lo': sig(min(worst), 3),
+        'q3_n_worst_hi': sig(max(worst), 3),
+        'q3_flip_c': f'{Q3_FEEDBACK_C[n_flip]:g}',
+        'q3_slow_lo': sig(min(slow), 2),
+        'q3_slow_hi': sig(max(slow), 2),
+        # The text calls the slow-decile floor a budget property; the
+        # document asserts that it is lower at 90 epochs in every cell.
+        'q3_slow_falls_with_budget': len(slow) == len(Q3_FEEDBACK_C) + 1
+        and all(a < b for a, b in zip(slow, slowest(t30), strict=True)),
+        'q3_t90_epochs_lo': str(min(t90_epochs)),
+        'q3_t90_epochs_hi': str(max(t90_epochs)),
+        'q3_zero_gap_pct': sig(100 * zero_gap, 1),
         'q3_a5_gap_pct': pct(a5_gap),
-        'q3_a0_nrmse': sig(max(mean_metric(r, 'velocity_nrmse') for r in a0), 3),
         'q3_a0_epochs': str(max(r.epochs_run or 0 for r in a0)),
         # eq-sign-info depends on alpha only through alpha^2 / (1 + alpha^2).
         'sign_info_a5_a3': sig(alpha_factor(5.0) / alpha_factor(3.0), 3),
@@ -183,10 +266,6 @@ def q3_values(records: dict[str, RunRecord]) -> dict[str, str | bool]:
         'q3_t30_c04_epochs': str(t30_epochs[0.4]),
         'q3_t30_other_epochs_lo': str(min(others)),
         'q3_t30_other_epochs_hi': str(max(others)),
-        'q3_c02_t30': sig(rmse(t30, c02), 2),
-        'q3_c02_t90': sig(rmse(t90, c02), 2),
-        'q3_mich_t30': sig(rmse(t30, 'michelson', 'velocity_rmse_sign_invariant'), 3),
-        'q3_mich_t90': sig(michelson, 3),
         'q3_c02_t270': sig(rmse('tcn-44k-T270', c02), 2),
         'q3_t270_epochs': str(long.epochs_run),
         'q3_t270_cycle': str(long.T_0),

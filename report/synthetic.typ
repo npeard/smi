@@ -338,80 +338,103 @@ channel and stay flat for three.
 
 #assert(val("q3_monotone"), message: "the 90-epoch C curve is no longer monotone")
 #assert(val("q3_t30_c04_below"), message: "the 30-epoch C = 0.4 inversion is gone")
+#assert(
+  val("q3_slow_falls_with_budget"),
+  message: "the slowest-decile floor no longer falls from 30 to 90 epochs",
+)
 
 == The fixed-budget curve <sec-q3-curve>
 
-Within the weak-feedback regime, more feedback is better for the causal TCN.
-At the 90-epoch budget its signed error falls monotonically from $C = 0.05$
-to $C = 0.9$, and every SMI cell lies below the Michelson sign-invariant
-error (@fig-feedback a). At $C = #val("q3_c_top")$ the RMSE is
+In RMSE at the 90-epoch budget, the causal TCN's signed error falls
+monotonically from $C = 0.05$ to $C = 0.9$, and every $alpha = 3$ cell lies
+below the Michelson sign-invariant error (#ref(<fig-feedback>)a). At $C = #val("q3_c_top")$ the RMSE is
 #val("q3_gain_top") times below Michelson's. Each cell trains the TCN of
 @sec-sign with the signed loss on noise-free three-channel data at
-$alpha = 3$, under one 90-epoch cosine cycle. A run ends at a 150-epoch cap
-or when its validation error has not improved by 1% over 10 checks, and is
-scored at its best checkpoint.
+$alpha = 3$, under cosine annealing with warm restarts, a 90-epoch period and
+no warmup. Patience (no 1% gain in validation error over 10 epochs) ends
+every run on the curve at epoch #val("q3_t90_epochs_lo") to
+#val("q3_t90_epochs_hi"), just after the first restart, so each run is one
+cosine cycle, scored at its best checkpoint.
 
 #fig(
   "feedback_curve",
   caption: [
-    Within weak feedback, the causal TCN's noise-free error falls
-    monotonically with $C$ and stays below the Michelson sign-invariant level.
-    (a) Velocity RMSE and (b) NRMSE, each the mean over the
+    Feedback brings the causal TCN's noise-free RMSE below Michelson's
+    sign-invariant level at every $C$ by removing the part of Michelson's
+    error that grows with $|v|$, but per shot the weakest $C$ does not beat
+    Michelson. (a) Velocity RMSE and (b) NRMSE, each the mean over the
     #val("test_shots") frozen test shots (seed #val("test_seed")), signed for
     SMI. TCN-44k, three channels, $alpha = 3$, one training seed. Solid: one
-    90-epoch cosine cycle; dashed: a 30-epoch cycle. Dotted lines: Michelson,
-    trained and scored sign-invariant, at the matching budget. Hollow markers:
-    the $alpha = 5$ and $alpha = 0$ controls at $C = 0.2$; the two budgets'
-    $alpha = 0$ runs coincide.
+    90-epoch cosine cycle; dashed: a 30-epoch cycle. Dotted: Michelson,
+    trained and scored sign-invariant, in its budget's color. Hollow markers:
+    the $alpha = 5$ and $alpha = 0$ controls at $C = 0.2$. (c) Sign-invariant
+    RMSE of the test samples pooled in each $|v|$ decile, at the decile's
+    midpoint speed, for three 90-epoch cells; grey line: slope one.
   ],
 ) <fig-feedback>
 
-The sign is resolved at every $C$ sampled, so the fall with $C$ is in the
-magnitude error. Signed and sign-invariant RMSE agree within
-#val("q3_sign_gap_pct")% in every cell of the 90-epoch curve. @sec-predictions
-allowed an optimum below $C = 1$ if sawtooth fringes were harder for the
-estimator to read, and none appears up to $C = 0.9$ at this budget. Without
-noise there is no information limit to approach, so this curve measures how
-well the estimator reads the tilted fringe, not the information of
-@eq-phase-factor.
+Per shot the gain is smaller, and the weakest feedback does not pay. The
+NRMSE exceeds Michelson's at $C <= #val("q3_nrmse_worse_t90")$ for the 90-epoch
+cells and at $C <= #val("q3_nrmse_worse_t30")$ for the 30-epoch cells
+(#ref(<fig-feedback>)b). At
+$C = #val("q3_c_top")$ the NRMSE gain is #val("q3_gain_top_nrmse") times by
+mean and #val("q3_gain_top_nrmse_median") by median. The case for more
+feedback at low $C$ therefore rests on pooled error, not on every shot.
 
-Normalized per shot, the gain over Michelson shrinks to
-#val("q3_gain_top_nrmse") times at $C = #val("q3_c_top")$
-(@fig-feedback b), because the two errors scale differently with speed. In
-the records' per-sample errors binned by $|v|$ decile, Michelson's
-sign-invariant error rises from #val("q3_mich_lo") $mu$m/ms in the slowest
-decile to #val("q3_mich_hi") in the fastest. At $C = #val("q3_c_top")$ it
-goes only from #val("q3_top_lo") to #val("q3_top_hi") $mu$m/ms. Feedback
-therefore gains most on fast motion, which dominates the mean RMSE, and
-nothing in the slowest decile, which weighs heavily in the mean NRMSE.
+The two metrics disagree because RMSE pools samples, which fast motion
+dominates, while NRMSE divides each shot by its velocity std, which lets
+low-amplitude shots dominate. Michelson's
+sign-invariant error grows roughly in proportion to $|v|$
+(#ref(<fig-feedback>)c), the cost of a wrong local direction between turning
+points, and feedback removes that part. Near $|v| = 0$ a direction error
+costs little, so the slowest decile, #val("q3_slow_lo") to
+#val("q3_slow_hi") $mu$m/ms for Michelson and every $C$, shows the
+estimator's own floor. Divided by the small std of low-amplitude shots, that
+floor sets the mean NRMSE. On noise-free data it belongs to the fixed-budget
+estimator, not to the information of @eq-phase-factor, and it is lower at 90
+epochs than at 30 in every cell.
+
+The sign is resolved on all but a few low-amplitude shots. Signed and
+sign-invariant RMSE agree within #val("q3_sign_gap_pct")% in every 90-epoch
+cell, but in NRMSE, which weights those shots, signed exceeds sign-invariant
+by up to #val("q3_n_sign_gap_max_pct")%, at $C = #val("q3_n_sign_gap_max_c")$.
+The worst shot's signed NRMSE lies between #val("q3_n_worst_lo") and
+#val("q3_n_worst_hi") across the curve. From $C = #val("q3_flip_c")$ up it
+reaches 2, the score of a zero-mean shot predicted with the wrong sign.
 
 The $alpha$ controls at $C = 0.2$ behave as @sec-feedback predicts. With
-$alpha = 0$ the fringe stays even and the signed-MSE optimum is zero. Both
-$alpha = 0$ runs stop by patience after #val("q3_a0_epochs") epochs at the
-zero-predictor level, NRMSE #val("q3_a0_nrmse"). With $alpha = 5$ the error
-is within #val("q3_a5_gap_pct")% of $alpha = 3$ at both budgets.
-@eq-sign-info depends on $alpha$ only through $alpha^2 \/ (1 + alpha^2)$,
-which changes by a factor #val("sign_info_a5_a3") between the two.
+$alpha = 0$ the fringe stays even and the signed-MSE optimum is zero, and both
+$alpha = 0$ runs match the zero predictor's test RMSE within
+#val("q3_zero_gap_pct")%. They coincide because their best checkpoint is the
+first validation, after one epoch at the peak learning rate both schedules
+share; patience then stops them at epoch #val("q3_a0_epochs"). With
+$alpha = 5$ the error is within #val("q3_a5_gap_pct")% of $alpha = 3$ at both
+budgets, consistent with @eq-sign-info's factor $alpha^2 \/ (1 + alpha^2)$,
+which noise-free runs that resolve the sign cannot test.
 
-If the advantage survives noise, the operating target is the top of the
-weak-feedback range, near the largest $C$ sampled here. Three levers set
-$C$: the attenuation of the return path, including the target's
-reflectivity; the coupling and focus of the returned light into the laser
-cavity; and the external cavity length. Which of them is practical on the
-rig is untested, and the moderate regime $C > 1$, with its hysteresis, is out
-of scope.
+Of the Q3 predictions in @sec-predictions, the sign prediction holds in RMSE, // math-ok: question label
+with the low-amplitude exceptions above. No optimum appears below $C = 1$ up
+to $C = 0.9$ at this budget, so sawtooth fringes did not defeat the
+estimator. Whether one channel reads the sign, and what noise costs, this
+curve does not test.
 
-Every value here holds for a fixed budget and still moves with it. Tripling the cosine
-cycle from 30 to 90 epochs lowers the $C = 0.2$ error from
-#val("q3_c02_t30") to #val("q3_c02_t90") $mu$m/ms and Michelson's from
-#val("q3_mich_t30") to #val("q3_mich_t90"). One #val("q3_t270_cycle")-epoch
-cycle at $C = 0.2$ stopped by patience at epoch #val("q3_t270_epochs"),
-early in its decay, at #val("q3_c02_t270") $mu$m/ms, so convergence is not
-demonstrated. At 30 epochs the curve inverts once: the $C = 0.4$ run lasted
-#val("q3_t30_c04_epochs") epochs against #val("q3_t30_other_epochs_lo") to
-#val("q3_t30_other_epochs_hi") for the other cells, and lies below
-$C = 0.7$ and $0.9$. Each cell is one training seed, and $alpha = 5$ is
-sampled only at $C = 0.2$.
+If the advantage survives noise, the operating target for this estimator is
+the top of the weak-feedback range sampled, a reading from one seed at a
+fixed budget that per shot needs $C$ above #val("q3_nrmse_worse_t90"). Three levers set $C$: the attenuation of the
+return path, including the target's reflectivity; the coupling and focus of
+the returned light into the laser cavity; and the external cavity length.
+Which of them is practical on the rig is untested, and the moderate regime
+$C > 1$, with its hysteresis, is out of scope.
+
+Every value here holds for a fixed budget and still moves with it, as the two
+curves of #ref(<fig-feedback>)a show. One #val("q3_t270_cycle")-epoch cycle
+at $C = 0.2$ stopped by patience at epoch #val("q3_t270_epochs"), early in its
+decay, at #val("q3_c02_t270") $mu$m/ms, so convergence is not demonstrated.
+The 30-epoch curve inverts once because its $C = 0.4$ run kept improving
+after its first restart and trained #val("q3_t30_c04_epochs") epochs, against
+#val("q3_t30_other_epochs_lo") to #val("q3_t30_other_epochs_hi") for the
+other cells. Each cell is one training seed, and $alpha = 5$ is sampled only
+at $C = 0.2$.
 
 == Noise ladder <sec-q3-noise>
 
