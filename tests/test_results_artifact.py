@@ -1,6 +1,7 @@
 """Tests for the learned-results artifact."""
 
 import json
+from dataclasses import asdict
 
 from smi.analysis.results_artifact import (
     SCHEMA_VERSION,
@@ -16,7 +17,7 @@ def _record(**overrides) -> RunRecord:
         config={'kernel_size': 5},
         total_params=57000,
         receptive_field=253,
-        sees_future=False,
+        causal=True,
         seed=0,
         device='NVIDIA GeForce RTX 3090 Ti',
         dataset='free-space',
@@ -28,7 +29,7 @@ def _record(**overrides) -> RunRecord:
 
 def test_round_trip_preserves_records(tmp_path):
     path = tmp_path / 'learned_results.json'
-    records = [_record(), _record(model_type='SCNN', sees_future=True)]
+    records = [_record(), _record(model_type='SCNN', causal=False)]
     write_results(path, records)
     assert read_results(path) == records
 
@@ -47,10 +48,10 @@ def test_datasets_are_keyed_like_the_baseline_artifact(tmp_path):
 
 
 def test_causality_flag_survives_the_round_trip(tmp_path):
-    """sees_future must not be droppable: the comparison depends on it."""
+    """Causal must not be droppable: the comparison depends on it."""
     path = tmp_path / 'learned_results.json'
-    write_results(path, [_record(model_type='SCNN', sees_future=True)])
-    assert read_results(path)[0].sees_future is True
+    write_results(path, [_record(model_type='SCNN', causal=False)])
+    assert read_results(path)[0].causal is False
 
 
 def test_write_is_byte_stable_across_runs(tmp_path):
@@ -61,3 +62,19 @@ def test_write_is_byte_stable_across_runs(tmp_path):
     write_results(first, records)
     write_results(second, list(reversed(records)))
     assert first.read_bytes() == second.read_bytes()
+
+
+def test_legacy_sees_future_records_still_read(tmp_path):
+    """learned_results.json stores sees_future only; old runner records carry a
+    since-dropped checkpoint field.
+    """
+    entry = {**asdict(_record()), 'checkpoint': 'best'}
+    del entry['causal']
+    entry['sees_future'] = True
+    path = tmp_path / 'legacy.json'
+    path.write_text(
+        json.dumps({'schema_version': SCHEMA_VERSION, 'datasets': {'d': [entry]}})
+    )
+    (record,) = read_results(path)
+    assert record.causal is False
+    assert 'sees_future' not in asdict(record)

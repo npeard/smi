@@ -278,7 +278,6 @@ def test_recurrent_checkpoint_records_unbounded_receptive_field(
     )
     (record,) = read_results(out)
     assert record.receptive_field is None
-    assert record.receptive_field_unbounded
     assert (
         json.loads(out.read_text())['datasets'][record.dataset][0]['receptive_field']
         is None
@@ -430,7 +429,7 @@ def test_records_without_new_fields_still_read_and_serialize_causal(tmp_path):
         config={},
         total_params=1,
         receptive_field=1,
-        sees_future=True,
+        causal=False,
         seed=0,
         device='cpu',
         dataset='d',

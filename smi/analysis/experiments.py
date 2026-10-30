@@ -427,7 +427,6 @@ def _train(
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(interface.best_model_path, checkpoint)
     fields = {
-        'checkpoint': 'best',
         'epochs_run': interface.epochs_run,
         'best_monitor': interface.best_monitor,
         'final_monitor': interface.final_monitor,

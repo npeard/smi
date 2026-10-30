@@ -92,7 +92,6 @@ def test_two_cell_grid_writes_complete_records_and_resumes(tmp_path):
         assert r.sim_config_hash
         assert r.sim_name == 'smi'
         assert r.wall_clock_s > 0
-        assert r.checkpoint == 'best'
         assert r.epochs_run == 1
         assert r.best_monitor <= r.final_monitor
         assert (r.train_crop_length, r.steps_per_epoch, r.batch_size) == (256, 1, 2)

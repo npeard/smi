@@ -19,7 +19,7 @@ SCHEMA_VERSION = 1
 class RunRecord:
     """One trained model evaluated on one dataset.
 
-    ``total_params``, ``receptive_field`` and ``sees_future`` are required, not
+    ``total_params``, ``receptive_field`` and ``causal`` are required, not
     optional: a causal and a non-causal model at equal parameter count are not
     solving the same problem, and a comparison table that cannot express the
     difference silently implies they are.
@@ -30,7 +30,8 @@ class RunRecord:
         total_params: Trainable parameter count.
         receptive_field: Receptive field in samples; ``None`` when the model
             has no finite lookback (recurrent state, whole-shot estimators).
-        sees_future: Whether the model uses samples after the predicted one.
+        causal: Whether the model uses only samples at or before the
+            predicted one.
         seed: Random seed the run was trained with; records from
             :mod:`smi.analysis.evaluate` use ``-1`` when the estimator has none.
         device: Device name, e.g. the CUDA device string.
@@ -60,8 +61,6 @@ class RunRecord:
         sim_name: Name of the runner's sim entry, with any swept value.
         wall_clock_s: Seconds the runner spent on the cell (training plus
             evaluation), for sizing a full grid from a pilot.
-        checkpoint: Which weights were scored: ``'best'`` (lowest monitored
-            validation value) for a runner cell.
         epochs_run: Epochs trained; with ``best_monitor`` and ``final_monitor``
             (the monitored validation value of the best and of the last
             epoch) it shows how far past its best a converged run went.
@@ -78,16 +77,15 @@ class RunRecord:
             it matches. ``fingerprint_blocks`` holds the per-block hashes so a
             mismatch names the changed blocks.
 
-    ``causal`` is the negation of ``sees_future``; it is a property so the one
-    stored flag cannot disagree with it, and :func:`write_results` also writes
-    it into the JSON so table readers find the key.
+    ``sees_future`` is a property, so it cannot disagree with ``causal``; a
+    receptive field is unbounded exactly when it is ``None``.
     """
 
     model_type: str
     config: dict[str, Any]
     total_params: int
     receptive_field: int | None
-    sees_future: bool
+    causal: bool
     seed: int
     device: str
     dataset: str
@@ -106,7 +104,6 @@ class RunRecord:
     cell_key: str | None = None
     sim_name: str | None = None
     wall_clock_s: float | None = None
-    checkpoint: str | None = None
     epochs_run: int | None = None
     best_monitor: float | None = None
     final_monitor: float | None = None
@@ -118,14 +115,11 @@ class RunRecord:
     lr: float | None = None
     run_fingerprint: str | None = None
     fingerprint_blocks: dict[str, str] | None = None
-    # Explicit alongside the null field so a reader never has to infer
-    # "unbounded" from a missing number; False for records predating it.
-    receptive_field_unbounded: bool = False
 
     @property
-    def causal(self) -> bool:
-        """Whether the estimator uses only past and present samples."""
-        return not self.sees_future
+    def sees_future(self) -> bool:
+        """Whether the estimator uses samples after the predicted one."""
+        return not self.causal
 
 
 def write_results(path: str | Path, records: list[RunRecord]) -> None:
@@ -142,9 +136,7 @@ def write_results(path: str | Path, records: list[RunRecord]) -> None:
     """
     datasets: dict[str, list[dict[str, Any]]] = {}
     for record in records:
-        entry = asdict(record)
-        entry['causal'] = record.causal
-        datasets.setdefault(record.dataset, []).append(entry)
+        datasets.setdefault(record.dataset, []).append(asdict(record))
 
     payload = {'schema_version': SCHEMA_VERSION, 'datasets': datasets}
     # Rename over the target so a killed runner never leaves a truncated
@@ -183,8 +175,11 @@ def read_results(path: str | Path) -> list[RunRecord]:
         )
 
     known = {f.name for f in fields(RunRecord)}
-    return [
-        RunRecord(**{k: v for k, v in entry.items() if k in known})
-        for entries in payload['datasets'].values()
-        for entry in entries
-    ]
+    records = []
+    for entries in payload['datasets'].values():
+        for entry in entries:
+            # learned_results.json predates the stored ``causal`` flag.
+            if 'causal' not in entry:
+                entry['causal'] = not entry['sees_future']
+            records.append(RunRecord(**{k: v for k, v in entry.items() if k in known}))
+    return records
