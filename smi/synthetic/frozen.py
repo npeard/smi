@@ -24,6 +24,8 @@ from smi.synthetic.forward import SIMULATOR_VERSION, SimConfig, simulate_batch
 # chunk. Stored as the `chunk_shots` attr and checked by load_or_create.
 CHUNK_SHOTS = 256
 
+# The rig's three lasers as the simulator configs spell them, in channel order.
+RIG_WAVELENGTHS_UM = (0.635, 0.6748, 0.515)
 # A config's rig wavelengths are matched to this tolerance: the simulator
 # configs spell the 675 nm laser 0.6748 while baseline_fit records 0.675.
 RIG_WAVELENGTH_TOL_UM = 1e-3

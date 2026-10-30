@@ -22,9 +22,8 @@ from smi.synthetic.forward import (
     NOMINAL_SWEEPS,
     SimConfig,
 )
-from smi.synthetic.frozen import write_frozen_set
+from smi.synthetic.frozen import RIG_WAVELENGTHS_UM, write_frozen_set
 
-RIG_WAVELENGTHS = (0.635, 0.6748, 0.515)
 N_SHOTS = 256
 REL_TOL = 0.2
 SNR_TOL_DB = 1.0
@@ -51,7 +50,7 @@ DC_VOLTS = 0.5
 
 def _known(pd_bandwidth_hz: float, **changes) -> SimConfig:
     # Nominal, except a visibility top below 1 so both bounds are tested.
-    nominal = SimConfig.nominal(RIG_WAVELENGTHS, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
+    nominal = SimConfig.nominal(RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
     return dataclasses.replace(
         nominal, visibility_range=(0.5, 0.9), pd_bandwidth_hz=pd_bandwidth_hz, **changes
     )
@@ -204,7 +203,7 @@ def test_cli_writes_json(known_set, tmp_path):
 
 
 def test_nominal_sits_inside_every_sweep():
-    nominal = SimConfig.nominal(RIG_WAVELENGTHS, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
+    nominal = SimConfig.nominal(RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
     names = {f.name for f in dataclasses.fields(SimConfig)}
     for name, sweep in NOMINAL_SWEEPS.items():
         assert name in names, name

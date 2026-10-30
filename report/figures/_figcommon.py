@@ -33,6 +33,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.typing import RcKeyType
 
+from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
+
 # Repository root, resolved from this file so scripts work from any cwd
 # (pytest runs them from the repo root, Snakemake from report/).
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -58,9 +60,9 @@ PD_CHANNELS: tuple[tuple[str, float], ...] = (
 )
 VOLTAGE_CHANNEL = 'RP1_CH1'
 
-# The same lasers as the synthetic simulator spells them (the experiment YAMLs
-# under smi/analysis/experiments/), for figures that compute from smi.synthetic.
-SYNTHETIC_WAVELENGTHS_UM = (0.635, 0.6748, 0.515)
+# The same lasers as the synthetic simulator spells them, for figures that
+# compute from smi.synthetic.
+SYNTHETIC_WAVELENGTHS_UM = RIG_WAVELENGTHS_UM
 
 # The two acquisitions, as (key in baseline_results.json, axis label). Shared
 # so that adding a third cannot leave one figure silently showing two.

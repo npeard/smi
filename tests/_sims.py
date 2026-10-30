@@ -8,9 +8,10 @@ import pytest
 
 from smi.synthetic import frozen
 from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SimConfig
+from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
 
 SAMPLE_RATE = 125e6 / 256
-WAVELENGTHS_UM = (0.635, 0.6748, 0.515)
+WAVELENGTHS_UM = RIG_WAVELENGTHS_UM
 #: Frozen-set chunk size for tests: real chunks are 256 shots of 16384
 #: samples, and the logic under test is chunk-size free.
 SMALL_CHUNK_SHOTS = 4

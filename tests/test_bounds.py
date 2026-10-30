@@ -10,8 +10,7 @@ import torch
 
 from smi.analysis import bounds
 from smi.synthetic.forward import SimConfig, fringe, noise_std, smi_excess_phase
-
-RIG = (0.635, 0.6748, 0.515)
+from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
 
 
 def _cfg(wavelengths_um, feedback_c, alpha):
@@ -20,7 +19,7 @@ def _cfg(wavelengths_um, feedback_c, alpha):
 
 @pytest.fixture(scope='module')
 def prior():
-    return bounds.motion_prior(_cfg(RIG, 0.2, 3.0))
+    return bounds.motion_prior(_cfg(RIG_WAVELENGTHS_UM, 0.2, 3.0))
 
 
 @pytest.mark.parametrize(('feedback_c', 'alpha'), [(0.0, 3.0), (0.2, 3.0), (0.7, 5.0)])
@@ -55,7 +54,7 @@ def test_fisher_matches_sympy(feedback_c, alpha):
 )
 def test_expected_information_matches_quadrature(feedback_c, alpha):
     """Closed-form phase average equals the uniform-phase average of fisher_single."""
-    cfg = _cfg(RIG, feedback_c, alpha)
+    cfg = _cfg(RIG_WAVELENGTHS_UM, feedback_c, alpha)
     # Periodic trapezoid rule over one fringe: exact to rounding for this
     # analytic integrand at this many nodes.
     theta = torch.arange(4096, dtype=torch.float64) * (2 * math.pi / 4096)
@@ -65,7 +64,7 @@ def test_expected_information_matches_quadrature(feedback_c, alpha):
     want = sum(
         bounds.fisher_single(theta, 1.0, 1.0, sigma, lam, feedback_c, alpha).mean()
         * mean_v2
-        for lam in RIG
+        for lam in RIG_WAVELENGTHS_UM
     )
     assert bounds.expected_information(cfg) == pytest.approx(float(want), rel=1e-10)
 
@@ -75,7 +74,7 @@ def test_k_channel_fi_adds():
     feedback_c, alpha, sigma = 0.4, 3.0, 0.02
     vis = torch.tensor([0.9, 0.6, 0.75], dtype=torch.float64)
     phase0 = torch.tensor([0.3, 2.0, -1.1], dtype=torch.float64)
-    lam = torch.tensor(RIG, dtype=torch.float64)
+    lam = torch.tensor(RIG_WAVELENGTHS_UM, dtype=torch.float64)
     for d_value in (0.0, 0.11, 0.37, 1.9):
         d = torch.tensor(d_value, dtype=torch.float64, requires_grad=True)
         theta = 4 * math.pi * d / lam + phase0
@@ -91,7 +90,7 @@ def test_k_channel_fi_adds():
                     1.0,
                     float(vis[k]),
                     sigma,
-                    RIG[k],
+                    RIG_WAVELENGTHS_UM[k],
                     feedback_c,
                     alpha,
                 )
@@ -103,25 +102,26 @@ def test_k_channel_fi_adds():
 
 def test_sign_information_zero_for_michelson():
     for alpha in (0.0, 3.0):
-        cfg = _cfg(RIG[:2], 0.0, alpha)
+        cfg = _cfg(RIG_WAVELENGTHS_UM[:2], 0.0, alpha)
         assert bounds.sign_information(cfg, 2, 0) < 1e-6
 
 
 def test_sign_information_zero_for_alpha_zero():
     for feedback_c in (0.2, 0.7):
-        cfg = _cfg(RIG[:1], feedback_c, 0.0)
+        cfg = _cfg(RIG_WAVELENGTHS_UM[:1], feedback_c, 0.0)
         assert bounds.sign_information(cfg, 2, 0) < 1e-6
 
 
 def test_sign_information_increases_with_c():
     values = [
-        bounds.sign_information(_cfg(RIG[:1], c, 3.0), 4, 0) for c in (0.05, 0.2, 0.7)
+        bounds.sign_information(_cfg(RIG_WAVELENGTHS_UM[:1], c, 3.0), 4, 0)
+        for c in (0.05, 0.2, 0.7)
     ]
     assert values[0] > 1.0
     assert values[0] < values[1] < values[2]
 
 
-@pytest.mark.parametrize('wavelengths_um', [RIG[:1], RIG])
+@pytest.mark.parametrize('wavelengths_um', [RIG_WAVELENGTHS_UM[:1], RIG_WAVELENGTHS_UM])
 @pytest.mark.parametrize('alpha', [3.0, 5.0])
 def test_sign_information_matches_leading_order(wavelengths_um, alpha):
     """At small C, sign_information equals its O(C^2) form shot by shot.
@@ -158,7 +158,7 @@ def test_k1_warped_mirror_reproduces_signal(feedback_c, alpha):
     So with the trajectory free, one channel's fringe shape carries no sign
     evidence; sign_information's fixed-trajectory value is an upper bound.
     """
-    shots = bounds.ideal_shots(_cfg(RIG[:1], feedback_c, alpha), 1, 0)
+    shots = bounds.ideal_shots(_cfg(RIG_WAVELENGTHS_UM[:1], feedback_c, alpha), 1, 0)
     theta = shots.theta[0, 0]
     delta, _ = smi_excess_phase(theta, feedback_c, alpha)
     phi_f = theta + delta
@@ -244,7 +244,7 @@ def test_smoother_matches_dense_information_inverse(prior, info):
 
 
 def test_smoother_bound_le_filter_bound(prior):
-    cfg = _cfg(RIG, 0.2, 3.0)
+    cfg = _cfg(RIG_WAVELENGTHS_UM, 0.2, 3.0)
     causal = bounds.pcrb_filter(prior, cfg, 500)
     smooth = bounds.bcrb_smoother(prior, cfg, 500)
     assert torch.all(smooth <= causal * (1 + 1e-9))
@@ -253,12 +253,15 @@ def test_smoother_bound_le_filter_bound(prior):
 
 
 def test_realization_bounds_more_channels_lower(prior):
-    cfg = _cfg(RIG, 0.2, 3.0)
+    cfg = _cfg(RIG_WAVELENGTHS_UM, 0.2, 3.0)
     shots = bounds.ideal_shots(cfg, 1, 0)
     theta, vis = shots.theta[0, :, :2000], shots.visibility[0]
     three = bounds.realization_bounds(prior, cfg, theta, vis)
     one = bounds.realization_bounds(
-        prior, dataclasses.replace(cfg, wavelengths_um=RIG[:1]), theta[:1], vis[:1]
+        prior,
+        dataclasses.replace(cfg, wavelengths_um=RIG_WAVELENGTHS_UM[:1]),
+        theta[:1],
+        vis[:1],
     )
     for many, few in zip(three, one, strict=True):
         assert torch.all(many <= few * (1 + 1e-9))
@@ -304,7 +307,7 @@ def _ekf(prior, y, lam, phase0, vis, sigma, feedback_c, alpha):
 
 def test_ekf_mse_above_bound(prior):
     """An EKF's empirical velocity MSE is not below the causal bound."""
-    cfg = _cfg(RIG, 0.2, 3.0)
+    cfg = _cfg(RIG_WAVELENGTHS_UM, 0.2, 3.0)
     # Scored after a 50-sample transient: before it the error is dominated by
     # each shot's initial velocity draw, which a few shots sample poorly.
     n_shots, n_steps, skip = 24, 300, 50
@@ -320,7 +323,7 @@ def test_ekf_mse_above_bound(prior):
 
     x = _sample_prior(local, n_shots, n_steps, rng)
     sigma = noise_std(cfg.snr_db)
-    lam = np.array(RIG)
+    lam = np.array(RIG_WAVELENGTHS_UM)
     errs = []
     for b in range(n_shots):
         phase0 = rng.uniform(0, 2 * math.pi, 3)
@@ -328,7 +331,7 @@ def test_ekf_mse_above_bound(prior):
         theta = 4 * math.pi * (x[b] @ cd)[None] / lam[:, None] + phase0[:, None]
         clean = vis[:, None] * fringe(torch.from_numpy(theta), 0.2, 3.0).numpy()
         y = clean + sigma * rng.standard_normal(clean.shape)
-        v_hat = _ekf(local, y, RIG, phase0, vis, sigma, 0.2, 3.0)
+        v_hat = _ekf(local, y, RIG_WAVELENGTHS_UM, phase0, vis, sigma, 0.2, 3.0)
         errs.append(np.mean((v_hat - x[b] @ local.velocity_row)[skip:] ** 2))
     errs = np.array(errs)
     mse, se = errs.mean(), errs.std(ddof=1) / math.sqrt(n_shots)
