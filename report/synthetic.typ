@@ -2,17 +2,18 @@
 // retrieval from multi-wavelength self-mixing fringes, before any real
 // acquisition is unblinded.
 //
-// Build:  pixi run report  (or, from report/: snakemake build/synthetic.pdf)
+// Build:  pixi run report-synthetic
 //
 // Every number in this document comes from a committed artifact or from a
 // computation in a committed script:
 // - smi/analysis/data/exit_check_results.json (the three exit-check runs of
 //   section 1.1, copied from the Task 10 diagnostic with its provenance);
 // - smi.analysis.bounds, evaluated by the figure scripts
-//   report/figures/plot_{fisher_phase,velocity_bounds,sign_information}.py and
-//   by the same calls for the values quoted in the text and table;
-// - report/report.typ and smi/analysis/data/learned_results.json, for the
-//   real-data numbers quoted as context only (the program is blinded).
+//   report/figures/plot_{fisher_phase,velocity_bounds,sign_information}.py;
+// - build/synthetic_values.json, written by report/figures/synthetic_values.py
+//   from smi.analysis.bounds and learned_results.json: every value quoted in
+//   section 1's prose and in its table is read from it below, so a library
+//   change rebuilds the prose rather than leaving it stale.
 // Sections 2 and 3 are written from smi/analysis/data/synthetic_results.json
 // once the experiment grids finish.
 //
@@ -29,10 +30,15 @@
 
 #set math.equation(numbering: "(1)")
 
+#let values = json("/build/synthetic_values.json")
+#let val(key) = values.at(key)
+#let sci(cell) = $#cell.mantissa times 10^#str(cell.exponent)$
+
 This report asks, on synthetic data where the true motion is known exactly,
 what limits velocity retrieval from three self-mixing photodiode channels at
-635, 674.8 and 515 nm. Every error is a velocity RMSE in um/ms on a frozen,
-seeded synthetic test set unless stated otherwise. The real acquisitions stay
+635, 674.8 and 515 nm. Every error is the velocity RMSE of each shot, in
+$mu$m/ms, averaged over the shots of a frozen, seeded synthetic test set;
+every bound is an RMS pooled over trajectories. The real acquisitions stay
 unread until the synthetic verdicts are fixed; real-data numbers appear only
 as context, quoted from the baseline report.
 
@@ -68,17 +74,16 @@ symmetric, $E[v | y] = 0$, and the best achievable signed MSE is the prior
 variance of $v$. A network trained with signed MSE on Michelson data should
 collapse toward predicting zero. A network trained to recover the motion must
 instead be scored per shot up to the global sign, with the sign-invariant
-loss $min_(s in {plus.minus 1}) "MSE"(s hat(v), v)$.
+loss $min_(epsilon in {plus.minus 1}) "MSE"(epsilon hat(v), v)$.
 
-@fig-exit-check confirms both predictions on noise-free three-channel data.
-The causal TCN (44k parameters, 85-sample lookback) trained with signed MSE
+@fig-exit-check confirms both predictions. The causal TCN (44k parameters, 85-sample lookback) trained with signed MSE
 on Michelson data scores at the zero-predictor level on both metrics. The
 same network trained with the sign-invariant loss recovers the motion up to
 sign, and its signed error, with a random sign per shot, exceeds the zero
 predictor's. Under weak feedback with signed MSE the two
 metrics agree, so the sign is resolved on nearly every test shot. None of the
-three runs had converged at 20 epochs, so only the ordering, not the absolute
-values, is evidence.
+three runs had converged, so only the ordering, not the absolute values, is
+evidence.
 
 #fig(
   "exit_check",
@@ -90,11 +95,12 @@ values, is evidence.
     Signed RMSE compares the prediction with the truth as is; sign-invariant
     RMSE takes the better of $plus.minus hat(v)$ per shot. Michelson runs use
     $C = 0$; the SMI run uses $C = 0.2$, $alpha = 3$. The dashed line is the
-    std of the true velocity, the RMSE of always predicting zero.
+    mean per-shot std of the true velocity, about the error of always
+    predicting zero. NRMSE, in the same artifact, orders the runs alike.
   ],
 ) <fig-exit-check>
 
-== Weak feedback breaks the symmetry, but one channel cannot use it <sec-feedback>
+== Feedback breaks the symmetry; one channel only through the prior <sec-feedback>
 
 Under weak optical feedback the fringe is $F(theta) = cos phi_F$, where the
 feedback phase $phi_F$ solves the excess-phase equation
@@ -124,12 +130,12 @@ $C sin beta thin lambda \/ (2 pi)$ that follows the fringe, therefore
 reproduces a single channel noise-free. Only the motion prior's penalty on
 that warp separates the two hypotheses. With two or more channels the warps
 of @eq-warp differ, because each depends on its own $phi_F$ and $lambda_k$,
-so no single trajectory mirrors every channel and the sign evidence is real.
+so this mirror does not carry over.
 
-We bound that evidence from above by holding the trajectory fixed. For each
+We bound the sign evidence from above by holding the trajectory fixed. For each
 shot and channel, the sign information is the Kullback-Leibler divergence
 between the noise law of the true signal and that of the closest
-sign-flipped signal $a + b F(-4 pi d \/ lambda_k + phi')$, with offset $a$,
+sign-flipped signal $m + b F(-4 pi d \/ lambda_k + phi')$, with offset $m$,
 gain $b >= 0$ and phase $phi'$ free. The gain is kept non-negative because
 photodiode polarity is fixed and known. Freeing the trajectory can only lower
 the value, to the prior-limited level for one channel. To leading order in
@@ -138,16 +144,18 @@ $
   I_"sign" = sum_k (L C^2 E[V_k^2] alpha^2) / (4 sigma^2 (1 + alpha^2)) .
 $ <eq-sign-info>
 The derivation expands $F = cos theta + C sin theta sin(theta + beta) +
-O(C^2)$. The exact mirror then leaves the residual $V C sin beta sin 2 theta$,
-which is orthogonal to the directions $(a, b, phi')$ can move.
+O(C^2)$. The unwarped mirror ($b = 1$, $phi' = -phi$) then leaves the
+residual $V C sin beta sin 2 theta$, which is orthogonal to the directions
+$(m, b, phi')$ can move.
 
 #fig(
   "sign_information",
   width: 62%,
   caption: [
-    Sign evidence grows as $C^2$ at weak feedback, and three channels carry about three times
-    one channel's. Upper bound on the sign evidence of one 16384-sample shot
-    at SNR 30 dB and $V tilde U(0.5, 1)$, mean over 8 shots (seed 0), for one
+    An upper bound on the sign evidence grows as $C^2$ at weak feedback, and
+    three channels carry about three times one channel's. The bound is for
+    one 16384-sample shot at SNR 30 dB and $V tilde U(0.5, 1)$, mean over 8
+    shots (seed 0), for one
     channel (635 nm) and all three. Markers are the computed value; lines are
     the leading-order form of @eq-sign-info, which is the same for both
     $alpha$ to within the marker size. The value is exactly zero at $C = 0$
@@ -155,14 +163,11 @@ which is orthogonal to the directions $(a, b, phi')$ can move.
   ],
 ) <fig-sign>
 
-The tilt breaks the symmetry: at the nominal SNR the bound is far above one
-nat per shot over the whole weak-feedback range (@fig-sign). This is a
-numerical result, not a proof; no analytic argument here excludes a phase
-shift $s$ with $F(-theta + s) = F(theta)$. It is an upper bound, and for one channel
-the true evidence is set by the motion prior, so @fig-sign does not show that
-a single-channel estimator can read the sign. Its trend in $alpha$ is weak,
-as $sin^2 beta$ in @eq-sign-info predicts. The values in @tab-sign anchor the
-figure.
+Because the bound is far above one nat per shot over the whole weak-feedback
+range (@fig-sign), no mirror on the true trajectory reproduces the signals;
+that is numerical, not proven. The bound does not quantify the evidence once the trajectory is free. For two or more
+channels, whether some other trajectory mirrors every channel, for example
+one that switches fringe branch at the extrema, is an exposed gap.
 
 #figure(
   align(center, table(
@@ -176,9 +181,7 @@ figure.
       [$alpha = 5$, $K = 1$],
       [$alpha = 5$, $K = 3$],
     ),
-    [0.05], [$1.10 times 10^4$], [$3.04 times 10^4$], [$1.18 times 10^4$], [$3.25 times 10^4$],
-    [0.2], [$1.72 times 10^5$], [$4.75 times 10^5$], [$1.83 times 10^5$], [$5.06 times 10^5$],
-    [0.7], [$1.63 times 10^6$], [$4.38 times 10^6$], [$1.70 times 10^6$], [$4.64 times 10^6$],
+    ..values.sign_table.map(row => ([#row.c], ..row.cells.map(sci))).flatten(),
   )),
   caption: [
     Upper bound on the sign evidence (nats per 16384-sample shot) at the
@@ -207,7 +210,7 @@ the information of the 635 nm channel at equal visibility and noise.
   width: 62%,
   caption: [
     Feedback concentrates the information on the steep fringe edge and leaves
-    the blind spots in place. $F'(theta)^2$, the phase-dependent factor of
+    the blind spots. $F'(theta)^2$, the phase-dependent factor of
     @eq-fisher, over one fringe at $alpha = 3$. Dashed lines are its phase
     averages $Phi(C, alpha)$, which the averaged bounds use.
   ],
@@ -219,12 +222,13 @@ $
   = 1 / (2 s) [1 - cos(2 beta) (1 - s) / (1 + s)], quad s = sqrt(1 - C^2) .
 $ <eq-phase-factor>
 Substituting $theta -> phi_F$ in the average, which is monotone for $C < 1$,
-reduces it to two elementary integrals over a uniform angle,
+reduces it to two standard integrals over a uniform angle,
 $chevron.l 1 \/ (1 + C cos u) chevron.r = 1 \/ s$ and
 $chevron.l cos 2u \/ (1 + C cos u) chevron.r = (1 - s) \/ (s (1 + s))$.
 The Michelson limit is $Phi = 1 \/ 2$. For $|alpha| > 1$, $cos 2 beta < 0$,
-so feedback adds magnitude information: at $alpha = 3$, $Phi = 0.514$ at
-$C = 0.2$ and $0.794$ at $C = 0.7$.
+so feedback adds magnitude information: at $alpha = 3$,
+$Phi = #val("phase_factor_c02")$ at $C = 0.2$ and #val("phase_factor_c07") at
+$C = 0.7$.
 
 == Causal and offline Bayesian bounds <sec-crb>
 
@@ -232,10 +236,11 @@ The time-series bounds combine @eq-fisher with a model of how the motion
 evolves. We fit a Gauss-Markov surrogate prior to the simulator's motion: the
 state $x = (d, v, dot(v))$ is driven by white noise through one real pole and
 one resonance, discretized exactly at the sample rate. The fit matches the
-in-band velocity line powers of 256 seeded trajectories to 0.73 dB rms, and
-it reproduces their velocity and displacement variances, a velocity std of
-0.506 um/ms. The coil resonance survives the drive pre-compensation, so the
-velocity spectrum is not flat.
+in-band velocity line powers of 256 seeded trajectories to
+#val("prior_psd_rms_db") dB rms, and it reproduces their velocity and
+displacement variances. Its pooled velocity std, #val("prior_velocity_std")
+$mu$m/ms, exceeds the mean per-shot std of @fig-exit-check because the drive
+amplitude is drawn per shot.
 
 The causal bound is the posterior Cramer-Rao bound of @tichavsky1998pcrb. For
 linear-Gaussian dynamics $x_(n+1) = A x_n + w_n$, $w_n tilde cal(N)(0, Q)$,
@@ -253,7 +258,7 @@ Since $theta_k mod 2 pi$ is uniform whatever $d$ is, $macron(J) = sum_k
 E[V_k^2] Phi(C, alpha) (4 pi \/ (lambda_k sigma))^2$ exactly, with no Monte
 Carlo. Averaging the information over the phase before inverting gives
 $(E J)^(-1) <= E[J^(-1)]$ by Jensen's inequality, so the averaged bound is
-valid and slightly looser than one conditioned on the phases.
+valid and looser than one conditioned on the phases.
 
 #fig(
   "velocity_bounds",
@@ -268,24 +273,26 @@ valid and slightly looser than one conditioned on the phases.
 ) <fig-bounds>
 
 The bound depends only weakly on both the channel count and $C$
-(@fig-bounds).
-At the nominal point ($K = 3$, $C = 0.2$) the causal bound is 0.0077 um/ms
-and the offline bound 0.0019 um/ms. Going from one channel to three
-multiplies $macron(J)$ by 3.4 but lowers the causal bound only by a factor
-0.74, close to $macron(J)^(-1 \/ 4)$. The causal bound is 14 times below the
-causal TCN's real free-space error of 0.1116 um/ms in the baseline report.
-That gap measures the bound's omissions as much as any estimator's
-shortfall. Within its own model the bound is nearly attained.
-`tests/test_bounds.py` runs an extended Kalman filter, given the genie
-phases, on three-channel $C = 0.2$ trajectories drawn from the surrogate
-prior. Its MSE must lie above the causal bound, within three standard
-errors, and below twice it.
+(@fig-bounds). At the nominal point ($K = 3$, $C = 0.2$) the causal bound is
+#val("causal_k3") $mu$m/ms and the offline bound #val("offline_k3") $mu$m/ms.
+Going from one channel to three multiplies $macron(J)$ by
+#val("info_ratio_k3_k1") but lowers the causal bound only by a factor
+#val("causal_ratio_k3_k1"), close to $macron(J)^(-1 \/ 4)$.
+
+The causal bound is #val("real_gap") times below the causal TCN's error of
+#val("real_tcn_rmse") $mu$m/ms on the real free-space test split in the
+baseline report. That gap measures the bound's omissions as much as any
+estimator's shortfall, since within its own model the bound is nearly
+attained. In `tests/test_bounds.py` an extended Kalman filter given the
+genie phases, on three-channel $C = 0.2$ trajectories from the surrogate
+prior, must score below twice the causal bound and above it within three
+standard errors.
 
 The bounds are exact for a simpler model than the simulator, so they are not
 a floor for it. Four simplifications separate the two.
 + They are exact for the fitted Gauss-Markov prior, not
   for the simulator's motion. That motion is a finite sum of drive lines with
-  a per-shot power drawn from $U(0, 1)$. An estimator that knows the line
+  a per-shot amplitude drawn from $U(0, 1)$. An estimator that knows the line
   structure could exploit it beyond the surrogate.
 + The offsets $phi_k$ and visibilities $V_k$ are known
   to the bound, and the amplitude is 1.
@@ -299,32 +306,30 @@ a floor for it. Four simplifications separate the two.
 
 == Predictions for Q3 and Q1 <sec-predictions> // math-ok: question labels
 
-// math-ok: Q3 and Q1 below are question labels from the program spec.
-*Q3, accuracy against feedback.* @sec-sign and @sec-feedback predict that
-signed error with three channels falls from the zero-predictor level at
-$C = 0$ to the sign-invariant level at the smallest swept $C > 0$, for
-$alpha in {3, 5}$, because the sign evidence of @fig-sign is large there.
-With one channel the sign is prior-limited (@eq-warp), so its signed error
-may stay above its sign-invariant error at small $C$. Because $Phi$ rises
-with $C$ at these $alpha$ (@eq-phase-factor), an optimum of the
-sign-invariant error below $C = 1$ would come from the estimator's
-difficulty with sawtooth fringes, not from lost information. The noise-free SMI error of
-@fig-exit-check, at 20 epochs, is already an order of magnitude above the
-nominal-SNR causal bound of @fig-bounds. The noise ladder should therefore
-find additive white noise at the nominal SNR a minor term; the bounds say
-nothing about the terms they omit.
+*Q3, accuracy against feedback.* With three channels, signed error should // math-ok: question label
+fall from the zero-predictor level at $C = 0$ to the sign-invariant level at
+$C > 0$, as the SMI run of @fig-exit-check already does at $C = 0.2$, $alpha = 3$.
+Whether one channel reads the sign is open. Its evidence comes only through
+the motion prior (@eq-warp), but the warp that mirrors it has velocity
+amplitude about $2 C |v| sin beta$ at the fringe rate $2|v| \/ lambda$, a
+fast component the prior may penalize heavily. Because $Phi$ rises with $C$
+at these $alpha$ (@eq-phase-factor), an optimum of the sign-invariant error
+below $C = 1$ would come from the estimator's difficulty with sawtooth
+fringes, not from lost local Fisher information. For an efficient causal
+estimator, 30 dB white noise costs at least the bound of @fig-bounds. The
+noise ladder measures what it costs the TCN, by training the same
+architecture and budget noise-free and at 30 dB.
 
 *Q1, multiple channels.* // math-ok: question label
 @eq-fisher predicts that a single channel loses all
 information at its fringe extrema, and incommensurate wavelengths put the
 extrema of different channels at different times. A three-channel estimator
 should therefore gain over the best single channel mainly near fringe
-extrema and at velocity turning points, and elsewhere by the modest factor
-of @fig-bounds. The test is error binned by distance to the nearest fringe
-extremum: it should rise toward the extremum for one channel and stay flat
-for three. A single channel also carries only prior-limited sign evidence,
-so its signed error should exceed its sign-invariant error where three
-channels' do not.
+extrema, and elsewhere by the modest factor of @fig-bounds. This includes
+velocity turning points, where the fringes stall and one channel can dwell at
+an extremum while the others do not. The test is error binned by distance to
+the nearest fringe extremum: it should rise toward the extremum for one
+channel and stay flat for three.
 
 = Q3: noise-free accuracy against feedback $C$ <sec-q3> // math-ok: question label
 

@@ -87,6 +87,12 @@ wildcard_constraints:
     name="|".join(FIGURES),
 
 
+# Numbers a document quotes in its prose, computed by a script and read by the
+# document at compile time, so the prose cannot drift from the library that
+# produces the figures.
+DOCUMENT_VALUES = {"synthetic": [f"{BUILD}/synthetic_values.json"]}
+
+
 def figure_pdfs(document):
     return [f"{FIGDIR}/{name}.pdf" for name in DOCUMENT_FIGURES[document]]
 
@@ -109,6 +115,19 @@ rule figure:
         "python {input.script} --output {output}"
 
 
+rule synthetic_values:
+    """Compute the values synthetic.typ quotes in its text and table."""
+    input:
+        script="figures/synthetic_values.py",
+        common="figures/_figcommon.py",
+        results=RESULTS,
+        code=ANALYSIS_CODE,
+    output:
+        f"{BUILD}/synthetic_values.json",
+    shell:
+        "python {input.script} --output {output}"
+
+
 rule document:
     """Compile a Typst document against its figures."""
     input:
@@ -116,6 +135,7 @@ rule document:
         theme=THEME,
         bib="refs.bib",
         figures=lambda wildcards: figure_pdfs(wildcards.document),
+        values=lambda wildcards: DOCUMENT_VALUES.get(wildcards.document, []),
     output:
         f"{BUILD}/{{document}}.pdf",
     shell:

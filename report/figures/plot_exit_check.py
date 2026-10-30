@@ -53,7 +53,7 @@ def main() -> None:
         results['std_v_um_per_ms'],
         color=COLORS['muted'],
         linestyle='--',
-        label=r'std of $v$',
+        label=r'mean per-shot std of $v$',
     )
     ax.set_xticks(x, [label for _, label in RUNS])
     ax.set_ylabel(r'velocity RMSE ($\mu$m/ms)')
