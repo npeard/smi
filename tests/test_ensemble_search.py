@@ -49,6 +49,7 @@ def test_synthetic_ensemble_reports_search_metric():
         dict(MODEL_HPARAMS),
         seeds=[0, 1, 2],
         wavelengths_nm=WAVELENGTHS_NM,
+        max_drive_v=1.0,
         target='velocity',
         per_member_lr=[1e-3, 5e-4, 1e-4],
     )

@@ -229,7 +229,7 @@ def _train_ensemble(config: dict[str, dict[str, Any]]) -> None:
             wavelengths_nm=wavelengths_nm,
             start_freq=synthetic.get('start_freq', 1.0),
             end_freq=synthetic.get('end_freq', 1000.0),
-            max_displacement_um=synthetic.get('max_displacement_um', 5.0),
+            max_drive_v=synthetic['max_drive_v'],
             **common,
         )
         steps = int(synthetic.get('steps_per_epoch', 100))

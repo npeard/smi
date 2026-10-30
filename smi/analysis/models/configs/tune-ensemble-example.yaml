@@ -40,7 +40,7 @@ synthetic:
   end_freq: 1000
   steps_per_epoch: 2
   val_steps: 2
-  max_displacement_um: 5.0
+  max_drive_v: 1.0
 
 ensemble:
   size: 3

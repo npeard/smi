@@ -10,6 +10,7 @@ from torch.func import functional_call
 
 from smi.analysis.ensemble import EnsembleModule, physics_loss
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
+from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.waveform import Waveform
 
 K = 3
@@ -179,7 +180,8 @@ def test_synthetic_batch_sharing():
         device=torch.device('cpu'),
         waveform=waveform,
         wavelengths_um=wavelengths_um,
-        max_displacement_um=5.0,
+        coil=CoilDriver(),
+        max_drive_v=1.0,
         acq_sample_rate=Waveform.SAMPLE_RATE_DEC1 / 256,
     )
     assert signals.shape[0] == BATCH

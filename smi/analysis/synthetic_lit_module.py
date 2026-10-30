@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import logging
-from typing import cast, override
+from typing import override
 
 import torch
 from torch import nn
@@ -11,6 +11,7 @@ from smi.analysis.lit_module import LitModule
 from smi.analysis.models.base import Model
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
+from smi.synthetic.forward import sample_trajectory
 from smi.synthetic.waveform import Waveform
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,8 @@ class SyntheticLitModule(LitModule):
         start_freq: float = 1.0,
         end_freq: float = 1000.0,
         steps_per_epoch: int = 1000,
-        max_displacement_um: float = 5.0,
+        *,
+        max_drive_v: float,
     ):
         """Initialize SyntheticLitModule with hyperparameter configuration.
 
@@ -76,7 +78,8 @@ class SyntheticLitModule(LitModule):
         start_freq: Lower bound of displacement spectrum frequency range (Hz)
         end_freq: Upper bound of displacement spectrum frequency range (Hz)
         steps_per_epoch: Number of training batches per epoch
-        max_displacement_um: Peak displacement amplitude in microns
+        max_drive_v: Peak drive voltage ceiling (V); see
+            ``smi.synthetic.forward.MAX_DRIVE_V``
         """
         super().__init__(
             model_hparams=model_hparams,
@@ -96,7 +99,8 @@ class SyntheticLitModule(LitModule):
         )
 
         self.steps_per_epoch = steps_per_epoch
-        self.max_displacement_um = max_displacement_um
+        self.max_drive_v = max_drive_v
+        self.coil = CoilDriver()
         self.acq_sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
 
         # Store wavelengths in microns as a buffer for device transfer
@@ -136,7 +140,8 @@ class SyntheticLitModule(LitModule):
         device: torch.device,
         waveform: Waveform,
         wavelengths_um: torch.Tensor,
-        max_displacement_um: float,
+        coil: CoilDriver,
+        max_drive_v: float,
         acq_sample_rate: float,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Generate one batch of synthetic interferometer data on the given device.
@@ -153,7 +158,8 @@ class SyntheticLitModule(LitModule):
             waveform: Waveform generator providing ``generate_batch_torch``.
             wavelengths_um: Interferometer wavelengths in microns, shape
                 ``[1, C, 1]`` for broadcasting with ``[B, 1, L]`` displacement.
-            max_displacement_um: Peak displacement amplitude in microns.
+            coil: Speaker transfer function turning drive voltage into motion.
+            max_drive_v: Peak drive voltage ceiling (V).
             acq_sample_rate: Acquisition sample rate (Hz) used to derive velocity.
 
         Returns:
@@ -162,16 +168,10 @@ class SyntheticLitModule(LitModule):
             - velocity: ``[batch_size, seq_len]`` velocity in um/ms
             - displacement: ``[batch_size, seq_len]`` mirror displacement in microns
         """
-        # 1. Generate random displacement waveforms [B, L]
-        displacement = waveform.generate_batch_torch(batch_size, device)
-
-        # Apply random amplitude scaling per sample
-        scale = torch.rand(batch_size, 1, device=device) * max_displacement_um
-        displacement = displacement * scale
-
-        # Normalize each waveform to have unit max amplitude before scaling
-        max_abs = displacement.abs().amax(dim=-1, keepdim=True).clamp(min=1e-10)
-        displacement = displacement / max_abs * scale
+        # 1. Drive voltage through the coil, as on the rig
+        _, velocity, displacement = sample_trajectory(
+            batch_size, waveform, coil, max_drive_v, acq_sample_rate, device, None
+        )
 
         # 2. Random interferometer phases per sample per channel [B, C, 1]
         num_channels = wavelengths_um.shape[1]
@@ -190,14 +190,6 @@ class SyntheticLitModule(LitModule):
         signals_mean = signals.mean(dim=-1, keepdim=True)
         signals_std = signals.std(dim=-1, keepdim=True).clamp(min=1e-8)
         signals = (signals - signals_mean) / signals_std
-
-        # 5. Compute velocity from displacement
-        # CoilDriver returns ndarray | Tensor; the tensor input path always
-        # yields a Tensor here.
-        velocity = cast(
-            torch.Tensor,
-            CoilDriver.derivative_displacement(displacement, acq_sample_rate),
-        )
 
         return signals, velocity, displacement
 
@@ -224,7 +216,8 @@ class SyntheticLitModule(LitModule):
             device,
             self.waveform,
             self.wavelengths_um,
-            self.max_displacement_um,
+            self.coil,
+            self.max_drive_v,
             self.acq_sample_rate,
         )
 

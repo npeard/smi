@@ -520,7 +520,7 @@ class SyntheticEnsembleModule(EnsembleModule):
         wavelengths_nm: Interferometer wavelengths in nanometers (one per channel).
         start_freq: Lower bound of the displacement spectrum (Hz).
         end_freq: Upper bound of the displacement spectrum (Hz).
-        max_displacement_um: Peak displacement amplitude in microns.
+        max_drive_v: Peak drive voltage ceiling (V).
         **ensemble_kwargs: Forwarded to :class:`EnsembleModule` (``target``, ``lr``,
             ``velocity_loss_weights``, ``displacement_loss_weights``, ``dropouts``,
             ``per_member_lr``).
@@ -534,7 +534,7 @@ class SyntheticEnsembleModule(EnsembleModule):
         wavelengths_nm: list[float],
         start_freq: float = 1.0,
         end_freq: float = 1000.0,
-        max_displacement_um: float = 5.0,
+        max_drive_v: float,
         **ensemble_kwargs: Any,
     ) -> None:
         if len(wavelengths_nm) != model_hparams['in_channels']:
@@ -543,7 +543,8 @@ class SyntheticEnsembleModule(EnsembleModule):
                 f'in_channels={model_hparams["in_channels"]}'
             )
         super().__init__(model_hparams, seeds, **ensemble_kwargs)
-        self.max_displacement_um = max_displacement_um
+        self.max_drive_v = max_drive_v
+        self.coil = CoilDriver()
         self.acq_sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
         self.waveform = Waveform(start_freq=start_freq, end_freq=end_freq)
         self.register_buffer(
@@ -560,7 +561,8 @@ class SyntheticEnsembleModule(EnsembleModule):
             self.device,
             self.waveform,
             self.wavelengths_um,
-            self.max_displacement_um,
+            self.coil,
+            self.max_drive_v,
             self.acq_sample_rate,
         )
 
