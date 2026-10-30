@@ -30,9 +30,11 @@ Grid YAML keys (all required except where noted):
 
 import argparse
 import dataclasses
+import fcntl
 import fnmatch
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -216,17 +218,6 @@ def expand_grid(path: Path) -> list[Cell]:
     return cells
 
 
-def _pid_alive(pid: int) -> bool:
-    """Signal-0 probe; POSIX only (the runner targets the MPS Mac)."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
 def _kill_children() -> None:
     # pkill -P: direct children only, which is all this process spawns.
     subprocess.run(  # noqa: S603 -- fixed argv, own PID
@@ -237,34 +228,30 @@ def _kill_children() -> None:
 
 @contextmanager
 def runner_lock(path: Path) -> Iterator[None]:
-    """Hold the single-instance lockfile, containing this process's PID.
+    """Hold the single-instance lock for the runner's lifetime.
 
-    A lock whose PID is dead is reclaimed with a warning. INT and TERM kill
-    this process's children, release the lock and exit ``128 + signal``, since
-    killing a wrapper alone would leave detached children running.
+    The lock is an exclusive ``flock`` on the file, which the kernel drops when
+    the process dies, so there is no stale-lock reclaim and no window where a
+    half-written file looks abandoned. The PID written into it is for humans.
+    The file is never unlinked: removing it would let a second runner lock a
+    new inode while the first still holds the old one. INT and TERM kill this
+    process's children and exit ``128 + signal``, since killing a wrapper alone
+    would leave detached children running.
 
     Raises:
-        RunnerLockedError: If a live process holds the lock.
+        RunnerLockedError: If another live process holds the lock.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    while True:
-        try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            break
-        except FileExistsError:
-            try:
-                holder = int(path.read_text().strip())
-            except (ValueError, FileNotFoundError):
-                holder = None
-            if holder is not None and _pid_alive(holder):
-                raise RunnerLockedError(
-                    f'another runner (pid {holder}) holds {path}'
-                ) from None
-            logger.warning('reclaiming stale runner lock %s (pid %s)', path, holder)
-            path.unlink(missing_ok=True)
-    with os.fdopen(fd, 'w') as f:
-        f.write(str(os.getpid()))
+    fd = os.open(path, os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        holder = os.read(fd, 32).decode().strip() or 'unknown'
+        os.close(fd)
+        raise RunnerLockedError(f'another runner (pid {holder}) holds {path}') from None
+    os.ftruncate(fd, 0)
+    os.write(fd, str(os.getpid()).encode())
 
     def _terminate(signum: int, _frame: object) -> None:
         _kill_children()
@@ -278,7 +265,7 @@ def runner_lock(path: Path) -> Iterator[None]:
     finally:
         for s, handler in previous.items():
             signal.signal(s, handler)
-        path.unlink(missing_ok=True)
+        os.close(fd)
 
 
 def _training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
@@ -286,7 +273,8 @@ def _training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
     training = {**family['training'], **grid['training']}
     loss = {**family['loss'], 'sign_invariant': cell.sign_invariant}
     # Derived, not chosen: the monitor must follow the loss (Task 11 rule), and
-    # a grid mixes Michelson (sign-invariant) and SMI sims over one family.
+    # a grid mixes Michelson (sign-invariant) and SMI sims over one family. So
+    # a family YAML's own ``convergence.monitor`` line is overridden here.
     training['convergence'] = {
         **training['convergence'],
         'monitor': convergence_monitor(loss),
@@ -307,17 +295,32 @@ def _training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
 
 def _train(
     cell: Cell, grid: dict[str, Any], checkpoint: Path
-) -> tuple[Path, bool, str]:
-    """Train ``cell`` and save its final weights; returns (path, converged, device)."""
+) -> tuple[bool, str, dict[str, Any]]:
+    """Train ``cell`` and copy its best checkpoint to ``checkpoint``.
+
+    Returns:
+        ``(converged, device, record fields)``; the fields say how far past its
+        best the final epoch was, and the budget behind the cell.
+    """
     assert cell.seed is not None
     lightning.seed_everything(cell.seed, workers=True)
-    interface = TrainingInterface(
-        config=_training_config(cell, grid), experiment_name=cell.key
-    )
+    config = _training_config(cell, grid)
+    interface = TrainingInterface(config=config, experiment_name=cell.key)
     converged = interface.train()
+    if not interface.best_model_path:
+        raise RuntimeError(f'{cell.key}: no finite validation value to checkpoint on')
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
-    interface.trainer.save_checkpoint(checkpoint)
-    return checkpoint, converged, str(interface.trainer.strategy.root_device)
+    shutil.copyfile(interface.best_model_path, checkpoint)
+    fields = {
+        'checkpoint': 'best',
+        'epochs_run': interface.epochs_run,
+        'best_monitor': interface.best_monitor,
+        'final_monitor': interface.final_monitor,
+        'train_crop_length': config.synthetic_config['train_crop_length'],
+        'steps_per_epoch': config.synthetic_config['steps_per_epoch'],
+        'batch_size': config.training_config['batch_size'],
+    }
+    return converged, str(interface.trainer.strategy.root_device), fields
 
 
 def run_cell(
@@ -328,11 +331,13 @@ def run_cell(
     dataset = load_or_create(cell.sim, test['seed'], test['n_shots'], frozen_root)
     start = time.perf_counter()
     est: Estimator
+    extra: dict[str, Any] = {}
     if cell.seed is None:
         est = InverseFitEstimator.for_dataset(dataset, test['n_shots'])
         converged = True
     else:
-        ckpt, converged, device = _train(cell, grid, runs_dir / f'{cell.key}.ckpt')
+        ckpt = runs_dir / f'{cell.key}.ckpt'
+        converged, device, extra = _train(cell, grid, ckpt)
         est = CheckpointEstimator(ckpt, device)
     result = evaluate(
         est, dataset, cell.wavelengths_um, test['n_shots'], converged, cell.seed
@@ -342,6 +347,7 @@ def run_cell(
         cell_key=cell.key,
         sim_name=cell.sim_name,
         wall_clock_s=time.perf_counter() - start,
+        **extra,
     )
     append_results(out, [record])
 

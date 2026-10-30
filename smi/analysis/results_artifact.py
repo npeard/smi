@@ -57,6 +57,15 @@ class RunRecord:
         sim_name: Name of the runner's sim entry, with any swept value.
         wall_clock_s: Seconds the runner spent on the cell (training plus
             evaluation), for sizing a full grid from a pilot.
+        checkpoint: Which weights were scored: ``'best'`` (lowest monitored
+            validation value) for a runner cell.
+        epochs_run: Epochs trained; with ``best_monitor`` and ``final_monitor``
+            (the monitored validation value of the best and of the last
+            epoch) it shows how far past its best a converged run went.
+        train_crop_length: Training window length (samples) of the cell.
+        steps_per_epoch: Training batches per epoch of the cell.
+        batch_size: Training batch size of the cell; with the two above, the
+            budget behind the cell, so cells are comparable.
 
     ``causal`` is the negation of ``sees_future``; it is a property so the one
     stored flag cannot disagree with it, and :func:`write_results` also writes
@@ -85,6 +94,13 @@ class RunRecord:
     cell_key: str | None = None
     sim_name: str | None = None
     wall_clock_s: float | None = None
+    checkpoint: str | None = None
+    epochs_run: int | None = None
+    best_monitor: float | None = None
+    final_monitor: float | None = None
+    train_crop_length: int | None = None
+    steps_per_epoch: int | None = None
+    batch_size: int | None = None
 
     @property
     def causal(self) -> bool:

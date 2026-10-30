@@ -323,6 +323,10 @@ class TrainingInterface:
         # needs, so it changes what "converged" means.
         check_val_every_n_epoch = self.config.training_config['check_val_every_n_epoch']
         callbacks = [self._convergence_callback(check_val_every_n_epoch)]
+        # Best-by-monitor on every path, logging or not: a converged run sits up
+        # to ``patience`` epochs past its best, so final weights would bias the
+        # reported ceiling. Same metric as the convergence monitor by design.
+        checkpoint_prefix = ''
         # Add WandB logger if configured
         if self.config.training_config['use_logging']:
             loggers = [
@@ -333,18 +337,17 @@ class TrainingInterface:
                 )
             ]
             callbacks.append(LearningRateMonitor())
-            callbacks.append(
-                ModelCheckpoint(
-                    dirpath=Path(self.checkpoint_dir) / self.experiment_name,
-                    filename=str(loggers[0].experiment.id)
-                    + '_{epoch}-{val_total_unweighted_loss:.4f}',
-                    monitor=None,  #'val/total_unweighted_loss',
-                    mode='min',
-                    save_top_k=1,
-                )
-            )
+            checkpoint_prefix = f'{loggers[0].experiment.id}_'
         else:
             loggers = []
+        self.checkpoint_callback = ModelCheckpoint(
+            dirpath=Path(self.checkpoint_dir) / self.experiment_name,
+            filename=checkpoint_prefix + '{epoch}',
+            monitor=self.convergence_callback.monitor,
+            mode='min',
+            save_top_k=1,
+        )
+        callbacks.append(self.checkpoint_callback)
 
         # Append any caller-supplied callbacks (e.g. Ray Tune's reporter).
         if extra_callbacks:
@@ -422,6 +425,27 @@ class TrainingInterface:
             self.convergence_callback.stopping_reason
             == EarlyStoppingReason.PATIENCE_EXHAUSTED
         )
+
+    @property
+    def best_model_path(self) -> str:
+        """Checkpoint with the lowest monitored value (empty if none was finite)."""
+        return self.checkpoint_callback.best_model_path
+
+    @property
+    def best_monitor(self) -> float:
+        """Lowest monitored validation value seen (NaN if none was finite)."""
+        score = self.checkpoint_callback.best_model_score
+        return math.nan if score is None else float(score)
+
+    @property
+    def final_monitor(self) -> float:
+        """Monitored validation value at the last validation check."""
+        return float(self.trainer.callback_metrics[self.convergence_callback.monitor])
+
+    @property
+    def epochs_run(self) -> int:
+        """Epochs the last :meth:`train` completed."""
+        return self.trainer.current_epoch
 
     def train(self) -> bool:
         """Train the model.

@@ -5,6 +5,7 @@ plateau, and every record must say whether its run got there.
 """
 
 import math
+from pathlib import Path
 
 import pytest
 import torch
@@ -191,3 +192,13 @@ def test_second_train_does_not_report_a_stale_converged():
 def test_monitor_not_matching_loss_sign_invariance_is_rejected():
     with pytest.raises(ValueError, match=INVARIANT):
         _run(_config(SIGNED, sign_invariant=True, max_epochs=1))
+
+
+@pytest.mark.parametrize(('flag', 'key'), [(False, SIGNED), (True, INVARIANT)])
+def test_best_checkpoint_is_tracked_without_logging(flag, key):
+    interface = _run(_config(key, sign_invariant=flag, max_epochs=2))
+    assert interface.checkpoint_callback.monitor == key
+    assert Path(interface.best_model_path).exists()
+    assert interface.epochs_run == 2
+    assert math.isfinite(interface.best_monitor)
+    assert interface.best_monitor <= interface.final_monitor

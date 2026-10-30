@@ -497,8 +497,11 @@ def _walk(
 
 
 @functools.cache
-def _drive(start_freq_hz: float, end_freq_hz: float) -> tuple[Waveform, CoilDriver]:
-    # Waveform builds its frequency grid in Python; cache it across steps.
+def drive(start_freq_hz: float, end_freq_hz: float) -> tuple[Waveform, CoilDriver]:
+    """The drive ``simulate_batch`` feeds ``sample_trajectory`` for this band.
+
+    Cached because Waveform builds its frequency grid in Python.
+    """
     return Waveform(start_freq=start_freq_hz, end_freq=end_freq_hz), CoilDriver()
 
 
@@ -528,7 +531,7 @@ def simulate_batch(
             the result to ``device``.
     """
     sim_device = generator.device if generator is not None else device
-    waveform, coil = _drive(cfg.start_freq_hz, cfg.end_freq_hz)
+    waveform, coil = drive(cfg.start_freq_hz, cfg.end_freq_hz)
     if waveform.acq_sample_rate != cfg.sample_rate:
         raise ValueError(
             f'sample_rate {cfg.sample_rate} does not match the Waveform grid '

@@ -165,6 +165,10 @@ class SyntheticLitModule(LitModule):
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         """Generate synthetic data on-device and delegate to parent validation_step.
 
+        Validation windows are cropped like training ones, so the monitored
+        metric (and the best checkpoint) is on crops; the reported metric is
+        :func:`smi.analysis.evaluate.evaluate` on full frozen shots.
+
         Args:
             batch: Tensor of indices from SyntheticIndexDataset (batch size only)
             batch_idx: Index of current batch

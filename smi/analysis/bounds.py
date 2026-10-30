@@ -24,7 +24,7 @@ import torch
 
 from smi.synthetic.forward import (
     SimConfig,
-    _drive,
+    drive,
     fringe,
     noise_std,
     sample_trajectory,
@@ -125,7 +125,7 @@ class IdealShots:
 def ideal_shots(cfg: SimConfig, n_shots: int, seed: int) -> IdealShots:
     """Trajectories from ``sample_trajectory`` with uniform phases, U visibility."""
     gen = torch.Generator().manual_seed(seed)
-    waveform, coil = _drive(cfg.start_freq_hz, cfg.end_freq_hz)
+    waveform, coil = drive(cfg.start_freq_hz, cfg.end_freq_hz)
     _, velocity, displacement = sample_trajectory(
         n_shots, waveform, coil, cfg.drive_gain, cfg.sample_rate, _CPU, gen
     )
@@ -257,7 +257,7 @@ def _stationary_cov(params: np.ndarray) -> np.ndarray:
 def _fit_prior(
     drive_gain: float, start_hz: float, end_hz: float, sample_rate: float
 ) -> StateSpace:
-    cfg_drive = _drive(start_hz, end_hz)
+    cfg_drive = drive(start_hz, end_hz)
     gen = torch.Generator().manual_seed(_PRIOR_SEED)
     _, v, d = sample_trajectory(
         _PRIOR_SHOTS, *cfg_drive, drive_gain, sample_rate, _CPU, gen

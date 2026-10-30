@@ -63,5 +63,7 @@ def test_missing_precision_names_the_field():
     )
     iface = TrainingInterface.__new__(TrainingInterface)
     iface.config = cfg
+    iface.checkpoint_dir = 'unused'
+    iface.experiment_name = 'unused'
     with pytest.raises(KeyError, match='precision'):
         iface.setup_trainer()
