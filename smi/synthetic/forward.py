@@ -3,11 +3,14 @@
 import functools
 import hashlib
 import json
+import logging
 import math
-from dataclasses import asdict, dataclass
+import statistics
+from dataclasses import asdict, dataclass, fields
 
 import torch
 
+from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.waveform import Waveform
 
@@ -75,6 +78,63 @@ def sample_trajectory(
     )
     return voltage, velocity, displacement
 
+
+logger = logging.getLogger(__name__)
+
+# Blinded nominal configuration (spec sec. 3.1): every value comes from a
+# hardware spec, the rig code, first principles or an already-published
+# number; none from opening an acquisition. "Assumed" marks an unknown whose
+# nominal is a stated guess and whose sweep (NOMINAL_SWEEPS) is deliberately
+# wide.
+
+# RedPitayaManager acquires at acq_dec = 256 (manager.py settings).
+NOMINAL_ACQ_DECIMATION = 256
+# RedPitayaManager's default drive band, start_freq / end_freq (manager.py).
+NOMINAL_DRIVE_BAND_HZ = (1.0, 1000.0)
+# Weak-feedback strength: plan nominal, inside the weak regime C < 1.
+NOMINAL_FEEDBACK_C = 0.2
+# Linewidth enhancement factor: literature-typical 3-5 for diode lasers;
+# spec nominal 3.
+NOMINAL_ALPHA = 3.0
+# Shot length 16384 samples (RedPitayaConfig.BUFFER_SIZE) at fs = 125 MHz /
+# 256: T = 33.55 ms.
+_SHOT_S = (
+    RedPitayaConfig.BUFFER_SIZE
+    * NOMINAL_ACQ_DECIMATION
+    / (RedPitayaConfig.SAMPLE_RATE_DEC1)
+)
+# Published within-shot drift: 1 to 2.7 fringes per shot (report/report.typ
+# sec 5.1), measured as the peak-to-peak of the windowed phase. One fringe is
+# 2 pi rad of phase; a random walk of D rad/sqrt(s) has mean range
+# sqrt(8 T / pi) D over a shot of T s, so N fringes -> 2 pi N / sqrt(8 T / pi).
+# Nominal at the geometric middle, sqrt(1 * 2.7) = 1.64 fringes.
+_FRINGES_TO_RAD_PER_SQRT_S = 2 * math.pi / math.sqrt(8 * _SHOT_S / math.pi)
+NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S = math.sqrt(2.7) * _FRINGES_TO_RAD_PER_SQRT_S
+
+# Sweep for each uncertain knob, as SimConfig field values (so a sweep point
+# is dataclasses.replace(cfg, **{name: value})). Nominals sit inside each.
+NOMINAL_SWEEPS: dict[str, tuple[object, ...]] = {
+    # 1/4 to 4x the published velocity scale; 4x is MAX_SPEED's anchor.
+    'drive_gain': tuple(NOMINAL_DRIVE_GAIN * k for k in (0.25, 0.5, 1.0, 2.0, 4.0)),
+    'feedback_c': (0.0, 0.05, 0.1, 0.2, 0.4, 0.7, 0.9),
+    'alpha': (0.0, 1.5, 3.0, 4.0, 5.0, 7.0),
+    'snr_db': (10.0, 20.0, 30.0, 40.0, 50.0),
+    'shot_noise': (False, True),
+    'visibility_range': ((0.1, 1.0), (0.3, 1.0), (0.5, 1.0), (0.7, 1.0), (0.9, 1.0)),
+    'dc_offset_range': ((0.0, 0.0), (-0.1, 0.1), (-0.3, 0.3), (-1.0, 1.0)),
+    'amplitude_drift_rel': (0.0, 0.02, 0.05, 0.1, 0.2, 0.5),
+    # 0, half the published low end, low (1 fringe), mid, high (2.7), 2x high.
+    'phase_drift_rad_per_sqrt_s': tuple(
+        n * _FRINGES_TO_RAD_PER_SQRT_S
+        for n in (0.0, 0.5, 1.0, math.sqrt(2.7), 2.7, 5.4)
+    ),
+    'contrast_drift_rel': (0.0, 0.02, 0.05, 0.1, 0.2, 0.5),
+    # Top below the board's boxcar -3 dB (216 kHz, see SimConfig.nominal).
+    'pd_bandwidth_hz': (None, 200e3, 100e3, 30e3, 10e3, 3e3),
+    'adc_bits': (None, 14, 12, 10, 8),
+    # Input range over DC level: 1.25 (DC fills the range) to 20 (DC 50 mV).
+    'adc_full_scale': (1.25, 2.0, 5.0, 10.0, 20.0),
+}
 
 # Bracketed Newton iterations for the SMI excess phase. Measured worst-case
 # |residual| over 2e6 phases in [-500, 500] rad (float32, alpha in {0, 3, 5}):
@@ -202,6 +262,87 @@ class SimConfig:
         return hashlib.sha1(blob.encode(), usedforsecurity=False).hexdigest()
 
     @classmethod
+    def nominal(
+        cls, wavelengths_um: tuple[float, ...], feedback_c: float, alpha: float
+    ) -> 'SimConfig':
+        """Blinded nominal rig configuration; see NOMINAL_SWEEPS for ranges."""
+        return cls(
+            wavelengths_um=wavelengths_um,
+            # 125 MHz board clock (RedPitayaConfig) over acq_dec = 256.
+            sample_rate=RedPitayaConfig.SAMPLE_RATE_DEC1 / NOMINAL_ACQ_DECIMATION,
+            start_freq_hz=NOMINAL_DRIVE_BAND_HZ[0],
+            end_freq_hz=NOMINAL_DRIVE_BAND_HZ[1],
+            # Published median velocity RMS (see NOMINAL_DRIVE_GAIN).
+            drive_gain=NOMINAL_DRIVE_GAIN,
+            feedback_c=feedback_c,
+            alpha=alpha,
+            # Assumed: no detector noise spec is known for the rig.
+            snr_db=30.0,
+            # Assumed: electronic (additive) noise dominates.
+            shot_noise=False,
+            # Assumed: speckle and alignment visibility, unknown spread.
+            visibility_range=(0.5, 1.0),
+            # Assumed: ambient light / electronic offset of up to 10% of DC.
+            dc_offset_range=(-0.1, 0.1),
+            # Assumed: no published amplitude drift.
+            amplitude_drift_rel=0.05,
+            # Published 1-2.7 fringes per shot, geometric middle (see above).
+            phase_drift_rad_per_sqrt_s=NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S,
+            # Assumed: the report says contrast wanders but gives no number.
+            contrast_drift_rel=0.05,
+            # Assumed: the PD amplifier model is not recorded in the repo. The
+            # board's decimation averaging (acq_set averaging=True: a 256-sample
+            # boxcar at 125 MHz) is -3 dB at 0.443 fs = 216 kHz and costs 0.1%
+            # at 10 kHz fringes, so it does not set this and only caps the sweep.
+            pd_bandwidth_hz=100e3,
+            # STEMlab 125-14 board spec (RedPitayaConfig.ADC_BITS).
+            adc_bits=RedPitayaConfig.ADC_BITS,
+            # LV input range +/-1 V (RedPitayaConfig) over an ASSUMED 0.5 V DC
+            # level, in signal units. The step matches the rig; clipping does
+            # not (the rig range is fixed in volts, this one centred on DC).
+            adc_full_scale=RedPitayaConfig.INPUT_FULL_SCALE_LV_V / 0.5,
+        )
+
+    @classmethod
+    def from_calibration(
+        cls, calibration: dict, wavelengths_um: tuple[float, ...]
+    ) -> 'SimConfig':
+        """Config from ``smi.analysis.calibrate_sim.calibrate`` output.
+
+        Per-channel estimates are pooled by the median across channels (the
+        simulator's knobs are shared by all channels; ``visibility_range``
+        pools each bound). A knob the data could not identify (None in every
+        channel) takes ``SimConfig.nominal``'s value and is logged, so a
+        fallback is never silent.
+        """
+        channels = list(calibration['channels'].values())
+        nominal = cls.nominal(wavelengths_um, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
+        values: dict[str, object] = {
+            'sample_rate': calibration['sample_rate'],
+            'drive_gain': calibration['drive_gain'],
+            'adc_bits': calibration['adc_bits'],
+        }
+        fallback = []
+        per_channel = [
+            f.name
+            for f in fields(cls)
+            if f.name in channels[0] and f.name != 'adc_bits'
+        ]
+        for name in per_channel:
+            found = [c[name] for c in channels if c[name] is not None]
+            if not found:
+                fallback.append(name)
+            elif name == 'visibility_range':
+                lo, hi = zip(*found, strict=True)
+                values[name] = (statistics.median(lo), statistics.median(hi))
+            else:
+                values[name] = statistics.median(found)
+        if fallback:
+            logger.warning('not identifiable, nominal used: %s', ', '.join(fallback))
+        known = {f.name: getattr(nominal, f.name) for f in fields(cls)}
+        return cls(**{**known, **values})
+
+    @classmethod
     def noise_free(
         cls,
         *,
@@ -303,6 +444,12 @@ def fringe(phase: torch.Tensor, feedback_c: float, alpha: float) -> torch.Tensor
     return torch.cos(phase + delta)
 
 
+def one_pole_coefficient(cutoff_hz: float, sample_rate: float) -> float:
+    """Pole p of the one-pole low-pass whose discrete response is -3 dB at cutoff."""
+    b = 2.0 - math.cos(2 * math.pi * cutoff_hz / sample_rate)
+    return b - math.sqrt(b * b - 1.0)
+
+
 def pd_lowpass(x: torch.Tensor, cutoff_hz: float, sample_rate: float) -> torch.Tensor:
     """Causal one-pole low-pass y[n] = p y[n-1] + (1 - p) x[n] along the last dim.
 
@@ -314,8 +461,7 @@ def pd_lowpass(x: torch.Tensor, cutoff_hz: float, sample_rate: float) -> torch.T
     x[0] p^(n+1); both terms use only samples at or before n.
     """
     length = x.shape[-1]
-    b = 2.0 - math.cos(2 * math.pi * cutoff_hz / sample_rate)
-    p = b - math.sqrt(b * b - 1.0)
+    p = one_pole_coefficient(cutoff_hz, sample_rate)
     n = torch.arange(length, device=x.device, dtype=x.dtype)
     decay = torch.exp(n * math.log(p))
     nfft = 2 * length

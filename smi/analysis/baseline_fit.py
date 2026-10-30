@@ -807,6 +807,34 @@ class PhaseDrift:
     n_windows: int
 
 
+def window_fringe_coefficients(
+    signal: np.ndarray, theta: np.ndarray, window_samples: int
+) -> np.ndarray:
+    """Least-squares ``a cos(theta) + b sin(theta) + c`` in each whole window.
+
+    The intercept column makes ``a`` and ``b`` independent of any constant
+    added to a window, so ``c`` is that window's DC level and the fringe terms
+    need no mean removal. Trailing samples that do not fill a window are
+    dropped.
+
+    Args:
+        signal: Samples for one shot, shape ``(n,)``.
+        theta: Model phase for the same samples (radians), shape ``(n,)``.
+        window_samples: Window length in samples.
+
+    Returns:
+        ``(n_windows, 3)`` array of ``[a, b, c]`` per window.
+    """
+    n_windows = signal.size // int(window_samples)
+    usable = n_windows * int(window_samples)
+    blocks = np.asarray(signal[:usable], dtype=np.float64).reshape(n_windows, -1)
+    thetas = np.asarray(theta[:usable], dtype=np.float64).reshape(n_windows, -1)
+    design = np.stack([np.cos(thetas), np.sin(thetas), np.ones_like(thetas)], axis=2)
+    gram = design.transpose(0, 2, 1) @ design
+    rhs = design.transpose(0, 2, 1) @ blocks[:, :, None]
+    return np.linalg.solve(gram, rhs)[:, :, 0]
+
+
 def measure_phase_drift(
     pd_signal: np.ndarray,
     displacement: np.ndarray,
@@ -850,15 +878,7 @@ def measure_phase_drift(
             f'{signal.size} samples at window_samples={window_samples}'
         )
 
-    usable = n_windows * int(window_samples)
-    blocks = signal[:usable].reshape(n_windows, -1)
-    thetas = theta[:usable].reshape(n_windows, -1)
-    blocks = blocks - blocks.mean(axis=1, keepdims=True)
-
-    design = np.stack([np.cos(thetas), np.sin(thetas), np.ones_like(thetas)], axis=2)
-    gram = design.transpose(0, 2, 1) @ design
-    rhs = design.transpose(0, 2, 1) @ blocks[:, :, None]
-    coeffs = np.linalg.solve(gram, rhs)[:, :, 0]
+    coeffs = window_fringe_coefficients(signal, theta, window_samples)
 
     # Same (a, b) -> phase convention as fit_phase_amplitude.
     phase = np.unwrap(np.arctan2(-coeffs[:, 1], coeffs[:, 0]))
