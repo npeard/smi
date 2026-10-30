@@ -89,9 +89,12 @@ committed for reproducibility.
 
 ### Environment constraints (three live ones, all easy to break)
 
-**Platforms are `win-64` and `linux-64`.** macOS was dropped deliberately.
-The old `numpy<2` / `torch<2.3` pins existed only to keep an Intel Mac
-working and are gone; the stack is now `torch>=2.14` / `numpy>=2`.
+**Platforms are `win-64`, `linux-64` and `osx-arm64`.** macOS Apple silicon
+is back for MPS work (torch from the default PyPI wheel, `llvm-openmp` from
+conda-forge for lightgbm); Intel Mac is unsupported. In `pyproject.toml` the
+osx-arm64 entry is named `macos-14-arm64` so it can declare macOS 14, which
+the torch>=2.14 wheels require; its target tables use that name. The stack is
+`torch>=2.14` / `numpy>=2`.
 
 **One OpenMP runtime, so the numeric stack comes from PyPI.** `numpy`,
 `numba`, `matplotlib` and `h5py` resolve from PyPI (via

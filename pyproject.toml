@@ -168,7 +168,13 @@ skip = ".git,*.ipynb"
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
-platforms = ["win-64", "linux-64"]
+# The Apple-silicon entry (osx-arm64) declares macOS 14: torch>=2.14 wheels are tagged
+# macosx_14_0, and pixi assumes 13.0 by default and finds no matching wheel.
+platforms = [
+    "win-64",
+    "linux-64",
+    { name = "macos-14-arm64", platform = "osx-arm64", macos = "14.0" },
+]
 
 [tool.pixi.dependencies]
 python = ">=3.12,<3.13"
@@ -186,6 +192,14 @@ polars = ">=1.0"
 ruff = ">=0.15,<0.16"
 codespell = "*"
 
+# The PyPI lightgbm macOS wheel does not bundle libomp and looks for Homebrew's
+# copy; conda-forge's llvm-openmp supplies it inside the env. The torch and
+# scikit-learn wheels each bundle their own libomp, so three copies load in one
+# process on macOS (verified with vmmap) -- unlike Windows, they do not abort:
+# tests/test_platform.py runs np.corrcoef after importing all three.
+[tool.pixi.target.macos-14-arm64.dependencies]
+llvm-openmp = "*"
+
 [tool.pixi.pypi-dependencies]
 smi = { path = ".", editable = true }
 # The generic gates (check-ascii, preflight), pinned to the same tag as the
@@ -194,14 +208,23 @@ agent-config = { git = "https://github.com/npeard/agent-config", tag = "v0.1.0" 
 
 # Torch arrives via the editable `smi` install, and PyPI's default win-64 torch
 # wheel is CPU-only -- which cannot answer the GPU-residency question this
-# project needs measured. Pin the CUDA 13.0 index explicitly on both supported
+# project needs measured. Pin the CUDA 13.0 index explicitly on the two CUDA
 # platforms so `torch.cuda.is_available()` is true out of the box.
 #
 # cu130 and not an older channel because the cu124 index stops publishing at
 # torch 2.6.0 for cp312/win-64; 2.14 exists only from cu130 onward. CUDA 13
 # drops Maxwell/Pascal/Volta but keeps sm_75, so both GPUs on this box (RTX
 # 3090 Ti sm_86, Quadro RTX 4000 sm_75) remain supported.
+[tool.pixi.target.win-64.pypi-dependencies]
 torch = { version = ">=2.14", index = "https://download.pytorch.org/whl/cu130" }
+
+[tool.pixi.target.linux-64.pypi-dependencies]
+torch = { version = ">=2.14", index = "https://download.pytorch.org/whl/cu130" }
+
+# osx-arm64 is for MPS work on the Apple machine. The default PyPI wheel
+# ships MPS, so no index override; the CUDA index has no macOS wheels.
+[tool.pixi.target.macos-14-arm64.pypi-dependencies]
+torch = ">=2.14"
 
 [tool.pixi.feature.dev.pypi-dependencies]
 pre-commit = "*"
