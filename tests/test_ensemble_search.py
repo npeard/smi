@@ -5,6 +5,7 @@ Covers the synthetic ensemble module end to end (metric reporting) and the
 on the GPU rig.
 """
 
+import dataclasses
 from pathlib import Path
 
 import lightning as lightning_module
@@ -18,7 +19,7 @@ pytest.importorskip('ray')
 from smi.analysis.ensemble import SyntheticEnsembleModule
 from smi.analysis.synthetic_lit_module import SyntheticIndexDataset
 from smi.analysis.tune_search import SEARCH_METRIC, run_search
-from smi.synthetic.forward import NOMINAL_DRIVE_GAIN
+from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SimConfig
 
 CONFIG = (
     Path(__file__).parent.parent
@@ -41,7 +42,6 @@ MODEL_HPARAMS = {
     'dilation_base': 2,
     'in_channels': 3,
 }
-WAVELENGTHS_NM = [635, 674.8, 515]
 
 
 def test_synthetic_ensemble_reports_search_metric():
@@ -49,8 +49,17 @@ def test_synthetic_ensemble_reports_search_metric():
     module = SyntheticEnsembleModule(
         dict(MODEL_HPARAMS),
         seeds=[0, 1, 2],
-        wavelengths_nm=WAVELENGTHS_NM,
-        drive_gain=NOMINAL_DRIVE_GAIN,
+        sim=dataclasses.asdict(
+            SimConfig.noise_free(
+                wavelengths_um=(0.635, 0.6748, 0.515),
+                sample_rate=125e6 / 256,
+                start_freq_hz=1.0,
+                end_freq_hz=1000.0,
+                drive_gain=NOMINAL_DRIVE_GAIN,
+                feedback_c=0.0,
+                alpha=0.0,
+            )
+        ),
         target='velocity',
         per_member_lr=[1e-3, 5e-4, 1e-4],
     )

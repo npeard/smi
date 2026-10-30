@@ -2,15 +2,13 @@
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.redpitaya.manager import RedPitayaManager
-from smi.redpitaya.redpitaya_config import RedPitayaConfig
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.waveform import Waveform
+from smi.synthetic.forward import SimConfig, simulate_batch
 
 logger = logging.getLogger(__name__)
 
@@ -48,50 +46,22 @@ def generate_dataset_from_rp(
 
 
 def generate_synthetic_test_data(
-    num_samples: int,
-    wavelengths_nm: list[float],
-    batch_size: int = 64,
-    start_freq: float = 1.0,
-    end_freq: float = 1000.0,
-    *,
-    drive_gain: float,
+    num_samples: int, sim: dict[str, Any], batch_size: int, seed: int
 ) -> DataLoader:
-    """Generate synthetic test data and return as a DataLoader.
-
-    Creates synthetic interferometer signals, velocity, and displacement
-    data for model evaluation. Uses CPU tensors.
+    """Simulate a seeded CPU test set and return it as a DataLoader.
 
     Args:
-        num_samples: Number of test samples to generate
-        wavelengths_nm: List of interferometer wavelengths in nanometers
-        batch_size: Batch size for the returned DataLoader
-        start_freq: Lower bound of displacement spectrum frequency range (Hz)
-        end_freq: Upper bound of displacement spectrum frequency range (Hz)
-        drive_gain: Drive voltage scale relative to the rig's waveform
-        seed: Random seed for reproducibility
+        num_samples: Number of test shots to simulate.
+        sim: Every ``SimConfig`` field by name (e.g. a checkpoint's ``sim``
+            hyperparameter), so test data matches the training simulator.
+        batch_size: Batch size for the returned DataLoader.
+        seed: Seed of the CPU generator.
 
     Returns:
         DataLoader yielding (signals, velocity, displacement) tuples, with
         velocity in um/ms and displacement in um
     """
-    torch.manual_seed(42)
-
-    acq_sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
-    waveform = Waveform(start_freq=start_freq, end_freq=end_freq)
-
-    wavelengths_um = torch.tensor(
-        [w / 1000.0 for w in wavelengths_nm], dtype=torch.float32
-    ).view(1, -1, 1)
-
-    signals, velocity, displacement = SyntheticLitModule.generate_synthetic_batch(
-        num_samples,
-        torch.device('cpu'),
-        waveform,
-        wavelengths_um,
-        CoilDriver(),
-        drive_gain,
-        acq_sample_rate,
-    )
-
-    dataset = TensorDataset(signals, velocity, displacement)
+    gen = torch.Generator().manual_seed(seed)
+    batch = simulate_batch(SimConfig(**sim), num_samples, torch.device('cpu'), gen)
+    dataset = TensorDataset(batch.signals, batch.velocity, batch.displacement)
     return DataLoader(dataset, batch_size=batch_size, shuffle=False)

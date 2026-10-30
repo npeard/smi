@@ -180,7 +180,8 @@ Two-level search (design: `docs/hyperparameter-search-pipeline-design.md`):
   fractional-GPU packing. `TrainingConfig.from_yaml` now returns one config.
 - **vmap-ensemble** (`analysis/ensemble.py`) trains K same-architecture models on
   one shared on-GPU minibatch via `torch.func` for efficient within-architecture
-  sweeps; `generate_synthetic_batch` (in `synthetic_lit_module.py`) is shared.
+  sweeps; both it and `SyntheticLitModule` draw batches from
+  `smi.synthetic.forward.simulate_batch` and bake `normalization_stats`.
 
 Deps live in the `tune` pixi feature (`ray[tune]`, `optuna`), included in all
 test-running envs so the search path is CPU-tested in CI as well as on the GPU rig.

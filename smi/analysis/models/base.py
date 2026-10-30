@@ -69,8 +69,8 @@ class Model(nn.Module):
         inner: nn.Module,
         input_mean: np.ndarray | Tensor,
         input_std: np.ndarray | Tensor,
-        output_mean: float,
-        output_std: float,
+        output_mean: float | Tensor,
+        output_std: float | Tensor,
     ) -> None:
         super().__init__()
         self.feature_map = FeatureMap()

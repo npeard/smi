@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import logging
-from typing import override
+from typing import Any, override
 
 import torch
 from torch import nn
@@ -9,14 +9,16 @@ from torch.utils.data import Dataset
 
 from smi.analysis.lit_module import LitModule
 from smi.analysis.models.base import Model
-from smi.redpitaya.redpitaya_config import RedPitayaConfig
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.forward import sample_trajectory
-from smi.synthetic.waveform import Waveform
+from smi.synthetic.forward import SimConfig, normalization_stats, simulate_batch
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_WAVELENGTHS_NM = [635, 674.8, 515, 780, 450]
+# Seeded CPU sample behind the baked normalization, fixed so a checkpoint
+# rebuilds the same buffers. Measured seed-to-seed spread over 5 seeds: input
+# std < 1%, velocity std 4.6% (the per-shot U(0, 1) drive power is heavy-tailed),
+# which is ample for a fixed affine scale; 0.13 s (Michelson) to 0.5 s (C = 0.9).
+NORM_STATS_SHOTS = 256
+NORM_STATS_SEED = 0
 
 
 class SyntheticIndexDataset(Dataset):
@@ -37,17 +39,14 @@ class SyntheticIndexDataset(Dataset):
 
 
 class SyntheticLitModule(LitModule):
-    """Lightning Module that generates synthetic interferometer data on-the-fly on GPU.
+    """Lightning Module that simulates its training data on-device each step.
 
-    Extends LitModule with on-device synthetic data generation. Each training/validation
-    step generates a fresh batch of random displacement waveforms, passes them through
-    simulated Michelson interferometers, and feeds the result to the parent class's
-    loss computation.
-
-    The displacement waveforms are generated using the same Rayleigh amplitude + random
-    phase approach as the real experiment's Waveform class, but in PyTorch for GPU
-    acceleration. The coil driver transfer function is skipped --
-    displacement is generated directly.
+    Each training/validation/test step draws a fresh batch from
+    :func:`smi.synthetic.forward.simulate_batch` (drive voltage through the
+    coil, then fringe and detector per the ``SimConfig``) and feeds it to the
+    parent class's loss computation. The model's input/output normalization is
+    fixed per simulator config and baked into the ``Model`` wrapper, so the
+    data reaching a causal network carries no whole-shot statistics.
     """
 
     def __init__(
@@ -58,12 +57,9 @@ class SyntheticLitModule(LitModule):
         loss_hparams: dict | None = None,
         training_hparams: dict | None = None,
         data_hparams: dict | None = None,
-        wavelengths_nm: list[float] | None = None,
-        start_freq: float = 1.0,
-        end_freq: float = 1000.0,
         steps_per_epoch: int = 1000,
         *,
-        drive_gain: float,
+        sim: dict[str, Any],
     ):
         """Initialize SyntheticLitModule with hyperparameter configuration.
 
@@ -74,13 +70,17 @@ class SyntheticLitModule(LitModule):
         loss_hparams: Hyperparameters for the loss function
         training_hparams: Hyperparameters for training configuration
         data_hparams: Hyperparameters for data configuration
-        wavelengths_nm: List of interferometer wavelengths in nanometers
-        start_freq: Lower bound of displacement spectrum frequency range (Hz)
-        end_freq: Upper bound of displacement spectrum frequency range (Hz)
         steps_per_epoch: Number of training batches per epoch
-        drive_gain: Drive voltage scale relative to the rig's pre-compensated
-            waveform; see ``smi.synthetic.forward.NOMINAL_DRIVE_GAIN``
+        sim: Every ``SimConfig`` field by name (the YAML ``synthetic.sim``
+            block); kept as a plain dict so it is saved with the checkpoint
         """
+        # _make_model runs inside LitModule.__init__ and needs the config.
+        self.sim_config = SimConfig(**sim)
+        if len(self.sim_config.wavelengths_um) != model_hparams['in_channels']:
+            raise ValueError(
+                f'{len(self.sim_config.wavelengths_um)} wavelengths but '
+                f'in_channels={model_hparams["in_channels"]}'
+            )
         super().__init__(
             model_hparams=model_hparams,
             optimizer_hparams=optimizer_hparams,
@@ -89,138 +89,29 @@ class SyntheticLitModule(LitModule):
             training_hparams=training_hparams,
             data_hparams=data_hparams,
         )
-
-        if wavelengths_nm is None:
-            raise ValueError('wavelengths_nm must be provided for synthetic training')
-
-        assert len(wavelengths_nm) == model_hparams['in_channels'], (
-            f'Number of wavelengths ({len(wavelengths_nm)}) must match '
-            f'in_channels ({model_hparams["in_channels"]})'
-        )
-
         self.steps_per_epoch = steps_per_epoch
-        self.drive_gain = drive_gain
-        self.coil = CoilDriver()
-        self.acq_sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
-
-        # Store wavelengths in microns as a buffer for device transfer
-        # Shape [1, C, 1] for broadcasting with [B, 1, L] displacement
-        wavelengths_um = [w / 1000.0 for w in wavelengths_nm]
-        self.register_buffer(
-            'wavelengths_um',
-            torch.tensor(wavelengths_um, dtype=torch.float32).view(1, -1, 1),
-        )
-
-        # Create waveform generator (reuses existing frequency grid logic)
-        self.waveform = Waveform(start_freq=start_freq, end_freq=end_freq)
-
-        # Save synthetic-specific hyperparameters
         self.save_hyperparameters(ignore=['model'])
-
-        logger.info(
-            f'SyntheticLitModule initialized with {len(wavelengths_nm)} '
-            f'interferometers: {wavelengths_nm} nm'
-        )
+        logger.info(f'SyntheticLitModule sim config {self.sim_config.hash()}')
 
     @override
     def _make_model(self, inner: nn.Module) -> Model:
-        """Wrap with identity normalization.
-
-        Synthetic signals are already per-sample z-scored on-device (see
-        ``_generate_synthetic_batch``) and the velocity/displacement targets use
-        the synthetic scale, so the real-data feature statistics do not apply.
-        An identity wrapper preserves the historical no-normalization behavior
-        while keeping the wrapped-model interface uniform.
-        """
-        return Model.identity(inner, self.model_hparams['in_channels'])
-
-    @staticmethod
-    def generate_synthetic_batch(
-        batch_size: int,
-        device: torch.device,
-        waveform: Waveform,
-        wavelengths_um: torch.Tensor,
-        coil: CoilDriver,
-        drive_gain: float,
-        acq_sample_rate: float,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Generate one batch of synthetic interferometer data on the given device.
-
-        This is the reusable core of synthetic data generation, factored out so
-        that both ``SyntheticLitModule`` and the vmap ensemble
-        (``smi.analysis.ensemble``) can produce one batch and -- in the
-        ensemble's case -- share it across all members. Motion comes from
-        :func:`smi.synthetic.forward.sample_trajectory` (drive voltage through
-        the coil), not from a random displacement spectrum.
-
-        Args:
-            batch_size: Number of samples to generate.
-            device: Target device for tensor creation.
-            waveform: Waveform generator providing ``generate_batch_torch``.
-            wavelengths_um: Interferometer wavelengths in microns, shape
-                ``[1, C, 1]`` for broadcasting with ``[B, 1, L]`` displacement.
-            coil: Speaker transfer function turning drive voltage into motion.
-            drive_gain: Drive voltage scale relative to the rig's waveform.
-            acq_sample_rate: Acquisition sample rate (Hz) used to derive velocity.
-
-        Returns:
-            Tuple of ``(signals, velocity, displacement)`` where:
-            - signals: ``[batch_size, num_channels, seq_len]`` interferometer signals
-            - velocity: ``[batch_size, seq_len]`` velocity in um/ms
-            - displacement: ``[batch_size, seq_len]`` mirror displacement in microns
-        """
-        # 1. Drive voltage through the coil, as on the rig
-        _, velocity, displacement = sample_trajectory(
-            batch_size, waveform, coil, drive_gain, acq_sample_rate, device, None
+        """Wrap with the simulator config's fixed normalization stats."""
+        if self.target != 'velocity':
+            raise ValueError(
+                'synthetic normalization scales the velocity target, '
+                f'not {self.target!r}'
+            )
+        return Model(
+            inner,
+            **normalization_stats(self.sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED),
         )
-
-        # 2. Random interferometer phases per sample per channel [B, C, 1]
-        num_channels = wavelengths_um.shape[1]
-        random_phases = (
-            torch.rand(batch_size, num_channels, 1, device=device) * 2.0 * torch.pi
-        )
-
-        # 3. Compute interferometer signals: cos(2*pi/lambda * 2 * displacement + phase)
-        # displacement: [B, L] -> [B, 1, L] for broadcasting
-        signals = torch.cos(
-            2.0 * torch.pi / wavelengths_um * 2.0 * displacement.unsqueeze(1)
-            + random_phases
-        )
-
-        # 4. Per-sample per-channel z-score normalization
-        signals_mean = signals.mean(dim=-1, keepdim=True)
-        signals_std = signals.std(dim=-1, keepdim=True).clamp(min=1e-8)
-        signals = (signals - signals_mean) / signals_std
-
-        return signals, velocity, displacement
 
     def _generate_synthetic_batch(
         self, batch_size: int, device: torch.device
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Generate a batch of synthetic interferometer data on the given device.
-
-        Thin instance wrapper around :meth:`generate_synthetic_batch` that
-        supplies this module's waveform generator and synthetic parameters.
-
-        Args:
-            batch_size: Number of samples to generate
-            device: Target device for tensor creation
-
-        Returns:
-            Tuple of (signals, velocity, displacement) where:
-            - signals: [batch_size, num_channels, seq_len] interferometer signals
-            - velocity: [batch_size, seq_len] velocity in um/ms
-            - displacement: [batch_size, seq_len] mirror displacement in microns
-        """
-        return self.generate_synthetic_batch(
-            batch_size,
-            device,
-            self.waveform,
-            self.wavelengths_um,
-            self.coil,
-            self.drive_gain,
-            self.acq_sample_rate,
-        )
+        """Simulate ``(signals, velocity, displacement)`` on ``device``."""
+        batch = simulate_batch(self.sim_config, batch_size, device, None)
+        return batch.signals, batch.velocity, batch.displacement
 
     @override
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:

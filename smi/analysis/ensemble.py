@@ -39,10 +39,10 @@ from torch.func import functional_call, stack_module_state
 
 from smi.analysis.models.base import Model
 from smi.analysis.models.factory import create_model
-from smi.analysis.synthetic_lit_module import SyntheticLitModule
+from smi.analysis.synthetic_lit_module import NORM_STATS_SEED, NORM_STATS_SHOTS
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.waveform import Waveform
+from smi.synthetic.forward import SimConfig, normalization_stats, simulate_batch
 
 logger = logging.getLogger(__name__)
 
@@ -134,8 +134,9 @@ def _desanitize(name: str) -> str:
 def build_member(
     model_hparams: dict[str, Any],
     seed: int,
+    *,
+    norm_stats: dict[str, Tensor] | None,
     dropout: float | None = None,
-    in_channels: int | None = None,
 ) -> Model:
     """Build one ``Model``-wrapped member with a deterministic seed.
 
@@ -143,21 +144,19 @@ def build_member(
         model_hparams: Hyperparameters passed to :func:`create_model`. The
             architecture must be identical across all members of an ensemble.
         seed: Seed used to make this member's initialization distinct.
+        norm_stats: ``Model`` keyword arguments (e.g. from
+            :func:`smi.synthetic.forward.normalization_stats`), or None for an
+            identity wrapper.
         dropout: If given, overrides the dropout probability of every dropout
             layer in the inner network (lets dropout vary per member).
-        in_channels: Number of input channels for the identity normalization
-            wrapper; defaults to ``model_hparams['in_channels']``.
-
-    Returns:
-        A ``Model``-wrapped network with identity (synthetic-scale)
-        normalization, matching the synthetic training path.
     """
     torch.manual_seed(seed)
     inner = create_model(model_hparams)
     if dropout is not None:
         _set_dropout(inner, dropout)
-    channels = in_channels if in_channels is not None else model_hparams['in_channels']
-    return Model.identity(inner, channels)
+    if norm_stats is None:
+        return Model.identity(inner, model_hparams['in_channels'])
+    return Model(inner, **norm_stats)
 
 
 class EnsembleModule(lightning_module.LightningModule):
@@ -200,8 +199,11 @@ class EnsembleModule(lightning_module.LightningModule):
         displacement_loss_weights: list[float] | float = 1.0,
         dropouts: list[float] | float | None = None,
         per_member_lr: list[float] | None = None,
+        *,
+        norm_stats: dict[str, Tensor] | None,
     ) -> None:
         super().__init__()
+        self.norm_stats = norm_stats
         self.model_hparams = model_hparams
         self.seeds = list(seeds)
         self.num_members = len(self.seeds)
@@ -232,7 +234,12 @@ class EnsembleModule(lightning_module.LightningModule):
 
         # Build K distinct members of the same architecture.
         members = [
-            build_member(model_hparams, seed=self.seeds[i], dropout=member_dropouts[i])
+            build_member(
+                model_hparams,
+                seed=self.seeds[i],
+                norm_stats=norm_stats,
+                dropout=member_dropouts[i],
+            )
             for i in range(self.num_members)
         ]
 
@@ -490,7 +497,9 @@ class EnsembleModule(lightning_module.LightningModule):
         if not 0 <= member_idx < self.num_members:
             raise IndexError(f'member_idx {member_idx} out of range')
 
-        member = build_member(self.model_hparams, seed=self.seeds[member_idx])
+        member = build_member(
+            self.model_hparams, seed=self.seeds[member_idx], norm_stats=self.norm_stats
+        )
         state = member.state_dict()
         # Overwrite with the trained slice for this member.
         for key, tensor in self._stacked_params.items():
@@ -503,24 +512,21 @@ class EnsembleModule(lightning_module.LightningModule):
 
 
 class SyntheticEnsembleModule(EnsembleModule):
-    """``EnsembleModule`` that generates one shared synthetic batch on-device.
+    """``EnsembleModule`` that simulates one shared synthetic batch on-device.
 
     This is the inner level of the search pipeline's synthetic-data workflow: it
     mirrors :class:`smi.analysis.synthetic_lit_module.SyntheticLitModule` (same
-    on-device Rayleigh-spectrum generation via :meth:`generate_synthetic_batch`)
-    but feeds the SINGLE generated batch to all ``K`` members each step (the
-    ``in_dims=(0, 0, None)`` broadcast in the parent), so the cheap on-GPU data is
-    generated once and shared. The dataloader only supplies an iteration count
-    (use :class:`SyntheticIndexDataset`); the batch content is generated here.
+    :func:`smi.synthetic.forward.simulate_batch` and the same baked
+    normalization) but feeds the SINGLE simulated batch to all ``K`` members
+    each step (the ``in_dims=(0, 0, None)`` broadcast in the parent). The
+    dataloader only supplies an iteration count (use
+    :class:`SyntheticIndexDataset`); the batch content is generated here.
 
     Args:
         model_hparams: Shared architecture hyperparameters; ``in_channels`` must
-            equal ``len(wavelengths_nm)``.
+            equal the number of wavelengths in ``sim``.
         seeds: Per-member seeds (length defines ``K``).
-        wavelengths_nm: Interferometer wavelengths in nanometers (one per channel).
-        start_freq: Lower bound of the displacement spectrum (Hz).
-        end_freq: Upper bound of the displacement spectrum (Hz).
-        drive_gain: Drive voltage scale relative to the rig's waveform.
+        sim: Every ``SimConfig`` field by name (the YAML ``synthetic.sim`` block).
         **ensemble_kwargs: Forwarded to :class:`EnsembleModule` (``target``, ``lr``,
             ``velocity_loss_weights``, ``displacement_loss_weights``, ``dropouts``,
             ``per_member_lr``).
@@ -531,40 +537,29 @@ class SyntheticEnsembleModule(EnsembleModule):
         model_hparams: dict[str, Any],
         seeds: list[int],
         *,
-        wavelengths_nm: list[float],
-        start_freq: float = 1.0,
-        end_freq: float = 1000.0,
-        drive_gain: float,
+        sim: dict[str, Any],
         **ensemble_kwargs: Any,
     ) -> None:
-        if len(wavelengths_nm) != model_hparams['in_channels']:
+        sim_config = SimConfig(**sim)
+        if len(sim_config.wavelengths_um) != model_hparams['in_channels']:
             raise ValueError(
-                f'len(wavelengths_nm)={len(wavelengths_nm)} must equal '
+                f'{len(sim_config.wavelengths_um)} wavelengths but '
                 f'in_channels={model_hparams["in_channels"]}'
             )
-        super().__init__(model_hparams, seeds, **ensemble_kwargs)
-        self.drive_gain = drive_gain
-        self.coil = CoilDriver()
-        self.acq_sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
-        self.waveform = Waveform(start_freq=start_freq, end_freq=end_freq)
-        self.register_buffer(
-            'wavelengths_um',
-            torch.tensor(
-                [w / 1000.0 for w in wavelengths_nm], dtype=torch.float32
-            ).view(1, -1, 1),
+        super().__init__(
+            model_hparams,
+            seeds,
+            norm_stats=normalization_stats(
+                sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED
+            ),
+            **ensemble_kwargs,
         )
+        self.sim_config = sim_config
 
     def _shared_batch(self, batch: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-        """Generate one synthetic batch (shared across all members) on-device."""
-        return SyntheticLitModule.generate_synthetic_batch(
-            len(batch),
-            self.device,
-            self.waveform,
-            self.wavelengths_um,
-            self.coil,
-            self.drive_gain,
-            self.acq_sample_rate,
-        )
+        """Simulate one synthetic batch (shared across all members) on-device."""
+        out = simulate_batch(self.sim_config, len(batch), self.device, None)
+        return out.signals, out.velocity, out.displacement
 
     @override
     def training_step(self, batch: Tensor, batch_idx: int) -> Tensor:

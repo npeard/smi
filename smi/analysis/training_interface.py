@@ -212,9 +212,8 @@ class TrainingInterface:
         """
         # Derive in_channels from data, not model config
         if self._is_synthetic():
-            syn = self.config.synthetic_config
-            wavelengths = syn['wavelengths_nm']
-            self.config.model_config['in_channels'] = len(wavelengths)
+            sim = self.config.synthetic_config['sim']
+            self.config.model_config['in_channels'] = len(sim['wavelengths_um'])
         else:
             self.config.model_config['in_channels'] = self.config.data_config.get(
                 'num_pd_channels', 3
@@ -253,12 +252,7 @@ class TrainingInterface:
         if self._is_synthetic():
             syn = self.config.synthetic_config
             return SyntheticLitModule(
-                **common_kwargs,
-                wavelengths_nm=syn['wavelengths_nm'],
-                start_freq=syn.get('start_freq', 1.0),
-                end_freq=syn.get('end_freq', 1000.0),
-                steps_per_epoch=syn['steps_per_epoch'],
-                drive_gain=syn['drive_gain'],
+                **common_kwargs, steps_per_epoch=syn['steps_per_epoch'], sim=syn['sim']
             )
 
         return LitModule(**common_kwargs)

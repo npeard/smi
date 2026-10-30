@@ -5,14 +5,19 @@ Tiny K, short sequence_length, in_channels=3. Every test runs on CPU and
 exercises the same code path used on GPU.
 """
 
+import dataclasses
+
 import torch
 from torch.func import functional_call
 
-from smi.analysis.ensemble import EnsembleModule, physics_loss
-from smi.analysis.synthetic_lit_module import SyntheticLitModule
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.forward import NOMINAL_DRIVE_GAIN
-from smi.synthetic.waveform import Waveform
+from smi.analysis.ensemble import EnsembleModule, SyntheticEnsembleModule, physics_loss
+from smi.analysis.synthetic_lit_module import NORM_STATS_SEED, NORM_STATS_SHOTS
+from smi.synthetic.forward import (
+    NOMINAL_DRIVE_GAIN,
+    SimConfig,
+    normalization_stats,
+    simulate_batch,
+)
 
 K = 3
 IN_CHANNELS = 3
@@ -37,7 +42,11 @@ def _tcn_hparams() -> dict:
 
 def _make_ensemble(**kwargs) -> EnsembleModule:
     defaults = dict(
-        model_hparams=_tcn_hparams(), seeds=[0, 1, 2], target='velocity', lr=1e-3
+        model_hparams=_tcn_hparams(),
+        seeds=[0, 1, 2],
+        target='velocity',
+        lr=1e-3,
+        norm_stats=None,
     )
     defaults.update(kwargs)
     return EnsembleModule(**defaults)
@@ -172,27 +181,41 @@ def test_physics_loss_matches_litmodule_logic():
     assert torch.allclose(out['total'], expected)
 
 
-def test_synthetic_batch_sharing():
-    """generate_synthetic_batch produces one shared batch usable by all members."""
-    waveform = Waveform(start_freq=100.0, end_freq=1000.0)
-    wavelengths_um = torch.tensor([0.635, 0.6748, 0.515]).view(1, -1, 1)
-    signals, velocity, displacement = SyntheticLitModule.generate_synthetic_batch(
-        batch_size=BATCH,
-        device=torch.device('cpu'),
-        waveform=waveform,
-        wavelengths_um=wavelengths_um,
-        coil=CoilDriver(),
+def _sim() -> SimConfig:
+    return SimConfig.noise_free(
+        wavelengths_um=(0.635, 0.6748, 0.515),
+        sample_rate=125e6 / 256,
+        start_freq_hz=100.0,
+        end_freq_hz=1000.0,
         drive_gain=NOMINAL_DRIVE_GAIN,
-        acq_sample_rate=Waveform.SAMPLE_RATE_DEC1 / 256,
+        feedback_c=0.0,
+        alpha=0.0,
     )
+
+
+def test_synthetic_batch_sharing():
+    """simulate_batch produces one shared batch usable by all members."""
+    batch = simulate_batch(_sim(), BATCH, torch.device('cpu'), None)
+    signals = batch.signals
     assert signals.shape[0] == BATCH
     assert signals.shape[1] == IN_CHANNELS
-    assert signals.shape[-1] == velocity.shape[-1] == displacement.shape[-1]
+    assert signals.shape[-1] == batch.velocity.shape[-1]
     assert torch.isfinite(signals).all()
 
     # One batch, shared across an ensemble whose seq_len matches the batch.
     hparams = _tcn_hparams()
     hparams['sequence_length'] = signals.shape[-1]
-    ens = EnsembleModule(model_hparams=hparams, seeds=[0, 1, 2])
+    ens = EnsembleModule(model_hparams=hparams, seeds=[0, 1, 2], norm_stats=None)
     out = ens(signals)
     assert out.shape == (K, BATCH, signals.shape[-1])
+
+
+def test_synthetic_ensemble_bakes_simulator_stats():
+    """Members carry the same fixed stats as SyntheticLitModule, not identity."""
+    ens = SyntheticEnsembleModule(
+        _tcn_hparams(), [0, 1], sim=dataclasses.asdict(_sim()), target='velocity'
+    )
+    expected = normalization_stats(_sim(), NORM_STATS_SHOTS, NORM_STATS_SEED)
+    member = ens.best_member_model(0)
+    for name, value in expected.items():
+        torch.testing.assert_close(getattr(member, name).flatten(), value.flatten())

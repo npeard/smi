@@ -221,16 +221,9 @@ def _train_ensemble(config: dict[str, dict[str, Any]]) -> None:
     batch_size = int(training['batch_size'])
 
     if synthetic is not None and synthetic.get('use_synthetic_training', False):
-        wavelengths_nm = synthetic['wavelengths_nm']
-        model_hparams['in_channels'] = len(wavelengths_nm)
+        model_hparams['in_channels'] = len(synthetic['sim']['wavelengths_um'])
         module: EnsembleModule = SyntheticEnsembleModule(
-            model_hparams,
-            seeds,
-            wavelengths_nm=wavelengths_nm,
-            start_freq=synthetic.get('start_freq', 1.0),
-            end_freq=synthetic.get('end_freq', 1000.0),
-            drive_gain=synthetic['drive_gain'],
-            **common,
+            model_hparams, seeds, sim=synthetic['sim'], **common
         )
         steps = int(synthetic.get('steps_per_epoch', 100))
         val_steps = int(synthetic.get('val_steps', max(1, steps // 5)))
@@ -245,7 +238,8 @@ def _train_ensemble(config: dict[str, dict[str, Any]]) -> None:
     else:
         data = config['data']
         model_hparams['in_channels'] = int(data.get('num_pd_channels', 3))
-        module = EnsembleModule(model_hparams, seeds, **common)
+        # Real data keeps the identity wrapper the ensemble has always used.
+        module = EnsembleModule(model_hparams, seeds, norm_stats=None, **common)
         datamodule = VelocityDataModule(
             dataset_path=_resolve_dataset_path(data),
             split_ratios=tuple(data.get('split_ratios', [80, 10, 10])),

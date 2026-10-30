@@ -6,6 +6,7 @@ import math
 import pytest
 import torch
 
+from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.synthetic.forward import (
     NOMINAL_DRIVE_GAIN,
     SMI_NEWTON_ITERATIONS,
@@ -230,3 +231,45 @@ def test_hash_is_stable_and_field_sensitive():
     assert (
         _noise_free().hash() != dataclasses.replace(_noise_free(), snr_db=20.0).hash()
     )
+
+
+def test_full_model_causal_with_baked_normalization():
+    seq_len = 1024
+    module = SyntheticLitModule(
+        model_hparams=dict(
+            type='TCN',
+            sequence_length=seq_len,
+            in_channels=len(WAVELENGTHS_UM),
+            activation='GELU',
+            use_layer_norm=True,
+            use_weight_norm=False,
+            kernel_size=3,
+            temporal_channels=[8, 8, 8],
+            dilation_base=2,
+            dropout=0.0,
+        ),
+        optimizer_hparams={'name': 'Adam', 'lr': 1e-3, 'weight_decay': 0.0},
+        scheduler_hparams={},
+        loss_hparams={
+            'dynamic': False,
+            'velocity_loss_weight': 1.0,
+            'displacement_loss_weight': 1.0,
+        },
+        training_hparams={'target': 'velocity'},
+        data_hparams={},
+        steps_per_epoch=1,
+        sim=dataclasses.asdict(_noise_free()),
+    )
+    model = module.model.eval()
+    # Baked stats, not identity: velocity std is the synthetic motion scale.
+    assert not torch.allclose(model.output_std, torch.ones(1))
+    assert not torch.allclose(model.input_std, torch.ones(1))
+
+    x = _simulate(_noise_free(), batch=2).signals[..., :seq_len]
+    t0 = 600
+    y = x.clone()
+    y[..., t0:] += 0.5
+    with torch.no_grad():
+        a, b = model(x), model(y)
+    torch.testing.assert_close(a[..., :t0], b[..., :t0], atol=1e-6, rtol=0)
+    assert not torch.allclose(a[..., t0:], b[..., t0:])

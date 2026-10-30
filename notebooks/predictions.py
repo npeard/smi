@@ -21,7 +21,6 @@ def _():
     from smi.analysis.datasets import get_data_loaders
     from smi.analysis.generate_data import generate_synthetic_test_data
     from smi.analysis.lit_module import LitModule
-    from smi.analysis.synthetic_lit_module import DEFAULT_WAVELENGTHS_NM
     from smi.redpitaya.redpitaya_config import RedPitayaConfig
 
     ACQ_SAMPLE_RATE = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
@@ -29,7 +28,6 @@ def _():
     return (
         ACQ_SAMPLE_RATE,
         CHANNEL_NAMES,
-        DEFAULT_WAVELENGTHS_NM,
         LitModule,
         generate_synthetic_test_data,
         get_data_loaders,
@@ -88,33 +86,25 @@ def _(LitModule, checkpoint_path, mo, torch):
 
 @app.cell
 def _(
-    DEFAULT_WAVELENGTHS_NM,
     batch_size,
     ckpt_hparams,
     dataset_path,
     generate_synthetic_test_data,
     get_data_loaders,
-    in_channels,
 ):
     if dataset_path.value == 'synthetic':
-        _wavelengths_nm = ckpt_hparams.get(
-            'wavelengths_nm', DEFAULT_WAVELENGTHS_NM[:in_channels]
-        )
-        _start_freq = ckpt_hparams.get('start_freq', 1.0)
-        _end_freq = ckpt_hparams.get('end_freq', 1000.0)
-        if 'drive_gain' not in ckpt_hparams:
+        if 'sim' not in ckpt_hparams:
             raise ValueError(
-                'checkpoint has no drive_gain hyperparameter (it predates '
-                'drive-voltage synthetic data); retrain or set drive_gain'
+                'checkpoint has no sim hyperparameter (it predates the '
+                'SimConfig forward model); retrain it'
             )
-        _drive_gain = ckpt_hparams['drive_gain']
+        # The checkpoint's own simulator config: its baked normalization
+        # matches this data, unlike the real-data stats.
         test_loader = generate_synthetic_test_data(
             num_samples=batch_size.value * 4,
-            wavelengths_nm=_wavelengths_nm,
+            sim=ckpt_hparams['sim'],
             batch_size=batch_size.value,
-            start_freq=_start_freq,
-            end_freq=_end_freq,
-            drive_gain=_drive_gain,
+            seed=0,
         )
     else:
         _, _, test_loader = get_data_loaders(

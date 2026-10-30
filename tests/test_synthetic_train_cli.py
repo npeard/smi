@@ -27,9 +27,7 @@ def test_synthetic_main_runs_test_stage(tmp_path):
         precision='32-true',
         use_logging=False,
     )
-    cfg['synthetic'].update(
-        steps_per_epoch=2, val_steps=1, wavelengths_nm=[635, 674.8, 515]
-    )
+    cfg['synthetic'].update(steps_per_epoch=2, val_steps=1)
     cfg['data']['split_ratios'] = [80, 10, 10]
     path = tmp_path / 'tiny.yaml'
     path.write_text(yaml.safe_dump(cfg))
