@@ -141,6 +141,17 @@ def test_patience_counts_epochs_not_validation_checks():
     assert interface.convergence_callback.patience == 5
 
 
+def test_patience_stops_after_that_many_epochs_at_a_coarser_cadence():
+    # Frozen weights: epoch 1 is the only improvement (the first value always
+    # is), so the 5 checks of patience at cadence 2 end the run at epoch 10.
+    config = _config(SIGNED, sign_invariant=False, max_epochs=40)
+    config.training_config['check_val_every_n_epoch'] = 2
+    config.training_config['convergence'].update(min_rel_delta=0.5, patience_epochs=10)
+    interface = _run(config)
+    assert interface.converged is True
+    assert interface.trainer.current_epoch <= 14
+
+
 def test_patience_spanning_too_few_checks_is_rejected():
     config = _config(SIGNED, sign_invariant=False, max_epochs=40)
     config.training_config['check_val_every_n_epoch'] = 5

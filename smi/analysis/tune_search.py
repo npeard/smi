@@ -258,7 +258,9 @@ def _train_ensemble(config: dict[str, dict[str, Any]]) -> None:
         devices=training.get('devices', 1),
         precision=training['precision'],
         callbacks=[report_callback],
-        check_val_every_n_epoch=1,
+        # Read from the YAML like train_func; no convergence callback here, ASHA
+        # governs when an ensemble trial stops.
+        check_val_every_n_epoch=int(training['check_val_every_n_epoch']),
         logger=False,
         enable_checkpointing=False,
     )

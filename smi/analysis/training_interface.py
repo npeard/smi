@@ -28,7 +28,9 @@ logger = logging.getLogger(__name__)
 SIGNED_RMSE_KEY = 'val/velocity_rmse_um_per_ms'
 SIGN_INVARIANT_RMSE_KEY = 'val/velocity_rmse_sign_invariant_um_per_ms'
 
-# Fewer checks than this and a noisy mid-schedule dip can pass for a plateau.
+# Floor on ceil(patience_epochs / check_val_every_n_epoch), the number of
+# validation checks patience spans: fewer and a noisy mid-schedule dip can pass
+# for a plateau.
 MIN_PATIENCE_CHECKS = 5
 
 
@@ -396,7 +398,8 @@ class TrainingInterface:
             raise ValueError(
                 f'patience_epochs={convergence["patience_epochs"]} with '
                 f'check_val_every_n_epoch={check_val_every_n_epoch} is {checks} '
-                f'validation checks; a plateau needs at least {MIN_PATIENCE_CHECKS}'
+                f'validation checks; a plateau needs patience to span at least '
+                f'{MIN_PATIENCE_CHECKS} validation checks'
             )
         self.convergence_callback = RelativeEarlyStopping(
             monitor=monitor,

@@ -130,7 +130,6 @@ class SweepSettings:
         device: Explicit torch device, e.g. ``'cuda:0'``. This box has two
             unequal GPUs, so which one a run lands on changes its timing.
         eval_shots: Cap on test shots evaluated per torch run.
-        check_val_every_n_epoch: Validation cadence.
         torch_configs: Config stems to sweep, so a partial rerun can name a
             subset without the module's default tuple being mutated.
         preload: Hold the whole dataset on the GPU instead of streaming it
@@ -142,7 +141,6 @@ class SweepSettings:
     datasets: tuple[str, ...]
     device: str
     eval_shots: int
-    check_val_every_n_epoch: int
     torch_configs: tuple[str, ...] = TORCH_CONFIGS
     preload: bool = True
 
@@ -257,7 +255,6 @@ def _load_config(name: str, settings: SweepSettings, dataset: str) -> TrainingCo
     config = TrainingConfig.from_yaml(str(CONFIG_DIR / f'{name}.yaml'))
     config.training_config['max_epochs'] = settings.epochs
     config.training_config['T_0'] = settings.epochs
-    config.training_config['check_val_every_n_epoch'] = settings.check_val_every_n_epoch
     config.training_config['use_logging'] = False
     config.data_config['dataset_file'] = DATASETS[dataset]
 
@@ -638,7 +635,6 @@ def main() -> None:
     )
     parser.add_argument('--device', default='cuda:0', help='Explicit torch device.')
     parser.add_argument('--eval-shots', type=int, default=200)
-    parser.add_argument('--check-val-every-n-epoch', type=int, default=2)
     parser.add_argument('--output', type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument('--configs', nargs='+', default=None, help='Subset to run.')
     parser.add_argument(
@@ -656,7 +652,6 @@ def main() -> None:
         datasets=tuple(args.datasets),
         device=args.device,
         eval_shots=20 if args.smoke else args.eval_shots,
-        check_val_every_n_epoch=1 if args.smoke else args.check_val_every_n_epoch,
         torch_configs=tuple(args.configs) if args.configs else TORCH_CONFIGS,
         preload=not args.no_preload,
     )
