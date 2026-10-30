@@ -6,6 +6,8 @@ import torch
 from smi.analysis.metrics import (
     count_parameters,
     displacement_from_velocity,
+    per_shot_rmse,
+    sign_invariant_rmse,
     summarize_per_shot,
     velocity_rmse,
 )
@@ -90,3 +92,14 @@ def test_count_parameters_agrees_with_instantiated_model():
 def test_barland_three_channel_budget_is_stable():
     """The matched-parameter budget every other model is held to."""
     assert count_parameters(dict(BARLAND_HPARAMS)) == 57377
+
+
+def test_per_shot_rmse_is_over_time_and_matches_the_sign_invariant_one_at_plus():
+    target = torch.tensor([[1.0, -2.0, 3.0], [0.5, 0.5, 0.5]])
+    pred = target + torch.tensor([[1.0, 1.0, 1.0], [0.0, 3.0, 0.0]])
+    torch.testing.assert_close(
+        per_shot_rmse(pred, target), torch.tensor([1.0, 3.0 / 3**0.5])
+    )
+    torch.testing.assert_close(
+        sign_invariant_rmse(pred, target), per_shot_rmse(pred, target)
+    )

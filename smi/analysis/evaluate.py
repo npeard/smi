@@ -33,7 +33,12 @@ from torch import Tensor
 from smi.analysis.baseline_fit import PD_WAVELENGTHS_UM, inverse_fit
 from smi.analysis.datasets import file_pd_channels, file_sample_rate, select_pd_keys
 from smi.analysis.lit_module import LitModule
-from smi.analysis.metrics import best_sign, sign_invariant_rmse, summarize_per_shot
+from smi.analysis.metrics import (
+    best_sign,
+    per_shot_rmse,
+    sign_invariant_rmse,
+    summarize_per_shot,
+)
 from smi.analysis.results_artifact import RunRecord, append_results
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.synthetic.coil_driver import CoilDriver
@@ -332,7 +337,7 @@ def evaluate(
                     f'expected {tuple(velocity.shape)}'
                 )
             finite &= bool(torch.isfinite(pred).all())
-            rmse = torch.sqrt(torch.mean((pred - velocity) ** 2, dim=-1))
+            rmse = per_shot_rmse(pred, velocity)
             rmse_si = sign_invariant_rmse(pred, velocity)
             std = velocity.std(dim=-1, unbiased=False)
             if (std == 0).any():

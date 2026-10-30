@@ -47,7 +47,11 @@ from smi.analysis.baselines import (
     windowize,
 )
 from smi.analysis.datamodule import VelocityDataModule
-from smi.analysis.metrics import displacement_from_velocity, summarize_per_shot
+from smi.analysis.metrics import (
+    displacement_from_velocity,
+    per_shot_rmse,
+    summarize_per_shot,
+)
 from smi.analysis.models.factory import create_model
 from smi.analysis.results_artifact import RunRecord, write_results
 from smi.analysis.training_interface import TrainingConfig, TrainingInterface
@@ -226,13 +230,13 @@ def evaluate_per_shot(
     Returns:
         Metric name -> the six summary keys of ``summarize_per_shot``.
     """
-    velocity_err = torch.sqrt(torch.mean((predictions - targets) ** 2, dim=1))
+    velocity_err = per_shot_rmse(predictions, targets)
 
     pred_disp = displacement_from_velocity(predictions, dt_ms)
     true_disp = displacement_from_velocity(targets, dt_ms)
     # Both integrals start at zero by construction, so no offset removal is
     # needed before differencing them.
-    disp_err = torch.sqrt(torch.mean((pred_disp - true_disp) ** 2, dim=1))
+    disp_err = per_shot_rmse(pred_disp, true_disp)
 
     return {
         'velocity_rmse_um_per_ms': summarize_per_shot(

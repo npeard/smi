@@ -35,6 +35,11 @@ def velocity_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return torch.sqrt(torch.mean((pred - target) ** 2))
 
 
+def per_shot_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """RMSE over the last (time) axis: ``[batch, length]`` -> ``[batch]``."""
+    return torch.sqrt(torch.mean((pred - target) ** 2, dim=-1))
+
+
 def sign_invariant_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     """Per-shot RMSE after the best global sign: min over s in {+1, -1}.
 
@@ -51,8 +56,7 @@ def sign_invariant_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tenso
     """
     # Shares best_sign with the training loss so validation and evaluation can
     # never disagree on which sign a shot gets.
-    signed = best_sign(pred, target) * pred
-    return torch.sqrt(torch.mean((signed - target) ** 2, dim=-1))
+    return per_shot_rmse(best_sign(pred, target) * pred, target)
 
 
 def best_sign(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
