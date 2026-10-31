@@ -437,6 +437,120 @@ BASELINE_DATASETS: tuple[tuple[str, str], ...] = (
 # Fallback sample rate; every real file carries `sample_rate` in its attrs.
 DEFAULT_SAMPLE_RATE = 488281.25
 
+# The leave-one-out grid's knobs, as (SimConfig field, sim-name stem); each
+# cell is named nominal-no-<stem> (q3_s3_leave_one_out.yaml).
+LEAVE_ONE_OUT = (
+    ('phase_drift_rad_per_sqrt_s', 'phasedrift'),
+    ('snr_db', 'snr'),
+    ('visibility_range', 'visibility'),
+    ('amplitude_drift_rel', 'ampdrift'),
+    ('contrast_drift_rel', 'contrastdrift'),
+    ('dc_offset_range', 'dc'),
+    ('pd_bandwidth_hz', 'pdbw'),
+    ('adc_bits', 'adc'),
+)
+
+
+# Section Q2's families as (runner family stem, label), causal first. Each ran
+# as ``<stem>-T90`` from configs/matched/<stem>.yaml. Mamba ran as its own
+# stage (q3_s1m_mamba.yaml); it stays optional so a fresh artifact without that
+# stage still builds, with Mamba marked pending.
+Q2_CAUSAL = (
+    ('tcn-44k', 'TCN'),
+    ('tcan-44k', 'TCAN'),
+    ('patchtransformer-causal-44k', 'PatchTransformer'),
+    ('unettransformer-causal-44k', 'UNet-Transformer'),
+    ('neuraloperator-causal-44k', 'Neural operator'),
+    ('lstm-44k', 'LSTM'),
+    ('mamba-44k', 'Mamba'),
+)
+Q2_OFFLINE = (
+    ('scnn-44k', 'SCNN'),
+    ('barland-44k', 'Barland CNN'),
+    ('mlp-44k', 'MLP'),
+    ('patchtransformer-offline-44k', 'PatchTransformer'),
+    ('unettransformer-offline-44k', 'UNet-Transformer'),
+    ('neuraloperator-offline-44k', 'Neural operator'),
+    ('lstm-bidir-44k', 'Bidirectional LSTM'),
+)
+Q2_OPTIONAL = ('mamba-44k',)
+Q2_STEMS = [stem for stem, _ in Q2_CAUSAL + Q2_OFFLINE]
+Q2_NAMED = [stem for stem in Q2_STEMS if stem not in Q2_OPTIONAL]
+# Each sim's score: Michelson's global sign is unobservable (section 1.1).
+Q2_SIMS = {'michelson': 'velocity_rmse_sign_invariant', 'smi-a3': 'velocity_rmse'}
+# A cell is called stalled when its best validation error stays within
+# this fraction of the zero predictor's (the runner's own test, min_rel_delta).
+STALL_TOLERANCE = 0.01
+
+
+def q2_record(records: dict[str, RunRecord], stem: str, sim: str) -> RunRecord | None:
+    """The family's seed-0 cell, or None for a family whose stage has not run."""
+    try:
+        return synthetic_cell(records, f'{stem}-T90', sim)
+    except KeyError:
+        if stem in Q2_OPTIONAL:
+            return None
+        raise
+
+
+# Displacement RMSE beside each velocity metric: the predicted velocity
+# integrated over the shot, each start offset removed, as LitModule's auxiliary
+# displacement loss compares them. In um. smi.analysis.evaluate does not write
+# them yet; the rerun plan's backfill re-scores every checkpoint to add them.
+DISPLACEMENT_METRICS = {
+    'velocity_rmse': 'displacement_rmse',
+    'velocity_rmse_sign_invariant': 'displacement_rmse_sign_invariant',
+}
+
+
+def displacement_pending(records: Iterable[RunRecord]) -> bool:
+    """Whether none of ``records`` carries displacement RMSE yet.
+
+    Raises:
+        ValueError: Naming the records that lack it, when only some do. A
+            part-backfilled artifact would otherwise plot a silent mix.
+    """
+    records = list(records)
+    missing = sorted(
+        str(r.cell_key) for r in records if 'displacement_rmse' not in r.metrics
+    )
+    if missing and len(missing) < len(records):
+        raise ValueError(f'displacement RMSE missing from only some records: {missing}')
+    return bool(missing)
+
+
+def pending_panel(ax: plt.Axes, what: str) -> None:
+    """Mark ``ax`` as awaiting data, so a pending figure cannot pass for a result."""
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.text(
+        0.5,
+        0.5,
+        f'PENDING\n{what}',
+        transform=ax.transAxes,
+        ha='center',
+        va='center',
+        fontsize=10,
+        fontweight='bold',
+        color='C3',
+    )
+
+
+# Section Q1's two families and their scores (Michelson's global sign is
+# unobservable, section 1.1). The S2 grid also expands an oracle cell for its
+# SMI sim, which its header leaves unrun: the oracle decodes under the
+# Michelson model, so only its Michelson cells are read.
+Q1_FAMILIES = ('tcn-44k', 'tcan-44k')
+Q1_S2_SIMS = {
+    's2-michelson': 'velocity_rmse_sign_invariant',
+    's2-smi-a3': 'velocity_rmse',
+}
+Q1_SNR_DB = (0.0, 10.0, 20.0, 30.0, 40.0)
+Q1_SINGLES = [w for w, _ in Q1_SUBSETS if len(w) == 1]
+Q1_MULTI = [w for w, _ in Q1_SUBSETS if len(w) > 1]
+Q1_PAIRS = [w for w in Q1_MULTI if len(w) == 2]
+
+
 # Seed used by any figure that needs randomness, so runs are reproducible.
 FIGURE_SEED = 20250910
 

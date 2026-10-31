@@ -24,6 +24,7 @@ import itertools
 import json
 import math
 import sys
+import warnings
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -37,23 +38,40 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _figcommon import (
     CEILING_GRID,
     DATA_DIR,
+    DISPLACEMENT_METRICS,
+    EXPERIMENTS_DIR,
+    LEAVE_ONE_OUT,
     MATCHED_DIR,
     MISMATCH_SHOTS,
     NOISE_KNOBS,
     Q1_BINNED_JSON,
+    Q1_FAMILIES,
+    Q1_MULTI,
+    Q1_PAIRS,
     Q1_S2_GRID,
+    Q1_S2_SIMS,
+    Q1_SINGLES,
+    Q1_SNR_DB,
     Q1_SUBSETS,
+    Q2_CAUSAL,
+    Q2_NAMED,
+    Q2_OFFLINE,
+    Q2_SIMS,
+    Q2_STEMS,
     Q3_BUDGETS,
     Q3_FEEDBACK_C,
+    STALL_TOLERANCE,
     SYNTHETIC_WAVELENGTHS_UM,
     LadderRow,
     c_sim,
+    displacement_pending,
     matched_length_cells,
     mean_metric,
     mismatch_spectra,
     noise_ladder,
     noise_seeds,
     oracle_cell,
+    q2_record,
     synthetic_cell,
     synthetic_records,
     velocity_bounds,
@@ -66,6 +84,7 @@ from smi.analysis.experiments import ORACLE_FAMILY, cell_key, expand_grid
 from smi.analysis.models.factory import create_model
 from smi.analysis.models.sliding_window import SlidingWindowModel
 from smi.analysis.results_artifact import RunRecord
+from smi.analysis.synthetic_lit_module import VAL_SEED
 from smi.synthetic.forward import (
     NOMINAL_ALPHA,
     NOMINAL_PHASE_DRIFT_FRINGES,
@@ -167,6 +186,18 @@ def zero_predictor_rmse(records: dict[str, RunRecord], grid: Path, key: str) -> 
     with h5py.File(path, 'r') as f:
         velocity = f['velocity'][:]
     return float(np.sqrt((velocity**2).mean(axis=1)).mean())
+
+
+def shot_length(records: dict[str, RunRecord]) -> int:
+    """Samples per simulated shot, read off the alpha = 0 control's frozen set."""
+    record = records[cell_key('tcn-44k-T90', SYNTHETIC_WAVELENGTHS_UM, 'smi-a0', 0)]
+    (cfg,) = [
+        cell.sim for cell in expand_grid(CEILING_GRID)[1] if cell.key == record.cell_key
+    ]
+    assert record.test_seed is not None
+    path = load_or_create(cfg, record.test_seed, test_shots(record), DEFAULT_ROOT)
+    with h5py.File(path, 'r') as f:
+        return int(f['velocity'].shape[1])
 
 
 def alpha_factor(alpha: float) -> float:
@@ -300,20 +331,6 @@ def q3_values(records: dict[str, RunRecord], zero: float) -> dict[str, str | boo
         'q3_t270_epochs': str(long.epochs_run),
         'q3_t270_cycle': str(long.T_0),
     }
-
-
-# The leave-one-out grid's knobs, as (SimConfig field, sim-name stem); each
-# cell is named nominal-no-<stem> (q3_s3_leave_one_out.yaml).
-LEAVE_ONE_OUT = (
-    ('phase_drift_rad_per_sqrt_s', 'phasedrift'),
-    ('snr_db', 'snr'),
-    ('visibility_range', 'visibility'),
-    ('amplitude_drift_rel', 'ampdrift'),
-    ('contrast_drift_rel', 'contrastdrift'),
-    ('dc_offset_range', 'dc'),
-    ('pd_bandwidth_hz', 'pdbw'),
-    ('adc_bits', 'adc'),
-)
 
 
 def noise_values(
@@ -489,39 +506,6 @@ def noise_values(
     }
 
 
-# Section Q2's families as (runner family stem, table label), causal column
-# first. Each ran as ``<stem>-T90`` from configs/matched/<stem>.yaml. Mamba's
-# stage (q3_s1m_mamba.yaml) may not have run yet: its row reads "pending"
-# until its records exist, and the text's per-family claims name only the
-# other families, so its arrival fills the table without contradicting them.
-# Claims over all families (the best at C = 0.2, the oracle comparisons)
-# include it once it exists, so a Mamba row that overturns one fails the build.
-Q2_CAUSAL = (
-    ('tcn-44k', 'TCN'),
-    ('tcan-44k', 'TCAN'),
-    ('patchtransformer-causal-44k', 'PatchTransformer'),
-    ('unettransformer-causal-44k', 'UNet-Transformer'),
-    ('neuraloperator-causal-44k', 'Neural operator'),
-    ('lstm-44k', 'LSTM'),
-    ('mamba-44k', 'Mamba'),
-)
-Q2_OFFLINE = (
-    ('scnn-44k', 'SCNN'),
-    ('barland-44k', 'Barland CNN'),
-    ('mlp-44k', 'MLP'),
-    ('patchtransformer-offline-44k', 'PatchTransformer'),
-    ('unettransformer-offline-44k', 'UNet-Transformer'),
-    ('neuraloperator-offline-44k', 'Neural operator'),
-    ('lstm-bidir-44k', 'Bidirectional LSTM'),
-)
-Q2_OPTIONAL = ('mamba-44k',)
-Q2_STEMS = [stem for stem, _ in Q2_CAUSAL + Q2_OFFLINE]
-Q2_NAMED = [stem for stem in Q2_STEMS if stem not in Q2_OPTIONAL]
-# Each sim's score: Michelson's global sign is unobservable (section 1.1).
-Q2_SIMS = {'michelson': 'velocity_rmse_sign_invariant', 'smi-a3': 'velocity_rmse'}
-# The text calls a cell stalled when its best validation error stays within
-# this fraction of the zero predictor's (the runner's own test, min_rel_delta).
-STALL_TOLERANCE = 0.01
 # A converged cell stopped well before its first restart; the rest end at it.
 EARLY_STOP_FRACTION = 0.95
 # The text says no family comes near the Michelson oracle; a ratio this large
@@ -529,16 +513,6 @@ EARLY_STOP_FRACTION = 0.95
 ORACLE_MARGIN = 1.5
 # The text calls the top offline families' span close to the seed range.
 CLOSE_FACTOR = 1.5
-
-
-def q2_record(records: dict[str, RunRecord], stem: str, sim: str) -> RunRecord | None:
-    """The family's seed-0 cell, or None for a family whose stage has not run."""
-    try:
-        return synthetic_cell(records, f'{stem}-T90', sim)
-    except KeyError:
-        if stem in Q2_OPTIONAL:
-            return None
-        raise
 
 
 def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
@@ -623,6 +597,11 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
         'q2_offline_rows': rows(Q2_OFFLINE, False),
         'q2_oracle_cells': [f'{v:.3f}' for v in oracle],
         'q2_mamba_pending': q2_record(records, 'mamba-44k', 'smi-a3') is None,
+        # The text says Mamba, unlike the LSTMs, trained on both sims.
+        'q2_mamba_trained': all(
+            r is not None and r.converged
+            for r in (q2_record(records, 'mamba-44k', sim) for sim in Q2_SIMS)
+        ),
         'q2_stalled_named': set(stalled)
         == {
             ('lstm-44k', 'michelson'),
@@ -642,6 +621,7 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
         ),
         'q2_sliding_named': set(sliding) == {'barland-44k', 'mlp-44k'},
         'q2_mlp_span': str(sliding['mlp-44k']),
+        'q2_tcn_field': str(fields['tcn-44k']),
         'q2_barland_span': str(sliding['barland-44k']),
         'q2_window_field': str(mlp.receptive_field),
         'q2_matched_named': set(matched)
@@ -798,19 +778,6 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
     }
 
 
-# Section Q1's two families and their scores (Michelson's global sign is
-# unobservable, section 1.1). The S2 grid also expands an oracle cell for its
-# SMI sim, which its header leaves unrun: the oracle decodes under the
-# Michelson model, so only its Michelson cells are read.
-Q1_FAMILIES = ('tcn-44k', 'tcan-44k')
-Q1_S2_SIMS = {
-    's2-michelson': 'velocity_rmse_sign_invariant',
-    's2-smi-a3': 'velocity_rmse',
-}
-Q1_SNR_DB = (0.0, 10.0, 20.0, 30.0, 40.0)
-Q1_SINGLES = [w for w, _ in Q1_SUBSETS if len(w) == 1]
-Q1_MULTI = [w for w, _ in Q1_SUBSETS if len(w) > 1]
-Q1_PAIRS = [w for w in Q1_MULTI if len(w) == 2]
 # The text says a Michelson single channel scores at the zero predictor, and
 # that pairs and triples sit far below it.
 AT_ZERO_TOL = 0.03
@@ -1135,6 +1102,126 @@ def spectral_values() -> dict[str, str]:
     }
 
 
+def budget_range(
+    cells: list[RunRecord], per_epoch: int, shot_length: int
+) -> dict[str, str]:
+    """Epochs, shots and samples the ``cells`` trained on, as printed ranges."""
+    n = [epochs(r) for r in cells]
+    samples = [
+        epochs(r) * per_epoch * (r.train_crop_length or shot_length) for r in cells
+    ]
+    return {
+        **lo_hi('epochs', n, str),
+        **lo_hi('kshots', (x * per_epoch / 1e3 for x in n), lambda x: f'{x:.0f}'),
+        **lo_hi('gsamples', samples, lambda x: f'{x / 1e9:.2f}'),
+        'cells': str(len(cells)),
+    }
+
+
+def methods_values(
+    records: dict[str, RunRecord], shot_length: int
+) -> dict[str, object]:
+    """The data and training protocol behind every trained cell, from the records.
+
+    Budgets are read off the records the cells wrote and the grids that ran
+    them, and each is asserted single-valued where the text states one value.
+    """
+    trained = [r for r in records.values() if r.steps_per_epoch is not None]
+    grids = [
+        yaml.safe_load(p.read_text('utf-8')) for p in EXPERIMENTS_DIR.glob('*.yaml')
+    ]
+    family = yaml.safe_load((MATCHED_DIR / 'tcn-44k.yaml').read_text('utf-8'))
+    convergence = family['training']['convergence']
+
+    def one(values: Iterable[Any]) -> Any:
+        (value,) = set(values)
+        return value
+
+    batch = one(r.batch_size for r in trained)
+    steps = one(r.steps_per_epoch for r in trained)
+    crop = one(r.train_crop_length for r in trained if r.train_crop_length is not None)
+    per_epoch = batch * steps
+    val_steps = one(g['synthetic']['val_steps'] for g in grids)
+    test_set = one(tuple(sorted(g['test_set'].items())) for g in grids)
+    full_length = sorted({r.model_type for r in trained if r.train_crop_length is None})
+    # Each matched family's stopping rule, which the text states once.
+    for path in MATCHED_DIR.glob('*-44k.yaml'):
+        rule = yaml.safe_load(path.read_text('utf-8'))['training']['convergence']
+        assert {k: rule[k] for k in convergence if k != 'monitor'} == {
+            k: v for k, v in convergence.items() if k != 'monitor'
+        }, path
+    return {
+        'm_batch': str(batch),
+        'm_steps': str(steps),
+        'm_shots_per_epoch': f'{per_epoch:,}',
+        'm_crop': str(crop),
+        'm_shot_length': str(shot_length),
+        'm_samples_per_epoch': f'{per_epoch * crop / 1e6:.1f}',
+        'm_full_samples_per_epoch': f'{per_epoch * shot_length / 1e6:.1f}',
+        # The text names the offline neural operator as the one full-shot family.
+        'm_full_length_is_no': full_length == ['NeuralOperator'],
+        **{
+            f'm_t{cycle}_{k}': v
+            for cycle in (30, 90)
+            for k, v in budget_range(
+                [r for r in trained if cycle == r.T_0], per_epoch, shot_length
+            ).items()
+        },
+        'm_val_batches': str(val_steps),
+        'm_val_shots': str(val_steps * batch),
+        'm_val_seed': str(VAL_SEED),
+        'm_test_shots': str(dict(test_set)['n_shots']),
+        'm_test_seed': str(dict(test_set)['seed']),
+        'm_test_sets': str(len({r.dataset for r in records.values()})),
+        'm_trained_cells': str(len(trained)),
+        'm_patience': str(convergence['patience_epochs']),
+        'm_min_rel_delta_pct': pct(convergence['min_rel_delta']),
+        'm_grace': str(convergence['min_epochs']),
+        'm_lr': f'{one(r.lr for r in trained):g}',
+        'm_device': one(r.device.split(':')[0] for r in trained).upper(),
+        'm_precision': one(r.precision for r in trained).removesuffix('-true'),
+        **lo_hi('m_epochs', map(epochs, trained), str),
+    }
+
+
+# The cells whose displacement RMSE the text quotes: the 90-epoch C curve and
+# its Michelson reference, and the S1 families at both sims.
+DISPLACEMENT_CURVE = 'tcn-44k-T90'
+
+
+def displacement_values(records: dict[str, RunRecord]) -> dict[str, object]:
+    """Displacement RMSE of the quoted cells, or the pending flag alone."""
+    curve = {
+        c: synthetic_cell(records, DISPLACEMENT_CURVE, c_sim(c)) for c in Q3_FEEDBACK_C
+    }
+    michelson = synthetic_cell(records, DISPLACEMENT_CURVE, 'michelson')
+    families = [
+        r
+        for stem in Q2_STEMS
+        for sim in Q2_SIMS
+        if (r := q2_record(records, stem, sim)) is not None
+    ]
+    if displacement_pending([*curve.values(), michelson, *families]):
+        warnings.warn(
+            'displacement RMSE is PENDING: no record carries it yet, and the '
+            'report marks it so (rerun plan item a backfills it)',
+            stacklevel=1,
+        )
+        return {'disp_pending': True}
+    si = DISPLACEMENT_METRICS['velocity_rmse_sign_invariant']
+    signed = DISPLACEMENT_METRICS['velocity_rmse']
+    top = max(Q3_FEEDBACK_C)
+    return {
+        'disp_pending': False,
+        'disp_michelson': sig(mean_metric(michelson, si), 2),
+        'disp_c_top': f'{top:g}',
+        'disp_curve_top': sig(mean_metric(curve[top], signed), 2),
+        'disp_gain_top': sig(
+            mean_metric(michelson, si) / mean_metric(curve[top], signed), 2
+        ),
+    }
+
+
 def prediction_values(records: dict[str, RunRecord], zero: float) -> dict[str, str]:
     """Synthetic error over the zero predictor's, for the real-data predictions.
 
@@ -1212,23 +1299,8 @@ def main() -> None:
         **q1_s4_values(records, seed_resolution(records)),
         **spectral_values(),
         **prediction_values(records, zero),
-        'sign_table': [
-            {
-                'c': f'{c:g}',
-                'cells': [
-                    sci(
-                        bounds.sign_information(
-                            SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM[:k], c, alpha),
-                            N_SHOTS,
-                            SEED,
-                        )
-                    )
-                    for alpha in TABLE_ALPHA
-                    for k in TABLE_K
-                ],
-            }
-            for c in TABLE_C
-        ],
+        **methods_values(records, shot_length(records)),
+        **displacement_values(records),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(values, indent=1) + '\n', encoding='utf-8')

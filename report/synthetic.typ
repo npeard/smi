@@ -7,14 +7,14 @@
 // Every number in this document comes from a committed artifact or from a
 // computation in a committed script:
 // - smi/analysis/data/synthetic_results.json, the experiment runner's records,
-//   read by report/figures/plot_{exit_check,feedback_curve}.py;
+//   read by the report/figures/plot_*.py scripts this document includes;
 // - smi.analysis.bounds, evaluated by the figure scripts
 //   report/figures/plot_{fisher_phase,velocity_bounds,sign_information}.py;
 // - build/synthetic_values.json, written by report/figures/synthetic_values.py
-//   from smi.analysis.bounds, learned_results.json and synthetic_results.json:
-//   every value quoted in the prose and in the table is read from it below, so
-//   a library or artifact change rebuilds the prose rather than leaving it
-//   stale.
+//   from smi.analysis.bounds, learned_results.json, synthetic_results.json and
+//   the experiment grids: every value quoted in the prose is read from it
+//   below, so a library or artifact change rebuilds the prose rather than
+//   leaving it stale.
 
 // ASCII only, per the repo convention.
 
@@ -22,319 +22,440 @@
 
 #show: report-theme.with(
   title: "Velocity from self-mixing fringes: a synthetic study",
-  subtitle: "Identifiability, information bounds, and what feedback and extra channels buy",
+  subtitle: "What feedback, noise and extra channels do to velocity retrieval",
   author: "Nolan Peard",
   date: "Draft",
 )
 
 #set math.equation(numbering: "(1)")
+// Floats go to the top or bottom of a page, so a figure that misses the space
+// left on one page does not leave that space blank.
+#show figure: set figure(placement: auto)
 
 #let values = json("/build/synthetic_values.json")
 #let val(key) = values.at(key)
-#let sci(cell) = $#cell.mantissa times 10^#str(cell.exponent)$
+// A result that awaits a rerun, marked so it cannot pass for a finding.
+#let pending(body) = block(
+  stroke: 1pt + rgb("#c0392b"),
+  inset: 8pt,
+  radius: 2pt,
+  width: 100%,
+  text(fill: rgb("#c0392b"))[*Pending.* #body],
+)
 
-This report asks, on synthetic data where the true motion is known exactly,
-what limits velocity retrieval from three self-mixing photodiode channels at
-635, 674.8 and 515 nm. Every error is the velocity RMSE of each shot, in
-$mu$m/ms, averaged over the shots of a frozen, seeded synthetic test set;
-NRMSE divides each shot's RMSE by that shot's velocity std before averaging.
-Every bound is an RMS pooled over trajectories. The real acquisitions stay
-unread until the synthetic verdicts are fixed; real-data numbers appear only
-as context, quoted from the baseline report.
+We want to measure how a mirror moves from the light it reflects into three
+lasers at 635, 674.8 and 515 nm. On real acquisitions the true motion is
+unknown, so this report works on simulated data, where it is known exactly,
+and asks what limits the recovered velocity. The real acquisitions stay unread
+until the synthetic program's predictions for them are fixed. Three results
+carry the report.
 
-= Identifiability, information and bounds <sec-bounds>
+#takeaway[
+  + *Weak optical feedback makes the direction of motion observable.* Without
+    feedback a network trained to predict signed velocity learns to predict
+    zero; with feedback it recovers the motion, and its error falls steadily as
+    feedback grows (@fig-exit-check, @fig-feedback).
+  + *At the nominal operating point, per-laser phase drift sets most of the
+    error.* White noise is a distant second and the other detector
+    imperfections are minor (@fig-noise, @fig-loo).
+  + *Extra channels help without noise, but not at nominal noise.* Pairs and
+    the three-channel set beat the best single channel by over 1.5 times on
+    noise-free data, but at the nominal point that gain shrinks to a few
+    percent (@fig-q1-subsets).
+]
 
-Each channel $k$ of the simulator reads
+A comparison of model families at matched size adds a fourth, narrower result:
+on feedback data a temporal convolutional network with attention is the best
+family, while both LSTMs, and the offline neural operator on feedback data,
+fail to train (@fig-families).
+
+= What the fringes can tell us <sec-bounds>
+
+Before training any network we ask what the signals determine at all: whether
+they fix the direction of motion, and how precisely they fix the displacement.
+The answers say which errors a learned estimator could remove and which no
+estimator can.
+
+== From a Michelson interferometer to self-mixing <sec-model>
+
+We measure motion by interferometry. A mirror moves along a trajectory $d(t)$,
+and we want to recover its velocity $v(t) = dot(d)(t)$, which is also the
+quantity the networks are trained to output. Each laser forms its own
+interferometer with the same mirror, so the three photodiode channels record
+the same $d(t)$ through three different wavelengths. In the familiar Michelson
+interferometer, channel $k$ reads
+$
+  y_k (t) = a_k (t) [1 + V_k (t) cos theta_k (t)] - 1 + n_k (t),
+  quad theta_k (t) = (4 pi d(t)) / lambda_k + phi_k .
+$ <eq-michelson>
+The optical phase $theta_k$ is what carries the motion: the round trip to the
+mirror adds $4 pi d \/ lambda_k$, so one fringe passes for every $lambda_k \/ 2$
+of travel. The phase offset $phi_k$ is set by the static path length, which we
+do not know, so it is drawn uniformly on $[0, 2 pi)$ for every shot. The
+amplitude $a_k$ (optical power, normalized to 1) and the visibility
+$0 < V_k <= 1$ (fringe contrast) scale the fringe without carrying motion, the
+$-1$ centers the signal, and $n_k$ is detector noise. Only $d(t)$ is wanted;
+the rest are nuisance or noise.
+
+In self-mixing the mirror's light re-enters the laser cavity, and the laser
+itself becomes the interferometer. The returning light pulls the laser's
+phase, which distorts the fringe. The self-mixing signal generalizes
+@eq-michelson by replacing the cosine with a fringe function $F$,
 $
   y_k (t) = a_k (t) [1 + V_k (t) F(theta_k (t))] - 1 + n_k (t),
-  quad theta_k = (4 pi d) / lambda_k + phi_k ,
+  quad F(theta) = cos phi_F (theta) ,
 $ <eq-signal>
-where $d$ is the mirror displacement, $lambda_k$ the wavelength, $phi_k$ an
-unknown phase offset drawn uniformly on $[0, 2 pi)$, $a_k$ and $V_k$ the
-amplitude and visibility, and $n_k$ the detector noise. For a Michelson
-interferometer $F = cos$. The training target is the velocity $v = dot(d)$.
+where the phase $phi_F$ at which the laser oscillates solves the excess-phase
+equation
+$
+  phi_F = theta - C sin(phi_F + beta), quad beta = arctan alpha .
+$ <eq-excess>
+The feedback strength $C$ says how strongly the returning light pulls the
+phase, and $C = 0$ recovers the Michelson cosine. The linewidth enhancement
+factor $alpha$ of the laser, typically 3 to 5 for diode lasers, couples its
+gain to its phase and sets the skew $beta$. We stay in the weak-feedback
+regime $0 <= C < 1$. There the right side of @eq-excess, as a map of
+$phi_F$, has slope at least $1 - C > 0$, so each $theta$ has exactly one root
+and $F$ is single-valued.
 
-== The Michelson global sign is unobservable <sec-sign>
+== The Michelson sign is unobservable <sec-sign>
 
-In the Michelson model no number of channels can tell $v(t)$ from $-v(t)$.
-The map $d -> -d$, $phi_k -> -phi_k$ sends every $theta_k$ to $-theta_k$, and
-$cos$ is even, so it leaves every channel of @eq-signal unchanged. The
-uniform law of $phi_k$ is invariant under $phi_k -> -phi_k$ modulo $2 pi$, so
-integrating the offsets out gives
+The first question is whether the signals determine which way the mirror
+moves. If they do not, no estimator can learn the sign, and a network asked
+for signed velocity should give up. For the Michelson model they do not. The
+map $d -> -d$, $phi_k -> -phi_k$ sends every $theta_k$ to $-theta_k$, and the
+cosine is even, so every channel of @eq-michelson is unchanged. The uniform
+law of $phi_k$ is also unchanged by $phi_k -> -phi_k$ modulo $2 pi$, so
+integrating out the offsets gives the same likelihood for a trajectory and its
+mirror image,
 $
   p(y | d) = integral p(y | d, phi) p(phi) dif phi
   = integral p(y | -d, -phi) p(-phi) dif phi = p(y | -d) .
 $ <eq-sign-likelihood>
-Nothing else in @eq-signal depends on the sign of $d$.
-
-The minimum-MSE signed velocity estimate is therefore zero. The drive is a
-sum of lines with independent uniform phases, so the trajectory prior is also
-symmetric, $p(d) = p(-d)$. With @eq-sign-likelihood the posterior is
-symmetric, $E[v | y] = 0$, and the best achievable signed MSE is the prior
-variance of $v$. A network trained with signed MSE on Michelson data should
-collapse toward predicting zero. A network trained to recover the motion must
-instead be scored per shot up to the global sign, with the sign-invariant
-loss $min_(epsilon in {plus.minus 1}) "MSE"(epsilon hat(v), v)$.
-
-@fig-exit-check confirms both predictions. The causal TCN (44k parameters, 85-sample lookback) trained with signed MSE
-on Michelson data scores at the zero-predictor level on both metrics. The
-same network trained with the sign-invariant loss recovers the motion up to
-sign, and its signed error, with a random sign per shot, exceeds the zero
-predictor's. Under weak feedback with signed MSE the two
-metrics agree, so the sign is resolved on nearly every test shot. The signed
-Michelson run stopped by patience after #val("exit_signed_epochs") epochs at
-the zero-predictor level, and the other two ran to the
-#val("exit_max_epochs")-epoch cap, so only the ordering, not the absolute
-values, is evidence.
+The simulated drive is a sum of lines with independent uniform phases, so the
+trajectory prior is symmetric too, $p(d) = p(-d)$. The posterior is then
+symmetric, and the estimate with least mean squared error is
+$
+  E[v(t) | y] = 0 .
+$ <eq-sign-zero>
+A network trained with signed mean squared error on Michelson data should
+therefore collapse toward zero. To ask instead whether it recovers the motion
+up to the unobservable sign, we score each shot with the sign-invariant loss
+$
+  cal(L)_"SI" = min_(epsilon in {plus.minus 1}) "MSE"(epsilon hat(v), v) .
+$ <eq-sign-invariant>
+@fig-exit-check tests both predictions with one network trained three ways,
+so each pair of runs differs in one factor: the loss or the fringe.
 
 #fig(
   "exit_check",
   width: 62%,
   caption: [
-    The Michelson sign collapse, and its absence under weak feedback.
-    Velocity NRMSE on a frozen noise-free test set of #val("test_shots")
-    shots (seed #val("test_seed")), three channels, for the causal TCN trained
-    for at most #val("exit_max_epochs") epochs of #val("exit_steps") steps.
-    Signed NRMSE compares the prediction with the truth as is; sign-invariant
-    NRMSE takes the better of $plus.minus hat(v)$ per shot. Michelson runs use
-    $C = 0$; the SMI run uses $C = 0.2$, $alpha = 3$. The dashed line,
-    NRMSE $= 1$, is the error of always predicting zero. RMSE, in the same
-    records, orders the runs alike.
+    Without feedback a signed-loss network learns to predict zero; with
+    feedback it recovers the motion and its sign. Test velocity NRMSE (error
+    over each shot's velocity std) of a causal temporal convolutional network
+    (TCN) on three noise-free channels. Signed compares the prediction with the truth as is;
+    sign-invariant takes the better of $plus.minus hat(v)$ per shot. Michelson
+    runs have $C = 0$; the self-mixing (SMI) run has $C = 0.2$, $alpha = 3$.
+    Dashed: NRMSE $= 1$, the score of always predicting zero. The runs train
+    at most #val("exit_max_epochs") epochs, so only the ordering is evidence.
   ],
 ) <fig-exit-check>
 
-== Feedback breaks the symmetry; one channel only through the prior <sec-feedback>
+== Feedback breaks the symmetry <sec-feedback>
 
-Under weak optical feedback the fringe is $F(theta) = cos phi_F$, where the
-feedback phase $phi_F$ solves the excess-phase equation
-$
-  phi_F = theta - C sin(phi_F + beta), quad beta = arctan alpha ,
-$ <eq-excess>
-with feedback strength $0 <= C < 1$ and linewidth enhancement factor
-$alpha$. The map $phi_F |-> phi_F + C sin(phi_F + beta)$ has derivative at
-least $1 - C > 0$, so @eq-excess has exactly one root for each $theta$.
+Feedback tilts the fringe toward a sawtooth whose steep edge faces the
+direction of motion, which is how self-mixing sensors read direction. This
+subsection asks when the tilt breaks the symmetry of @sec-sign, and how much
+evidence about the sign one shot carries.
 
-The symmetry of @sec-sign survives feedback when $alpha = 0$. With
-$beta = 0$, negating @eq-excess shows that $-phi_F$ solves it at $-theta$; by
-uniqueness $phi_F (-theta) = -phi_F (theta)$, so $F$ is still even and
+The symmetry survives feedback when $alpha = 0$. Then $beta = 0$, and negating
+@eq-excess shows that $-phi_F$ solves it at $-theta$. The root is unique, so
+$phi_F (-theta) = -phi_F (theta)$, $F$ is still even, and
 @eq-sign-likelihood holds for every $C$. For $C > 0$ and $alpha != 0$ the
-fringe tilts toward a sawtooth whose slow and steep edges swap with the
-direction of motion.
+fringe's slow and steep edges swap with the direction of motion, and the
+symmetry breaks.
 
-With one channel the symmetry is broken only through the motion prior. The
-warped phase $theta'' = phi_F + C sin(phi_F - beta)$ satisfies
-@eq-excess at $-theta''$ with root $-phi_F$, so
+With a single channel the break is incomplete, because a slightly warped
+phase undoes it. The warped phase below satisfies @eq-excess at $-theta''$
+with root $-phi_F$, so it reproduces the fringe exactly:
 $
-  F(-theta'') = F(theta) quad "exactly", quad
-  theta'' - theta = -2 C sin beta cos phi_F .
+  theta'' = phi_F + C sin(phi_F - beta) quad => quad
+  F(-theta'') = F(theta), quad theta'' - theta = -2 C sin beta cos phi_F .
 $ <eq-warp>
-A sign-flipped trajectory, displaced by a warp of depth
-$C sin beta thin lambda \/ (2 pi)$ that follows the fringe, therefore
-reproduces a single channel noise-free. Only the motion prior's penalty on
-that warp separates the two hypotheses. With two or more channels the warps
-of @eq-warp differ, because each depends on its own $phi_F$ and $lambda_k$,
-so this mirror does not carry over.
+A sign-flipped trajectory, displaced by a small warp that follows the fringe,
+therefore reproduces one channel without error. Only the motion prior's
+penalty on that warp separates the two hypotheses. With two or more channels
+each warp depends on its own $phi_F$ and $lambda_k$, so no single warped
+trajectory mirrors every channel.
 
-We bound the sign evidence from above by holding the trajectory fixed. For each
-shot and channel, the sign information is the Kullback-Leibler divergence
-between the noise law of the true signal and that of the closest
-sign-flipped signal $m + b F(-4 pi d \/ lambda_k + phi')$, with offset $m$,
-gain $b >= 0$ and phase $phi'$ free. The gain is kept non-negative because
-photodiode polarity is fixed and known. Freeing the trajectory can only lower
-the value, to the prior-limited level for one channel. To leading order in
-$C$, for $L$ samples per shot, noise std $sigma$ and uniform phase coverage,
+To size the evidence we hold the trajectory fixed and ask how well the true
+signal can be told from the closest sign-flipped one,
+$
+  tilde(y)_k (t) = m + b F(-(4 pi d(t)) / lambda_k + phi'), quad b >= 0 .
+$ <eq-flipped>
+The flipped signal may choose its offset $m$, gain $b$ and phase $phi'$
+freely; the gain stays non-negative because photodiode polarity is known. The
+measure is the Kullback-Leibler divergence between the noise distributions of
+$y_k$ and $tilde(y)_k$, in nats. For $L$ samples per shot, white noise of
+std $sigma$ and uniform phase coverage, the leading order in $C$ is
 $
   I_"sign" = sum_k (L C^2 E[V_k^2] alpha^2) / (4 sigma^2 (1 + alpha^2)) .
 $ <eq-sign-info>
-The derivation expands $F = cos theta + C sin theta sin(theta + beta) +
-O(C^2)$. The unwarped mirror ($b = 1$, $phi' = -phi$) then leaves the
-residual $V C sin beta sin 2 theta$, which is orthogonal to the directions
-$(m, b, phi')$ can move.
+Freeing the trajectory can only lower $I_"sign"$, so it is an upper bound.
 
 #fig(
   "sign_information",
   width: 62%,
   caption: [
-    An upper bound on the sign evidence grows as $C^2$ at weak feedback, and
-    three channels carry about three times one channel's. The bound is for
-    one 16384-sample shot at SNR 30 dB and $V tilde U(0.5, 1)$, mean over 8
-    shots (seed 0), for one
-    channel (635 nm) and all three. Markers are the computed value; lines are
-    the leading-order form of @eq-sign-info, which is the same for both
-    $alpha$ to within the marker size. The value is exactly zero at $C = 0$
-    and at $alpha = 0$.
+    One noisy shot carries far more than one nat of sign evidence across weak
+    feedback, growing as $C^2$, and three channels carry about three times
+    one channel's. Upper bound on the sign evidence for one 16384-sample shot
+    at SNR 30 dB, $V tilde U(0.5, 1)$, mean over 8 shots (seed 0), for the
+    635 nm channel alone and all three. Markers: computed value; lines: the
+    leading order, @eq-sign-info. The bound is exactly zero at $C = 0$ and at
+    $alpha = 0$.
   ],
 ) <fig-sign>
 
-Because the bound is far above one nat per shot over the whole weak-feedback
-range (@fig-sign), no mirror on the true trajectory reproduces the signals;
-that is numerical, not proven. The bound does not quantify the evidence once the trajectory is free. For two or more
-channels, whether some other trajectory mirrors every channel, for example
-one that switches fringe branch at the extrema, is an exposed gap.
-
-#figure(
-  align(center, table(
-    columns: 5,
-    align: (left, right, right, right, right),
-    stroke: 0.5pt + rgb("#d0d0d0"),
-    table.header(
-      [$C$],
-      [$alpha = 3$, $K = 1$],
-      [$alpha = 3$, $K = 3$],
-      [$alpha = 5$, $K = 1$],
-      [$alpha = 5$, $K = 3$],
-    ),
-    ..values.sign_table.map(row => ([#row.c], ..row.cells.map(sci))).flatten(),
-  )),
-  caption: [
-    Upper bound on the sign evidence (nats per 16384-sample shot) at the
-    settings of @fig-sign. $K = 1$ is the 635 nm channel.
-  ],
-) <tab-sign>
+With the trajectory held fixed, no mirror reproduces the signals; this is
+numerical, not proven. Whether some other trajectory mirrors every channel at
+once, for example one that switches fringe branch at the extrema, is an open
+gap.
 
 == Fisher information per sample <sec-fisher>
 
-Away from the global sign, how precisely a sample fixes $d$ is set by its
-Fisher information. For channel $k$ at unit amplitude, with white Gaussian
-noise of std $sigma$,
+Once the sign is settled, the question becomes precision: how tightly does
+one sample pin down the displacement? The standard measure is the Fisher
+information, the expected curvature of the log-likelihood in the unknown. Its
+inverse is the smallest variance an unbiased estimator can reach (the
+Cramer-Rao bound). It suits this problem because it adds over independent
+channels and samples, so it says directly what each channel contributes and
+where on the fringe a channel goes blind. This subsection shows that the
+information vanishes at the fringe extrema and that feedback moves it onto the
+steep edge.
+
+For channel $k$ at unit amplitude with white Gaussian noise of std $sigma$,
+the Fisher information about $d$ in one sample is
 $
   J_k (theta) = ((4 pi V_k) / (lambda_k sigma))^2 F'(theta)^2, quad
   F'(theta) = - (sin phi_F) / (1 + C cos(phi_F + beta)) ,
 $ <eq-fisher>
-where $F'$ follows from implicit differentiation of @eq-excess. The factor
-$F'^2$ vanishes at the fringe extrema, $sin phi_F = 0$, where a channel is
-blind to motion (@fig-fisher). The channel noises are independent, so the
-information of $K$ channels is the sum of the $J_k$. Because $J_k$ scales as
-$lambda_k^(-2)$, the 515 nm channel carries $(0.635 \/ 0.515)^2 = 1.52$ times
-the information of the 635 nm channel at equal visibility and noise.
+with $F'$ from implicit differentiation of @eq-excess. The prefactor is the
+fringe's phase-to-signal gain over the noise. The factor $F'^2$ vanishes where
+$sin phi_F = 0$, at the fringe extrema, where a small motion leaves the signal
+unchanged (@fig-fisher). The channel noises are independent, so $K$ channels
+together carry $sum_k J_k$. Because $J_k$ scales as $lambda_k^(-2)$, the
+515 nm channel carries $(0.635 \/ 0.515)^2 = 1.52$ times the information of
+the 635 nm channel at equal visibility and noise.
+
+The bounds below need the information averaged over a uniform fringe phase.
+That average has a closed form,
+$
+  Phi(C, alpha) = chevron.l F'^2 chevron.r_theta
+  = 1 / (2 s) [1 - cos(2 beta) (1 - s) / (1 + s)], quad s = sqrt(1 - C^2) .
+$ <eq-phase-factor>
+Changing variables from $theta$ to $phi_F$, which is monotone for $C < 1$,
+reduces it to two standard averages over a uniform angle $u$,
+$
+  chevron.l 1 / (1 + C cos u) chevron.r_u = 1 / s, quad
+  chevron.l (cos 2u) / (1 + C cos u) chevron.r_u = (1 - s) / (s (1 + s)) .
+$ <eq-phase-integrals>
+The Michelson limit is $Phi = 1 \/ 2$. For $|alpha| > 1$, $cos 2 beta < 0$, so
+feedback raises the average: at $alpha = 3$, $Phi = #val("phase_factor_c02")$
+at $C = 0.2$ and #val("phase_factor_c07") at $C = 0.7$.
 
 #fig(
   "fisher_phase",
   width: 62%,
   caption: [
-    Feedback concentrates the information on the steep fringe edge and leaves
-    the blind spots. $F'(theta)^2$, the phase-dependent factor of
-    @eq-fisher, over one fringe at $alpha = 3$. Dashed lines are its phase
-    averages $Phi(C, alpha)$, which the averaged bounds use.
+    Feedback concentrates the information on the steep fringe edge but keeps
+    the blind spots at the extrema. $F'(theta)^2$, the phase-dependent factor
+    of @eq-fisher, over one fringe at $alpha = 3$. Dashed: its phase averages
+    $Phi(C, alpha)$ of @eq-phase-factor.
   ],
 ) <fig-fisher>
 
-Averaged over a uniform fringe phase, the factor has a closed form,
+== Causal and offline bounds on velocity error <sec-crb>
+
+Information per sample does not bound the velocity error by itself, because
+velocity is read across many samples and depends on how the motion evolves.
+Combining @eq-fisher with a model of that evolution gives two Bayesian
+Cramer-Rao bounds: a causal one, for an estimator that sees only past samples,
+and an offline one, for an estimator that sees the whole shot. Their role here
+is a floor: if a learned estimator sits far above them, information is not
+what limits it.
+
+The bounds need a linear motion model, so we fit a Gauss-Markov surrogate to
+the simulator's motion. Its state $x_n = (d, v, dot(v))$ at sample $n$ evolves
+as
 $
-  Phi(C, alpha) = chevron.l F'^2 chevron.r_theta
-  = 1 / (2 s) [1 - cos(2 beta) (1 - s) / (1 + s)], quad s = sqrt(1 - C^2) .
-$ <eq-phase-factor>
-Substituting $theta -> phi_F$ in the average, which is monotone for $C < 1$,
-reduces it to two standard integrals over a uniform angle,
-$chevron.l 1 \/ (1 + C cos u) chevron.r = 1 \/ s$ and
-$chevron.l cos 2u \/ (1 + C cos u) chevron.r = (1 - s) \/ (s (1 + s))$.
-The Michelson limit is $Phi = 1 \/ 2$. For $|alpha| > 1$, $cos 2 beta < 0$,
-so feedback adds magnitude information: at $alpha = 3$,
-$Phi = #val("phase_factor_c02")$ at $C = 0.2$ and #val("phase_factor_c07") at
-$C = 0.7$.
+  x_(n+1) = A x_n + w_n, quad w_n tilde cal(N)(0, Q) ,
+$ <eq-prior>
+driven by white noise $w_n$ through one real pole and one resonance, and
+discretized exactly at the sample rate. The fit matches the in-band velocity
+line powers of 256 seeded trajectories to #val("prior_psd_rms_db") dB rms and
+reproduces their velocity and displacement variances.
 
-== Causal and offline Bayesian bounds <sec-crb>
-
-The time-series bounds combine @eq-fisher with a model of how the motion
-evolves. We fit a Gauss-Markov surrogate prior to the simulator's motion: the
-state $x = (d, v, dot(v))$ is driven by white noise through one real pole and
-one resonance, discretized exactly at the sample rate. The fit matches the
-in-band velocity line powers of 256 seeded trajectories to
-#val("prior_psd_rms_db") dB rms, and it reproduces their velocity and
-displacement variances. Its pooled velocity std, #val("prior_velocity_std")
-$mu$m/ms, exceeds a typical shot's own std because the drive amplitude is
-drawn per shot.
-
+Each sample adds the same information about $d$ on average. Because
+$theta_k mod 2 pi$ is uniform whatever $d$ is, the average of @eq-fisher over
+phase and visibility is exact, with no Monte Carlo:
+$
+  macron(J) = sum_k E[V_k^2] Phi(C, alpha) ((4 pi) / (lambda_k sigma))^2 .
+$ <eq-info-avg>
 The causal bound is the posterior Cramer-Rao bound of @tichavsky1998pcrb. For
-linear-Gaussian dynamics $x_(n+1) = A x_n + w_n$, $w_n tilde cal(N)(0, Q)$,
-its information recursion reduces to
+the linear-Gaussian model of @eq-prior its information matrix $J_n$ obeys
 $
   J_(n+1) = (Q + A J_n^(-1) A^T)^(-1) + macron(J) c_d c_d^T ,
 $ <eq-pcrb>
-where $c_d$ selects $d$ from the state and $macron(J)$ is the per-sample
-information summed over channels. That is the covariance recursion of a
-Kalman filter that measures $d$ linearly. The offline bound is the Bayesian
-(Van Trees) bound @vantrees1968detection, whose information matrix is the
-block-tridiagonal prior information plus $macron(J) c_d c_d^T$ on each
-block; its inverse diagonal blocks are the surrogate's smoother covariances.
-Since $theta_k mod 2 pi$ is uniform whatever $d$ is, $macron(J) = sum_k
-E[V_k^2] Phi(C, alpha) (4 pi \/ (lambda_k sigma))^2$ exactly, with no Monte
-Carlo. Averaging the information over the phase before inverting gives
-$(E J)^(-1) <= E[J^(-1)]$ by Jensen's inequality, so the averaged bound is
-valid and looser than one conditioned on the phases.
+where $c_d$ selects $d$ from the state. This is the covariance recursion of a
+Kalman filter that measures $d$ linearly with information $macron(J)$ per
+sample. The offline bound is the Bayesian (Van Trees) bound
+@vantrees1968detection: the block-tridiagonal prior information plus
+$macron(J) c_d c_d^T$ on each block, whose inverse diagonal blocks are the
+surrogate's smoother covariances. Averaging the information before inverting
+it is safe, because by Jensen's inequality
+$
+  (E J)^(-1) <= E[J^(-1)] ,
+$ <eq-jensen>
+so the averaged bound is valid and looser than one conditioned on the phases.
 
 #fig(
   "velocity_bounds",
   width: 62%,
   caption: [
-    Extra channels lower the velocity bound more than feedback does.
-    Stationary RMS velocity bounds at SNR 30 dB, $V tilde U(0.5, 1)$ and
-    $alpha = 3$. Causal is the posterior CRB of @eq-pcrb after convergence;
-    offline is the smoothing bound at mid-record. $K = 1$ is 635 nm, $K = 2$
-    adds 674.8 nm and $K = 3$ adds 515 nm.
+    Three channels lower the velocity bound only modestly, and feedback less
+    still. Stationary RMS velocity bounds at SNR 30 dB, $V tilde U(0.5, 1)$,
+    $alpha = 3$. Causal: @eq-pcrb after convergence; offline: the smoothing
+    bound at mid-record. $K = 1$ is 635 nm, $K = 2$ adds 674.8 nm and $K = 3$
+    adds 515 nm.
   ],
 ) <fig-bounds>
 
-The bound depends only weakly on both the channel count and $C$
-(@fig-bounds). At the nominal point ($K = 3$, $C = 0.2$) the causal bound is
-#val("causal_k3") $mu$m/ms and the offline bound #val("offline_k3") $mu$m/ms.
-Going from one channel to three multiplies $macron(J)$ by
-#val("info_ratio_k3_k1") but lowers the causal bound only by a factor
-#val("causal_ratio_k3_k1"), close to $macron(J)^(-1 \/ 4)$.
-
-The causal bound is #val("real_gap") times below the causal TCN's error of
-#val("real_tcn_rmse") $mu$m/ms on the real free-space test split in the
-baseline report. That gap measures the bound's omissions as much as any
-estimator's shortfall, since within its own model the bound is nearly
-attained. In `tests/test_bounds.py` an extended Kalman filter given the
-genie phases, on three-channel $C = 0.2$ trajectories from the surrogate
-prior, must score below twice the causal bound and above it within three
-standard errors.
+The bound depends weakly on channel count: three channels multiply
+$macron(J)$ by #val("info_ratio_k3_k1") but the causal bound only by
+#val("causal_ratio_k3_k1"), close to the inverse fourth root of that ratio. The causal
+bound sits #val("real_gap") times below the causal TCN's error of
+#val("real_tcn_rmse") $mu$m/ms on the real free-space test split of the
+baseline report. Within its own model the bound is nearly attained: in
+`tests/test_bounds.py` an extended Kalman filter given the true phases must
+score within twice the causal bound. So that gap measures what the bound
+leaves out as much as any estimator's shortfall.
 
 The bounds are exact for a simpler model than the simulator, so they are not
-a floor for it. Four simplifications separate the two.
-+ They are exact for the fitted Gauss-Markov prior, not
-  for the simulator's motion. That motion is a finite sum of drive lines with
-  a per-shot amplitude drawn from $U(0, 1)$. An estimator that knows the line
-  structure could exploit it beyond the surrogate.
-+ The offsets $phi_k$ and visibilities $V_k$ are known
-  to the bound, and the amplitude is 1.
-+ Amplitude, contrast and phase drift, DC offset, the
-  photodiode low-pass and the ADC are absent; drift in particular raises
-  $E[a^2 V^2]$ above the value used here.
-+ They are local and sign-resolved: they see neither the global sign nor the
-  fringe order. At $C = 0$ or $alpha = 0$ they stay finite while the
-  signed-MSE floor is the prior variance (@sec-sign), so there they compare
-  only with a sign-invariant RMSE.
+a floor for it. They use the fitted surrogate rather than the simulator's
+finite sum of drive lines, which a line-aware estimator could exploit. They
+know $phi_k$ and $V_k$ and set $a_k = 1$. They omit amplitude, contrast and
+phase drift, DC offset, the photodiode low-pass and the ADC. And they are
+local: they see neither the global sign nor the fringe order, so at $C = 0$ or
+$alpha = 0$ they compare only with a sign-invariant error.
 
-== Predictions for Q3 and Q1 <sec-predictions> // math-ok: question labels
+= Data, training and evaluation <sec-methods>
 
-*Q3, accuracy against feedback.* With three channels, signed error should // math-ok: question label
-fall from the zero-predictor level at $C = 0$ to the sign-invariant level at
-$C > 0$, as the SMI run of @fig-exit-check already does at $C = 0.2$, $alpha = 3$.
-Whether one channel reads the sign is open. Its evidence comes only through
-the motion prior (@eq-warp), but the warp that mirrors it has velocity
-amplitude about $2 C |v| sin beta$ at the fringe rate $2|v| \/ lambda$, a
-fast component the prior may penalize heavily. Because $Phi$ rises with $C$
-at these $alpha$ (@eq-phase-factor), an optimum of the sign-invariant error
-below $C = 1$ would come from the estimator's difficulty with sawtooth
-fringes, not from lost local Fisher information. For an efficient causal
-estimator, 30 dB white noise costs at least the bound of @fig-bounds. The
-noise ladder measures what it costs the TCN, by training the same
-architecture and budget noise-free and at 30 dB.
+Every learned result below compares cells that differ in one factor: the
+feedback, a noise knob, the channel subset or the model family. That
+comparison is fair only because the data, the training budget and the scoring
+are otherwise shared. This section states them.
 
-*Q1, multiple channels.* // math-ok: question label
-@eq-fisher predicts that a single channel loses all
-information at its fringe extrema, and incommensurate wavelengths put the
-extrema of different channels at different times. A three-channel estimator
-should therefore gain over the best single channel mainly near fringe
-extrema, and elsewhere by the modest factor of @fig-bounds. This includes
-velocity turning points, where the fringes stall and one channel can dwell at
-an extremum while the others do not. The test is error binned by distance to
-the nearest fringe extremum: it should rise toward the extremum for one
-channel and stay flat for three.
+The simulator draws each shot's trajectory as a sum of drive lines from 1 Hz
+to 1 kHz with independent uniform phases and an amplitude drawn per shot from
+$U(0, 1)$. It renders the three channels of @eq-signal over
+#val("m_shot_length") samples at 488 kHz, a 33.6 ms shot. A noise-free
+configuration turns every detector and drift knob off; the nominal
+configuration sets each to a stated guess. Every model maps the three channel
+signals to velocity at every sample. The reference model is a causal temporal
+convolutional network (TCN) of 44k parameters that sees the
+#val("q2_tcn_field") most recent samples. @tab-splits gives the size and
+origin of each data split.
 
-= Q3: noise-free accuracy against feedback $C$ <sec-q3> // math-ok: question label
+#figure(
+  {
+    set par(justify: false)
+    set text(size: 9pt)
+    table(
+      columns: (auto, 1.8fr, 1fr),
+      align: (left, left, left),
+      stroke: 0.5pt + rgb("#d0d0d0"),
+      table.header([Split], [How it is generated], [Size]),
+      [Training],
+      [Simulated fresh for every batch from the cell's seeded random stream, so no
+        shot repeats. Each shot is cut to a random #val("m_crop")-sample window;
+        the offline neural operator trains on whole shots.],
+      [#val("m_batch") shots $times$ #val("m_steps") steps $=$
+        #val("m_shots_per_epoch") shots per epoch, #val("m_samples_per_epoch") M
+        samples (#val("m_full_samples_per_epoch") M uncropped)],
+
+      [Validation],
+      [#val("m_val_batches") batches from a fixed seed (#val("m_val_seed")), cropped
+        like training, simulated once and replayed at every epoch. It picks the
+        best checkpoint and drives early stopping.],
+      [#val("m_val_shots") windows],
+
+      [Test],
+      [Frozen sets of whole shots, one per simulator configuration, seed
+        #val("m_test_seed"), each identified by a hash of its configuration.
+        Every estimator of a configuration scores the same shots.],
+      [#val("m_test_shots") shots per set, #val("m_test_sets") sets],
+    )
+  },
+  caption: [
+    The three data splits behind every learned result. Training data are never
+    reused, so the amount seen grows with the epochs trained (text).
+  ],
+) <tab-splits>
+
+#assert(val("m_full_length_is_no"), message: "a family other than the offline neural operator now trains on whole shots")
+
+Training uses Adam at a peak learning rate of #val("m_lr"), under cosine
+annealing with warm restarts. Two cycle lengths appear: $T_0 = 30$ epochs,
+capped at 100, for the noise and channel grids, and $T_0 = 90$, capped at 150,
+for the feedback curve and the family comparison. A run stops when its
+validation error has not improved by #val("m_min_rel_delta_pct")% in
+#val("m_patience") epochs, but never before epoch #val("m_grace"); that grace
+lets slow starters leave the zero-output plateau. Under $T_0 = 30$ the
+#val("m_t30_cells") cells trained #val("m_t30_epochs_lo") to
+#val("m_t30_epochs_hi") epochs, so each saw #val("m_t30_kshots_lo") k to
+#val("m_t30_kshots_hi") k distinct shots. Under $T_0 = 90$ the
+#val("m_t90_cells") cells trained #val("m_t90_epochs_lo") to
+#val("m_t90_epochs_hi") epochs, #val("m_t90_kshots_lo") k to
+#val("m_t90_kshots_hi") k shots. The #val("q3_a0_epochs")-epoch runs are
+$alpha = 0$ controls, which cannot learn the sign, so their best checkpoint is
+their first. Each cell is
+one training seed unless stated. Three seeds of the noise-free base span
+#val("q2_seed_range_pct")% of its mean error, and that range is the resolution
+for ranking any two cells. Every cell ran on Apple #val("m_device") in
+float#val("m_precision"), with Python 3.14 and torch 2.15.0.
+
+Each error is the RMSE of a shot, averaged over the test shots. Velocity RMSE
+is in $mu$m/ms. NRMSE divides each shot's RMSE by that shot's velocity std
+before averaging, so it weights slow shots more. Displacement RMSE integrates
+the predicted velocity over the shot and removes each start offset, as the
+training code's displacement loss does; it is in $mu$m. The zero predictor,
+always predicting zero velocity, scores #val("q1_zero") $mu$m/ms on the
+noise-free three-channel test set at $C = 0.2$.
+
+#fig(
+  "spectral_mismatch",
+  width: 75%,
+  caption: [
+    Velocity, not displacement, has its power where the fringes do. Power
+    spectral densities, each divided by its peak, of the velocity target
+    (solid), the displacement target (dashed) and each channel's
+    instantaneous fringe frequency (colored), averaged over
+    #val("spec_shots") shots at $C = 0.2$, $alpha = 3$: (a) every knob
+    nominal, (b) noise-free with the same trajectories. Hann-windowed whole
+    shots; shaded: the drive band.
+  ],
+) <fig-spectral>
+
+The networks predict velocity rather than displacement because velocity
+matches the information in the signal (@fig-spectral). Each fringe frequency
+follows $|v|$, while displacement weights the velocity spectrum by
+$1 \/ f^2$ and puts #val("spec_x_low_pct")% of its power below 100 Hz, against
+#val("spec_v_low_pct")% for velocity. Below the lowest resolved bin,
+#val("spec_bin_hz") Hz, drive content enters a shot only as a trend.
+
+= Q3: accuracy against feedback strength <sec-q3> // math-ok: question label
 
 #assert(val("q3_monotone"), message: "the 90-epoch C curve is no longer monotone")
 #assert(val("q3_t30_c04_below"), message: "the 30-epoch C = 0.4 inversion is gone")
@@ -343,100 +464,79 @@ channel and stay flat for three.
   message: "the slowest-decile floor no longer falls from 30 to 90 epochs",
 )
 
-== The fixed-budget curve <sec-q3-curve>
+== The noise-free curve <sec-q3-curve>
 
-In RMSE at the 90-epoch budget, the causal TCN's signed error falls
-monotonically from $C = 0.05$ to $C = 0.9$, and every $alpha = 3$ cell lies
-below the Michelson sign-invariant error (#ref(<fig-feedback>)a). At $C = #val("q3_c_top")$ the RMSE is
-#val("q3_gain_top") times below Michelson's. Each cell trains the TCN of
-@sec-sign with the signed loss on noise-free three-channel data at
-$alpha = 3$, under cosine annealing with warm restarts, a 90-epoch period and
-no warmup. Patience (no 1% gain in validation error over 10 epochs) ends
-every run on the curve at epoch #val("q3_t90_epochs_lo") to
-#val("q3_t90_epochs_hi"), just after the first restart, so each run is one
-cosine cycle, scored at its best checkpoint.
+Section 1 predicts that feedback with a skewed fringe lets a signed estimator
+read the direction. It does not say how fast the error falls with $C$, or
+whether a strongly tilted fringe becomes harder to decode. We answer that by
+training the same causal TCN, with the signed loss, on noise-free data at six
+values of $C$, and comparing each with Michelson scored sign-invariantly, the
+best a Michelson estimator can do (@fig-feedback).
 
 #fig(
   "feedback_curve",
   caption: [
-    Feedback brings the causal TCN's noise-free RMSE below Michelson's
-    sign-invariant level at every $C$ by removing the part of Michelson's
-    error that grows with $|v|$, but per shot the weakest $C$ does not beat
-    Michelson. (a) Velocity RMSE and (b) NRMSE, each the mean over the
-    #val("test_shots") frozen test shots (seed #val("test_seed")), signed for
-    SMI. TCN-44k, three channels, $alpha = 3$, one training seed. Solid: one
-    90-epoch cosine cycle; dashed: a 30-epoch cycle. Dotted: Michelson,
-    trained and scored sign-invariant, in its budget's color. Hollow markers:
-    the $alpha = 5$ and $alpha = 0$ controls at $C = 0.2$. (c) Sign-invariant
-    RMSE of the test samples pooled in each $|v|$ decile, at the decile's
-    midpoint speed, for three 90-epoch cells; grey line: slope one.
+    Feedback lowers the error steadily up to $C = 0.9$ and beats the
+    Michelson sign-invariant error at every $C$ in RMSE, by removing the error
+    that grows with speed; per shot (NRMSE) the weakest feedback does not beat
+    Michelson. (a) Test velocity RMSE, (b) NRMSE, signed for SMI, causal TCN,
+    three noise-free channels, $alpha = 3$, one seed. Solid: one 90-epoch
+    cosine cycle; dashed: a 30-epoch cycle. Dotted: Michelson, trained and
+    scored sign-invariant, in its budget's color. Hollow: the $alpha = 5$ and
+    $alpha = 0$ controls at $C = 0.2$. (c) Sign-invariant RMSE of the test
+    samples pooled in each $|v|$ decile, for three 90-epoch cells; grey:
+    slope one.
   ],
 ) <fig-feedback>
 
-Per shot the gain is smaller, and the weakest feedback does not pay. The
-NRMSE exceeds Michelson's at $C <= #val("q3_nrmse_worse_t90")$ for the 90-epoch
-cells and at $C <= #val("q3_nrmse_worse_t30")$ for the 30-epoch cells
-(#ref(<fig-feedback>)b). At
-$C = #val("q3_c_top")$ the NRMSE gain is #val("q3_gain_top_nrmse") times by
-mean and #val("q3_gain_top_nrmse_median") by median. The case for more
-feedback at low $C$ therefore rests on pooled error, not on every shot.
+At $C = #val("q3_c_top")$ the 90-epoch RMSE is #val("q3_gain_top") times below
+Michelson's, and per shot #val("q3_gain_top_nrmse") times by mean NRMSE. RMSE
+and NRMSE disagree at weak feedback because they weight different shots. RMSE
+pools samples, which fast motion dominates, and Michelson's error grows in
+proportion to $|v|$ (#ref(<fig-feedback>)c): a wrong local direction costs
+more the faster the mirror moves. NRMSE divides by each shot's velocity std,
+which lets slow, low-amplitude shots dominate. There the estimator's own
+floor, #val("q3_slow_lo") to #val("q3_slow_hi") $mu$m/ms in the slowest
+decile for every $C$, sets the score, and it falls with training budget.
 
-The two metrics disagree because RMSE pools samples, which fast motion
-dominates, while NRMSE divides each shot by its velocity std, which lets
-low-amplitude shots dominate. Michelson's
-sign-invariant error grows roughly in proportion to $|v|$
-(#ref(<fig-feedback>)c), the cost of a wrong local direction between turning
-points, and feedback removes that part. Near $|v| = 0$ a direction error
-costs little, so the slowest decile, #val("q3_slow_lo") to
-#val("q3_slow_hi") $mu$m/ms for Michelson and every $C$, shows the
-estimator's own floor. Divided by the small std of low-amplitude shots, that
-floor sets the mean NRMSE. On noise-free data it belongs to the fixed-budget
-estimator, not to the information of @eq-phase-factor, and it is lower at 90
-epochs than at 30 in every cell.
+The sign is resolved on nearly every shot: signed and sign-invariant RMSE
+agree within #val("q3_sign_gap_pct")% in every 90-epoch cell. The two
+controls behave as @sec-feedback predicts. At $alpha = 0$ the fringe stays
+even, and both budgets end at the zero predictor's error within
+#val("q3_zero_gap_pct")%. At $alpha = 5$ the error is within
+#val("q3_a5_gap_pct")% of $alpha = 3$.
 
-The sign is resolved on all but a few low-amplitude shots. Signed and
-sign-invariant RMSE agree within #val("q3_sign_gap_pct")% in every 90-epoch
-cell, but in NRMSE, which weights those shots, signed exceeds sign-invariant
-by up to #val("q3_n_sign_gap_max_pct")%, at $C = #val("q3_n_sign_gap_max_c")$.
-The worst shot's signed NRMSE lies between #val("q3_n_worst_lo") and
-#val("q3_n_worst_hi") across the curve. From $C = #val("q3_flip_c")$ up it
-reaches 2, the score of a zero-mean shot predicted with the wrong sign.
+The curve holds for a fixed budget, and its values still move with it. One
+#val("q3_t270_cycle")-epoch cycle at $C = 0.2$ reached #val("q3_c02_t270")
+$mu$m/ms, below the 90-epoch value, so convergence is not demonstrated. The
+30-epoch curve's one inversion, at $C = 0.4$, is a run that kept improving
+past its first restart and trained #val("q3_t30_c04_epochs") epochs. Within
+that caveat, the operating target is the strongest weak feedback sampled.
 
-The $alpha$ controls at $C = 0.2$ behave as @sec-feedback predicts. With
-$alpha = 0$ the fringe stays even and the signed-MSE optimum is zero, and both
-$alpha = 0$ runs match the zero predictor's test RMSE within
-#val("q3_zero_gap_pct")%. They coincide because their best checkpoint is the
-first validation, after one epoch at the peak learning rate both schedules
-share; patience then stops them at epoch #val("q3_a0_epochs"). With
-$alpha = 5$ the error is within #val("q3_a5_gap_pct")% of $alpha = 3$ at both
-budgets, consistent with @eq-sign-info's factor $alpha^2 \/ (1 + alpha^2)$,
-which noise-free runs that resolve the sign cannot test.
+#if val("disp_pending") [
+  #pending[Displacement RMSE (@fig-displacement) awaits re-scoring of the
+    saved checkpoints; the records do not carry it yet.]
+] else [
+  Displacement RMSE follows the same checkpoints (@fig-displacement). At
+  $C = #val("disp_c_top")$ the 90-epoch TCN reaches #val("disp_curve_top")
+  $mu$m, #val("disp_gain_top") times below Michelson's sign-invariant
+  #val("disp_michelson") $mu$m.
+]
 
-Of the Q3 predictions in @sec-predictions, the sign prediction holds in RMSE, // math-ok: question label
-with the low-amplitude exceptions above. No optimum appears below $C = 1$ up
-to $C = 0.9$ at this budget, so sawtooth fringes did not defeat the
-estimator. Whether one channel reads the sign, and what noise costs, this
-curve does not test.
+#fig(
+  "displacement_rmse",
+  width: 80%,
+  caption: [
+    Displacement RMSE from the same checkpoints and test shots as the velocity
+    results: the predicted velocity integrated over each 16384-sample shot,
+    its start offset removed. (a) Against $C$, as in #ref(<fig-feedback>)a;
+    dotted: Michelson, sign-invariant. (b) Displacement against velocity RMSE
+    for every trained family of @fig-families, hollow on Michelson
+    (sign-invariant), filled at $C = 0.2$ (signed).
+  ],
+) <fig-displacement>
 
-If the advantage survives noise, the operating target for this estimator is
-the top of the weak-feedback range sampled, a reading from one seed at a
-fixed budget that per shot needs $C$ above #val("q3_nrmse_worse_t90"). Three levers set $C$: the attenuation of the
-return path, including the target's reflectivity; the coupling and focus of
-the returned light into the laser cavity; and the external cavity length.
-Which of them is practical on the rig is untested, and the moderate regime
-$C > 1$, with its hysteresis, is out of scope.
-
-Every value here holds for a fixed budget and still moves with it, as the two
-curves of #ref(<fig-feedback>)a show. One #val("q3_t270_cycle")-epoch cycle
-at $C = 0.2$ stopped by patience at epoch #val("q3_t270_epochs"), early in its
-decay, at #val("q3_c02_t270") $mu$m/ms, so convergence is not demonstrated.
-The 30-epoch curve inverts once because its $C = 0.4$ run kept improving
-after its first restart and trained #val("q3_t30_c04_epochs") epochs, against
-#val("q3_t30_other_epochs_lo") to #val("q3_t30_other_epochs_hi") for the
-other cells. Each cell is one training seed, and $alpha = 5$ is sampled only
-at $C = 0.2$.
-
-== Noise ladder <sec-q3-noise>
+== Which imperfection costs the most <sec-q3-noise>
 
 #assert(val("noise_ranking"), message: "the noise ladder no longer ranks phase drift, then SNR, then the rest")
 #assert(val("noise_e60_phase_monotone"), message: "at equal length the phase-drift error no longer rises monotonically with drift")
@@ -453,156 +553,81 @@ at $C = 0.2$.
 #assert(val("loo_e60_same_ranking"), message: "at equal length, the base, no-phase-drift and nominal cells no longer rank in that order")
 #assert(val("loo_snr_subadditive"), message: "removing SNR from the nominal point now saves a third or more of its ladder cost")
 
-Phase drift dominates the error at the nominal operating point
-(@fig-noise). Each row trains the 30-epoch TCN of @fig-feedback at
-$C = 0.2$ with one detector or drift knob switched on at a time. Measured
-against the mean of the noise-free base, phase drift alone at its nominal
-#val("noise_phase_fringes") fringes per shot gives
-#val("noise_phase_share")% of the error that every knob at nominal adds, and
-30 dB white noise gives #val("noise_snr_share")%. No other knob gives more
-than #val("noise_minor_share_hi")%, against a base seed spread of
-#val("noise_spread_share")% on the same scale. How the knobs combine the
-ladder cannot show; @tab-loo removes each from the nominal point instead.
+A real rig adds detector noise and drifts to the fringes, and a hardware fix
+targets one of them at a time. The question is which one costs the most. Two
+designs answer it from opposite ends, all at $C = 0.2$, $alpha = 3$, with the
+30-epoch TCN. The ladder switches on one knob at a time from the noise-free
+base (@fig-noise). The leave-one-out switches one knob off at a time from the
+nominal point, where every knob is on (@fig-loo). The second design is the one
+a hardware fix asks about, because the knobs need not add.
 
 #fig(
   "noise_ladder",
   caption: [
-    Test velocity RMSE, mean over the
-    #val("test_shots") frozen shots (seed #val("test_seed")), of TCN-44k on
-    three channels at $C = 0.2$, $alpha = 3$, seed 0, with one knob on and the
-    rest noise-free. Ringed: the knob's nominal value. Grey and red bands, each
-    with a line at its mean: the noise-free base and every knob at nominal,
-    over #val("noise_n_seeds") seeds; dotted: every knob at nominal at
-    $C = 0.9$, one seed. Squares and dashed line (phase drift only): the drift
-    sweep and the base trained exactly #val("loo_e60_epochs") epochs. Each x axis runs toward the worse signal; the nominal
-    phase drift is #val("noise_phase_rad") rad$\/sqrt("s")$.
+    Alone, phase drift costs the most, then white noise; at its nominal value
+    every other knob costs little. Test velocity RMSE of the TCN with one knob
+    on and the rest noise-free, one seed per point. Ringed: the knob's nominal
+    value. Grey and red bands, with a line at the mean: the noise-free base and
+    every knob at nominal, over #val("noise_n_seeds") seeds; dotted: every
+    knob at nominal at $C = 0.9$. Squares and dashed line (phase drift only):
+    the drift sweep and the base trained exactly #val("loo_e60_epochs")
+    epochs. Each x axis runs toward the worse signal; the nominal drift of
+    #val("noise_phase_fringes") fringes per shot is #val("noise_phase_rad")
+    rad$\/sqrt("s")$.
   ],
 ) <fig-noise>
 
-A partial cut in phase drift recovers only part of its cost (@fig-noise,
-squares). The ladder's drift rows stopped at #val("noise_phase_epochs_lo")
-to #val("noise_phase_epochs_hi") epochs, so the sweep was rerun at exactly
-#val("loo_e60_epochs"), where the error rises monotonically with drift.
-Cutting drift from the nominal #val("noise_phase_fringes") to
-#val("noise_e60_low_fringes") fringes per shot keeps
-#val("noise_e60_half_kept")% of its cost over the equal-length base. No run
-sampled drift between 0 and #val("noise_e60_low_fringes") fringes.
-
-Removing phase drift from the nominal point cuts its error by
-#val("loo_phase_cut")%, the only large single removal (@tab-loo). Each cell
-is the nominal point with one knob returned to its noise-free value, at the
-ladder's budget and one seed. Of the other seven, only full visibility, at
-#val("loo_vis_cut")%, and the photodiode bandwidth, at
-#val("loo_pdbw_cut")%, fall below the nominal seeds by more than their own
-spread.
-
-#figure(
-  align(center, table(
-    columns: 3,
-    align: (left, right, right),
-    stroke: 0.5pt + rgb("#d0d0d0"),
-    table.header([Knob removed], [RMSE], [Epochs]),
-    [none, #val("noise_n_seeds") seeds], [#val("loo_nominal_lo")--#val("loo_nominal_hi")],
-    [#val("loo_nominal_epochs_lo")--#val("loo_nominal_epochs_hi")],
-    ..val("loo_rows").map(row => ([#row.label], [#row.rmse], [#row.epochs])).flatten(),
-  )),
-  caption: [
-    Test velocity RMSE ($mu$m/ms) on the frozen shots of
-    @fig-noise, TCN-44k on three channels at $C = 0.2$, $alpha = 3$, seed 0,
-    with the named knob noise-free and the rest at nominal. Epochs: when
-    patience stopped the run, under the 30-epoch cycle.
-  ],
-) <tab-loo>
-
-Training length does not explain the cut. With plateau stopping disabled, the
-nominal point, the nominal point without phase drift and the noise-free base
-each trained exactly #val("loo_e60_epochs") epochs, one seed each. At equal
-length, removing phase drift cuts the nominal error by #val("loo_e60_cut")%,
-far more than the nominal seed spread. The same runs leave the ranking unchanged, though the
-extra epochs help the base (#val("loo_e60_base_gain")%) far more than the
-nominal point (#val("loo_e60_nominal_gain")%), against the ladder's seeds.
-
-White noise and the other knobs do not add. Alone at 30 dB it raises the
-base error by #val("noise_snr_cost") $mu$m/ms, but removing it from the
-nominal point saves #val("loo_snr_saving") $mu$m/ms. These grids do not
-show which other knob its cost depends on.
-
-With every other knob on, removing any one electronic knob (white noise,
-the ADC or the bandwidth limit) moves the error by at most
-#val("loo_pdbw_cut")%, and that largest move came with the longer training.
-No run removed all three together, and the knobs do not add. In the ladder,
-the ADC and bandwidth rows rise above the base only at 8 bits or 3 kHz.
-White noise alone gives #val("noise_snr_share")% of the nominal excess, so
-it is the likely next limit once drift is fixed.
-
-In the simulation, phase drift is an independent random walk per channel,
-as per-laser frequency drift would be. A path-length drift shared by all
-channels would read as displacement and was not simulated. The measured 1
-to 2.7 fringes is the phase wander the baseline report's global fit leaves,
-with no source attributed. The lever this supports is per-laser frequency
-stability or a per-laser phase monitor, not a common-path stabilization.
-Full visibility is an alignment and speckle lever, and raising $C$ to 0.9,
-in one seed, cuts the nominal-point error by a factor
-#val("noise_c09_ratio"). No grid here tests any of these levers on the rig.
-
-Every nominal value is itself an assumption. The nominal drive gain and phase
-drift are anchored to numbers the baseline report published, as context
-rather than a calibration, and the phase-drift nominal is a lower bound on
-the true rate. SNR, visibility, DC offset, amplitude and contrast drift
-and the photodiode bandwidth are stated guesses with wide sweeps. At 20%,
-four times their assumed value, amplitude and contrast drift each cost
-comparably to 30 dB white noise (@fig-noise). The verdict also rests on the
-guessed 30 dB: at 20 dB the white-noise cost doubles, to
-#val("noise_snr20_cost") $mu$m/ms. Measuring these drifts and the rig's SNR
-would therefore test the verdict above.
-
-The 30 dB row is consistent with the causal floor of @sec-predictions, but
-the comparison has no power here. The bound floors the total error of an
-efficient estimator, within the simplifications of @sec-crb, not the
-increase a knob adds. The noise-free base alone sits
-#val("noise_base_over_bound") times above the bound of
-#val("noise_snr_bound") $mu$m/ms at the 30 dB row's settings.
-
-Two DC-offset rows, $plus.minus 0.3$ and $plus.minus 1$, score below every
-seed of the noise-free base. Both trained #val("noise_dc_low_epochs")
-epochs, into a third cosine cycle, against #val("noise_base_epochs_lo") to
-#val("noise_base_epochs_hi") for the base seeds. Whether the longer run or
-the offset causes the drop is untested, and nothing here rests on it.
-
-Each ladder row and leave-one-out cell is one training seed at one budget,
-read against the seed spread of @fig-noise. Budgets also differ by row: #val("noise_n_long") of
-the #val("noise_n_rows") rows, the nominal phase-drift row among them, trained #val("noise_long_epochs_lo")
-to #val("noise_long_epochs_hi") epochs, against
-#val("noise_short_epochs_lo") to #val("noise_short_epochs_hi") for the rest.
-The ladder covers three channels at $C = 0.2$, $alpha = 3$ only. Every run
-used Python 3.14 and torch 2.15.0 on Apple MPS in float32.
-
-= Q1: does multi-channel beat any single channel? <sec-q1> // math-ok: question label
-
 #fig(
-  "spectral_mismatch",
+  "leave_one_out",
+  width: 62%,
   caption: [
-    Shot-averaged power spectral densities, each divided by its own peak, of
-    the velocity target (solid), the displacement target (dashed) and each
-    channel's instantaneous fringe frequency (colored), over
-    #val("spec_shots") simulated shots at $C = 0.2$, $alpha = 3$. (a) Every
-    noise knob at nominal; (b) noise-free, with the same trajectories. The
-    fringe frequency is the time derivative of the analytic signal's phase
-    over $2 pi$; each periodogram is Hann-windowed over the whole
-    16384-sample shot. Shaded: the drive band.
+    Removing phase drift is the only large single cut at the nominal point,
+    and it survives equal training length. Test velocity RMSE of the TCN with
+    the named knob returned to noise-free and every other knob nominal, one
+    seed each. Red band: all knobs nominal over #val("noise_n_seeds") seeds;
+    grey: the noise-free base. Purple: the same cells trained exactly
+    #val("loo_e60_epochs") epochs. Hollow markers trained into a third cosine
+    cycle, so part of their cut is training length.
   ],
-) <fig-spectral>
+) <fig-loo>
 
-@fig-spectral supports the choice of a velocity target rather than
-answering Q1. // math-ok: question label
-The displacement target weights the velocity spectrum by $1 \/ f^2$, so it
-puts #val("spec_x_low_pct")% of its power below 100 Hz, against
-#val("spec_v_low_pct")% for the velocity target. The lowest resolved bin is
-#val("spec_bin_hz") Hz, so drive content below it enters each shot only as a trend. Each channel's
-fringe frequency, which follows $|v|$, peaks at twice the velocity target's
-peak frequency and keeps power near its peak down to the lowest bin. Above
-1 kHz it sits on a broadband floor that the nominal noise raises
-(#ref(<fig-spectral>)a against b).
+Phase drift alone gives #val("noise_phase_share")% of the error every knob
+adds together, and 30 dB white noise #val("noise_snr_share")%, against a base
+seed spread of #val("noise_spread_share")% on that scale. Removing drift from
+the nominal point cuts its error by #val("loo_phase_cut")%, and by
+#val("loo_e60_cut")% when both runs train exactly #val("loo_e60_epochs")
+epochs, so training length does not explain it. A partial cut buys
+less: at equal length, drift reduced from #val("noise_phase_fringes") to
+#val("noise_e60_low_fringes") fringes per shot keeps #val("noise_e60_half_kept")%
+of its cost (@fig-noise, squares).
+
+The knobs do not add. White noise at 30 dB raises the base error by
+#val("noise_snr_cost") $mu$m/ms, but removing it from the nominal point saves
+only #val("loo_snr_saving") $mu$m/ms. No electronic knob (white noise, ADC or
+photodiode bandwidth) moves the nominal error by more than
+#val("loo_pdbw_cut")% when removed, and the largest of those came with longer
+training. Raising $C$ to 0.9, in one seed, halves the nominal error, a factor
+#val("noise_c09_ratio").
+
+The simulation draws phase drift independently per laser, as frequency drift
+of each laser would. A path-length drift shared by all channels would read as
+displacement and is not simulated. So the lever these runs support is
+per-laser frequency stability or a per-laser phase monitor, not common-path
+stabilization. The verdict rests on nominal values that are assumptions. The
+drift nominal, from the phase wander the baseline report's fit leaves, is a
+lower bound on the true rate; the rest are guesses. At four times their
+assumed value amplitude and contrast drift each cost about as much as 30 dB
+white noise, and at 20 dB the white-noise cost doubles to
+#val("noise_snr20_cost") $mu$m/ms. Measuring the rig's drifts and SNR would
+test the verdict.
+
+The 30 dB causal bound of @sec-crb is no constraint here: the noise-free base
+alone sits #val("noise_base_over_bound") times above it. Two DC-offset rows
+score below the base, but both trained #val("noise_dc_low_epochs") epochs,
+into a third cycle, and nothing here rests on them. The ladder and the
+leave-one-out cover three channels at $C = 0.2$ only.
+
+= Q1: do extra channels beat the best single channel? <sec-q1> // math-ok: question label
 
 #assert(val("q1_multi_beats_single"), message: "a multi-channel set no longer beats the best single channel at C = 0.2 by more than the seed range")
 #assert(val("q1_515_best"), message: "515 nm is no longer the best single channel at C = 0.2 for both families")
@@ -623,175 +648,87 @@ peak frequency and keeps power near its peak down to the lowest bin. Above
 #assert(val("q1_s4_30_outside"), message: "at 30 dB the multi-channel gain is no longer several times the nominal seed range, or 635 + 674.8 nm now beats 515 nm alone")
 #assert(val("q1_s4_oracle_worse"), message: "the nominal-point oracle no longer scores worse than the zero predictor")
 
-Without noise, every pair and the three-channel set beat the best single
-channel by more than the seed range (@tab-q1-subsets). At $C = 0.2$ the best
-multi-channel set is #val("q1_gain_tcn") times below the best single channel
-for the TCN and #val("q1_gain_tcan") times for TCAN, against a
-#val("q2_seed_range_pct")% seed range (@sec-q3-noise). Each cell trains the
-TCN of @sec-sign or TCAN, a temporal convolutional network with attention
-matched to its 44k parameters, on one channel subset, noise-free, with the 30-epoch
-cycle of @sec-q3-noise, and is scored on #val("test_shots") frozen test
-shots. A third channel adds nothing the TCN resolves: its four
-multi-channel sets lie within the seed range of each other. For TCAN the
-three channels sit #val("q1_tcan_triple_pct")% below the best pair, at the
-edge of the seed range.
+The rig has three lasers, so the practical question is what the second and
+third buy. @eq-fisher predicts that a channel goes blind at its fringe
+extrema, and incommensurate wavelengths put the extrema of different channels
+at different times. Extra channels should therefore help most near one
+channel's extrema, including velocity turning points, where the fringes stall,
+and elsewhere by the modest factor of @fig-bounds. To test this we train the
+TCN and TCAN, a temporal convolutional network with attention at the same
+44k parameters, on every subset of the three channels. We score them noise-free
+and, for the TCN, at the nominal point across SNR (@fig-q1-subsets).
 
-#figure(
-  align(center, table(
-    columns: 6,
-    align: (left, right, right, right, right, right),
-    stroke: 0.5pt + rgb("#d0d0d0"),
-    table.header(
-      table.cell(rowspan: 2)[Channels (nm)],
-      table.cell(colspan: 3)[Michelson, sign-invariant],
-      table.cell(colspan: 2)[$C = 0.2$, signed],
-      [TCN], [TCAN], [Oracle], [TCN], [TCAN],
-    ),
-    ..val("q1_s2_rows").map(row => ([#row.label], ..row.cells.map(c => [#c]))).flatten(),
-  )),
+#fig(
+  "q1_subsets",
   caption: [
-    Noise-free test velocity RMSE ($mu$m/ms) of each channel subset, one
-    training seed per cell, $alpha = 3$ at $C = 0.2$. The zero predictor
-    scores #val("q1_zero"). The oracle is the baseline report's classical
-    inverse fit, given the true excursion, run on Michelson only.
+    Noise-free, any pair beats the best single channel at $C = 0.2$, and on
+    Michelson one channel recovers nothing; at the nominal point the extra
+    channels buy only a few percent. (a) Noise-free test RMSE of each channel
+    subset, one seed per cell: Michelson scored sign-invariant, $C = 0.2$
+    signed, $alpha = 3$; the oracle is the baseline report's classical inverse
+    fit given the true excursion. (b) The TCN at the nominal point with SNR
+    varied: the lowest error among the single channels, among the pairs, and
+    all three; error bar: three seeds of all three channels at 30 dB.
   ],
-) <tab-q1-subsets>
+) <fig-q1-subsets>
 
-The best single channel is 515 nm for both families, in the
-$lambda_k^(-2)$ order of @eq-fisher, though noise-free that bound does not
-bind. Its lead over the runner-up, 635 nm, is
-#val("q1_runner_up_tcn_pct")% for the TCN, at the edge of the seed range, and
-#val("q1_runner_up_tcan_pct")% for TCAN.
+Noise-free at $C = 0.2$, the best multi-channel set is #val("q1_gain_tcn")
+times below the best single channel for the TCN and #val("q1_gain_tcan")
+times for TCAN, far outside the #val("q2_seed_range_pct")% seed range. A third
+channel adds nothing the TCN resolves over a pair; for TCAN it sits at the edge
+of the seed range. The best single channel is 515 nm, as the $lambda_k^(-2)$
+scaling of @eq-fisher orders them, though its lead is at the edge of the seed
+range for the TCN.
 
-On Michelson one channel recovers nothing, not even up to sign. Every
+On Michelson one channel recovers nothing, even up to sign. Every
 single-channel cell scores within #val("q1_mich_single_gap_pct")% of the zero
-predictor, sign-invariant, in both families, and the single-channel oracle
-scores above it, while every pair and the three-channel set recover the
-motion (@tab-q1-subsets). The runner's #val("q1_stall_tol_pct")% stall test
-passes them, but by a thin margin, so the claim rests on the test score.
-Their best validation error sits #val("q1_mich_single_monitor_lo") to
-#val("q1_mich_single_monitor_hi")% below the zero predictor's, and they
-stopped at epoch #val("q1_mich_single_epochs"), the first the runner allows.
-
-The global mirror of @sec-sign cannot explain this, because the
-sign-invariant score forgives it. One argument, which these runs do not
-test, is that for one channel the mirror also acts locally. Near $t_0$ the
-fringe is $cos(psi_0 + 4 pi [d(t) - d(t_0)] \/ lambda)$, with local offset
-$psi_0 = 4 pi d(t_0) \/ lambda + phi$, and it reads the same with $psi_0$
-and the displacement increment both negated. The offset is uniform whatever
-the window, so a window of #val("q2_matched_lo") to #val("q2_matched_hi")
-samples would need the parity of turning points since a shot-wide reference
-to fix the sign. The single-channel oracle fits the whole shot and also
-fails, which no window argument explains. @sec-sign treats only the global
-sign, so this local ambiguity is a gap it leaves open.
-
-Two channels would fix a direction convention per shot, in the same
-untested sense. Their full phases $psi_k = 4 pi d \/ lambda_k + phi_k$,
-unwrapped over a bounded excursion, give
-$lambda_1 psi_1 - lambda_2 psi_2 = lambda_1 phi_1 - lambda_2 phi_2$, which
-is free of $d$ and flips under the mirror. Wrapped, it is defined only
-modulo the lattice $2 pi (lambda_1 ZZ + lambda_2 ZZ)$, which is dense for
-incommensurate wavelengths and has spacing at most
-$2 pi times #val("q1_lattice_nm")$ nm for these. With feedback the
-single-channel mirror needs the warp of @eq-warp, at the fringe rate, which
-a window can see; that fits the single channels' recovery at $C = 0.2$.
+predictor, sign-invariant, and so does the single-channel oracle, while every
+pair recovers the motion. The global mirror of @sec-sign cannot explain this,
+because the sign-invariant score forgives it. One untested explanation is that
+for one channel the mirror also acts locally. Near a time $t_0$ the fringe is
+$
+  cos(psi_0 + (4 pi [d(t) - d(t_0)]) / lambda), quad
+  psi_0 = (4 pi d(t_0)) / lambda + phi ,
+$ <eq-local-mirror>
+which is unchanged when the local offset $psi_0$ and the displacement
+increment are both negated. The offset is uniform for any window, so a
+windowed estimator cannot fix the sign locally. The whole-shot oracle also
+fails, which no window argument explains, so this remains a gap.
 
 #fig(
   "q1_binned",
   caption: [
-    The multi-channel gain is not concentrated at fringe extrema. TCN-44k on
-    515 nm alone, on 635 + 515 nm and on all three channels, $C = 0.2$,
-    $alpha = 3$, one seed, on the frozen test shots of @tab-q1-subsets.
-    Pooled RMSE of the test samples (a, b) in #val("q1_bin_width")-fringe
-    bins of the distance from the fringe phase $phi_F$ of @eq-excess to the
-    nearest extremum ($phi_F = 0 mod pi$): of the 515 nm channel (solid), and
-    of the channel farthest from one, so that every channel is near an
-    extremum at once (dotted); (a) noise-free, (b) the nominal point at
-    30 dB; (c) in $|v|$ deciles, noise-free (solid) and at the nominal 30 dB
-    point (dashed), with the zero predictor (grey) and the causal bound of
-    @sec-crb for each subset at 30 dB (dash-dotted).
+    The multi-channel gain is not concentrated at fringe extrema; noise-free
+    it grows with speed instead. TCN on 515 nm alone, on 635 + 515 nm and on
+    all three, $C = 0.2$, $alpha = 3$, one seed. Pooled test RMSE in
+    #val("q1_bin_width")-fringe bins of the distance from $phi_F$ to the
+    nearest extremum, of the 515 nm channel (solid) and of the channel farthest
+    from one, so that every channel is near an extremum (dotted): (a)
+    noise-free, (b) the nominal point at 30 dB. (c) In $|v|$ deciles,
+    noise-free (solid) and at 30 dB (dashed), with the zero predictor (grey)
+    and each subset's causal bound at 30 dB (dash-dotted).
   ],
 ) <fig-q1-binned>
 
-The prediction of @sec-predictions fails noise-free. The single channel's
-error falls slightly toward its extremum, and the three-channel gain is
-#val("q1_bin_gain_near") times near the 515 nm extremum against
-#val("q1_bin_gain_far") midway (#ref(<fig-q1-binned>)a). The prediction
-rests on the Fisher information, a noise-limited claim, so the 30 dB panel
-is its proper test. There the single channel rises
-#val("q1_bin_nom_rise_one_pct")% toward its extremum and three channels
-#val("q1_bin_nom_rise_three_pct")% (#ref(<fig-q1-binned>)b), the predicted
-direction but far from a loss of all information. The per-bin seed spread
-was not measured.
+The extremum prediction fails (@fig-q1-binned). Noise-free, the three-channel
+gain is #val("q1_bin_gain_near") times near the 515 nm extremum against
+#val("q1_bin_gain_far") midway. The 30 dB panel, the proper test of a
+noise-limited claim, rises in the predicted direction but far less than a loss
+of all information would. One untested reading is that an estimator seeing a
+window interpolates across an extremum, as the prior does in the bounds of
+@sec-crb. The gain instead grows with speed and vanishes in the slowest decile,
+against the turning-point clause of the prediction.
 
-Error does rise where every channel is near an extremum at once, by
-#val("q1_bin_all_rise_lo") to #val("q1_bin_all_rise_hi")% noise-free, but
-those bins hold #val("q1_bin_all_share_pair")% of the samples for the pair
-and #val("q1_bin_all_share_three")% for three channels. One untested
-reading: per-sample information vanishes at an extremum (@eq-fisher), but
-an estimator that sees a window can interpolate across it, as the prior
-does in the bounds of @sec-crb.
+At the nominal point, where phase drift dominates (@sec-q3-noise), the gain
+shrinks to at most #val("q1_s4_gain_max_pct")% (#ref(<fig-q1-subsets>)b). The
+#val("q1_s4_30_gain_pct")% left at 30 dB is several times the nominal seed
+range and comes from pairing 515 nm with another channel. The single
+channel's win at 40 dB is a cell that alone trained into a third cycle. The
+classical oracle decodes under the Michelson model and scores worse than zero
+at the nominal point, so it is not a reference there.
 
-The noise-free gain grows with speed instead (#ref(<fig-q1-binned>)c). Below
-#val("q1_bin_v_slow_hi") $mu$m/ms three channels are worse than one (a ratio
-of #val("q1_bin_v_slow_gain")), and both sit above the zero predictor's
-#val("q1_bin_v_slow_zero") $mu$m/ms there, one channel at
-#val("q1_bin_v_slow_one") and three at #val("q1_bin_v_slow_three"). The gain peaks at
-#val("q1_bin_v_gain_max") times between #val("q1_bin_v_peak_lo") and
-#val("q1_bin_v_peak_hi") $mu$m/ms. That contradicts the turning-point clause
-of the prediction, where the fringes stall. These runs do not show which
-estimator property sets the speed dependence. At 30 dB every bin lies at
-least #val("q1_bound_gap") times above its subset's causal bound, so the
-bound does not bind here either.
-
-At the nominal point, where phase drift dominates the error
-(@sec-q3-noise), the gain shrinks to at most #val("q1_s4_gain_max_pct")%
-(@tab-q1-snr). Against the zero predictor's #val("q1_zero") $mu$m/ms, every
-subset scores #val("q1_s4_0db_lo") to #val("q1_s4_0db_hi") at 0 dB and
-#val("q1_s4_high_lo") to #val("q1_s4_high_hi") at 30 and 40 dB. At 30 dB the
-#val("q1_s4_30_gain_pct")% that remains is several times the nominal seed spread
-(#val("q1_nominal_lo") to #val("q1_nominal_hi") $mu$m/ms), and it comes from
-pairing 515 nm with another channel; 635 + 674.8 nm, at
-#val("q1_s4_30_pair_no515"), does no better than 515 nm alone. The gain does
-not grow with SNR. It vanishes at 0 dB, where every subset predicts about
-zero, and at 40 dB the single channel beats every multi-channel set, but
-that cell alone trained #val("q1_s4_40_epochs") epochs, into a third cycle.
-The oracle decodes under the Michelson model and so is misspecified here
-(signed RMSE #val("q1_s4_oracle_lo") to #val("q1_s4_oracle_hi") $mu$m/ms,
-worse than zero); it is not a reference.
-
-#figure(
-  align(center, table(
-    columns: 5,
-    align: (right, left, left, right, right),
-    stroke: 0.5pt + rgb("#d0d0d0"),
-    table.header(
-      [SNR (dB)], [Best single (nm)], [Best pair (nm)], [Three], [Gain (%)],
-    ),
-    ..val("q1_s4_rows").map(row => (
-      [#row.snr],
-      [#row.single (#row.single_label)],
-      [#row.pair (#row.pair_label)],
-      [#row.three],
-      [#row.gain],
-    )).flatten(),
-  )),
-  caption: [
-    Test velocity RMSE ($mu$m/ms) of TCN-44k at the nominal point, every
-    knob nominal but the SNR, $C = 0.2$, $alpha = 3$, one seed per cell, on
-    #val("test_shots") frozen shots. Gain: how far the best multi-channel
-    set falls below the best single channel.
-  ],
-) <tab-q1-snr>
-
-Each cell is one training seed at the 30-epoch budget, and its rankings are
-read against seed spreads measured on three channels only. Noise-free
-subsets ran for the TCN and TCAN alone, and the nominal point for the TCN
-alone. Runs stopped by patience between epochs #val("q1_epochs_lo") and
-#val("q1_epochs_hi") noise-free, so budgets differ by cell. Every run used
-Python 3.14 and torch 2.15.0 on Apple MPS in float32.#footnote[The binned
-errors of @fig-q1-binned were rescored from the saved best checkpoints on
-CPU, in float32, and reproduce each record's test RMSE to 0.1%.]
+These runs are one seed each at the 30-epoch budget, ranked against a seed
+spread measured on three channels, and the nominal point ran for the TCN only.
 
 = Q2: model families <sec-q2> // math-ok: question label
 
@@ -807,126 +744,61 @@ CPU, in float32, and reproduce each record's test RMSE to 0.1%.]
 #assert(val("q2_matched_named"), message: "the fixed-window families are no longer the eight named in the context paragraph")
 #assert(val("q2_barland_ties_scnn"), message: "Barland and SCNN no longer tie at C = 0.2")
 #assert(val("q2_oracle_worse_than_zero"), message: "the oracle's signed C = 0.2 cell no longer scores worse than the zero predictor")
+#assert(val("q2_mamba_trained"), message: "Mamba no longer trains on both sims")
 
-Without feedback no family separates from the TCN, and none comes near the
-classical oracle. With feedback, at $C = 0.2$, TCAN beats the TCN by a factor
-#val("q2_tcan_gain") and is the best family, causal or offline
-(@tab-families). Each family is matched to the TCN's 44k
-parameters and trained as in @sec-q3-curve: one seed, a 90-epoch cosine
-cycle that #val("q2_second_n") cells overran into a second, noise-free
-three-channel data, the signed loss at $C = 0.2$, $alpha = 3$ and the
-sign-invariant loss on Michelson. All cells are scored on the frozen test
-shots of @fig-feedback. The recurrent families are the LSTM (causal and
-bidirectional) and the state-space model Mamba. The neural operator is our
-own code, not the `neuraloperator` library.#footnote[The original cells ran
-in Python 3.12. The six cells that stalled in that run were rerun with a
-grace period that withholds early stopping for the first 30 epochs; they,
-and Mamba, ran in Python 3.14 with torch 2.15.0. Every learned cell ran on
-Apple MPS in float32.]
+Every result so far uses the TCN, so we ask whether the architecture is the
+limit. Each family is matched to the TCN's 44k parameters and trained as the
+feedback curve was, with one 90-epoch cycle on noise-free three-channel data:
+the signed loss at $C = 0.2$, $alpha = 3$, and the sign-invariant loss on
+Michelson (@fig-families). Causal families see only the past; offline ones see
+both sides. Context is matched at #val("q2_matched_lo") to
+#val("q2_matched_hi") samples for the convolutional, transformer and causal
+neural-operator families. The recurrent families (LSTM and the state-space
+model Mamba) see unbounded context, the offline neural operator sees the whole
+shot, and the MLP and Barland CNN average overlapping windows spanning
+#val("q2_mlp_span") and #val("q2_barland_span") samples.
 
-#figure(
-  align(center, table(
-    columns: 4,
-    align: (left, right, right, right),
-    stroke: 0.5pt + rgb("#d0d0d0"),
-    table.header(
-      [Family], [Context], [Michelson, sign-invariant], [$C = 0.2$, signed],
-    ),
-    table.cell(colspan: 4)[_Causal_],
-    ..val("q2_causal_rows").map(row => ([#row.label], [#row.context], ..row.cells.map(c => [#c]))).flatten(),
-    table.cell(colspan: 4)[_Offline_],
-    ..val("q2_offline_rows").map(row => ([#row.label], [#row.context], ..row.cells.map(c => [#c]))).flatten(),
-    [Inverse-fit oracle], [whole shot], ..val("q2_oracle_cells").map(c => [#c]),
-  )),
+#fig(
+  "model_families",
+  width: 70%,
   caption: [
-    Test velocity RMSE ($mu$m/ms) of each model family at a matched 44k
-    parameters, one training seed per cell. Context is the span of input
-    samples one output depends on: past samples only for causal rows, both
-    sides for offline rows. Stalled: the run never left the zero-output
-    plateau, so the cell measures the protocol, not the estimator. Pending:
-    Mamba's stage has not yet run, so its context is also unknown (#"--"). The
-    oracle is given the true excursion and decodes under the Michelson model,
-    so its $C = 0.2$ cell is misspecified and scores worse than the zero
-    predictor (#val("q2_zero_smi")).
+    On Michelson no family separates from the TCN and all sit far above the
+    classical oracle; at $C = 0.2$ TCAN is best. Both LSTMs never train, nor
+    does the offline neural operator at $C = 0.2$. Noise-free test velocity RMSE of
+    each family at 44k parameters, one seed per cell. Shaded: the TCN's value
+    within the #val("q2_seed_range_pct")% seed range, so a family outside the
+    band is resolved from it. The oracle is given the true excursion and
+    decodes under the Michelson model, so its signed $C = 0.2$ cell is
+    misspecified.
   ],
-) <tab-families>
+) <fig-families>
 
-On Michelson the families do not separate. Every trained family but the
-offline neural operator lies between #val("q2_mich_lo") and
-#val("q2_mich_hi") $mu$m/ms, a span of #val("q2_mich_span_pct")%, inside the
-#val("q2_seed_range_pct")% that three seeds of the noise-free base span
-(@sec-q3-noise). That range was measured on the TCN at $C = 0.2$, signed, at
-$T_0 = 30$, and serves here as a rough resolution for both columns, so the
-TCN ties every other family here.
-The offline neural operator, at #val("q2_no_offline_mich") $mu$m/ms, falls
-behind the rest. The oracle is the classical inverse fit of the baseline
-report, decoding each whole shot under the Michelson model and told the true
-excursion. It reaches #val("q2_oracle_mich") $mu$m/ms, #val("q2_oracle_gap")
-times below the best learned family. The learned models therefore fall
-short of an oracle given the true excursion, and no architecture tried
-closes that gap at this budget.
+On Michelson every trained family but the offline neural operator lies within
+the seed range of the others, and the oracle is #val("q2_oracle_gap") times
+below the best of them. No architecture tried closes the gap to an oracle told
+the true excursion. At $C = 0.2$ the families separate. TCAN is
+#val("q2_tcan_gain") times below the TCN and #val("q2_tcan_margin_pct")% below
+the next family, causal or offline. Four offline families beat the TCN but lie
+within #val("q2_offline_span_pct")% of each other, so one seed does not order
+them. SCNN, the TCN with symmetric padding, is the one exactly matched causal
+and offline pair: it ties the TCN on Michelson and beats it at $C = 0.2$.
 
-At $C = 0.2$ the families separate. In the causal column TCAN is
-#val("q2_tcan_gain") times below the TCN and the causal PatchTransformer
-#val("q2_patch_gain") times below it, while the causal UNet-Transformer and
-the causal neural operator lie above it by more than the seed range. TCAN
-also beats the best offline family by #val("q2_tcan_margin_pct")%, so no
-offline family matches it here. Four offline families,
-SCNN, Barland, PatchTransformer and UNet-Transformer, beat the TCN, but they
-span #val("q2_offline_span_pct")% among themselves, close to the seed range,
-and one seed does not settle their order. SCNN is the TCN with symmetric
-padding, the one exactly matched causal and offline pair. The two tie on
-Michelson, and at $C = 0.2$ SCNN is #val("q2_scnn_gain_pct")% lower than the
-TCN, at one seed. The oracle stops being a ceiling here.
-Its Michelson model has no feedback term, so it does not read the sign
-(signed RMSE #val("q2_oracle_smi_signed") $mu$m/ms). Even scored
-sign-invariant it reaches only #val("q2_oracle_smi_si") $mu$m/ms,
-#val("q2_oracle_smi_gap") times above the weakest trained family.
+Five cells never left the zero-output plateau: their best validation error
+stayed within #val("q2_stall_tol_pct")% of the zero predictor's. They are the
+LSTM and the bidirectional LSTM on both simulations and the offline neural
+operator at $C = 0.2$, and each stalled again with the 30-epoch grace. At
+default initialization the LSTM's sensitivity to past input decays within a
+few samples, while velocity must be read over a fringe period of hundreds;
+chrono gate initialization and a larger learning rate did not move it. The
+offline neural operator mixes a few global Fourier modes and has no local path
+at the fringe frequency. Mamba, also a state-space model, trained on both
+simulations.
 
-Context is matched at #val("q2_matched_lo") to #val("q2_matched_hi")
-samples for the TCN, TCAN, SCNN, both PatchTransformers, both
-UNet-Transformers and the causal neural operator. The recurrent families see
-unbounded context, and the offline neural operator sees the whole shot and
-trains on full shots, about four times the samples per step of its siblings'
-4096-sample crops. The MLP and Barland records give a field of
-#val("q2_window_field") samples, which counts one window. Each output,
-however, averages every window that covers it, so a gradient probe finds
-they depend on #val("q2_mlp_span") and #val("q2_barland_span") samples. The
-wider context bought nothing visible: at $C = 0.2$ Barland ties SCNN
-(#val("q2_barland_smi") against #val("q2_scnn_smi") $mu$m/ms), and the MLP
-trails the TCN.
-
-Five cells did not train under this protocol, and they are kept out of every
-ranking above: the LSTM and the bidirectional LSTM on both sims, and the
-offline neural operator at $C = 0.2$. In each, the best validation error
-stayed within #val("q2_stall_tol_pct")% of the zero predictor's. Each also stalled in the first run,
-without the grace, and stalled again with it, stopping at epoch
-#val("q2_stall_epochs"). The diagnosis differs by family. At default
-initialization the LSTM's sensitivity to past input decays within a few
-samples, while velocity has to be read over a fringe period of hundreds.
-In short diagnostic runs at $C = 0.2$, chrono gate initialization and a
-larger learning rate did not move it, nor did a 40-epoch run without early
-stopping. For the offline neural operator, three diagnostic seeds all
-stalled at $C = 0.2$. The likely cause is that it mixes a few global Fourier
-modes and has no local path at the fringe frequency, though its training on
-full 16384-sample shots is a confound. On Michelson, where it trained, it is
-the weakest family. The offline UNet-Transformer on Michelson is the
-opposite case: its stall was a slow start. Without early stopping, seed 0
-left the plateau at epoch 15, which the 30-epoch grace now covers, and seeds
-1 and 2 escaped in their first epoch. #if val("q2_mamba_pending") [Mamba runs as its own stage, on a
-parallel scan that matches the sequential loop to float32 rounding; its row
-is pending.] else [Mamba ran as its own stage, on a parallel scan that
-matches the sequential loop to float32 rounding; its row arrived after this
-text was written, and the per-family comparisons above leave it out.]
-
-Each cell is one seed, at one budget, noise-free, with three channels and
-the two feedback settings. Budgets also differ by cell. Of the trained cells,
-#val("q2_early_n") stopped by patience at epoch #val("q2_early_lo") to
-#val("q2_early_hi"), before the restart at #val("q2_restart"), and the rest
-ran #val("q2_late_lo") to #val("q2_late_hi"). The one gain well outside the
-seed range is TCAN over the TCN at $C = 0.2$ (a factor #val("q2_tcan_gain")); more
-seeds of both would test it. The order among families within the seed range
-of each other is not resolved.
+Each cell is one seed at one budget, noise-free, and budgets differ:
+#val("q2_early_n") trained cells stopped by patience before the restart at
+epoch #val("q2_restart"), and #val("q2_second_n") overran into a second
+cycle. The one gain well outside the seed range is TCAN over the TCN at
+$C = 0.2$; more seeds of both would test it.
 
 = Predictions for the real data <sec-real-predictions>
 
@@ -944,7 +816,8 @@ of each other is not resolved.
   message: "the real free-space ratio no longer lies between the noise-free base and every nominal-point variant",
 )
 
-This section fixes what the synthetic program predicts for the real
+The synthetic results are useful only if they say something checkable about
+the rig. This section fixes what the synthetic program predicts for the real
 acquisitions before they are read (@tab-real-predictions). Each prediction
 names what it rests on and the observation that would refute it. Absolute
 synthetic errors should not transfer, because the rig's $C$, $alpha$, SNR and
@@ -954,7 +827,7 @@ baseline report's results table (its Section 9.1): the causal TCN at
 #real-tcn-fs and 0.2540 $mu$m/ms and Barland at 0.0814 and 0.1643 $mu$m/ms,
 in free space and behind multimode fiber. Those bars are two-seed means,
 while the synthetic #val("q2_seed_range_pct")% seed range comes from one seed.
-P6 therefore scores every falsifier with $s$, the seed range it measures on
+P6 therefore scores every falsifier with $s$, the seed range it measures on // math-ok: stage label
 the real runs at the same two seeds.
 
 #figure(
@@ -1087,7 +960,7 @@ less than $s$.
 The Q1 gain should fall between its two synthetic limits (@sec-q1). // math-ok: question label
 Three channels beat the best single channel by a factor
 #val("pred_triple_free") noise-free and #val("pred_triple_30") at the
-nominal 30 dB point, for the TCN (@tab-q1-subsets, @tab-q1-snr). The nominal
+nominal 30 dB point, for the TCN (@fig-q1-subsets). The nominal
 end is within the seed range of parity, so a ratio there cannot be told
 from 1. Ratios between $1 - s$ and #val("pred_triple_30"), or between
 #val("pred_triple_free") and #val("pred_triple_free") $(1 + s)$, neither
@@ -1100,7 +973,7 @@ Predictions 5 and 7 rest on thinner evidence. 515 nm leads in the
 $lambda_k^(-2)$ order of @eq-fisher and in every synthetic cell, but its
 noise-free TCN lead is at the edge of the seed range. 515 nm alone recovers
 the motion at $C = 0.2$, while on Michelson one channel scores at the zero
-predictor (@tab-q1-subsets). Prediction 7 scores it with the
+predictor (@fig-q1-subsets). Prediction 7 scores it with the
 #val("q1_stall_tol_pct")% stall tolerance of the runner. A real 515 nm
 channel at the zero predictor would mean feedback too weak for one channel to
 read the sign.
@@ -1108,7 +981,7 @@ read the sign.
 The Q2 predictions claim orderings only, because the synthetic family ranks // math-ok: question label
 already transferred imperfectly once. On the real data Barland beats SCNN by
 15% (baseline report, Section 9.1), where the synthetic cells tie them
-(@tab-families). TCAN's #val("q2_tcan_gain")-fold gain over the TCN was
+(@fig-families). TCAN's #val("q2_tcan_gain")-fold gain over the TCN was
 measured noise-free; under noise, the Q1 multi-channel gain shrank from // math-ok: question label
 #val("q1_gain_tcn") to #val("q1_s4_30_gain_pct")%, so prediction 8 runs from
 parity to that factor. A ratio between $1 - s$ and 1, or above

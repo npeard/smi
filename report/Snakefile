@@ -44,6 +44,10 @@ DOCUMENT_FIGURES = {
         "velocity_bounds",
         "spectral_mismatch",
         "q1_binned",
+        "leave_one_out",
+        "q1_subsets",
+        "model_families",
+        "displacement_rmse",
     ],
 }
 
