@@ -1286,6 +1286,24 @@ def main() -> None:
         'causal_k3': sig(causal_k3, 2),
         'offline_k3': sig(offline_k3, 2),
         'info_ratio_k3_k1': sig(info[1] / info[0], 2),
+        # The sign-evidence caption: how much more three channels carry than one.
+        **lo_hi(
+            'sign_k3_k1',
+            (
+                bounds.sign_information(
+                    SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, c, NOMINAL_ALPHA),
+                    N_SHOTS,
+                    SEED,
+                )
+                / bounds.sign_information(
+                    SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM[:1], c, NOMINAL_ALPHA),
+                    N_SHOTS,
+                    SEED,
+                )
+                for c in TABLE_C
+            ),
+            lambda x: sig(x, 2),
+        ),
         'causal_ratio_k3_k1': sig(causal_k3 / causal_k1, 2),
         'real_tcn_rmse': sig(real, 4),
         'real_gap': f'{real / causal_k3:.0f}',
