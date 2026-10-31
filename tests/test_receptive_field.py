@@ -9,6 +9,8 @@ gradient -- ground truth the formula cannot talk its way around.
 import pytest
 import torch
 
+from smi.analysis.models.barland_cnn import BarlandCNN, BarlandCNNConfig
+from smi.analysis.models.mlp import MLP, MLPConfig
 from smi.analysis.models.neural_operator import NeuralOperator, NeuralOperatorConfig
 from smi.analysis.models.patch_transformer import (
     PatchTransformer,
@@ -76,8 +78,32 @@ def measure_receptive_field_at(
     An input sample counts as touched when its gradient exceeds ``rel_tol``
     times the largest one (the model's ``probe_rel_tol``).
     """
+    return _touched_field(model, torch.zeros(1, in_channels, length), probe, rel_tol)
+
+
+def measure_sliding_window_field(
+    model: torch.nn.Module, in_channels: int, length: int
+) -> int:
+    """Widest measured field of a sliding-window model over one stride.
+
+    Probed at a seeded random input, not zeros: at a constant input every
+    max-pool window ties, so gradient reaches one sample per pool and the
+    probe under-counts Barland's field. Exact at rel_tol 0, since the windows
+    have hard edges.
+    """
+    torch.manual_seed(0)
+    x = torch.randn(1, in_channels, length)
+    return max(
+        _touched_field(model, x, length // 2 + j, rel_tol=0.0)[0]
+        for j in range(model.window_stride)
+    )
+
+
+def _touched_field(
+    model: torch.nn.Module, x: torch.Tensor, probe: int, rel_tol: float
+) -> tuple[int, bool]:
     model.eval()
-    x = torch.zeros(1, in_channels, length, requires_grad=True)
+    x = x.clone().requires_grad_(True)
     out = model(x)
     model.zero_grad()
     out[0, 0, probe].backward()
@@ -362,3 +388,45 @@ def test_offline_neural_operator_field_is_the_whole_input():
         )
         assert measured == length
         assert sees_future
+
+
+# (window_size, window_stride): point-to-point as matched, an overlap that
+# does not divide the window (so the covering count varies by phase), and none.
+MLP_GEOMETRIES = [(91, 1), (10, 3), (64, 64), (91, 45)]
+
+
+@pytest.mark.parametrize(('window_size', 'window_stride'), MLP_GEOMETRIES)
+def test_mlp_field_spans_every_window_its_average_covers(window_size, window_stride):
+    """Each output averages the windows covering it, so it depends on all of them."""
+    model = MLP(
+        MLPConfig(
+            window_size=window_size,
+            in_channels=3,
+            hidden_sizes=[8],
+            activation='GELU',
+            dropout=0.0,
+            window_stride=window_stride,
+        )
+    )
+    measured = measure_sliding_window_field(model, in_channels=3, length=1024)
+    assert model.receptive_field == measured
+
+
+# The published head reads ten pooled positions, which fixes window_size at
+# 256; only the stride and the widths are free.
+@pytest.mark.parametrize('window_stride', [8, 7, 100, 256])
+def test_barland_field_spans_every_window_its_average_covers(window_stride):
+    """One window depends on 250 of its 256 samples; the average widens that."""
+    model = BarlandCNN(
+        BarlandCNNConfig(
+            window_size=256,
+            in_channels=3,
+            activation='LeakyReLU',
+            dropout=0.0,
+            use_weight_norm=False,
+            window_stride=window_stride,
+            channels=[4, 4, 8, 8],
+        )
+    )
+    measured = measure_sliding_window_field(model, in_channels=3, length=2048)
+    assert model.receptive_field == measured

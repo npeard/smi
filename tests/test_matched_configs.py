@@ -51,13 +51,16 @@ def _field(model_hparams: dict) -> int | None:
 # One-sided lookback every causal convolutional/attention family is held to
 # (the patch Transformer's worst phase; see its receptive_field).
 CAUSAL_FIELD = _field(_load(MATCHED / 'tcn-44k.yaml')['model'])
-# Symmetric field every offline family is held to: Barland's, because its
-# depth and kernels are fixed by the published network while the others can be
-# tuned to it. Offline families match it within FIELD_BAND, not exactly: SCNN
-# needs an odd kernel (symmetric padding cannot preserve length otherwise),
-# which puts its fields at 85 or 169, never 91.
+# Symmetric field every offline family is held to: the 91-sample field of one
+# position of Barland's conv stack, because its depth and kernels are fixed by
+# the published network while the others can be tuned to it. It is not
+# Barland's receptive_field: the dense head and the overlap average widen that
+# (to 498 for barland-44k), as they widen the MLP's, so the two sliding-window
+# families are held only to the crop margin. Offline families match it within
+# FIELD_BAND, not exactly: SCNN needs an odd kernel (symmetric padding cannot
+# preserve length otherwise), which puts its fields at 85 or 169, never 91.
 FIELD_BAND = 0.10
-OFFLINE_FIELD = _field(_load(MATCHED / 'barland-44k.yaml')['model'])
+OFFLINE_FIELD = 91
 
 
 def _wrapped_parameters(model_hparams: dict) -> int:
@@ -104,7 +107,7 @@ def test_context_rule_follows_the_column(path):
         return
     if model.causal:
         assert field == CAUSAL_FIELD
-    else:
+    elif not isinstance(model, SlidingWindowModel):
         assert abs(field / OFFLINE_FIELD - 1) <= FIELD_BAND
     crop = config['synthetic']['train_crop_length']
     assert field * MARGIN <= crop
@@ -149,8 +152,8 @@ def test_forward_preserves_length(path):
 
 # Unbounded fields are excluded: the whole input (tests/test_receptive_field.py
 # checks the offline neural operator directly). So are windowed families,
-# whose overlap averaging makes the probed footprint wider than the window by
-# construction.
+# which a zero-input probe under-counts at Barland's tied max-pools; they are
+# probed at a random input there.
 BOUNDED_FIELD = [
     p
     for p in CONFIGS

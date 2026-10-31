@@ -124,6 +124,22 @@ class SlidingWindowModel(SequenceModel):
         # Remove the height dim and trim to exact signal_length
         return averaged.squeeze(2)[:, :, :signal_length]  # [batch, 1, signal_length]
 
+    @torch.jit.unused
+    def averaged_span(self, window_field: int) -> int:
+        """Input samples one output depends on, given one window's field.
+
+        An output is the average of every window whose ``window_size`` span
+        covers it, at most ``ceil(window_size / window_stride)`` of them (the
+        worst phase when the stride does not divide the window), so it reaches
+        from the first of those windows to the end of the last one's field.
+
+        Args:
+            window_field: Samples, from a window's start, its prediction
+                depends on.
+        """
+        covering = math.ceil(self.window_size / self.window_stride)
+        return (covering - 1) * self.window_stride + window_field
+
     @property
     @torch.jit.unused
     def causal(self) -> bool:

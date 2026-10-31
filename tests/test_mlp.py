@@ -37,9 +37,3 @@ def test_mlp_reports_its_parameter_count():
     assert model.total_params == sum(
         p.numel() for p in model.parameters() if p.requires_grad
     )
-
-
-def test_mlp_receptive_field_is_the_window():
-    """A dense layer over the window sees all of it and nothing beyond it."""
-    model = create_model(_hparams())
-    assert model.receptive_field == 256

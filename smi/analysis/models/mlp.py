@@ -110,10 +110,10 @@ class MLP(SlidingWindowModel):
     def receptive_field(self) -> int:
         """Receptive field in input samples.
 
-        Every output position is produced by a dense layer over the whole
-        window, so the window is the receptive field exactly.
+        A dense layer over the whole window makes one window's field the
+        window itself; the overlap average widens it to every covering window.
         """
-        return self.window_size
+        return self.averaged_span(self.window_size)
 
     def _forward_windows(self, x: Tensor) -> Tensor:
         """Run a batch of windows through the dense stack.

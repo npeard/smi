@@ -535,8 +535,9 @@ CLOSE_FACTOR = 1.5
 def sliding_span(stem: str) -> int | None:
     """Samples one output of a sliding-window model depends on; else None.
 
-    The record's ``receptive_field`` counts one window, but every output
-    averages all the windows that cover it, so the field is wider. Measured by
+    Records written before the models declared it store a ``receptive_field``
+    of one window, but every output averages all the windows that cover it,
+    so the field is wider. Measured here, so old and new records agree, by
     a gradient probe of a seeded init, exact here because the windows have
     hard edges. Other families' formulas are checked in
     tests/test_receptive_field.py.
