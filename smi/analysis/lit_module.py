@@ -34,6 +34,10 @@ from smi.synthetic.coil_driver import CoilDriver
 
 logger = logging.getLogger(__name__)
 
+#: Rate (Hz) the loss and ``velocity_from_output`` integrate and differentiate
+#: at: the rig's 125 MHz ADC decimated by 256, which every acquisition uses.
+SAMPLE_RATE = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+
 
 class LitModule(lightning_module.LightningModule):
     """Lightning Module for fusing multiple sensor channels into velocity predictions.
@@ -305,7 +309,7 @@ class LitModule(lightning_module.LightningModule):
         """
         if self.target == 'velocity':
             return prediction
-        sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+        sample_rate = SAMPLE_RATE
         return cast(
             torch.Tensor, CoilDriver.derivative_displacement(prediction, sample_rate)
         )
@@ -333,7 +337,7 @@ class LitModule(lightning_module.LightningModule):
             Dictionary of loss components with keys representing loss types
             and values representing the corresponding loss tensors.
         """
-        sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+        sample_rate = SAMPLE_RATE
 
         if self.target == 'velocity':
             # Model predicts velocity
@@ -576,7 +580,7 @@ class LitModule(lightning_module.LightningModule):
         signals, velocity_target, displacement_target = batch
 
         prediction = self(signals)  # Model prediction (velocity or displacement)
-        sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+        sample_rate = SAMPLE_RATE
 
         # Derive both velocity and displacement for plotting, regardless of target
         if self.target == 'velocity':
