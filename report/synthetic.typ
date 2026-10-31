@@ -531,29 +531,33 @@ Q1 grid // math-ok: question label
 = Q2: model families <sec-q2> // math-ok: question label
 
 #assert(val("q2_mich_tied"), message: "the Michelson families other than the offline neural operator no longer lie within the seed range")
-#assert(val("q2_oracle_beats_all"), message: "a learned family now matches the Michelson oracle")
+#assert(val("q2_oracle_beats_all"), message: "a learned family now comes within a factor 1.5 of the Michelson oracle")
 #assert(val("q2_smi_vs_tcn"), message: "the families above and below the TCN at C = 0.2 have changed")
 #assert(val("q2_tcan_best"), message: "TCAN is no longer the best family at C = 0.2 by more than the seed range")
-#assert(val("q2_offline_span_close"), message: "the top offline families at C = 0.2 now span more than twice the seed range")
+#assert(val("q2_offline_span_close"), message: "the top offline families at C = 0.2 now span more than 1.5 times the seed range")
 #assert(val("q2_scnn_pair"), message: "SCNN against TCN no longer ties on Michelson and wins at C = 0.2")
 #assert(val("q2_learned_beat_oracle_smi"), message: "a trained family no longer beats the oracle at C = 0.2")
 #assert(val("q2_stalled_named"), message: "the stalled cells are no longer the two LSTMs and the offline neural operator at C = 0.2")
 #assert(val("q2_sliding_named"), message: "the sliding-window families are no longer Barland and the MLP")
+#assert(val("q2_matched_named"), message: "the fixed-window families are no longer the eight named in the context paragraph")
+#assert(val("q2_barland_ties_scnn"), message: "Barland and SCNN no longer tie at C = 0.2")
+#assert(val("q2_oracle_worse_than_zero"), message: "the oracle's signed C = 0.2 cell no longer scores worse than the zero predictor")
 
-Without feedback no family beats the TCN, and none comes near the classical
-oracle. With feedback, at $C = 0.2$, TCAN does beat it, by a factor
-#val("q2_tcan_gain"), and is the best family in either column
-(@tab-families). Each family is matched to the TCN's 44k parameters and
-trained as in @sec-q3-curve: one seed, one 90-epoch cosine cycle,
-noise-free three-channel data, the signed loss at $C = 0.2$, $alpha = 3$ and
-the sign-invariant loss on Michelson. All cells are scored on the frozen test
-shots of @fig-feedback. The RNN is the LSTM, causal and bidirectional,
-beside the recurrent state-space model Mamba; the neural operator is our own
-code, not the `neuraloperator` library.
-The original cells ran in a Python 3.12 environment. The six cells that
-stalled in that run were rerun with a grace period that withholds early
-stopping for the first 30 epochs, and they ran, as Mamba does, in Python
-3.14 with torch 2.15.0. Every learned cell ran on Apple MPS in float32.
+Without feedback no family separates from the TCN, and none comes near the
+classical oracle. With feedback, at $C = 0.2$, TCAN beats the TCN by a factor
+#val("q2_tcan_gain") and is the best family, causal or offline
+(@tab-families). Each family is matched to the TCN's 44k
+parameters and trained as in @sec-q3-curve: one seed, a 90-epoch cosine
+cycle that #val("q2_second_n") cells overran into a second, noise-free
+three-channel data, the signed loss at $C = 0.2$, $alpha = 3$ and the
+sign-invariant loss on Michelson. All cells are scored on the frozen test
+shots of @fig-feedback. The recurrent families are the LSTM (causal and
+bidirectional) and the state-space model Mamba. The neural operator is our
+own code, not the `neuraloperator` library.#footnote[The original cells ran
+in Python 3.12. The six cells that stalled in that run were rerun with a
+grace period that withholds early stopping for the first 30 epochs; they,
+and Mamba, ran in Python 3.14 with torch 2.15.0. Every learned cell ran on
+Apple MPS in float32.]
 
 #figure(
   align(center, table(
@@ -574,7 +578,11 @@ stopping for the first 30 epochs, and they ran, as Mamba does, in Python
     parameters, one training seed per cell. Context is the span of input
     samples one output depends on: past samples only for causal rows, both
     sides for offline rows. Stalled: the run never left the zero-output
-    plateau, so the cell measures the protocol, not the estimator.
+    plateau, so the cell measures the protocol, not the estimator. Pending:
+    Mamba's stage has not yet run, so its context is also unknown (#"--"). The
+    oracle is given the true excursion and decodes under the Michelson model,
+    so its $C = 0.2$ cell is misspecified and scores worse than the zero
+    predictor (#val("q2_zero_smi")).
   ],
 ) <tab-families>
 
@@ -582,42 +590,46 @@ On Michelson the families do not separate. Every trained family but the
 offline neural operator lies between #val("q2_mich_lo") and
 #val("q2_mich_hi") $mu$m/ms, a span of #val("q2_mich_span_pct")%, inside the
 #val("q2_seed_range_pct")% that three seeds of the noise-free base span
-(@sec-q3-noise). That range comes from a 30-epoch budget, so it serves only
-as a rough resolution, and no family is ranked apart from the TCN within it.
+(@sec-q3-noise). That range was measured on the TCN at $C = 0.2$, signed, at
+$T_0 = 30$, and serves here as a rough resolution for both columns, so the
+TCN ties every other family here.
 The offline neural operator, at #val("q2_no_offline_mich") $mu$m/ms, falls
 behind the rest. The oracle is the classical inverse fit of the baseline
 report, decoding each whole shot under the Michelson model and told the true
 excursion. It reaches #val("q2_oracle_mich") $mu$m/ms, #val("q2_oracle_gap")
 times below the best learned family. The learned models therefore fall
-short of what a classical decoder recovers from the same signals, and no
-architecture tried closes that gap at this budget.
+short of an oracle given the true excursion, and no architecture tried
+closes that gap at this budget.
 
 At $C = 0.2$ the families separate. In the causal column TCAN is
 #val("q2_tcan_gain") times below the TCN and the causal PatchTransformer
 #val("q2_patch_gain") times below it, while the causal UNet-Transformer and
 the causal neural operator lie above it by more than the seed range. TCAN
-also beats the best offline family by #val("q2_tcan_margin_pct")%, so
-lookahead does not make up the difference. Four offline families,
+also beats the best offline family by #val("q2_tcan_margin_pct")%, so no
+offline family matches it here. Four offline families,
 SCNN, Barland, PatchTransformer and UNet-Transformer, beat the TCN, but they
 span #val("q2_offline_span_pct")% among themselves, close to the seed range,
-and one seed does not settle their order. The MLP trails the TCN. SCNN is
-the TCN with symmetric padding, the one exactly matched causal and offline
-pair. The two tie on Michelson, and at $C = 0.2$ lookahead at equal span
-buys SCNN #val("q2_scnn_gain_pct")%. The oracle stops being a ceiling here.
+and one seed does not settle their order. SCNN is the TCN with symmetric
+padding, the one exactly matched causal and offline pair. The two tie on
+Michelson, and at $C = 0.2$ SCNN is #val("q2_scnn_gain_pct")% lower than the
+TCN, at one seed. The oracle stops being a ceiling here.
 Its Michelson model has no feedback term, so it does not read the sign
 (signed RMSE #val("q2_oracle_smi_signed") $mu$m/ms). Even scored
 sign-invariant it reaches only #val("q2_oracle_smi_si") $mu$m/ms,
 #val("q2_oracle_smi_gap") times above the weakest trained family.
 
-Context is matched only within the convolutional and attention families.
-The recurrent families see unbounded context, and the offline neural
-operator sees the whole shot and trains on full shots, about four times the
-samples per step of its siblings' 4096-sample crops. The MLP and Barland
-records give a field of #val("q2_window_field") samples, which counts one
-window. Each output, however, averages every window that covers it, so a
-gradient probe finds they depend on #val("q2_mlp_span") and
-#val("q2_barland_span") samples. Part of Barland's lead over the TCN at
-$C = 0.2$ may therefore come from context rather than architecture.
+Context is matched at #val("q2_matched_lo") to #val("q2_matched_hi")
+samples for the TCN, TCAN, SCNN, both PatchTransformers, both
+UNet-Transformers and the causal neural operator. The recurrent families see
+unbounded context, and the offline neural operator sees the whole shot and
+trains on full shots, about four times the samples per step of its siblings'
+4096-sample crops. The MLP and Barland records give a field of
+#val("q2_window_field") samples, which counts one window. Each output,
+however, averages every window that covers it, so a gradient probe finds
+they depend on #val("q2_mlp_span") and #val("q2_barland_span") samples. The
+wider context bought nothing visible: at $C = 0.2$ Barland ties SCNN
+(#val("q2_barland_smi") against #val("q2_scnn_smi") $mu$m/ms), and the MLP
+trails the TCN.
 
 Five cells did not train under this protocol, and they are kept out of every
 ranking above: the LSTM and the bidirectional LSTM on both sims, and the
@@ -627,15 +639,16 @@ without the grace, and stalled again with it, stopping at epoch
 #val("q2_stall_epochs"). The diagnosis differs by family. At default
 initialization the LSTM's sensitivity to past input decays within a few
 samples, while velocity has to be read over a fringe period of hundreds.
-Chrono gate initialization and a larger learning rate did not move it in
-short diagnostic runs, nor did a longer run without early stopping. For the
-offline neural operator, three diagnostic seeds all stalled at $C = 0.2$.
-It mixes a few global Fourier modes and has no local path at the fringe
-frequency, and on Michelson, where it trained, it is the weakest family.
-The offline UNet-Transformer on Michelson is the opposite case. It stalled
-in its first run and trained once given the grace, and two other seeds
-escaped the plateau in their first epoch, so its stall was bad luck in the
-seed. #if val("q2_mamba_pending") [Mamba runs as its own stage, on a
+In short diagnostic runs at $C = 0.2$, chrono gate initialization and a
+larger learning rate did not move it, nor did a 40-epoch run without early
+stopping. For the offline neural operator, three diagnostic seeds all
+stalled at $C = 0.2$. The likely cause is that it mixes a few global Fourier
+modes and has no local path at the fringe frequency, though its training on
+full 16384-sample shots is a confound. On Michelson, where it trained, it is
+the weakest family. The offline UNet-Transformer on Michelson is the
+opposite case: its stall was a slow start. Without early stopping, seed 0
+left the plateau at epoch 15, which the 30-epoch grace now covers, and seeds
+1 and 2 escaped in their first epoch. #if val("q2_mamba_pending") [Mamba runs as its own stage, on a
 parallel scan that matches the sequential loop to float32 rounding; its row
 is pending.] else [Mamba ran as its own stage, on a parallel scan that
 matches the sequential loop to float32 rounding; its row arrived after this
@@ -645,10 +658,9 @@ Each cell is one seed, at one budget, noise-free, with three channels and
 the two feedback settings. Budgets also differ by cell. Of the trained cells,
 #val("q2_early_n") stopped by patience at epoch #val("q2_early_lo") to
 #val("q2_early_hi"), before the restart at #val("q2_restart"), and the rest
-ran #val("q2_late_lo") to #val("q2_late_hi"). What is resolved is that TCAN
-beats the TCN at $C = 0.2$ and that no family reaches the oracle on
-Michelson. The order among families within the seed range of each other is
-not, and more seeds of TCAN and the TCN at $C = 0.2$ would test the one gain
-this grid shows.
+ran #val("q2_late_lo") to #val("q2_late_hi"). The one gain well outside the
+seed range is TCAN over the TCN at $C = 0.2$ (a factor #val("q2_tcan_gain")); more
+seeds of both would test it. The order among families within the seed range
+of each other is not resolved.
 
 #bibliography("refs.bib")

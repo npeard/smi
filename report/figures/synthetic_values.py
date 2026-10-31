@@ -424,6 +424,11 @@ SPAN_PROBE_LENGTH = 2048
 STALL_TOLERANCE = 0.01
 # A converged cell stopped well before its first restart; the rest end at it.
 EARLY_STOP_FRACTION = 0.95
+# The text says no family comes near the Michelson oracle; a ratio this large
+# is well clear of the seed range, which a bare `oracle < best` would not be.
+ORACLE_MARGIN = 1.5
+# The text calls the top offline families' span close to the seed range.
+CLOSE_FACTOR = 1.5
 
 
 def sliding_span(stem: str) -> int | None:
@@ -507,6 +512,15 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
     )
     sliding = {s: span for s in Q2_NAMED if (span := sliding_span(s)) is not None}
     mlp = records['mlp-44k-T90__ch635-675-515__smi-a3__seed0']
+    # The families whose context is a fixed window, which the text says are
+    # matched; the sliding-window families' wider spans are named apart.
+    matched = {
+        stem: r.receptive_field
+        for stem in Q2_NAMED
+        if stem not in sliding
+        and (r := q2_record(records, stem, 'smi-a3')) is not None
+        and r.receptive_field is not None
+    }
     return {
         'q2_causal_rows': rows(Q2_CAUSAL, True),
         'q2_offline_rows': rows(Q2_OFFLINE, False),
@@ -533,6 +547,21 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
         'q2_mlp_span': str(sliding['mlp-44k']),
         'q2_barland_span': str(sliding['barland-44k']),
         'q2_window_field': str(mlp.receptive_field),
+        'q2_matched_named': sorted(matched)
+        == sorted(
+            [
+                'tcn-44k',
+                'tcan-44k',
+                'patchtransformer-causal-44k',
+                'unettransformer-causal-44k',
+                'neuraloperator-causal-44k',
+                'scnn-44k',
+                'patchtransformer-offline-44k',
+                'unettransformer-offline-44k',
+            ]
+        ),
+        'q2_matched_lo': str(min(matched.values())),
+        'q2_matched_hi': str(max(matched.values())),
     }
 
 
@@ -586,6 +615,13 @@ def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
     ]
     early = [n for n, t in epochs if n < EARLY_STOP_FRACTION * t]
     late = [n for n, t in epochs if n >= EARLY_STOP_FRACTION * t]
+    second = [n for n, t in epochs if n > t]
+    # The zero predictor's test RMSE: the alpha = 0 control's frozen set shares
+    # the oracle's test seed, so it scores the same velocities.
+    a0 = synthetic_cell(records, 'tcn-44k-T90', 'smi-a0')
+    assert a0.test_seed == oracle_smi.test_seed
+    zero = zero_predictor_rmse(a0)
+    oracle_signed = mean_metric(oracle_smi, 'velocity_rmse')
     return {
         'q2_seed_range_pct': pct(resolution),
         # Michelson: every trained family but the offline neural operator lies
@@ -599,7 +635,7 @@ def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
         'q2_no_offline_mich': sig(mich_named[weakest], 2),
         'q2_oracle_mich': sig(oracle, 2),
         'q2_oracle_gap': sig(min(mich.values()) / oracle, 2),
-        'q2_oracle_beats_all': oracle < min(mich.values()),
+        'q2_oracle_beats_all': ORACLE_MARGIN * oracle <= min(mich.values()),
         # C = 0.2: the families the text names as beating or trailing the TCN.
         'q2_smi_vs_tcn': below_tcn
         == sorted(
@@ -621,15 +657,25 @@ def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
         'q2_tcan_best': best == 'tcan-44k' and apart(smi[best], runner_up),
         'q2_tcan_margin_pct': pct(runner_up / smi[best] - 1),
         'q2_offline_span_pct': pct(offline_top[-1] / offline_top[0] - 1),
-        'q2_offline_span_close': offline_top[-1] / offline_top[0] - 1 < 2 * resolution,
+        'q2_offline_span_close': offline_top[-1] / offline_top[0] - 1
+        < CLOSE_FACTOR * resolution,
         'q2_scnn_gain_pct': pct(tcn_smi / smi['scnn-44k'] - 1),
+        # Barland's 498-sample span ties SCNN's 85: the wider context shows no gain.
+        'q2_barland_ties_scnn': not apart(
+            min(smi['barland-44k'], smi['scnn-44k']),
+            max(smi['barland-44k'], smi['scnn-44k']),
+        ),
+        'q2_barland_smi': sig(smi['barland-44k'], 3),
+        'q2_scnn_smi': sig(smi['scnn-44k'], 3),
         # SCNN is the TCN with symmetric padding: the one matched pair.
         'q2_scnn_pair': not apart(
             min(tcn_mich, mich['scnn-44k']), max(tcn_mich, mich['scnn-44k'])
         )
         and apart(smi['scnn-44k'], tcn_smi),
         'q2_oracle_smi_si': sig(oracle_si, 2),
-        'q2_oracle_smi_signed': sig(mean_metric(oracle_smi, 'velocity_rmse'), 2),
+        'q2_oracle_smi_signed': sig(oracle_signed, 2),
+        'q2_zero_smi': sig(zero, 2),
+        'q2_oracle_worse_than_zero': oracle_signed > zero,
         'q2_learned_beat_oracle_smi': max(smi.values()) < oracle_si,
         'q2_oracle_smi_gap': sig(oracle_si / max(smi_named.values()), 2),
         'q2_early_n': str(len(early)),
@@ -638,6 +684,8 @@ def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
         'q2_late_lo': str(min(late)),
         'q2_late_hi': str(max(late)),
         'q2_restart': str(max(t for _, t in epochs)),
+        'q2_second_n': str(len(second)),
+        'q2_second_lo': str(min(second)),
     }
 
 
