@@ -1,7 +1,7 @@
 # mlp-19k: matched budget of 19,329 parameters (+/-10%, test_matched_configs.py).
-# Offline column: symmetric field of 91 samples, Barland's. Barland's depth
-# and kernels are fixed by the published network, so every other offline
-# family is set to it.
+# Offline column: one window spans 91 samples, matched to Barland's published
+# window. Averaging every window that covers an output widens the MLP's true
+# dependency span to 181 samples (its receptive_field).
 model:
   type: "MLP"
   window_size: 91  # the shared offline field
