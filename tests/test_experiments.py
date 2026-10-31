@@ -457,6 +457,29 @@ def test_shipped_grids_expand_and_name_existing_configs():
             assert c.sign_invariant == (c.sim.feedback_c == 0.0)
 
 
+DISPLACEMENT = experiments.ANALYSIS_DIR / 'models' / 'configs' / 'displacement'
+EXPERIMENTS = experiments.ANALYSIS_DIR / 'experiments'
+
+
+def test_displacement_grid_retargets_the_s1_cells_and_nothing_else():
+    """Each family is its matched config with only the target and loss weights
+    changed, on S1's sims and test sets, so each cell pairs with its S1 cell.
+    """
+    grid, cells = expand_grid(EXPERIMENTS / 'q3_s1d_displacement.yaml')
+    s1_grid, s1_cells = expand_grid(EXPERIMENTS / 'q3_s1_families.yaml')
+    assert len(cells) == 4 * 2
+    assert grid['test_set'] == s1_grid['test_set']
+    s1_sims = {c.sim_name: c.sim for c in s1_cells}
+    for cell in cells:
+        assert cell.sim == s1_sims[cell.sim_name]
+        assert cell.family_config.parent == DISPLACEMENT
+        retargeted = yaml.safe_load(cell.family_config.read_text())
+        matched = yaml.safe_load((MATCHED / cell.family_config.name).read_text())
+        matched['training']['target'] = 'displacement'
+        matched['loss'].update(velocity_loss_weight=0.0, displacement_loss_weight=1.0)
+        assert retargeted == matched, cell.family_config.name
+
+
 def test_lock_refuses_second_holder_and_releases(tmp_path):
     lock = tmp_path / '.runner.lock'
     with runner_lock(lock):

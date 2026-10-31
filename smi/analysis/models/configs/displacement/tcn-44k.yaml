@@ -1,0 +1,81 @@
+# tcn-44k, retargeted to displacement for q3_s1d_displacement.yaml: a copy of
+# ../matched/tcn-44k.yaml with only training.target and the two loss weights
+# changed, so the S1 velocity-target cells keep their fingerprints and keys.
+# The matched config's notes follow.
+# tcn-44k: matched budget of 44,000 parameters (+/-10%, test_matched_configs.py).
+# Causal column: one-sided lookback of 85 samples, the tcn-44k value (kernel
+# 7, dilations 1-2-4).
+model:
+  type: "TCN"
+  sequence_length: 16384
+  in_channels: 3  # replaced by len(synthetic.sim.wavelengths_um)
+  activation: "GELU"
+  use_layer_norm: true
+  use_weight_norm: false
+  kernel_size: 7
+  temporal_channels: [16, 32, 48]
+  dilation_base: 2
+  dropout: 0.0
+
+training:
+  max_epochs: 30
+  check_val_every_n_epoch: 1  # validate every epoch; patience_epochs counts these
+  convergence:  # stop on a plateau; max_epochs above stays the cap
+    monitor: "val/velocity_rmse_um_per_ms"  # the runner derives it from the loss
+    patience_epochs: 10
+    min_rel_delta: 0.01  # improvement below 1% of the best counts as none
+    min_epochs: 30  # no stop sooner: S1 zero-output stalls lasted ~15 epochs, then escaped
+  warmup_epochs: 0
+  T_0: 30
+  T_mult: 1
+  batch_size: 16
+  optimizer: "Adam"
+  weight_decay: 1e-6
+  momentum: 0.9
+  learning_rate: 1e-3
+  eta_min: 1e-6
+  accelerator: "cpu"  # the experiment grid overrides device and precision
+  precision: "32-true"
+  devices: 1
+  use_logging: false
+  wandb_project: "smi"
+  experiment_name: "tcn_44k"
+  target: "displacement"
+
+loss:
+  dynamic: false
+  velocity_loss_weight: 0.0
+  displacement_loss_weight: 1.0
+  sign_invariant: false  # the experiment runner sets it per sim
+
+data:
+  data_dir: "./analysis/data"
+  dataset_file: "unused"  # not used in synthetic mode
+  split_ratios: [80, 10, 10]
+  num_workers: 0
+
+synthetic:
+  use_synthetic_training: true
+  steps_per_epoch: 200
+  train_crop_length: 4096  # must exceed the receptive field with margin
+  val_steps: 20
+  # Every SimConfig field, no defaults (smi.synthetic.forward.SimConfig).
+  # The experiment runner replaces the whole block per cell.
+  sim:
+    wavelengths_um: [0.635, 0.6748, 0.515]
+    sample_rate: 488281.25  # 125 MHz / decimation 256
+    start_freq_hz: 1.0
+    end_freq_hz: 1000.0
+    drive_gain: 0.002454  # NOMINAL_DRIVE_GAIN
+    feedback_c: 0.2
+    alpha: 3.0
+    snr_db: null
+    shot_noise: false
+    visibility_range: [1.0, 1.0]
+    dc_offset_range: [0.0, 0.0]
+    amplitude_drift_rel: 0.0
+    phase_drift_rad_per_sqrt_s: 0.0
+    contrast_drift_rel: 0.0
+    pd_bandwidth_hz: null
+    adc_bits: null
+    adc_full_scale: 1.0
