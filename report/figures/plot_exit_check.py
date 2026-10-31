@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _figcommon import (
     COLORS,
     FIGSIZE_HALF,
+    SIGN_COLLAPSE_CONTROLS,
     mean_metric,
     parse_args,
     save,
@@ -40,7 +41,7 @@ RUNS = (
 
 def main() -> None:
     args = parse_args(__doc__.splitlines()[0])
-    records = synthetic_records()
+    records = synthetic_records(SIGN_COLLAPSE_CONTROLS)
 
     x = np.arange(len(RUNS))
     width = 0.38

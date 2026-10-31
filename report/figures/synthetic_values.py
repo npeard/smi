@@ -37,6 +37,7 @@ from _figcommon import (
     DATA_DIR,
     NOMINAL_PHASE_DRIFT_FRINGES,
     Q3_FEEDBACK_C,
+    SIGN_COLLAPSE_CONTROLS,
     SYNTHETIC_WAVELENGTHS_UM,
     LadderRow,
     matched_length_cells,
@@ -806,7 +807,7 @@ def main() -> None:
         for k in (1, 3)
     ]
     real = real_tcn_rmse()
-    records = synthetic_records()
+    records = synthetic_records(SIGN_COLLAPSE_CONTROLS)
 
     values = {
         'prior_psd_rms_db': sig(prior.psd_rms_db, 2),

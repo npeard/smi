@@ -26,6 +26,7 @@ from _figcommon import (
     COLORS,
     FIGSIZE_TALL,
     NOMINAL_PHASE_DRIFT_FRINGES,
+    SIGN_COLLAPSE_CONTROLS,
     matched_length_cells,
     mean_metric,
     noise_ladder,
@@ -73,7 +74,7 @@ PHASE = 'phase_drift_rad_per_sqrt_s'
 
 def main() -> None:
     args = parse_args(__doc__.splitlines()[0])
-    records = synthetic_records()
+    records = synthetic_records(SIGN_COLLAPSE_CONTROLS)
     ladder = noise_ladder(records)
 
     def rmse_span(sim: str) -> tuple[float, float, float]:

@@ -7,6 +7,7 @@ identically.
 """
 
 import json
+from collections.abc import Collection, Iterable
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -188,3 +189,43 @@ def read_results(path: str | Path) -> list[RunRecord]:
                 entry['causal'] = not entry['sees_future']
             records.append(RunRecord(**{k: v for k, v in entry.items() if k in known}))
     return records
+
+
+def check_grace_protocol(
+    records: Iterable[RunRecord], min_epochs: int, expected_collapses: Collection[str]
+) -> None:
+    """Reject a record trained before the min_epochs grace that the grace would change.
+
+    A record without ``zero_predictor_monitor`` was trained before
+    ``training.convergence.min_epochs`` existed, under the converged rule that
+    did not compare against the zero predictor. It is equivalent to a record
+    of today's protocol when it ran past the grace, hit its epoch cap (no
+    patience stop to withdraw), or was never trained (``epochs_run`` None).
+    One that patience stopped inside the grace is not: today the run would
+    have continued and might have escaped, so mixing it with new records
+    would silently mix protocols.
+
+    Args:
+        records: Records to check.
+        min_epochs: The grace the current family configs set.
+        expected_collapses: Cell keys of such records the caller quotes as
+            zero-output collapses stopped by patience under the old protocol,
+            which is what the caller reports them as.
+
+    Raises:
+        ValueError: Naming each offending cell key.
+    """
+    stale = [
+        record.cell_key
+        for record in records
+        if record.zero_predictor_monitor is None
+        and record.epochs_run is not None
+        and record.epochs_run <= min_epochs
+        and record.epochs_run != record.max_epochs
+        and record.cell_key not in expected_collapses
+    ]
+    if stale:
+        raise ValueError(
+            f'records trained before the min_epochs={min_epochs} grace stopped '
+            f'inside it; rerun them or name them as expected collapses: {stale}'
+        )

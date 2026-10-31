@@ -27,6 +27,7 @@ from _figcommon import (
     FIGSIZE_WIDE,
     Q3_BUDGETS,
     Q3_FEEDBACK_C,
+    SIGN_COLLAPSE_CONTROLS,
     mean_metric,
     panel_label,
     parse_args,
@@ -110,7 +111,7 @@ def binned_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
 
 def main() -> None:
     args = parse_args(__doc__.splitlines()[0])
-    records = synthetic_records()
+    records = synthetic_records(SIGN_COLLAPSE_CONTROLS)
 
     fig, axes = plt.subplots(1, 3, figsize=FIGSIZE_WIDE)
     for ax, (metric, ylabel, yticks), tag in zip(

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import math
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,7 +37,7 @@ import numpy as np
 from matplotlib.typing import RcKeyType
 
 from smi.analysis.experiments import expand_grid
-from smi.analysis.results_artifact import RunRecord, read_results
+from smi.analysis.results_artifact import RunRecord, check_grace_protocol, read_results
 from smi.synthetic.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
 from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
 
@@ -65,9 +66,34 @@ Q3_FEEDBACK_C = (0.05, 0.1, 0.2, 0.4, 0.7, 0.9)
 Q3_BUDGETS = (('tcn-44k-T90', 90), ('tcn-44k', 30))
 
 
-def synthetic_records() -> dict[str, RunRecord]:
-    """The synthetic results artifact's records, keyed by runner cell key."""
+# training.convergence.min_epochs, as every family YAML under
+# smi/analysis/models/configs/ sets it. Records do not store it, and the
+# artifact's records are not tied to one grid, so it is named here.
+GRACE_MIN_EPOCHS = 30
+
+# The sign-collapse controls of synthetic.typ sections 1.1 (the exit check's
+# signed Michelson run) and 2A (alpha = 0 at both schedules). They predate the
+# min_epochs grace and stopped by patience at epoch 11 on the zero-output
+# plateau, which is exactly what the report quotes them for, so they are the
+# only pre-grace early stops that may be read beside new records.
+SIGN_COLLAPSE_CONTROLS = frozenset(
+    {
+        'tcn-44k-E20__ch635-675-515__michelson-signed__seed0',
+        'tcn-44k-T90__ch635-675-515__smi-a0__seed0',
+        'tcn-44k__ch635-675-515__smi-a0__seed0',
+    }
+)
+
+
+def synthetic_records(expected_collapses: Collection[str]) -> dict[str, RunRecord]:
+    """The synthetic results artifact's records, keyed by runner cell key.
+
+    Args:
+        expected_collapses: Pre-grace early-stopped cells the caller accepts;
+            any other raises (see ``check_grace_protocol``).
+    """
     records = read_results(SYNTHETIC_RESULTS_JSON)
+    check_grace_protocol(records, GRACE_MIN_EPOCHS, expected_collapses)
     return {r.cell_key: r for r in records if r.cell_key is not None}
 
 
