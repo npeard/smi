@@ -51,6 +51,17 @@ SIM_STYLE = {
 }
 
 
+# The C = 0.2 families the caption names, as (label, offset in points,
+# alignment); offsets keep the clustered lowest three apart.
+LABELED = {
+    'patchtransformer-offline-44k': ('PatchTr. (off.)', (5, -4), 'left'),
+    'tcan-44k': ('TCAN', (0, -8), 'center'),
+    'unettransformer-offline-44k': ('UNet-Tr. (off.)', (5, 4), 'left'),
+    'tcn-44k': ('TCN', (5, -5), 'left'),
+    'mamba-44k': ('Mamba', (-5, 3), 'right'),
+}
+
+
 def plain_log(axis: Axis) -> None:
     """Log ticks at 1-2-5 per decade, printed plainly rather than as powers."""
     axis.set_major_locator(LogLocator(subs=(1.0, 2.0, 5.0)))
@@ -82,6 +93,8 @@ def curve_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
         )
     ax.set_xscale('log')
     ax.set_yscale('log')
+    # Headroom so the Michelson lines clear the panel label.
+    ax.set_ylim(top=1.6 * ax.get_ylim()[1])
     plain_log(ax.yaxis)
     ax.set_xticks(Q3_FEEDBACK_C, [f'{c:g}' for c in Q3_FEEDBACK_C], fontsize=8)
     ax.xaxis.set_minor_locator(NullLocator())
@@ -91,25 +104,42 @@ def curve_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
     ax.legend(fontsize=7, title='dotted: Michelson', title_fontsize=7)
 
 
-def families_panel(ax: plt.Axes, cells: list[tuple[str, RunRecord]]) -> None:
-    for sim, record in cells:
+def families_panel(ax: plt.Axes, cells: list[tuple[str, str, RunRecord]]) -> None:
+    for stem, sim, record in cells:
         if not record.converged:
             continue
         metric = Q2_SIMS[sim]
         color, _ = SIM_STYLE[sim]
-        ax.plot(
+        xy = (
             mean_metric(record, metric),
             mean_metric(record, DISPLACEMENT_METRICS[metric]),
+        )
+        ax.plot(
+            *xy,
             marker='o',
             color=color,
             markerfacecolor=color if sim == 'smi-a3' else 'white',
             markeredgewidth=1.3,
             linestyle='none',
         )
+        if sim == 'smi-a3' and stem in LABELED:
+            text, offset, ha = LABELED[stem]
+            ax.annotate(
+                text,
+                xy,
+                xytext=offset,
+                textcoords='offset points',
+                ha=ha,
+                va='center',
+                fontsize=7,
+                color=color,
+            )
     for color, label in SIM_STYLE.values():
         ax.plot([], [], marker='o', color=color, ls='none', label=label)
     ax.set_xscale('log')
     ax.set_yscale('log')
+    # Room for the labels of the lowest points inside the axes.
+    ax.margins(0.12)
     plain_log(ax.xaxis)
     plain_log(ax.yaxis)
     ax.tick_params(labelsize=8)
@@ -127,13 +157,13 @@ def main() -> None:
         for sim in [*map(c_sim, Q3_FEEDBACK_C), 'michelson']
     ]
     families = [
-        (sim, r)
+        (stem, sim, r)
         for stem in Q2_STEMS
         for sim in Q2_SIMS
         if (r := q2_record(records, stem, sim)) is not None
     ]
     fig, (a, b) = plt.subplots(1, 2, figsize=(FIGSIZE_WIDE[0], 2.9))
-    if displacement_pending([*curve, *(r for _, r in families)]):
+    if displacement_pending([*curve, *(r for _, _, r in families)]):
         pending_panel(a, 'displacement RMSE against $C$\n(rerun plan item a)')
         pending_panel(b, 'displacement against velocity RMSE\n(rerun plan item a)')
     else:

@@ -531,31 +531,6 @@ The curve holds for a fixed budget, and its values still move with it. One
 $mu$m/ms, below the 90-epoch value, so convergence is not demonstrated. Within
 that caveat, the operating target is the strongest weak feedback sampled.
 
-#if val("disp_pending") [
-  #pending[Displacement RMSE (@fig-displacement) awaits re-scoring of the
-    saved checkpoints; the records do not carry it yet.]
-] else [
-  Displacement RMSE follows the same checkpoints (@fig-displacement). At
-  $C = #val("disp_c_top")$ the 90-epoch TCN reaches #val("disp_curve_top")
-  $mu$m, #val("disp_gain_top") times below Michelson's sign-invariant
-  #val("disp_michelson") $mu$m.
-]
-
-#fig(
-  "displacement_rmse",
-  width: 80%,
-  caption: [
-    #if val("disp_pending") [*Pending:* the records do not carry displacement
-      RMSE yet, so this figure states no result.]
-    Displacement RMSE from the same checkpoints and test shots as the velocity
-    results: the predicted velocity integrated over each 16384-sample shot,
-    its start offset removed. (a) Against $C$, as in #ref(<fig-feedback>)a;
-    dotted: Michelson, sign-invariant. (b) Displacement against velocity RMSE
-    for every trained family of @fig-families, hollow on Michelson
-    (sign-invariant), filled at $C = 0.2$ (signed).
-  ],
-) <fig-displacement>
-
 == Which imperfection costs the most <sec-q3-noise>
 
 #assert(val("noise_ranking"), message: "the noise ladder no longer ranks phase drift, then SNR, then the rest")
@@ -816,6 +791,42 @@ a few samples, while velocity must be read over a fringe period of hundreds;
 chrono gate initialization and a larger learning rate did not move it. The
 offline neural operator mixes a few global Fourier modes and has no local path
 at the fringe frequency.
+
+#assert(val("disp_lowest_named"), message: "the three lowest families on displacement at C = 0.2 are no longer the two offline transformers and TCAN, tied with each other and below the TCN")
+#assert(val("disp_mamba_last"), message: "Mamba is no longer last on displacement at C = 0.2, tied with the TCN on both scores")
+#assert(val("disp_mich_spread"), message: "the Michelson families tied on velocity no longer spread beyond the displacement seed range")
+#assert(val("disp_curve_monotone"), message: "the 90-epoch displacement curve is no longer monotone in C")
+
+Displacement RMSE ranks the families differently from velocity RMSE
+(@fig-displacement). Displacement is what the instrument reports, and it
+weights the velocity error spectrum by $1 \/ f^2$ (@fig-spectral), so slow
+error counts for more than in velocity RMSE. We rescore the checkpoints and
+frozen test shots of @fig-families without retraining. Three seeds of the
+noise-free base span #val("disp_seed_range_pct")% of its mean displacement
+error, against #val("q2_seed_range_pct")% for velocity, and that wider range
+decides which families are resolved. Why integration reorders the families
+is untested, and a grid that retrains the stalled families and a TCN control
+on the displacement target is still running.
+
+#fig(
+  "displacement_rmse",
+  width: 80%,
+  caption: [
+    Displacement does not keep the families' velocity ranking. With feedback,
+    TCAN, best on velocity, ties the offline PatchTransformer and
+    UNet-Transformer at #val("disp_lowest_lo") to #val("disp_lowest_hi")
+    #box[$mu$m], against the TCN's #val("disp_tcn") #box[$mu$m]. Mamba, tied
+    with the TCN on velocity, is last at #val("disp_mamba") #box[$mu$m] but
+    within the displacement seed range of the TCN. Without feedback, the
+    families tied on velocity span #val("disp_mich_span") times in
+    displacement. (a) The TCN against $C$, as in #ref(<fig-feedback>)a,
+    falling to #val("disp_gain_top") times below Michelson (dotted,
+    sign-invariant) at $C = #val("disp_c_top")$. (b) Displacement against
+    velocity RMSE for every trained family of @fig-families, one seed each:
+    hollow on Michelson, scored under each shot's better global sign; filled
+    at $C = 0.2$, signed.
+  ],
+) <fig-displacement>
 
 Each cell is one seed at one budget, noise-free, and budgets differ:
 #val("q2_early_n") trained cells stopped by patience before the restart at

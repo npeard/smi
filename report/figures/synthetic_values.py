@@ -1187,10 +1187,21 @@ def methods_values(
 # The cells whose displacement RMSE the text quotes: the 90-epoch C curve and
 # its Michelson reference, and the S1 families at both sims.
 DISPLACEMENT_CURVE = 'tcn-44k-T90'
+# The families the text names lowest on displacement at C = 0.2.
+DISPLACEMENT_LOWEST = {
+    'patchtransformer-offline-44k',
+    'tcan-44k',
+    'unettransformer-offline-44k',
+}
 
 
 def displacement_values(records: dict[str, RunRecord]) -> dict[str, object]:
-    """Displacement RMSE of the quoted cells, or the pending flag alone."""
+    """Displacement RMSE of the quoted cells, or the pending flag alone.
+
+    Families are ranked at the displacement seed range, measured on the same
+    seeds as ``seed_resolution``: integration changes the spread, so the
+    velocity resolution does not carry over.
+    """
     curve = {
         c: synthetic_cell(records, DISPLACEMENT_CURVE, c_sim(c)) for c in Q3_FEEDBACK_C
     }
@@ -1211,14 +1222,54 @@ def displacement_values(records: dict[str, RunRecord]) -> dict[str, object]:
     si = DISPLACEMENT_METRICS['velocity_rmse_sign_invariant']
     signed = DISPLACEMENT_METRICS['velocity_rmse']
     top = max(Q3_FEEDBACK_C)
+    base = [mean_metric(r, signed) for r in noise_seeds(records, 'ladder-base')]
+    resolution = (max(base) - min(base)) / (sum(base) / len(base))
+
+    def trained(sim: str) -> dict[str, float]:
+        return {
+            s: mean_metric(r, DISPLACEMENT_METRICS[Q2_SIMS[sim]])
+            for s in Q2_STEMS
+            if (r := q2_record(records, s, sim)) is not None and r.converged
+        }
+
+    smi, mich = trained('smi-a3'), trained('michelson')
+    tcn = smi['tcn-44k']
+    ranked = sorted(smi, key=smi.__getitem__)
+    lowest = [smi[s] for s in ranked[: len(DISPLACEMENT_LOWEST)]]
+    # Michelson: the families the velocity text calls tied (all but the
+    # offline neural operator) and their spread on displacement.
+    tied = [v for s, v in mich.items() if s != 'neuraloperator-offline-44k']
+    curve_rmse = [mean_metric(curve[c], signed) for c in sorted(Q3_FEEDBACK_C)]
+    velocity = {
+        s: mean_metric(synthetic_cell(records, f'{s}-T90', 'smi-a3'), 'velocity_rmse')
+        for s in ('tcn-44k', 'mamba-44k')
+    }
     return {
         'disp_pending': False,
-        'disp_michelson': sig(mean_metric(michelson, si), 2),
         'disp_c_top': f'{top:g}',
-        'disp_curve_top': sig(mean_metric(curve[top], signed), 2),
         'disp_gain_top': sig(
             mean_metric(michelson, si) / mean_metric(curve[top], signed), 2
         ),
+        'disp_curve_monotone': all(a > b for a, b in itertools.pairwise(curve_rmse)),
+        'disp_seed_range_pct': pct(resolution),
+        **lo_hi('disp_lowest', lowest, lambda x: sig(x, 2)),
+        'disp_tcn': sig(tcn, 2),
+        'disp_mamba': sig(smi['mamba-44k'], 2),
+        # The three lowest are the named ones, unordered by the seed range,
+        # and each sits below the TCN by more than it.
+        'disp_lowest_named': set(ranked[: len(DISPLACEMENT_LOWEST)])
+        == DISPLACEMENT_LOWEST
+        and not separated(lowest[0], lowest[-1], resolution)
+        and separated(lowest[-1], tcn, resolution),
+        # Mamba, tied with the TCN on velocity, is last of the trained
+        # families on displacement but not resolved from the TCN.
+        'disp_mamba_last': ranked[-1] == 'mamba-44k'
+        and not separated(tcn, smi['mamba-44k'], resolution)
+        and not separated(
+            velocity['tcn-44k'], velocity['mamba-44k'], seed_resolution(records)
+        ),
+        'disp_mich_span': sig(max(tied) / min(tied), 2),
+        'disp_mich_spread': separated(min(tied), max(tied), resolution),
     }
 
 
