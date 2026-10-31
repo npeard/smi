@@ -146,14 +146,16 @@ def main() -> None:
         ),
         Line2D([], [], marker='o', color=SIM_STYLE['smi-a3'], ls='none'),
         Line2D([], [], marker='x', color=STALLED, mew=1.6, ls='none'),
-        Patch(color=COLORS['accent'], alpha=0.3),
+        Patch(color=SIM_STYLE['michelson'], alpha=0.18, lw=0),
+        Patch(color=SIM_STYLE['smi-a3'], alpha=0.18, lw=0),
         Line2D([], [], color='k', ls='--', lw=1.0),
     ]
     labels = [
         'Michelson, sign-invariant',
         '$C=0.2$, signed',
         'stalled at the zero-output plateau',
-        'TCN $\\pm$ seed range',
+        'TCN $\\pm$ seed range, Michelson',
+        'TCN $\\pm$ seed range, $C=0.2$',
         'zero predictor',
     ]
     fig.legend(
