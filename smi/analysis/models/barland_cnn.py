@@ -16,6 +16,16 @@ POOL_SIZE = 2
 HEAD_POSITIONS = 10
 
 
+def conv_position_field(n_layers: int) -> int:
+    """Samples one conv-stack position spans, counting kernels only.
+
+    Layer ``i`` (from 0) sees its kernel at stride ``POOL_SIZE**i``; each pool
+    is counted as pure subsampling, so its own window adds nothing (91 for the
+    four-layer published network, where the pools' windows would make it 98).
+    """
+    return 1 + (KERNEL_SIZE - 1) * sum(POOL_SIZE**i for i in range(n_layers))
+
+
 @dataclass
 class BarlandCNNConfig:
     # Common parameters (consistent across all model configs)
@@ -101,9 +111,9 @@ class BarlandCNN(SlidingWindowModel):
         through each conv + pool layer (a pool doubles the samples, a conv
         adds kernel_size - 1) gives the samples one window's prediction
         depends on: 250 of the published 256, the pooling floors dropping the
-        tail. Each conv position alone sees only 91, which is not the field: the
-        dense head combines them. The overlap average then widens the window's
-        field to every covering window.
+        tail. The dense head combines the conv positions (``conv_position_field``
+        spans each alone), and the overlap average widens the window's field to
+        every covering window.
         """
         window_field = HEAD_POSITIONS
         for _ in self.config.channels:

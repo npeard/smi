@@ -13,6 +13,7 @@ import torch
 import yaml
 
 from smi.analysis.metrics import count_parameters
+from smi.analysis.models.barland_cnn import conv_position_field
 from smi.analysis.models.base import Model
 from smi.analysis.models.factory import MODEL_REGISTRY, create_model
 from smi.analysis.models.sliding_window import SlidingWindowModel
@@ -51,8 +52,8 @@ def _field(model_hparams: dict) -> int | None:
 # One-sided lookback every causal convolutional/attention family is held to
 # (the patch Transformer's worst phase; see its receptive_field).
 CAUSAL_FIELD = _field(_load(MATCHED / 'tcn-44k.yaml')['model'])
-# Symmetric field every offline family is held to: the 91-sample field of one
-# position of Barland's conv stack, because its depth and kernels are fixed by
+# Symmetric field every offline family is held to: the field of one position
+# of Barland's conv stack (91 samples), because its depth and kernels are fixed by
 # the published network while the others can be tuned to it. It is not
 # Barland's receptive_field: the dense head and the overlap average widen that
 # (to 498 for barland-44k), as they widen the MLP's, so the two sliding-window
@@ -60,7 +61,9 @@ CAUSAL_FIELD = _field(_load(MATCHED / 'tcn-44k.yaml')['model'])
 # FIELD_BAND, not exactly: SCNN needs an odd kernel (symmetric padding cannot
 # preserve length otherwise), which puts its fields at 85 or 169, never 91.
 FIELD_BAND = 0.10
-OFFLINE_FIELD = 91
+OFFLINE_FIELD = conv_position_field(
+    len(_load(MATCHED / 'barland-44k.yaml')['model']['channels'])
+)
 
 
 def _wrapped_parameters(model_hparams: dict) -> int:
