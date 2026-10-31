@@ -3,7 +3,8 @@
 # but that cell trained ~64 epochs against ~35 for the nominal point, and the
 # noise-free base itself gains 36-49% from longer training. Here the nominal
 # point, the nominal point without phase drift, and the noise-free base all
-# train exactly 60 epochs, so the comparison is at equal length.
+# train exactly 60 epochs, so the comparison is at equal length; so does the
+# ladder's phase-drift sweep.
 # Run: python -m smi.analysis.experiments smi/analysis/experiments/q3_s3_matched_length.yaml \
 #        --out smi/analysis/data/synthetic_results.json
 families:
@@ -17,6 +18,10 @@ sims:
   - {name: nominal-no-phasedrift, preset: nominal, feedback_c: 0.2, alpha: 3.0,
      override: {phase_drift_rad_per_sqrt_s: 0.0}}
   - {name: ladder-base, preset: noise_free, feedback_c: 0.2, alpha: 3.0}
+  # The ladder's phase-drift rows trained 36-67 epochs; at equal length the
+  # curve says what a partial drift cut buys.
+  - {name: ladder-phasedrift, preset: noise_free, feedback_c: 0.2, alpha: 3.0,
+     sweep: {phase_drift_rad_per_sqrt_s: [10.74743605277774, 21.49487210555548, 35.31967896870391, 58.0361546849998, 116.0723093699996]}}
 
 seeds: [0]
 oracle: false
