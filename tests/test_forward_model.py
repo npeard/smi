@@ -310,3 +310,12 @@ def test_cached_simulation_is_bitwise_the_uncached_one(device):
     )
     for field in dataclasses.fields(cold):
         assert torch.equal(getattr(cold, field.name), getattr(warm, field.name))
+
+
+def test_nominal_phase_drift_rate_is_its_fringes_converted():
+    # Pinned to the rate every shipped grid's sim hashes were computed under:
+    # defining it from the fringe count must not move it by one ulp.
+    assert forward.NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S == 35.31967896870391
+    assert forward.rad_per_sqrt_s_to_fringes(
+        forward.NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S
+    ) == pytest.approx(forward.NOMINAL_PHASE_DRIFT_FRINGES)

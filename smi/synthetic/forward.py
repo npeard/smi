@@ -118,7 +118,16 @@ _SHOT_S = (
 # low at the nominal D (finite windows smooth the walk) while this conversion uses the
 # continuous Brownian range, so the nominal is a lower bound on the true D.
 _FRINGES_TO_RAD_PER_SQRT_S = 2 * math.pi / math.sqrt(8 * _SHOT_S / math.pi)
-NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S = math.sqrt(2.7) * _FRINGES_TO_RAD_PER_SQRT_S
+NOMINAL_PHASE_DRIFT_FRINGES = math.sqrt(2.7)
+NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S = (
+    NOMINAL_PHASE_DRIFT_FRINGES * _FRINGES_TO_RAD_PER_SQRT_S
+)
+
+
+def rad_per_sqrt_s_to_fringes(rate: float) -> float:
+    """Mean within-shot drift in fringes of a phase walk of ``rate`` rad/sqrt(s)."""
+    return rate / _FRINGES_TO_RAD_PER_SQRT_S
+
 
 # Sweep for each uncertain knob, as SimConfig field values (so a sweep point
 # is dataclasses.replace(cfg, **{name: value})). Nominals sit inside each.
@@ -135,7 +144,7 @@ NOMINAL_SWEEPS: dict[str, tuple[object, ...]] = {
     # 0, half the published low end, low (1 fringe), mid, high (2.7), 2x high.
     'phase_drift_rad_per_sqrt_s': tuple(
         n * _FRINGES_TO_RAD_PER_SQRT_S
-        for n in (0.0, 0.5, 1.0, math.sqrt(2.7), 2.7, 5.4)
+        for n in (0.0, 0.5, 1.0, NOMINAL_PHASE_DRIFT_FRINGES, 2.7, 5.4)
     ),
     'contrast_drift_rel': (0.0, 0.02, 0.05, 0.1, 0.2, 0.5),
     # Top below the board's boxcar -3 dB (216 kHz, see SimConfig.nominal).
