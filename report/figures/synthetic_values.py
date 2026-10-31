@@ -676,6 +676,16 @@ def separated(a: float, b: float, resolution: float) -> bool:
     return b / a - 1 > resolution
 
 
+def at_edge(gain: float, resolution: float) -> bool:
+    """Whether a relative ``gain`` is about ``resolution``, within a factor 1.5.
+
+    For gains the text calls "at the edge of the seed range": neither clearly
+    resolved nor clearly inside it, so a rerun that moves the gain well past
+    either side should change the wording.
+    """
+    return resolution / 1.5 <= gain <= 1.5 * resolution
+
+
 def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
     """Values section Q2 quotes from the S1 and S1m family grids.
 
@@ -904,6 +914,7 @@ def q1_s2_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
         # two-channel phase combination: the coarsest gcd over the pairs.
         'q1_lattice_nm': f'{lattice_nm:g}',
         'q1_runner_up_tcn_pct': pct(runner_up('tcn-44k')),
+        'q1_runner_up_tcn_at_edge': at_edge(runner_up('tcn-44k'), resolution),
         'q1_runner_up_tcan_pct': pct(runner_up('tcan-44k')),
         'q1_gain_tcn': sig(gain('tcn-44k'), 3),
         'q1_gain_tcan': sig(gain('tcan-44k'), 3),
@@ -916,7 +927,7 @@ def q1_s2_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
         ),
         'q1_tcn_multi_tied': not separated(min(tcn_multi), max(tcn_multi), resolution),
         'q1_tcan_triple_pct': pct(1 - tcan_triple / tcan_pair),
-        'q1_tcan_triple_apart': separated(tcan_triple, tcan_pair, resolution),
+        'q1_tcan_triple_at_edge': at_edge(tcan_pair / tcan_triple - 1, resolution),
         **lo_hi(
             'q1_epochs',
             (
