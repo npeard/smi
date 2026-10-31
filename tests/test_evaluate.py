@@ -21,6 +21,7 @@ from smi.analysis.results_artifact import (
 )
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.synthetic import frozen
+from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.forward import SIMULATOR_VERSION
 from smi.synthetic.frozen import pd_keys, write_frozen_set
 from tests._sims import SAMPLE_RATE, SMALL_CHUNK_SHOTS, michelson_sim
@@ -76,10 +77,18 @@ def test_sign_invariant_rmse_per_shot():
     torch.testing.assert_close(out, torch.tensor([0.0, 1.0]))
 
 
+VELOCITY_METRICS = (
+    'velocity_rmse',
+    'velocity_rmse_sign_invariant',
+    'velocity_nrmse',
+    'velocity_nrmse_sign_invariant',
+)
+
+
 def test_perfect_estimator_scores_zero(michelson_set):
     result = evaluate(_Truth(michelson_set), michelson_set, RIG, None, **TRAINED)
-    for key, summary in result.record.metrics.items():
-        assert summary['max'] == 0.0, key
+    for key in VELOCITY_METRICS:
+        assert result.record.metrics[key]['max'] == 0.0, key
     assert result.record.converged
     assert result.record.causal
     assert result.record.sim_config_hash == michelson_sim().hash()
@@ -371,6 +380,63 @@ def test_fringe_distance_bin_uses_shortest_wavelength_phase_column(tmp_path):
     # The same channel asked for alone is still found by wavelength.
     only = evaluate(_Truth(path, offset=1.0), path, (0.515,), None, **TRAINED)
     assert only.record.binned['fringe_distance'][1]['n'] == 2 * 32
+
+
+def _integrable_file(path, offset_um):
+    """File whose displacement is exactly ``integrate_velocity`` of its velocity.
+
+    A frozen set's velocity is the spectral derivative of its displacement, so
+    integrating it back carries a small discretization error; here the two
+    agree to rounding, which gives the displacement metrics a known answer.
+    ``offset_um`` is a per-shot start offset the metric must ignore.
+    """
+    rng = np.random.default_rng(1)
+    shots, length = 3, 256
+    velocity = np.cumsum(rng.normal(size=(shots, length)), axis=1).astype('float32')
+    displacement = (
+        CoilDriver.integrate_velocity(
+            torch.from_numpy(velocity).double(), SAMPLE_RATE
+        ).numpy()
+        + np.asarray(offset_um)[:, None]
+    )
+    with h5py.File(path, 'w') as f:
+        f.attrs['sample_rate'] = SAMPLE_RATE
+        f.attrs['pd_wavelengths_um'] = np.asarray(RIG[:1])
+        f['velocity'] = velocity
+        f['displacement'] = displacement
+        for key in pd_keys(RIG[:1]):
+            f[key] = rng.normal(size=(shots, length)).astype('float32')
+    return path, displacement - displacement[:, :1]
+
+
+def test_perfect_velocity_scores_zero_displacement_rmse(tmp_path):
+    path, _ = _integrable_file(tmp_path / 'int.h5', [5.0, -2.0, 0.0])
+    result = evaluate(_Truth(path), path, RIG[:1], None, **TRAINED)
+    for key in ('displacement_rmse', 'displacement_rmse_sign_invariant'):
+        assert result.record.metrics[key]['max'] < 1e-9, key
+
+
+def test_constant_velocity_bias_gives_the_ramp_rms(tmp_path):
+    path, _ = _integrable_file(tmp_path / 'int.h5', [5.0, -2.0, 0.0])
+    bias = 0.5
+    result = evaluate(_Truth(path, offset=bias), path, RIG[:1], None, **TRAINED)
+    # Integrated bias is the ramp b * dt * k, k = 0..L-1, once offsets go.
+    dt_ms = 1e3 / SAMPLE_RATE
+    ramp_rms = bias * dt_ms * np.sqrt(np.mean(np.arange(256.0) ** 2))
+    np.testing.assert_allclose(
+        result.per_shot['displacement_rmse'], ramp_rms, rtol=1e-5
+    )
+
+
+def test_sign_flip_is_chosen_on_velocity_for_displacement(tmp_path):
+    path, centered = _integrable_file(tmp_path / 'int.h5', [5.0, -2.0, 0.0])
+    result = evaluate(_Truth(path, scale=-1.0), path, RIG[:1], None, **TRAINED)
+    assert result.record.metrics['displacement_rmse_sign_invariant']['max'] < 1e-9
+    np.testing.assert_allclose(
+        result.per_shot['displacement_rmse'],
+        2 * np.sqrt(np.mean(centered**2, axis=1)),
+        rtol=1e-5,
+    )
 
 
 def test_record_labels_training_and_test_seeds_and_finiteness(tmp_path, michelson_set):

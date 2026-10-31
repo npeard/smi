@@ -12,6 +12,11 @@ Conventions that matter when reading the numbers:
   ``-pred`` (see :func:`smi.analysis.metrics.sign_invariant_rmse`).
 * NRMSE is that RMSE divided by the per-shot population std of the true
   velocity, for both variants.
+* ``displacement_rmse`` (um) is the per-shot RMSE of the integrated predicted
+  velocity against the true displacement, both with their start sample
+  removed, as in ``LitModule.loss_function``'s displacement term. Its
+  ``_sign_invariant`` variant reuses the sign chosen on velocity, so a shot's
+  two sign-invariant metrics agree on one sign.
 * Per-sample errors are binned by the true ``|v|`` (10 quantile bins over the
   evaluated set) and by the phase distance to the nearest fringe extremum of
   the shortest selected wavelength. The sign-invariant bin errors use the sign
@@ -23,7 +28,7 @@ import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import h5py
 import numpy as np
@@ -215,10 +220,11 @@ def _iter_chunks(
     fringe_key: str,
     n_shots: int,
     full: bool,
-) -> Iterator[tuple[Tensor | None, Tensor, np.ndarray | None]]:
-    """Yield ``(signals [b,C,L], velocity [b,L], phase [b,L])`` chunks.
+) -> Iterator[tuple[Tensor | None, Tensor, np.ndarray | None, Tensor | None]]:
+    """Yield ``(signals [b,C,L], velocity [b,L], phase [b,L], disp [b,L])``.
 
-    With ``full`` false only the velocity is read; signals and phase are None.
+    With ``full`` false only the velocity is read; the rest are None. The
+    displacement is float64, um.
 
     Truth comes from the file when stored (frozen sets), else from the drive
     voltage through the coil model, as the training datasets do. The phase is
@@ -234,7 +240,7 @@ def _iter_chunks(
         if 'velocity' in f:
             velocity = torch.from_numpy(np.asarray(f['velocity'][sl], dtype=np.float32))
             if not full:
-                yield None, velocity, None
+                yield None, velocity, None, None
                 continue
             displacement = np.asarray(f['displacement'][sl], dtype=np.float64)
         else:
@@ -244,7 +250,7 @@ def _iter_chunks(
                 volts, sample_rate
             )
             if not full:
-                yield None, velocity.float(), None
+                yield None, velocity.float(), None, None
                 continue
             displacement = disp_t.double().numpy()
         if 'optical_phase' in f:
@@ -257,7 +263,7 @@ def _iter_chunks(
         signals = torch.from_numpy(
             np.stack([np.asarray(f[k][sl], dtype=np.float32) for k in keys], axis=1)
         )
-        yield signals, velocity.float(), phase
+        yield signals, velocity.float(), phase, torch.from_numpy(displacement)
 
 
 def evaluate(
@@ -296,12 +302,13 @@ def evaluate(
         n = n if n_shots is None else min(n_shots, n)
         shortest = int(np.argmin(wavelengths_um))
         fringe = (keys[shortest], wavelengths_um[shortest])
+        sample_rate = file_sample_rate(f)
 
         # Pass 1: quantile edges of the true |v| need the whole evaluated set.
         speeds = np.concatenate(
             [
                 v.abs().numpy().ravel()
-                for _, v, _ in _iter_chunks(f, keys, fringe[1], fringe[0], n, False)
+                for _, v, _, _ in _iter_chunks(f, keys, fringe[1], fringe[0], n, False)
             ]
         )
         v_edges = np.quantile(speeds, np.linspace(0.0, 1.0, N_BINS + 1))
@@ -315,17 +322,20 @@ def evaluate(
                 'velocity_rmse_sign_invariant',
                 'velocity_nrmse',
                 'velocity_nrmse_sign_invariant',
+                'displacement_rmse',
+                'displacement_rmse_sign_invariant',
             )
         }
         # [count, squared-error sum, sign-invariant squared-error sum] per bin
         acc = {name: np.zeros((3, N_BINS)) for name in ('v', 'p')}
         finite = True
         shot = 0
-        for signals, velocity, phase in _iter_chunks(
+        for signals, velocity, phase, disp in _iter_chunks(
             f, keys, fringe[1], fringe[0], n, True
         ):
             assert signals is not None
             assert phase is not None
+            assert disp is not None
             pred = est.predict_velocity(signals, wavelengths_um)
             if pred.shape != velocity.shape:
                 raise ValueError(
@@ -343,20 +353,26 @@ def evaluate(
                     'undefined (invalid data)'
                 )
             shot += len(std)
+            sign = best_sign(pred, velocity).double()
+            # float64: a cumulative sum over 16384 float32 samples would carry
+            # its own rounding into the metric. integrate_velocity starts each
+            # shot at zero, which removes the predicted start offset.
+            d_hat = cast(
+                Tensor, CoilDriver.integrate_velocity(pred.double(), sample_rate)
+            )
+            d = disp - disp[:, :1]
             for key, value in (
                 ('velocity_rmse', rmse),
                 ('velocity_rmse_sign_invariant', rmse_si),
                 ('velocity_nrmse', rmse / std),
                 ('velocity_nrmse_sign_invariant', rmse_si / std),
+                ('displacement_rmse', per_shot_rmse(d_hat, d)),
+                ('displacement_rmse_sign_invariant', per_shot_rmse(sign * d_hat, d)),
             ):
                 per_shot[key].append(value)
 
             sq = ((pred - velocity) ** 2).numpy().astype(np.float64)
-            sq_si = (
-                ((best_sign(pred, velocity) * pred - velocity) ** 2)
-                .numpy()
-                .astype(np.float64)
-            )
+            sq_si = ((sign.float() * pred - velocity) ** 2).numpy().astype(np.float64)
             half = np.abs(phase - np.pi * np.round(phase / np.pi))
             for name, idx in (
                 ('v', np.digitize(velocity.abs().numpy(), v_edges[1:-1])),
