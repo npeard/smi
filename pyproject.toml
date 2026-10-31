@@ -237,10 +237,11 @@ torch = ">=2.15"
 [tool.pixi.feature.dev.pypi-dependencies]
 pre-commit = "*"
 nbstripout = "*"
-# Upper-bounded (pre-1.0, rule sets shift): 0.0.90 and later report invalid-mutable-override on every
-# nn.Module.forward override, because torch types `forward` as a mutable
-# Callable attribute. Still open at 0.0.95 (21 diagnostics); lift when torch or ty resolves it.
-ty = "<0.0.96"
+# Held below 0.0.81: 0.0.90 through 0.0.95 (checked 2026-10-31) report
+# invalid-mutable-override on every nn.Module.forward override, because torch
+# types `forward` as a mutable Callable attribute. Lift the pin when torch or
+# ty resolves that.
+ty = "<0.0.81"
 bandit = "*"
 marimo = "*"
 lmfit = "*"
