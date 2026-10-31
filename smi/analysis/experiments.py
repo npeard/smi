@@ -56,7 +56,7 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -278,7 +278,7 @@ def _kill_children() -> None:
 
 
 @contextmanager
-def runner_lock(path: Path) -> Iterator[None]:
+def runner_lock(path: Path) -> Generator[None]:
     """Hold the single-instance lock for the runner's lifetime.
 
     The lock is an exclusive ``flock`` on the file, which the kernel drops when

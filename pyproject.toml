@@ -113,7 +113,9 @@ ignore = [
     # Exception handling (reasonable for research code)
     "TRY003",
     # Complexity (reasonable limits for scientific code)
-    "PLR0913", "PLR2004",
+    # PLR0917 (new in ruff 0.17) is the positional twin of PLR0913: same call
+    # shape, same reason; keyword-only rewrites would touch every call site.
+    "PLR0913", "PLR0917", "PLR2004",
     # Private access (sometimes needed for scientific libraries)
     "SLF001",
     # Security (may need adjustment based on your needs)
