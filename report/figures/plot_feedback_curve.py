@@ -14,6 +14,7 @@ Reads the runner's records in synthetic_results.json and recomputes nothing.
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -27,7 +28,7 @@ from _figcommon import (
     FIGSIZE_WIDE,
     Q3_BUDGETS,
     Q3_FEEDBACK_C,
-    SIGN_COLLAPSE_CONTROLS,
+    c_sim,
     mean_metric,
     panel_label,
     parse_args,
@@ -38,8 +39,6 @@ from _figcommon import (
 
 from smi.analysis.results_artifact import RunRecord
 
-# Per schedule: color and line style, so the two curves differ without color.
-STYLE = {90: (COLORS['accent'], '-', 'o'), 30: (COLORS['muted'], '--', 's')}
 # The alpha controls, all at C = 0.2.
 CONTROLS = (('smi-a5', '^', r'$\alpha=5$'), ('smi-a0', 'X', r'$\alpha=0$'))
 # (metric, axis label, labelled y ticks): log axes spanning under a decade
@@ -56,11 +55,20 @@ BINNED = (
 )
 
 
+def log_axes(ax: plt.Axes, xticks: Sequence[float], yticks: Sequence[float]) -> None:
+    """Log both axes, labelling exactly ``xticks`` and ``yticks``."""
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.minorticks_off()
+    ax.set_xticks(xticks, [f'{x:g}' for x in xticks], fontsize=8)
+    ax.set_yticks(yticks, [f'{y:g}' for y in yticks], fontsize=8)
+
+
 def binned_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
     """Sign-invariant RMSE by |v| decile, at each decile's midpoint speed."""
-    color = STYLE[90][0]
+    budget = Q3_BUDGETS[0]
     for sim, linestyle, marker, label in BINNED:
-        binned = synthetic_cell(records, 'tcn-44k-T90', sim).binned
+        binned = synthetic_cell(records, budget.family, sim).binned
         assert binned is not None, sim
         rows = binned['abs_velocity']
         speed = [(r['lo'] + r['hi']) / 2 for r in rows]
@@ -68,7 +76,7 @@ def binned_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
         ax.plot(
             speed,
             error,
-            color=color,
+            color=budget.color,
             linestyle=linestyle,
             marker=marker,
             markersize=4,
@@ -96,13 +104,7 @@ def binned_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
                 fontsize=8,
                 color=COLORS['muted'],
             )
-    ax.set_xscale('log')
-    ax.set_yscale('log')
-    ax.minorticks_off()
-    xticks = (0.01, 0.1, 1.0)
-    yticks = (0.02, 0.05, 0.1, 0.2, 0.5)
-    ax.set_xticks(xticks, [f'{x:g}' for x in xticks], fontsize=8)
-    ax.set_yticks(yticks, [f'{y:g}' for y in yticks], fontsize=8)
+    log_axes(ax, (0.01, 0.1, 1.0), (0.02, 0.05, 0.1, 0.2, 0.5))
     ax.set_xlim(right=8)
     ax.set_xlabel(r'$|v|$ decile midpoint ($\mu$m/ms)')
     ax.set_ylabel(r'sign-inv. RMSE ($\mu$m/ms)')
@@ -111,53 +113,45 @@ def binned_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
 
 def main() -> None:
     args = parse_args(__doc__.splitlines()[0])
-    records = synthetic_records(SIGN_COLLAPSE_CONTROLS)
+    records = synthetic_records()
 
     fig, axes = plt.subplots(1, 3, figsize=FIGSIZE_WIDE)
     for ax, (metric, ylabel, yticks), tag in zip(
         axes[:2], PANELS, ['(a)', '(b)'], strict=True
     ):
-        for family, epochs in Q3_BUDGETS:
-            color, linestyle, marker = STYLE[epochs]
+        for budget in Q3_BUDGETS:
             curve = [
-                mean_metric(
-                    synthetic_cell(records, family, f'smi-a3-feedback_c={c}'), metric
-                )
+                mean_metric(synthetic_cell(records, budget.family, c_sim(c)), metric)
                 for c in Q3_FEEDBACK_C
             ]
             ax.plot(
                 Q3_FEEDBACK_C,
                 curve,
-                color=color,
-                linestyle=linestyle,
-                marker=marker,
+                color=budget.color,
+                linestyle=budget.linestyle,
+                marker=budget.marker,
                 markersize=5,
             )
-            michelson = synthetic_cell(records, family, 'michelson')
+            michelson = synthetic_cell(records, budget.family, 'michelson')
             ax.axhline(
                 mean_metric(michelson, f'{metric}_sign_invariant'),
-                color=color,
+                color=budget.color,
                 linestyle=':',
                 linewidth=1.5,
             )
             for sim, control_marker, _ in CONTROLS:
                 ax.plot(
                     0.2,
-                    mean_metric(synthetic_cell(records, family, sim), metric),
+                    mean_metric(synthetic_cell(records, budget.family, sim), metric),
                     marker=control_marker,
                     markersize=8,
                     markerfacecolor='none',
-                    markeredgecolor=color,
+                    markeredgecolor=budget.color,
                     markeredgewidth=1.2,
                     linestyle='none',
                 )
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.minorticks_off()
-        ax.set_xticks(
-            Q3_FEEDBACK_C, [f'{c:g}' for c in Q3_FEEDBACK_C], fontsize=8, rotation=45
-        )
-        ax.set_yticks(yticks, [f'{y:g}' for y in yticks], fontsize=8)
+        log_axes(ax, Q3_FEEDBACK_C, yticks)
+        ax.tick_params(axis='x', labelrotation=45)
         ax.set_xlabel('feedback strength $C$')
         ax.set_ylabel(ylabel)
         panel_label(ax, tag)
@@ -167,11 +161,13 @@ def main() -> None:
     # Each Michelson line and control marker is drawn once per budget, in that
     # budget's color, so the legend shows both colors side by side.
     def per_budget(**style: object) -> tuple[Line2D, ...]:
-        return tuple(Line2D([], [], color=STYLE[e][0], **style) for _, e in Q3_BUDGETS)
+        return tuple(Line2D([], [], color=b.color, **style) for b in Q3_BUDGETS)
 
     handles = [
-        Line2D([], [], color=STYLE[90][0], linestyle='-', marker='o'),
-        Line2D([], [], color=STYLE[30][0], linestyle='--', marker='s'),
+        *(
+            Line2D([], [], color=b.color, linestyle=b.linestyle, marker=b.marker)
+            for b in Q3_BUDGETS
+        ),
         per_budget(linestyle=':', linewidth=1.5),
         *(
             per_budget(
@@ -185,8 +181,7 @@ def main() -> None:
         ),
     ]
     labels = [
-        '90-epoch cycle',
-        '30-epoch cycle',
+        *(f'{b.epochs}-epoch cycle' for b in Q3_BUDGETS),
         'Michelson, sign-inv.',
         *(lab for _, _, lab in CONTROLS),
     ]

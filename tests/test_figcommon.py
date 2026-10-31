@@ -14,26 +14,11 @@ from _figcommon import (
 
 from smi.analysis.experiments import expand_grid
 from smi.analysis.results_artifact import RunRecord
-
-
-def _record(**overrides) -> RunRecord:
-    base = dict(
-        model_type='TCN',
-        config={'kernel_size': 5},
-        total_params=57000,
-        receptive_field=253,
-        causal=True,
-        seed=0,
-        device='cpu',
-        dataset='synthetic',
-        metrics={},
-    )
-    base.update(overrides)
-    return RunRecord(**base)
+from tests._helpers import run_record
 
 
 def _trained(cell_key: str, epochs_run: int, **overrides) -> RunRecord:
-    return _record(
+    return run_record(
         cell_key=cell_key, epochs_run=epochs_run, max_epochs=100, **overrides
     )
 
@@ -78,8 +63,8 @@ def test_named_expected_collapse_is_accepted():
     [
         _trained('past-grace', 31),
         _trained('new-protocol', 11, zero_predictor_monitor=0.5),
-        _record(cell_key='capped', epochs_run=20, max_epochs=20),
-        _record(cell_key='oracle'),
+        run_record(cell_key='capped', epochs_run=20, max_epochs=20),
+        run_record(cell_key='oracle'),
     ],
 )
 def test_records_the_grace_would_not_change_are_accepted(record):
@@ -99,13 +84,13 @@ def test_grace_comes_from_each_grids_resolved_training_config():
 
 def test_record_run_under_another_sim_config_names_its_cell():
     _, (first, *_) = expand_grid(NOISE_LADDER_GRID)
-    stale = _record(cell_key=first.key, sim_config_hash='not-the-grid-hash')
+    stale = run_record(cell_key=first.key, sim_config_hash='not-the-grid-hash')
     with pytest.raises(ValueError, match=first.key):
         noise_ladder({first.key: stale})
 
 
 def test_matched_length_grid_repeats_the_ladders_phase_drift_sweep():
-    """plot_noise_ladder pairs the 60-epoch cells to ladder rows by sim hash."""
+    """plot_noise_ladder pairs the 60-epoch cells to ladder rows by sweep point."""
 
     def sweep(grid: Path) -> dict:
         (entry,) = [

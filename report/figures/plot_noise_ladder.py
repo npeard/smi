@@ -25,8 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _figcommon import (
     COLORS,
     FIGSIZE_TALL,
-    NOMINAL_PHASE_DRIFT_FRINGES,
-    SIGN_COLLAPSE_CONTROLS,
+    NOISE_KNOBS,
     matched_length_cells,
     mean_metric,
     noise_ladder,
@@ -36,20 +35,20 @@ from _figcommon import (
     synthetic_records,
 )
 
-from smi.synthetic.forward import NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S
+from smi.synthetic.forward import rad_per_sqrt_s_to_fringes
 
-# (field, panel title, x label, log x, invert x). Inverted axes are those
-# where a smaller value is the worse signal.
-PANELS: tuple[tuple[str, str, str, bool, bool], ...] = (
-    ('phase_drift_rad_per_sqrt_s', 'phase drift', 'fringes per shot', True, False),
-    ('snr_db', 'white noise', 'SNR (dB)', False, True),
-    ('visibility_range', 'visibility', r'lowest $V$', False, True),
-    ('amplitude_drift_rel', 'amplitude drift', 'relative std at shot end', True, False),
-    ('contrast_drift_rel', 'contrast drift', 'relative std at shot end', True, False),
-    ('dc_offset_range', 'DC offset', 'half-range (fringe units)', True, False),
-    ('pd_bandwidth_hz', 'PD bandwidth', 'kHz', True, True),
-    ('adc_bits', 'ADC', 'bits', False, True),
-)
+# Per knob: (x label, log x, invert x). Inverted axes
+# are those where a smaller value is the worse signal.
+PANELS: dict[str, tuple[str, bool, bool]] = {
+    'phase_drift_rad_per_sqrt_s': ('fringes per shot', True, False),
+    'snr_db': ('SNR (dB)', False, True),
+    'visibility_range': (r'lowest $V$', False, True),
+    'amplitude_drift_rel': ('relative std at shot end', True, False),
+    'contrast_drift_rel': ('relative std at shot end', True, False),
+    'dc_offset_range': ('half-range (fringe units)', True, False),
+    'pd_bandwidth_hz': ('kHz', True, True),
+    'adc_bits': ('bits', False, True),
+}
 
 
 def knob_x(field: str, value: object) -> float:
@@ -59,7 +58,7 @@ def knob_x(field: str, value: object) -> float:
         return lo if field == 'visibility_range' else hi
     x = float(cast(float, value))
     if field == 'phase_drift_rad_per_sqrt_s':
-        return x / NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S * NOMINAL_PHASE_DRIFT_FRINGES
+        return rad_per_sqrt_s_to_fringes(x)
     if field == 'pd_bandwidth_hz':
         return x / 1e3
     return x
@@ -74,7 +73,7 @@ PHASE = 'phase_drift_rad_per_sqrt_s'
 
 def main() -> None:
     args = parse_args(__doc__.splitlines()[0])
-    records = synthetic_records(SIGN_COLLAPSE_CONTROLS)
+    records = synthetic_records()
     ladder = noise_ladder(records)
 
     def rmse_span(sim: str) -> tuple[float, float, float, int]:
@@ -84,17 +83,15 @@ def main() -> None:
     *base, n_base = rmse_span('ladder-base')
     *nominal, n_nominal = rmse_span('nominal')
     (c09,) = noise_seeds(records, 'nominal-c0.9')
-    # The 60-epoch reruns share the ladder's sim configs, so the config hash
-    # pairs each with its ladder row.
-    cells = matched_length_cells(records)
+    # The 60-epoch reruns repeat the ladder's drift sweep, so a row's
+    # (field, value) is its rerun's sweep point.
+    cells, e60 = matched_length_cells(records)
     (epochs,) = {r.epochs_run for r in cells.values()}
-    e60 = {r.sim_config_hash: mean_metric(r, 'velocity_rmse') for r in cells.values()}
     e60_base = mean_metric(cells['ladder-base'], 'velocity_rmse')
 
     fig, axes = plt.subplots(2, 4, figsize=FIGSIZE_TALL, sharey=True)
-    for ax, (field, title, xlabel, log_x, invert) in zip(
-        axes.flat, PANELS, strict=True
-    ):
+    for ax, (field, title) in zip(axes.flat, NOISE_KNOBS.items(), strict=True):
+        xlabel, log_x, invert = PANELS[field]
         rows = ladder[field]
         x = [knob_x(field, row.value) for row in rows]
         y = [mean_metric(row.record, 'velocity_rmse') for row in rows]
@@ -111,7 +108,7 @@ def main() -> None:
             ax.axhline(e60_base, color=EQUAL_LENGTH, ls='--', lw=1.2)
             ax.plot(
                 x,
-                [e60[row.record.sim_config_hash] for row in rows],
+                [mean_metric(e60[field, row.value], 'velocity_rmse') for row in rows],
                 color=EQUAL_LENGTH,
                 marker='s',
                 markersize=4,

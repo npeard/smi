@@ -24,26 +24,32 @@ import itertools
 import json
 import math
 import sys
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Any
 
 import h5py
 import numpy as np
-import torch
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import (
+    CEILING_GRID,
     DATA_DIR,
-    NOMINAL_PHASE_DRIFT_FRINGES,
+    MATCHED_DIR,
+    NOISE_KNOBS,
+    Q3_BUDGETS,
     Q3_FEEDBACK_C,
-    SIGN_COLLAPSE_CONTROLS,
     SYNTHETIC_WAVELENGTHS_UM,
     LadderRow,
+    c_sim,
+    grid_cells,
     matched_length_cells,
     mean_metric,
     noise_ladder,
     noise_seeds,
+    oracle_cell,
     synthetic_cell,
     synthetic_records,
 )
@@ -51,14 +57,15 @@ from _figcommon import (
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from smi.analysis import bounds
-from smi.analysis.experiments import expand_grid
 from smi.analysis.models.factory import create_model
 from smi.analysis.models.sliding_window import SlidingWindowModel
 from smi.analysis.results_artifact import RunRecord
 from smi.synthetic.forward import (
     NOMINAL_ALPHA,
+    NOMINAL_PHASE_DRIFT_FRINGES,
     NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S,
     SimConfig,
+    rad_per_sqrt_s_to_fringes,
 )
 from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
@@ -67,9 +74,6 @@ N_STEPS = 2000
 N_SHOTS = 8
 SEED = 0
 NOMINAL_C = 0.2
-CEILING_GRID = (
-    Path(__file__).resolve().parents[2] / 'smi/analysis/experiments/q3_s0c_ceiling.yaml'
-)
 TABLE_C = (0.05, 0.2, 0.7)
 TABLE_ALPHA = (3.0, 5.0)
 TABLE_K = (1, 3)
@@ -114,6 +118,22 @@ def pct(x: float) -> str:
     return f'{100 * x:.0f}'
 
 
+def lo_hi(prefix: str, xs: Iterable[Any], fmt: Callable[[Any], str]) -> dict[str, str]:
+    """``<prefix>_lo`` and ``<prefix>_hi``: the range of ``xs``, as printed."""
+    xs = list(xs)
+    return {f'{prefix}_lo': fmt(min(xs)), f'{prefix}_hi': fmt(max(xs))}
+
+
+def epochs(record: RunRecord) -> int:
+    """Epochs ``record`` trained; 0 for the untrained oracle."""
+    return record.epochs_run or 0
+
+
+def ran_third_cycle(record: RunRecord) -> bool:
+    """Whether ``record`` trained past its second warm restart."""
+    return epochs(record) > 2 * (record.T_0 or 0)
+
+
 def test_shots(record: RunRecord) -> int:
     """Shot count of the frozen set, from its dataset key ``<hash>_seed<s>_n<n>``.
 
@@ -123,18 +143,20 @@ def test_shots(record: RunRecord) -> int:
     return int(record.dataset.rsplit('_n', 1)[1])
 
 
-def zero_predictor_rmse(record: RunRecord) -> float:
+def zero_predictor_rmse(records: dict[str, RunRecord]) -> float:
     """Test RMSE of predicting zero velocity on the alpha = 0 control's test set.
 
-    That is each shot's velocity RMS, averaged over shots. The control's sim
-    config comes from expanding the grid that produced the record, so the
-    emitter cannot drift from the runner; the hash check stops a grid edit
-    since the run from scoring another set.
+    That is each shot's velocity RMS, averaged over shots, for the 90-epoch
+    control. Its sim config comes from expanding the grid that produced the
+    record (hash-checked by ``grid_cells``), so the emitter cannot drift from
+    the runner or score another set after a grid edit.
     """
-    _, cells = expand_grid(CEILING_GRID)
-    (cfg,) = [cell.sim for cell in cells if cell.key == record.cell_key]
-    if cfg.hash() != record.sim_config_hash:
-        raise ValueError(f'{record.cell_key}: grid sim config no longer matches')
+    record = synthetic_cell(records, 'tcn-44k-T90', 'smi-a0')
+    (cfg,) = [
+        cell.sim
+        for cell, _ in grid_cells(records, CEILING_GRID)
+        if cell.key == record.cell_key
+    ]
     if record.test_seed is None:
         raise ValueError(f'{record.cell_key}: no test seed recorded')
     path = load_or_create(cfg, record.test_seed, test_shots(record), DEFAULT_ROOT)
@@ -161,30 +183,34 @@ def exit_check_values(records: dict[str, RunRecord]) -> dict[str, str]:
     }
 
 
-def q3_values(records: dict[str, RunRecord]) -> dict[str, str | bool]:
-    """Values section 2 quotes from the fixed-budget accuracy-against-C grids."""
+def q3_values(records: dict[str, RunRecord], zero: float) -> dict[str, str | bool]:
+    """Values section 2 quotes from the fixed-budget accuracy-against-C grids.
+
+    Args:
+        records: The synthetic records.
+        zero: The zero predictor's test RMSE (``zero_predictor_rmse``).
+    """
 
     def rmse(family: str, sim: str, metric: str = 'velocity_rmse') -> float:
         return mean_metric(synthetic_cell(records, family, sim), metric)
 
     def sweep(family: str, metric: str = 'velocity_rmse') -> list[float]:
-        return [rmse(family, f'smi-a3-feedback_c={c}', metric) for c in Q3_FEEDBACK_C]
+        return [rmse(family, c_sim(c), metric) for c in Q3_FEEDBACK_C]
 
-    t90, t30 = 'tcn-44k-T90', 'tcn-44k'
+    t90, t30 = (budget.family for budget in Q3_BUDGETS)
     curve = sweep(t90)
     t30_curve = sweep(t30)
     curve_si = sweep(t90, 'velocity_rmse_sign_invariant')
     michelson = rmse(t90, 'michelson', 'velocity_rmse_sign_invariant')
     michelson_n = rmse(t90, 'michelson', 'velocity_nrmse_sign_invariant')
-    top = f'smi-a3-feedback_c={Q3_FEEDBACK_C[-1]}'
-    c02 = 'smi-a3-feedback_c=0.2'
+    top = c_sim(Q3_FEEDBACK_C[-1])
+    c02 = c_sim(0.2)
     a5_gap = max(
         abs(rmse(f, 'smi-a5') - rmse(f, c02)) / rmse(f, c02) for f in (t90, t30)
     )
     a0 = [synthetic_cell(records, f, 'smi-a0') for f in (t90, t30)]
     t30_epochs = {
-        c: synthetic_cell(records, t30, f'smi-a3-feedback_c={c}').epochs_run
-        for c in Q3_FEEDBACK_C
+        c: synthetic_cell(records, t30, c_sim(c)).epochs_run for c in Q3_FEEDBACK_C
     }
     others = [n for c, n in t30_epochs.items() if c != 0.4 and n is not None]
     long = synthetic_cell(records, 'tcn-44k-T270', c02)
@@ -204,9 +230,7 @@ def q3_values(records: dict[str, RunRecord]) -> dict[str, str | bool]:
     curve_n_si = sweep(t90, 'velocity_nrmse_sign_invariant')
     n_gaps = [s / i - 1 for s, i in zip(curve_n, curve_n_si, strict=True)]
     worst = [
-        synthetic_cell(records, t90, f'smi-a3-feedback_c={c}').metrics[
-            'velocity_nrmse'
-        ]['max']
+        synthetic_cell(records, t90, c_sim(c)).metrics['velocity_nrmse']['max']
         for c in Q3_FEEDBACK_C
     ]
     # A sign-flipped zero-mean shot scores NRMSE 2. The text says the worst
@@ -220,19 +244,13 @@ def q3_values(records: dict[str, RunRecord]) -> dict[str, str | bool]:
 
     def slowest(family: str) -> list[float]:
         """Slowest-|v|-decile sign-invariant RMSE of Michelson and each C."""
-        sims = ('michelson', *(f'smi-a3-feedback_c={c}' for c in Q3_FEEDBACK_C))
+        sims = ('michelson', *(c_sim(c) for c in Q3_FEEDBACK_C))
         bins = [synthetic_cell(records, family, sim).binned for sim in sims]
         return [b['abs_velocity'][0]['rmse_sign_invariant'] for b in bins if b]
 
     slow = slowest(t90)
-    t90_epochs = [
-        synthetic_cell(records, t90, f'smi-a3-feedback_c={c}').epochs_run or 0
-        for c in Q3_FEEDBACK_C
-    ]
-    a0_t90 = synthetic_cell(records, t90, 'smi-a0')
-    zero_gap = abs(
-        mean_metric(a0_t90, 'velocity_rmse') / zero_predictor_rmse(a0_t90) - 1
-    )
+    t90_epochs = [epochs(synthetic_cell(records, t90, c_sim(c))) for c in Q3_FEEDBACK_C]
+    zero_gap = abs(mean_metric(a0[0], 'velocity_rmse') / zero - 1)
     return {
         # The text claims the 90-epoch curve falls monotonically in RMSE; the
         # document asserts this, so a regenerated artifact that breaks it
@@ -253,20 +271,17 @@ def q3_values(records: dict[str, RunRecord]) -> dict[str, str | bool]:
         'q3_nrmse_worse_t30': nrmse_worse(t30),
         'q3_n_sign_gap_max_pct': pct(max(n_gaps)),
         'q3_n_sign_gap_max_c': f'{Q3_FEEDBACK_C[n_gaps.index(max(n_gaps))]:g}',
-        'q3_n_worst_lo': sig(min(worst), 3),
-        'q3_n_worst_hi': sig(max(worst), 3),
+        **lo_hi('q3_n_worst', worst, lambda x: sig(x, 3)),
         'q3_flip_c': f'{Q3_FEEDBACK_C[n_flip]:g}',
-        'q3_slow_lo': sig(min(slow), 2),
-        'q3_slow_hi': sig(max(slow), 2),
+        **lo_hi('q3_slow', slow, lambda x: sig(x, 2)),
         # The text calls the slow-decile floor a budget property; the
         # document asserts that it is lower at 90 epochs in every cell.
         'q3_slow_falls_with_budget': len(slow) == len(Q3_FEEDBACK_C) + 1
         and all(a < b for a, b in zip(slow, slowest(t30), strict=True)),
-        'q3_t90_epochs_lo': str(min(t90_epochs)),
-        'q3_t90_epochs_hi': str(max(t90_epochs)),
+        **lo_hi('q3_t90_epochs', t90_epochs, str),
         'q3_zero_gap_pct': sig(100 * zero_gap, 1),
         'q3_a5_gap_pct': pct(a5_gap),
-        'q3_a0_epochs': str(max(r.epochs_run or 0 for r in a0)),
+        'q3_a0_epochs': str(max(epochs(r) for r in a0)),
         # eq-sign-info depends on alpha only through alpha^2 / (1 + alpha^2).
         'sign_info_a5_a3': sig(alpha_factor(5.0) / alpha_factor(3.0), 3),
         # The 30-epoch curve's one inversion, which the text attributes to the
@@ -276,25 +291,24 @@ def q3_values(records: dict[str, RunRecord]) -> dict[str, str | bool]:
             for c in (0.7, 0.9)
         ),
         'q3_t30_c04_epochs': str(t30_epochs[0.4]),
-        'q3_t30_other_epochs_lo': str(min(others)),
-        'q3_t30_other_epochs_hi': str(max(others)),
+        **lo_hi('q3_t30_other_epochs', others, str),
         'q3_c02_t270': sig(rmse('tcn-44k-T270', c02), 2),
         'q3_t270_epochs': str(long.epochs_run),
         'q3_t270_cycle': str(long.T_0),
     }
 
 
-# The leave-one-out grid's knobs, as (SimConfig field, sim-name stem, fig-noise
-# panel name); each cell is named nominal-no-<stem> (q3_s3_leave_one_out.yaml).
+# The leave-one-out grid's knobs, as (SimConfig field, sim-name stem); each
+# cell is named nominal-no-<stem> (q3_s3_leave_one_out.yaml).
 LEAVE_ONE_OUT = (
-    ('phase_drift_rad_per_sqrt_s', 'phasedrift', 'phase drift'),
-    ('snr_db', 'snr', 'white noise'),
-    ('visibility_range', 'visibility', 'visibility'),
-    ('amplitude_drift_rel', 'ampdrift', 'amplitude drift'),
-    ('contrast_drift_rel', 'contrastdrift', 'contrast drift'),
-    ('dc_offset_range', 'dc', 'DC offset'),
-    ('pd_bandwidth_hz', 'pdbw', 'PD bandwidth'),
-    ('adc_bits', 'adc', 'ADC'),
+    ('phase_drift_rad_per_sqrt_s', 'phasedrift'),
+    ('snr_db', 'snr'),
+    ('visibility_range', 'visibility'),
+    ('amplitude_drift_rel', 'ampdrift'),
+    ('contrast_drift_rel', 'contrastdrift'),
+    ('dc_offset_range', 'dc'),
+    ('pd_bandwidth_hz', 'pdbw'),
+    ('adc_bits', 'adc'),
 )
 
 
@@ -308,8 +322,9 @@ def noise_values(
 
     ladder = noise_ladder(records)
     base_runs = noise_seeds(records, 'ladder-base')
+    nominal_runs = noise_seeds(records, 'nominal')
     base = [rmse(r) for r in base_runs]
-    nominal = [rmse(r) for r in noise_seeds(records, 'nominal')]
+    nominal = [rmse(r) for r in nominal_runs]
     base_mean = sum(base) / len(base)
     excess = sum(nominal) / len(nominal) - base_mean
 
@@ -325,7 +340,7 @@ def noise_values(
     minor = [f for f in ladder if f not in (phase, snr)]
     minor_shares = [share(f) for f in minor]
     (c09,) = noise_seeds(records, 'nominal-c0.9')
-    (nominal0,) = [r for r in noise_seeds(records, 'nominal') if r.seed == 0]
+    (nominal0,) = [r for r in nominal_runs if r.seed == 0]
     # The causal bound at the 30 dB row's own config (unit visibility, no
     # drift), so it is the floor for exactly what that row adds to the base.
     snr_row = at_nominal(snr)
@@ -337,16 +352,10 @@ def noise_values(
     # The DC-offset rows that score below every base seed; the text names them
     # as the +/-0.3 and +/-1 rows and reports how long they trained.
     dc_low = [row for row in ladder['dc_offset_range'] if rmse(row.record) < min(base)]
-    base_epochs = [r.epochs_run or 0 for r in base_runs]
     rows = [row for rows in ladder.values() for row in rows]
-    # Rows that trained past their second warm restart, i.e. into a third
-    # cosine cycle, unlike every base seed.
-    long_rows = [
-        row for row in rows if (row.record.epochs_run or 0) > 2 * (row.record.T_0 or 0)
-    ]
-    assert all(
-        n <= 2 * (r.T_0 or 0) for n, r in zip(base_epochs, base_runs, strict=True)
-    )
+    # Rows that trained into a third cosine cycle, unlike every base seed.
+    long_rows = [row for row in rows if ran_third_cycle(row.record)]
+    assert not any(ran_third_cycle(r) for r in base_runs)
     short_rows = [row for row in rows if row not in long_rows]
 
     def above_base(field: str) -> list[object]:
@@ -357,9 +366,8 @@ def noise_values(
     nominal_mean = sum(nominal) / len(nominal)
     width = max(nominal) - min(nominal)
     loo: dict[str, RunRecord] = {}
-    for field, stem, _ in LEAVE_ONE_OUT:
+    for field, stem in LEAVE_ONE_OUT:
         (loo[field],) = noise_seeds(records, f'nominal-no-{stem}')
-    labels = {field: label for field, _, label in LEAVE_ONE_OUT}
 
     def cut(field: str) -> float:
         return 1 - rmse(loo[field]) / nominal_mean
@@ -369,22 +377,20 @@ def noise_values(
         # nominal seeds' own spread.
         return rmse(loo[field]) < min(nominal) - width
 
-    loo_long = {f for f, r in loo.items() if (r.epochs_run or 0) > 2 * (r.T_0 or 0)}
+    loo_long = {f for f, r in loo.items() if ran_third_cycle(r)}
     pdbw = 'pd_bandwidth_hz'
-    # The equal-length grid: all three cells trained exactly 60 epochs.
-    e60 = {name: rmse(r) for name, r in matched_length_cells(records).items()}
-    assert {r.epochs_run for r in matched_length_cells(records).values()} == {60}
+    # The equal-length grid: every cell trained the same length, its cap.
+    e60_cells, e60_sweep = matched_length_cells(records)
+    (e60_epochs,) = {r.epochs_run for r in e60_cells.values()}
+    e60 = {name: rmse(r) for name, r in e60_cells.items()}
     e60_nominal = e60['nominal']
     e60_nodrift = e60['nominal-no-phasedrift']
     e60_base = e60['ladder-base']
-    # The ladder's drift sweep rerun at 60 epochs on the same sim configs,
-    # matched to the ladder rows by config hash, in sweep order.
-    e60_by_hash = {
-        r.sim_config_hash: rmse(r) for r in matched_length_cells(records).values()
-    }
+    # The ladder's drift sweep rerun at 60 epochs on the same knob values,
+    # in sweep order.
     phase_rows = [row.record for row in ladder[phase]]
-    e60_drift_rmse = [e60_by_hash[r.sim_config_hash] for r in phase_rows]
-    e60_drift_nominal = e60_by_hash[at_nominal(phase).record.sim_config_hash]
+    e60_drift_rmse = [rmse(e60_sweep[phase, row.value]) for row in ladder[phase]]
+    e60_drift_nominal = rmse(e60_sweep[phase, at_nominal(phase).value])
     e60_half_kept = (e60_drift_rmse[0] - e60_base) / (e60_drift_nominal - e60_base)
     # Fractional gain from 35 to 60 epochs, against the ladder's seeds.
     nominal_gain = 1 - e60_nominal / nominal_mean
@@ -392,17 +398,15 @@ def noise_values(
     loo_rows = sorted(loo.items(), key=lambda item: rmse(item[1]))
     return {
         'loo_rows': [
-            {'label': labels[f], 'rmse': f'{rmse(r):.3f}', 'epochs': str(r.epochs_run)}
+            {
+                'label': NOISE_KNOBS[f],
+                'rmse': f'{rmse(r):.3f}',
+                'epochs': str(r.epochs_run),
+            }
             for f, r in loo_rows
         ],
-        'loo_nominal_lo': f'{min(nominal):.3f}',
-        'loo_nominal_hi': f'{max(nominal):.3f}',
-        'loo_nominal_epochs_lo': str(
-            min(r.epochs_run or 0 for r in noise_seeds(records, 'nominal'))
-        ),
-        'loo_nominal_epochs_hi': str(
-            max(r.epochs_run or 0 for r in noise_seeds(records, 'nominal'))
-        ),
+        **lo_hi('loo_nominal', nominal, lambda x: f'{x:.3f}'),
+        **lo_hi('loo_nominal_epochs', map(epochs, nominal_runs), str),
         'loo_phase_cut': pct(cut(phase)),
         'loo_vis_cut': pct(cut('visibility_range')),
         'loo_pdbw_cut': pct(cut(pdbw)),
@@ -414,7 +418,7 @@ def noise_values(
         # The text: only the phase-drift and PD-bandwidth cells trained into
         # a third cosine cycle.
         'loo_long_named': loo_long == {phase, pdbw},
-        'loo_e60_epochs': '60',
+        'loo_e60_epochs': str(e60_epochs),
         'loo_e60_cut': pct(1 - e60_nodrift / e60_nominal),
         'loo_e60_base_gain': pct(base_gain),
         'loo_e60_nominal_gain': pct(nominal_gain),
@@ -448,16 +452,13 @@ def noise_values(
         'noise_spread_share': pct((max(base) - min(base)) / excess),
         # The ranking the text states: phase drift, then SNR, then the rest.
         'noise_ranking': share(phase) > share(snr) > max(minor_shares),
-        'noise_phase_epochs_lo': str(min(r.epochs_run or 0 for r in phase_rows)),
-        'noise_phase_epochs_hi': str(max(r.epochs_run or 0 for r in phase_rows)),
+        **lo_hi('noise_phase_epochs', map(epochs, phase_rows), str),
         # The text: at equal length the drift curve rises monotonically, and
         # cutting drift to its lowest swept level keeps most of its cost.
         'noise_e60_phase_monotone': e60_base < e60_drift_rmse[0]
         and all(a < b for a, b in itertools.pairwise(e60_drift_rmse)),
         'noise_e60_low_fringes': sig(
-            ladder[phase][0].sim.phase_drift_rad_per_sqrt_s
-            / NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S
-            * NOMINAL_PHASE_DRIFT_FRINGES,
+            rad_per_sqrt_s_to_fringes(ladder[phase][0].sim.phase_drift_rad_per_sqrt_s),
             1,
         ),
         'noise_e60_half_kept': pct(e60_half_kept),
@@ -472,18 +473,15 @@ def noise_values(
         # The text: at 20 dB the white-noise cost about doubles.
         'noise_snr20_cost': sig(snr20_cost, 2),
         'noise_snr20_doubles': 1.7 < snr20_cost / snr_cost < 2.3,
-        'noise_dc_low_named': sorted(row.value[1] for row in dc_low) == [0.3, 1.0],
+        'noise_dc_low_named': {row.value[1] for row in dc_low} == {0.3, 1.0},
         'noise_dc_low_epochs': '/'.join(
             sorted({str(row.record.epochs_run) for row in dc_low})
         ),
-        'noise_base_epochs_lo': str(min(base_epochs)),
-        'noise_base_epochs_hi': str(max(base_epochs)),
+        **lo_hi('noise_base_epochs', map(epochs, base_runs), str),
         'noise_n_long': str(len(long_rows)),
         'noise_n_rows': str(len(rows)),
-        'noise_long_epochs_lo': str(min(r.record.epochs_run or 0 for r in long_rows)),
-        'noise_long_epochs_hi': str(max(r.record.epochs_run or 0 for r in long_rows)),
-        'noise_short_epochs_lo': str(min(r.record.epochs_run or 0 for r in short_rows)),
-        'noise_short_epochs_hi': str(max(r.record.epochs_run or 0 for r in short_rows)),
+        **lo_hi('noise_long_epochs', (epochs(r.record) for r in long_rows), str),
+        **lo_hi('noise_short_epochs', (epochs(r.record) for r in short_rows), str),
     }
 
 
@@ -517,11 +515,6 @@ Q2_STEMS = [stem for stem, _ in Q2_CAUSAL + Q2_OFFLINE]
 Q2_NAMED = [stem for stem in Q2_STEMS if stem not in Q2_OPTIONAL]
 # Each sim's score: Michelson's global sign is unobservable (section 1.1).
 Q2_SIMS = {'michelson': 'velocity_rmse_sign_invariant', 'smi-a3': 'velocity_rmse'}
-MATCHED_DIR = (
-    Path(__file__).resolve().parents[2] / 'smi/analysis/models/configs/matched'
-)
-# Long enough to hold Barland's widened field with margin on both sides.
-SPAN_PROBE_LENGTH = 2048
 # The text calls a cell stalled when its best validation error stays within
 # this fraction of the zero predictor's (the runner's own test, min_rel_delta).
 STALL_TOLERANCE = 0.01
@@ -534,39 +527,29 @@ ORACLE_MARGIN = 1.5
 CLOSE_FACTOR = 1.5
 
 
-def sliding_span(stem: str) -> int | None:
-    """Samples one output of a sliding-window model depends on; else None.
-
-    Records written before the models declared it store a ``receptive_field``
-    of one window, but every output averages all the windows that cover it,
-    so the field is wider. Measured here, so old and new records agree, by
-    a gradient probe of a seeded init, exact here because the windows have
-    hard edges. Other families' formulas are checked in
-    tests/test_receptive_field.py.
-    """
-    config = yaml.safe_load((MATCHED_DIR / f'{stem}.yaml').read_text('utf-8'))
-    torch.manual_seed(SEED)
-    model = create_model(config['model']).eval()
-    if not isinstance(model, SlidingWindowModel):
-        return None
-    x = torch.randn(1, config['model']['in_channels'], SPAN_PROBE_LENGTH)
-    x.requires_grad_(True)
-    model(x)[0, 0, SPAN_PROBE_LENGTH // 2].backward()
-    assert x.grad is not None
-    hit = (x.grad.abs().sum(dim=1)[0] > 0).nonzero().flatten()
-    return int(hit.max() - hit.min()) + 1
-
-
 def q2_record(records: dict[str, RunRecord], stem: str, sim: str) -> RunRecord | None:
     """The family's seed-0 cell, or None for a family whose stage has not run."""
-    key = f'{stem}-T90__ch635-675-515__{sim}__seed0'
-    if key not in records and stem in Q2_OPTIONAL:
-        return None
-    return records[key]
+    try:
+        return synthetic_cell(records, f'{stem}-T90', sim)
+    except KeyError:
+        if stem in Q2_OPTIONAL:
+            return None
+        raise
 
 
 def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
-    """The rows of section Q2's table, and checks on what they are labeled."""
+    """The rows of section Q2's table, and checks on what they are labeled.
+
+    Context is each family's ``receptive_field``, read off its model built
+    from the matched config it trained under (tests/test_receptive_field.py
+    pins each against a gradient probe).
+    """
+    models = {
+        stem: create_model(
+            yaml.safe_load((MATCHED_DIR / f'{stem}.yaml').read_text('utf-8'))['model']
+        )
+        for stem in Q2_STEMS
+    }
 
     def cell(r: RunRecord | None, sim: str) -> str:
         if r is None:
@@ -585,10 +568,10 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
     def context(r: RunRecord | None, stem: str) -> str:
         if r is None:
             return '--'
-        if r.receptive_field is None:
+        field = models[stem].receptive_field
+        if field is None:
             return 'unbounded' if r.causal else 'whole shot'
-        span = sliding_span(stem)
-        return str(r.receptive_field if span is None else span)
+        return str(field)
 
     def rows(group: tuple[tuple[str, str], ...], causal: bool) -> list[dict]:
         out = []
@@ -605,7 +588,7 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
         return out
 
     oracle = [
-        mean_metric(records[f'inverse_fit__ch635-675-515__{sim}__oracle'], metric)
+        mean_metric(oracle_cell(records, sim), metric)
         for sim, metric in Q2_SIMS.items()
     ]
     stalled = sorted(
@@ -614,63 +597,71 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
         for sim in Q2_SIMS
         if (r := q2_record(records, stem, sim)) is not None and not r.converged
     )
-    sliding = {s: span for s in Q2_NAMED if (span := sliding_span(s)) is not None}
-    mlp = records['mlp-44k-T90__ch635-675-515__smi-a3__seed0']
+    fields = {stem: models[stem].receptive_field for stem in Q2_NAMED}
+    sliding = {
+        stem: fields[stem]
+        for stem in Q2_NAMED
+        if isinstance(models[stem], SlidingWindowModel)
+    }
+    # The text quotes the one-window field the MLP and Barland records store,
+    # written before the models declared the averaged span; only the record
+    # still carries it, so this one value is read from there.
+    mlp = synthetic_cell(records, 'mlp-44k-T90', 'smi-a3')
     # The families whose context is a fixed window, which the text says are
     # matched; the sliding-window families' wider spans are named apart.
     matched = {
-        stem: r.receptive_field
-        for stem in Q2_NAMED
-        if stem not in sliding
-        and (r := q2_record(records, stem, 'smi-a3')) is not None
-        and r.receptive_field is not None
+        stem: field
+        for stem, field in fields.items()
+        if stem not in sliding and field is not None
     }
     return {
         'q2_causal_rows': rows(Q2_CAUSAL, True),
         'q2_offline_rows': rows(Q2_OFFLINE, False),
         'q2_oracle_cells': [f'{v:.3f}' for v in oracle],
         'q2_mamba_pending': q2_record(records, 'mamba-44k', 'smi-a3') is None,
-        'q2_stalled_named': stalled
-        == [
+        'q2_stalled_named': set(stalled)
+        == {
             ('lstm-44k', 'michelson'),
             ('lstm-44k', 'smi-a3'),
             ('lstm-bidir-44k', 'michelson'),
             ('lstm-bidir-44k', 'smi-a3'),
             ('neuraloperator-offline-44k', 'smi-a3'),
-        ],
+        },
         'q2_stall_tol_pct': pct(STALL_TOLERANCE),
         'q2_stall_epochs': '/'.join(
             sorted(
                 {
-                    str(records[f'{s}-T90__ch635-675-515__{m}__seed0'].epochs_run)
+                    str(synthetic_cell(records, f'{s}-T90', m).epochs_run)
                     for s, m in stalled
                 }
             )
         ),
-        'q2_sliding_named': sorted(sliding) == ['barland-44k', 'mlp-44k'],
+        'q2_sliding_named': set(sliding) == {'barland-44k', 'mlp-44k'},
         'q2_mlp_span': str(sliding['mlp-44k']),
         'q2_barland_span': str(sliding['barland-44k']),
         'q2_window_field': str(mlp.receptive_field),
-        'q2_matched_named': sorted(matched)
-        == sorted(
-            [
-                'tcn-44k',
-                'tcan-44k',
-                'patchtransformer-causal-44k',
-                'unettransformer-causal-44k',
-                'neuraloperator-causal-44k',
-                'scnn-44k',
-                'patchtransformer-offline-44k',
-                'unettransformer-offline-44k',
-            ]
-        ),
-        'q2_matched_lo': str(min(matched.values())),
-        'q2_matched_hi': str(max(matched.values())),
+        'q2_matched_named': set(matched)
+        == {
+            'tcn-44k',
+            'tcan-44k',
+            'patchtransformer-causal-44k',
+            'unettransformer-causal-44k',
+            'neuraloperator-causal-44k',
+            'scnn-44k',
+            'patchtransformer-offline-44k',
+            'unettransformer-offline-44k',
+        },
+        **lo_hi('q2_matched', matched.values(), str),
     }
 
 
-def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
-    """Values section Q2 quotes from the S1 and S1m family grids."""
+def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
+    """Values section Q2 quotes from the S1 and S1m family grids.
+
+    Args:
+        records: The synthetic records.
+        zero: The zero predictor's test RMSE (``zero_predictor_rmse``).
+    """
 
     def trained(sim: str, among: list[str]) -> dict[str, float]:
         """Test score of each converged cell of ``among`` on ``sim``."""
@@ -694,9 +685,7 @@ def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
 
     mich, smi = trained('michelson', Q2_STEMS), trained('smi-a3', Q2_STEMS)
     mich_named, smi_named = trained('michelson', Q2_NAMED), trained('smi-a3', Q2_NAMED)
-    oracle_mich, oracle_smi = (
-        records[f'inverse_fit__ch635-675-515__{sim}__oracle'] for sim in Q2_SIMS
-    )
+    oracle_mich, oracle_smi = (oracle_cell(records, sim) for sim in Q2_SIMS)
     oracle = mean_metric(oracle_mich, 'velocity_rmse_sign_invariant')
     oracle_si = mean_metric(oracle_smi, 'velocity_rmse_sign_invariant')
     tcn_mich, tcn_smi = mich['tcn-44k'], smi['tcn-44k']
@@ -709,22 +698,21 @@ def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
     offline_top = sorted(
         v for s, v in smi_named.items() if s in dict(Q2_OFFLINE) and s != 'mlp-44k'
     )
-    below_tcn = sorted(s for s, v in smi_named.items() if apart(v, tcn_smi))
-    above_tcn = sorted(s for s, v in smi_named.items() if apart(tcn_smi, v))
-    epochs = [
-        (r.epochs_run or 0, r.T_0 or 0)
+    below_tcn = {s for s, v in smi_named.items() if apart(v, tcn_smi)}
+    above_tcn = {s for s, v in smi_named.items() if apart(tcn_smi, v)}
+    runs = [
+        (epochs(r), r.T_0 or 0)
         for s in Q2_NAMED
         for sim in Q2_SIMS
         if (r := q2_record(records, s, sim)) is not None and r.converged
     ]
-    early = [n for n, t in epochs if n < EARLY_STOP_FRACTION * t]
-    late = [n for n, t in epochs if n >= EARLY_STOP_FRACTION * t]
-    second = [n for n, t in epochs if n > t]
-    # The zero predictor's test RMSE: the alpha = 0 control's frozen set shares
-    # the oracle's test seed, so it scores the same velocities.
+    early = [n for n, t in runs if n < EARLY_STOP_FRACTION * t]
+    late = [n for n, t in runs if n >= EARLY_STOP_FRACTION * t]
+    second = [n for n, t in runs if n > t]
+    # The zero predictor scored the alpha = 0 control's frozen set, which
+    # shares the oracle's test seed, so it scores the same velocities.
     a0 = synthetic_cell(records, 'tcn-44k-T90', 'smi-a0')
     assert a0.test_seed == oracle_smi.test_seed
-    zero = zero_predictor_rmse(a0)
     oracle_signed = mean_metric(oracle_smi, 'velocity_rmse')
     return {
         'q2_seed_range_pct': pct(resolution),
@@ -733,8 +721,7 @@ def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
         'q2_mich_tied': weakest == 'neuraloperator-offline-44k'
         and not apart(min(rest), max(rest))
         and apart(max(rest), mich_named[weakest]),
-        'q2_mich_lo': sig(min(rest), 2),
-        'q2_mich_hi': sig(max(rest), 2),
+        **lo_hi('q2_mich', rest, lambda x: sig(x, 2)),
         'q2_mich_span_pct': pct(max(rest) / min(rest) - 1),
         'q2_no_offline_mich': sig(mich_named[weakest], 2),
         'q2_oracle_mich': sig(oracle, 2),
@@ -742,20 +729,16 @@ def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
         'q2_oracle_beats_all': ORACLE_MARGIN * oracle <= min(mich.values()),
         # C = 0.2: the families the text names as beating or trailing the TCN.
         'q2_smi_vs_tcn': below_tcn
-        == sorted(
-            [
-                'tcan-44k',
-                'patchtransformer-causal-44k',
-                'scnn-44k',
-                'barland-44k',
-                'patchtransformer-offline-44k',
-                'unettransformer-offline-44k',
-            ]
-        )
+        == {
+            'tcan-44k',
+            'patchtransformer-causal-44k',
+            'scnn-44k',
+            'barland-44k',
+            'patchtransformer-offline-44k',
+            'unettransformer-offline-44k',
+        }
         and above_tcn
-        == sorted(
-            ['unettransformer-causal-44k', 'neuraloperator-causal-44k', 'mlp-44k']
-        ),
+        == {'unettransformer-causal-44k', 'neuraloperator-causal-44k', 'mlp-44k'},
         'q2_tcan_gain': sig(tcn_smi / smi['tcan-44k'], 3),
         'q2_patch_gain': sig(tcn_smi / smi['patchtransformer-causal-44k'], 3),
         'q2_tcan_best': best == 'tcan-44k' and apart(smi[best], runner_up),
@@ -783,11 +766,9 @@ def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
         'q2_learned_beat_oracle_smi': max(smi.values()) < oracle_si,
         'q2_oracle_smi_gap': sig(oracle_si / max(smi_named.values()), 2),
         'q2_early_n': str(len(early)),
-        'q2_early_lo': str(min(early)),
-        'q2_early_hi': str(max(early)),
-        'q2_late_lo': str(min(late)),
-        'q2_late_hi': str(max(late)),
-        'q2_restart': str(max(t for _, t in epochs)),
+        **lo_hi('q2_early', early, str),
+        **lo_hi('q2_late', late, str),
+        'q2_restart': str(max(t for _, t in runs)),
         'q2_second_n': str(len(second)),
         'q2_second_lo': str(min(second)),
     }
@@ -810,7 +791,8 @@ def main() -> None:
         for k in (1, 3)
     ]
     real = real_tcn_rmse()
-    records = synthetic_records(SIGN_COLLAPSE_CONTROLS)
+    records = synthetic_records()
+    zero = zero_predictor_rmse(records)
 
     values = {
         'prior_psd_rms_db': sig(prior.psd_rms_db, 2),
@@ -824,10 +806,10 @@ def main() -> None:
         'real_tcn_rmse': sig(real, 4),
         'real_gap': f'{real / causal_k3:.0f}',
         **exit_check_values(records),
-        **q3_values(records),
+        **q3_values(records, zero),
         **noise_values(records, prior),
         **q2_table(records),
-        **q2_values(records),
+        **q2_values(records, zero),
         'sign_table': [
             {
                 'c': f'{c:g}',

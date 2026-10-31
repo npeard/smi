@@ -36,15 +36,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.typing import RcKeyType
 
-from smi.analysis.experiments import Cell, expand_grid, training_config
+from smi.analysis.experiments import (
+    ANALYSIS_DIR,
+    ORACLE_FAMILY,
+    Cell,
+    cell_key,
+    expand_grid,
+    training_config,
+)
 from smi.analysis.results_artifact import RunRecord, read_results
 from smi.synthetic.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
 from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
 
-# Repository root, resolved from this file so scripts work from any cwd
-# (pytest runs them from the repo root, Snakemake from report/).
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = REPO_ROOT / 'smi' / 'analysis' / 'data'
+# Resolved by the package, not the cwd (pytest runs scripts from the repo
+# root, Snakemake from report/).
+DATA_DIR = ANALYSIS_DIR / 'data'
+EXPERIMENTS_DIR = ANALYSIS_DIR / 'experiments'
+MATCHED_DIR = ANALYSIS_DIR / 'models' / 'configs' / 'matched'
 
 FREE_SPACE_H5 = DATA_DIR / 'free-space-synchro_10k.h5'
 MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
@@ -60,10 +68,17 @@ RESULTS_JSON = DATA_DIR / 'baseline_results.json'
 # Experiment-runner records behind synthetic.typ's learned-model results.
 SYNTHETIC_RESULTS_JSON = DATA_DIR / 'synthetic_results.json'
 
-# The feedback values the Q3 grids sweep at alpha = 3, and the two cosine
-# schedules they ran under, as (runner family name, epochs per cosine cycle).
+# The same lasers as the synthetic simulator spells them, for figures that
+# compute from smi.synthetic.
+SYNTHETIC_WAVELENGTHS_UM = RIG_WAVELENGTHS_UM
+
+# The feedback values the Q3 grids sweep at alpha = 3.
 Q3_FEEDBACK_C = (0.05, 0.1, 0.2, 0.4, 0.7, 0.9)
-Q3_BUDGETS = (('tcn-44k-T90', 90), ('tcn-44k', 30))
+
+
+def c_sim(c: float) -> str:
+    """The Q3 grids' sim name for feedback ``c`` at alpha = 3."""
+    return f'smi-a3-feedback_c={c}'
 
 
 # The sign-collapse controls of synthetic.typ sections 1.1 (the exit check's
@@ -74,11 +89,12 @@ Q3_BUDGETS = (('tcn-44k-T90', 90), ('tcn-44k', 30))
 # exempt from check_grace_protocol; every other such record ran past the grace
 # or to its epoch cap.
 SIGN_COLLAPSE_CONTROLS = frozenset(
-    {
-        'tcn-44k-E20__ch635-675-515__michelson-signed__seed0',
-        'tcn-44k-T90__ch635-675-515__smi-a0__seed0',
-        'tcn-44k__ch635-675-515__smi-a0__seed0',
-    }
+    cell_key(family, SYNTHETIC_WAVELENGTHS_UM, sim, 0)
+    for family, sim in (
+        ('tcn-44k-E20', 'michelson-signed'),
+        ('tcn-44k-T90', 'smi-a0'),
+        ('tcn-44k', 'smi-a0'),
+    )
 )
 
 
@@ -142,15 +158,19 @@ def grace_by_cell() -> dict[str, int]:
     return grace
 
 
-def synthetic_records(expected_collapses: Collection[str]) -> dict[str, RunRecord]:
+def synthetic_records() -> dict[str, RunRecord]:
     """The synthetic results artifact's records, keyed by runner cell key.
 
-    Args:
-        expected_collapses: Pre-grace early-stopped cells the caller accepts;
-            any other raises (see ``check_grace_protocol``).
+    Pre-grace early-stopped cells other than SIGN_COLLAPSE_CONTROLS raise (see
+    ``check_grace_protocol``).
     """
     records = read_results(SYNTHETIC_RESULTS_JSON)
-    check_grace_protocol(records, grace_by_cell(), expected_collapses)
+    # Only pre-grace records can fail the check, and resolving every grid's
+    # training config is the slow part, so skip it when none remain.
+    legacy = [r for r in records if r.zero_predictor_monitor is None]
+    check_grace_protocol(
+        legacy, grace_by_cell() if legacy else {}, SIGN_COLLAPSE_CONTROLS
+    )
     return {r.cell_key: r for r in records if r.cell_key is not None}
 
 
@@ -160,7 +180,12 @@ def synthetic_cell(records: dict[str, RunRecord], family: str, sim: str) -> RunR
     Every synthetic.typ figure reads three-channel seed-0 cells; a missing one
     raises here, naming the key, rather than plotting a gap.
     """
-    return records[f'{family}__ch635-675-515__{sim}__seed0']
+    return records[cell_key(family, SYNTHETIC_WAVELENGTHS_UM, sim, 0)]
+
+
+def oracle_cell(records: dict[str, RunRecord], sim: str) -> RunRecord:
+    """The three-channel inverse-fit oracle's record on ``sim``."""
+    return records[cell_key(ORACLE_FAMILY, SYNTHETIC_WAVELENGTHS_UM, sim, None)]
 
 
 def mean_metric(record: RunRecord, metric: str) -> float:
@@ -170,15 +195,23 @@ def mean_metric(record: RunRecord, metric: str) -> float:
 
 # The noise ladder (each knob swept alone from the noise-free base) and the
 # grid that reruns its base and nominal cells at more seeds.
-EXPERIMENTS_DIR = REPO_ROOT / 'smi' / 'analysis' / 'experiments'
+CEILING_GRID = EXPERIMENTS_DIR / 'q3_s0c_ceiling.yaml'
 NOISE_LADDER_GRID = EXPERIMENTS_DIR / 'q3_s3_noise_ladder.yaml'
 NOISE_SPREAD_GRID = EXPERIMENTS_DIR / 'q3_s3_spread.yaml'
 LEAVE_ONE_OUT_GRID = EXPERIMENTS_DIR / 'q3_s3_leave_one_out.yaml'
 MATCHED_LENGTH_GRID = EXPERIMENTS_DIR / 'q3_s3_matched_length.yaml'
-# forward.py sets the nominal phase drift at the geometric middle of the
-# published 1 to 2.7 fringes per shot; drift in fringes per shot is linear in
-# the rate, so this converts a swept rate to fringes.
-NOMINAL_PHASE_DRIFT_FRINGES = math.sqrt(2.7)
+# The noise knobs, as (SimConfig field, display label), in the order the
+# noise-ladder figure and the leave-one-out table show them.
+NOISE_KNOBS = {
+    'phase_drift_rad_per_sqrt_s': 'phase drift',
+    'snr_db': 'white noise',
+    'visibility_range': 'visibility',
+    'amplitude_drift_rel': 'amplitude drift',
+    'contrast_drift_rel': 'contrast drift',
+    'dc_offset_range': 'DC offset',
+    'pd_bandwidth_hz': 'PD bandwidth',
+    'adc_bits': 'ADC',
+}
 
 
 @dataclass(frozen=True)
@@ -200,17 +233,19 @@ class LadderRow:
     record: RunRecord
 
 
+_NOMINAL_SIM = SimConfig.nominal(
+    SYNTHETIC_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
+)
+
+
 def _is_nominal(field: str, value: object) -> bool:
-    nominal = getattr(
-        SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA),
-        field,
-    )
+    nominal = getattr(_NOMINAL_SIM, field)
     if isinstance(value, float) and isinstance(nominal, float):
         return math.isclose(value, nominal)
     return value == nominal
 
 
-def _grid_records(
+def grid_cells(
     records: dict[str, RunRecord], grid: Path
 ) -> list[tuple[Cell, RunRecord]]:
     """``(cell, record)`` per cell of ``grid``, hash-checked.
@@ -234,7 +269,7 @@ def _grid_records(
 def noise_ladder(records: dict[str, RunRecord]) -> dict[str, list[LadderRow]]:
     """The ladder's single-knob rows, keyed by swept field, in sweep order."""
     rows: dict[str, list[LadderRow]] = {}
-    for cell, record in _grid_records(records, NOISE_LADDER_GRID):
+    for cell, record in grid_cells(records, NOISE_LADDER_GRID):
         if cell.sweep is None:
             continue
         field, _ = cell.sweep
@@ -250,18 +285,24 @@ def noise_seeds(records: dict[str, RunRecord], sim_name: str) -> list[RunRecord]
     found = {
         record.cell_key: record
         for grid in (NOISE_LADDER_GRID, NOISE_SPREAD_GRID, LEAVE_ONE_OUT_GRID)
-        for cell, record in _grid_records(records, grid)
+        for cell, record in grid_cells(records, grid)
         if cell.sim_name == sim_name
     }
     return list(found.values())
 
 
-def matched_length_cells(records: dict[str, RunRecord]) -> dict[str, RunRecord]:
-    """The equal-length grid's records, keyed by sim name."""
-    return {
-        cell.sim_name: record
-        for cell, record in _grid_records(records, MATCHED_LENGTH_GRID)
-    }
+def matched_length_cells(
+    records: dict[str, RunRecord],
+) -> tuple[dict[str, RunRecord], dict[tuple[str, object], RunRecord]]:
+    """The equal-length grid's records, keyed by sim name and by sweep point.
+
+    The second mapping is keyed by ``Cell.sweep``, so a ladder row's
+    ``(field, value)`` finds its 60-epoch rerun of the same knob setting.
+    """
+    cells = grid_cells(records, MATCHED_LENGTH_GRID)
+    by_name = {cell.sim_name: record for cell, record in cells}
+    by_sweep = {cell.sweep: record for cell, record in cells if cell.sweep}
+    return by_name, by_sweep
 
 
 # Photodiode channels, in the order the dataset feeds them to the model, with
@@ -272,10 +313,6 @@ PD_CHANNELS: tuple[tuple[str, float], ...] = (
     ('RP2_CH2', 0.515),
 )
 VOLTAGE_CHANNEL = 'RP1_CH1'
-
-# The same lasers as the synthetic simulator spells them, for figures that
-# compute from smi.synthetic.
-SYNTHETIC_WAVELENGTHS_UM = RIG_WAVELENGTHS_UM
 
 # The two acquisitions, as (key in baseline_results.json, axis label). Shared
 # so that adding a third cannot leave one figure silently showing two.
@@ -306,6 +343,31 @@ COLORS: dict[str, str] = {
     'highlight': 'C4',
 }
 CHANNEL_COLORS: tuple[str, ...] = (COLORS['ch635'], COLORS['ch675'], COLORS['ch515'])
+
+
+@dataclass(frozen=True)
+class Budget:
+    """One cosine schedule of the Q3 grids, and how its curves are drawn.
+
+    Attributes:
+        family: Runner family name.
+        epochs: Epochs per cosine cycle.
+        color: Line color.
+        linestyle: Line style, so the curves differ without color.
+        marker: Marker.
+    """
+
+    family: str
+    epochs: int
+    color: str
+    linestyle: str
+    marker: str
+
+
+Q3_BUDGETS = (
+    Budget('tcn-44k-T90', 90, COLORS['accent'], '-', 'o'),
+    Budget('tcn-44k', 30, COLORS['muted'], '--', 's'),
+)
 
 # Slide-friendly default: wide enough for a 16:9 body, small enough that 9 pt
 # labels stay legible when the PDF is placed at ~90% of the slide width.
