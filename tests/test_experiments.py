@@ -19,7 +19,8 @@ from smi.analysis.experiments import (
 )
 from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import read_results
-from smi.analysis.training_interface import SIGNED_RMSE_KEY, ZERO_PREDICTOR_RMSE_KEY
+from smi.analysis.training_interface import SIGNED_RMSE_KEY
+from tests._helpers import script_log
 
 MATCHED = experiments.ANALYSIS_DIR / 'models' / 'configs' / 'matched'
 
@@ -238,14 +239,7 @@ def test_patience_exhausted_cell_is_converged_only_below_the_zero_predictor(
 ):
     # Scale the logged zero-predictor value far above (a real plateau) or far
     # below (a stall at the zero-output plateau) whatever the tiny TCN reaches.
-    real_log = LitModule.log
-
-    def log(self, name, value, *args, **kwargs):
-        if name == ZERO_PREDICTOR_RMSE_KEY:
-            value = value * zero_scale
-        return real_log(self, name, value, *args, **kwargs)
-
-    monkeypatch.setattr(LitModule, 'log', log)
+    script_log(monkeypatch, None, zero=lambda v: v * zero_scale)
     path = _grid(tmp_path)
     grid = yaml.safe_load(path.read_text())
     grid['seeds'] = [0]

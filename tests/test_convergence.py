@@ -5,7 +5,6 @@ plateau, and every record must say whether its run got there.
 """
 
 import math
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -15,12 +14,12 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 
 from smi.analysis.lit_module import LitModule
 from smi.analysis.training_interface import (
-    ZERO_PREDICTOR_RMSE_KEY,
     RelativeEarlyStopping,
     TrainingConfig,
     TrainingInterface,
     convergence_monitor,
 )
+from tests._helpers import script_log
 from tests.test_synthetic_train_cli import CONFIG
 
 SIGNED = 'val/velocity_rmse_um_per_ms'
@@ -130,31 +129,9 @@ def _run(config: TrainingConfig) -> TrainingInterface:
     return interface
 
 
-def _script_log(
-    monkeypatch,
-    monitor: Callable[[int], float] | None = None,
-    zero: Callable[[torch.Tensor], torch.Tensor] | None = None,
-) -> None:
-    """Script the logged monitor by epoch and the zero-predictor value.
-
-    The frozen, untrained tiny TCN need not beat a zero predictor, so a test
-    about plateau timing scales the zero-predictor value far above the monitor.
-    """
-    real_log = LitModule.log
-
-    def log(self, name, value, *args, **kwargs):
-        if name == SIGNED and monitor is not None:
-            value = torch.tensor(monitor(self.trainer.current_epoch))
-        if name == ZERO_PREDICTOR_RMSE_KEY and zero is not None:
-            value = zero(value)
-        return real_log(self, name, value, *args, **kwargs)
-
-    monkeypatch.setattr(LitModule, 'log', log)
-
-
 @pytest.fixture
 def beats_zero_predictor(monkeypatch):
-    _script_log(monkeypatch, zero=lambda v: v * 1e6)
+    script_log(monkeypatch, None, zero=lambda v: v * 1e6)
 
 
 def test_plateau_stops_early_and_reports_converged(beats_zero_predictor):
@@ -293,7 +270,7 @@ def test_stall_inside_grace_period_does_not_stop_a_run_that_escapes(monkeypatch)
     def monitor(epoch: int) -> float:
         return 0.9 ** (min(max(epoch, 7), 20) - 7)
 
-    _script_log(monkeypatch, monitor, zero=lambda v: v * 1e6)
+    script_log(monkeypatch, monitor, zero=lambda v: v * 1e6)
     config = _config(SIGNED, sign_invariant=False, max_epochs=40)
     config.training_config['convergence']['min_epochs'] = 10
     interface = _run(config)
@@ -308,9 +285,7 @@ def test_grace_leaves_a_run_that_plateaus_after_it_unchanged(monkeypatch):
     # the patience count from inside the grace must carry over, so the run
     # stops on the same epoch, which is why min_epochs leaves every
     # non-stalled S3/S4 row as it was.
-    _script_log(
-        monkeypatch, lambda e: 0.9**e if e <= 8 else 1.0, zero=lambda v: v * 1e6
-    )
+    script_log(monkeypatch, lambda e: 0.9**e if e <= 8 else 1.0, zero=lambda v: v * 1e6)
     runs = []
     for min_epochs in (0, 10):
         config = _config(SIGNED, sign_invariant=False, max_epochs=40)
@@ -338,7 +313,7 @@ def test_converged_needs_min_rel_delta_below_the_zero_predictor(
 ):
     # Zero predictor scripted to 1.0, min_rel_delta=0.01: 0.5% below it is
     # still a stall, 2% below it is a real plateau.
-    _script_log(monkeypatch, lambda _: monitor, zero=lambda _: torch.tensor(1.0))
+    script_log(monkeypatch, lambda _: monitor, zero=lambda _: torch.tensor(1.0))
     interface = _run(_config(SIGNED, sign_invariant=False, max_epochs=40))
     assert interface.zero_predictor_monitor == pytest.approx(1.0)
     stopping_reason = interface.convergence_callback.stopping_reason
@@ -350,7 +325,7 @@ def test_non_finite_monitor_inside_grace_still_stops_the_run(monkeypatch):
     # The grace withdraws patience stops only: a NaN at epoch 5 ends the run
     # there, as it did before the grace existed, even though the monitor is
     # finite again later and patience would otherwise run out past the grace.
-    _script_log(
+    script_log(
         monkeypatch, lambda e: math.nan if e == 5 else 1.0, zero=lambda v: v * 1e6
     )
     config = _config(SIGNED, sign_invariant=False, max_epochs=40)
