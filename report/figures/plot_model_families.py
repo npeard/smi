@@ -82,39 +82,6 @@ def sim_marker(ax: plt.Axes, x: float, y: float, sim: str, marker: str) -> None:
     )
 
 
-def annotate_scnn(
-    ax: plt.Axes, records: dict[str, RunRecord], rows: list[tuple[str, str]]
-) -> None:
-    """Label the C = 0.2 SCNN and Barland cells with their standing against the TCN.
-
-    SCNN is the TCN with symmetric padding, so its gain is what seeing the
-    future buys at a matched context; Barland's wider window then ties SCNN.
-    """
-    metric = Q2_SIMS['smi-a3']
-
-    def score(stem: str) -> float:
-        record = q2_record(records, stem, 'smi-a3')
-        assert record is not None
-        return mean_metric(record, metric)
-
-    stems = [stem for stem, _ in rows]
-    tcn, scnn = score('tcn-44k'), score('scnn-44k')
-    for stem, text in (
-        ('scnn-44k', f'{100 * (tcn / scnn - 1):.0f}% below TCN'),
-        ('barland-44k', 'ties SCNN'),
-    ):
-        ax.annotate(
-            text,
-            (score(stem), stems.index(stem)),
-            xytext=(7, 0),
-            textcoords='offset points',
-            ha='left',
-            va='center',
-            fontsize=7.5,
-            color=SIM_STYLE['smi-a3'],
-        )
-
-
 def retarget_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
     """Displacement RMSE of each S1d family, velocity target against displacement.
 
@@ -222,7 +189,6 @@ def main() -> None:
     ax.minorticks_off()
     ax.set_xticks(ticks, [f'{t:g}' for t in ticks], fontsize=8)
     ax.set_xlabel(r'noise-free test velocity RMSE ($\mu$m/ms)')
-    annotate_scnn(ax, records, rows)
     panel_label(ax, '(a)')
     retarget_panel(ax_b, records)
     handles = [

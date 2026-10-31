@@ -96,14 +96,9 @@ from smi.synthetic.forward import (
 )
 from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
-# Matches plot_velocity_bounds.py and plot_sign_information.py.
+# Matches plot_velocity_bounds.py.
 N_STEPS = 2000
-N_SHOTS = 8
-SEED = 0
 NOMINAL_C = 0.2
-TABLE_C = (0.05, 0.2, 0.7)
-TABLE_ALPHA = (3.0, 5.0)
-TABLE_K = (1, 3)
 # The real-data causal TCN of report.typ's results table: the matched 44k
 # configuration on the free-space held-out test split, mean over model seeds.
 REAL_TCN_CONFIG = 'tcn-matched'
@@ -311,10 +306,6 @@ def q3_values(records: dict[str, RunRecord], zero: float) -> dict[str, str | boo
         **lo_hi('q3_n_worst', worst, lambda x: sig(x, 3)),
         'q3_flip_c': f'{Q3_FEEDBACK_C[n_flip]:g}',
         **lo_hi('q3_slow', slow, lambda x: sig(x, 2)),
-        # The text calls the slow-decile floor a budget property; the
-        # document asserts that it is lower at 90 epochs in every cell.
-        'q3_slow_falls_with_budget': len(slow) == len(Q3_FEEDBACK_C) + 1
-        and all(a < b for a, b in zip(slow, slowest(t30), strict=True)),
         **lo_hi('q3_t90_epochs', t90_epochs, str),
         'q3_zero_gap_pct': sig(100 * zero_gap, 1),
         'q3_a5_gap_pct': pct(a5_gap),
@@ -395,12 +386,6 @@ def noise_values(
     def cut(field: str) -> float:
         return 1 - rmse(loo[field]) / nominal_mean
 
-    def outside(field: str) -> bool:
-        # Clearly outside: below the lowest nominal seed by more than the
-        # nominal seeds' own spread.
-        return rmse(loo[field]) < min(nominal) - width
-
-    loo_long = {f for f, r in loo.items() if ran_third_cycle(r)}
     pdbw = 'pd_bandwidth_hz'
     # The equal-length grid: every cell trained the same length, its cap.
     e60_cells, e60_sweep = matched_length_cells(records)
@@ -433,14 +418,6 @@ def noise_values(
         'loo_phase_cut': pct(cut(phase)),
         'loo_vis_cut': pct(cut('visibility_range')),
         'loo_pdbw_cut': pct(cut(pdbw)),
-        # The text: phase drift is the largest removal, then visibility and
-        # PD bandwidth are the only others clearly outside the nominal spread.
-        'loo_outside_named': {f for f in loo if outside(f)}
-        == {phase, 'visibility_range', pdbw}
-        and loo_rows[0][0] == phase,
-        # The text: only the phase-drift and PD-bandwidth cells trained into
-        # a third cosine cycle.
-        'loo_long_named': loo_long == {phase, pdbw},
         'loo_e60_epochs': str(e60_epochs),
         'loo_e60_cut': pct(1 - e60_nodrift / e60_nominal),
         'loo_e60_base_gain': pct(base_gain),
@@ -450,8 +427,6 @@ def noise_values(
         'loo_e60_outside': e60_nodrift < e60_nominal - width,
         'loo_e60_same_ranking': e60_base < e60_nodrift < e60_nominal,
         'loo_snr_saving': sig(nominal_mean - rmse(loo[snr]), 1),
-        # The text: removing SNR saves under a third of what it costs alone.
-        'loo_snr_subadditive': nominal_mean - rmse(loo[snr]) < snr_cost / 3,
         # The text: only 8 bits and a 3 kHz bandwidth leave the base spread.
         'noise_electronics_flat': above_base('adc_bits') == [8]
         and above_base('pd_bandwidth_hz') == [3e3],
@@ -459,13 +434,6 @@ def noise_values(
         # as much as removing the bandwidth limit.
         'loo_electronics_max_pdbw': max(cut(f) for f in (snr, 'adc_bits', pdbw))
         == cut(pdbw),
-        # The text: at 20% each drift costs comparably to 30 dB white noise.
-        'noise_drift_20_like_snr': all(
-            2 / 3 < (rmse(row.record) - base_mean) / snr_cost < 3 / 2
-            for f in ('amplitude_drift_rel', 'contrast_drift_rel')
-            for row in ladder[f]
-            if row.value == 0.2
-        ),
         'noise_n_seeds': str(len(base)),
         'noise_phase_fringes': sig(NOMINAL_PHASE_DRIFT_FRINGES, 3),
         'noise_phase_rad': sig(NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S, 3),
@@ -485,7 +453,6 @@ def noise_values(
             1,
         ),
         'noise_e60_half_kept': pct(e60_half_kept),
-        'noise_e60_half_keeps_most': e60_half_kept > 0.5,
         'noise_c09_ratio': sig(rmse(nominal0) / rmse(c09), 2),
         'noise_snr_cost': sig(snr_cost, 2),
         'noise_snr_bound': sig(snr_bound, 2),
@@ -495,7 +462,6 @@ def noise_values(
         'noise_bound_no_power': base_mean > 5 * snr_bound,
         # The text: at 20 dB the white-noise cost about doubles.
         'noise_snr20_cost': sig(snr20_cost, 2),
-        'noise_snr20_doubles': 1.7 < snr20_cost / snr_cost < 2.3,
         'noise_dc_low_named': {row.value[1] for row in dc_low} == {0.3, 1.0},
         'noise_dc_low_epochs': '/'.join(
             sorted({str(row.record.epochs_run) for row in dc_low})
@@ -513,8 +479,6 @@ EARLY_STOP_FRACTION = 0.95
 # The text says no family comes near the Michelson oracle; a ratio this large
 # is well clear of the seed range, which a bare `oracle < best` would not be.
 ORACLE_MARGIN = 1.5
-# The text calls the top offline families' span close to the seed range.
-CLOSE_FACTOR = 1.5
 
 
 def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
@@ -599,11 +563,6 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
         'q2_offline_rows': rows(Q2_OFFLINE, False),
         'q2_oracle_cells': [f'{v:.3f}' for v in oracle],
         'q2_mamba_pending': q2_record(records, 'mamba-44k', 'smi-a3') is None,
-        # The text says Mamba, unlike the LSTMs, trained on both sims.
-        'q2_mamba_trained': all(
-            r is not None and r.converged
-            for r in (q2_record(records, 'mamba-44k', sim) for sim in Q2_SIMS)
-        ),
         'q2_stalled_named': set(stalled)
         == {
             ('lstm-44k', 'michelson'),
@@ -694,7 +653,7 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
     oracle_mich, oracle_smi = (oracle_cell(records, sim) for sim in Q2_SIMS)
     oracle = mean_metric(oracle_mich, 'velocity_rmse_sign_invariant')
     oracle_si = mean_metric(oracle_smi, 'velocity_rmse_sign_invariant')
-    tcn_mich, tcn_smi = mich['tcn-44k'], smi['tcn-44k']
+    tcn_smi = smi['tcn-44k']
 
     weakest = max(mich_named, key=mich_named.__getitem__)
     rest = [v for s, v in mich_named.items() if s != weakest]
@@ -704,8 +663,6 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
     offline_top = sorted(
         v for s, v in smi_named.items() if s in dict(Q2_OFFLINE) and s != 'mlp-44k'
     )
-    below_tcn = {s for s, v in smi_named.items() if apart(v, tcn_smi)}
-    above_tcn = {s for s, v in smi_named.items() if apart(tcn_smi, v)}
     runs = [
         (epochs(r), r.T_0 or 0)
         for s in Q2_NAMED
@@ -733,25 +690,11 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
         'q2_oracle_mich': sig(oracle, 2),
         'q2_oracle_gap': sig(min(mich.values()) / oracle, 2),
         'q2_oracle_beats_all': ORACLE_MARGIN * oracle <= min(mich.values()),
-        # C = 0.2: the families the text names as beating or trailing the TCN.
-        'q2_smi_vs_tcn': below_tcn
-        == {
-            'tcan-44k',
-            'patchtransformer-causal-44k',
-            'scnn-44k',
-            'barland-44k',
-            'patchtransformer-offline-44k',
-            'unettransformer-offline-44k',
-        }
-        and above_tcn
-        == {'unettransformer-causal-44k', 'neuraloperator-causal-44k', 'mlp-44k'},
         'q2_tcan_gain': sig(tcn_smi / smi['tcan-44k'], 3),
         'q2_patch_gain': sig(tcn_smi / smi['patchtransformer-causal-44k'], 3),
         'q2_tcan_best': best == 'tcan-44k' and apart(smi[best], runner_up),
         'q2_tcan_margin_pct': pct(runner_up / smi[best] - 1),
         'q2_offline_span_pct': pct(offline_top[-1] / offline_top[0] - 1),
-        'q2_offline_span_close': offline_top[-1] / offline_top[0] - 1
-        < CLOSE_FACTOR * resolution,
         'q2_scnn_gain_pct': pct(tcn_smi / smi['scnn-44k'] - 1),
         # Barland's 498-sample span ties SCNN's 85: the wider context shows no gain.
         'q2_barland_ties_scnn': not apart(
@@ -760,11 +703,6 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
         ),
         'q2_barland_smi': sig(smi['barland-44k'], 3),
         'q2_scnn_smi': sig(smi['scnn-44k'], 3),
-        # SCNN is the TCN with symmetric padding: the one matched pair.
-        'q2_scnn_pair': not apart(
-            min(tcn_mich, mich['scnn-44k']), max(tcn_mich, mich['scnn-44k'])
-        )
-        and apart(smi['scnn-44k'], tcn_smi),
         'q2_oracle_smi_si': sig(oracle_si, 2),
         'q2_oracle_smi_signed': sig(oracle_signed, 2),
         'q2_zero_smi': sig(zero, 2),
@@ -843,7 +781,6 @@ def q1_s2_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
         return best / min(smi[family][w] for w in Q1_MULTI)
 
     lattice_nm = max(math.gcd(round(1e4 * a), round(1e4 * b)) for a, b in Q1_PAIRS) / 10
-    tcn_multi = [smi['tcn-44k'][w] for w in Q1_MULTI]
     tcan_pair = min(smi['tcan-44k'][w] for w in Q1_PAIRS)
     tcan_triple = smi['tcan-44k'][triple]
     table_columns = (
@@ -894,9 +831,7 @@ def q1_s2_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
             for f in Q1_FAMILIES
             for w in Q1_MULTI
         ),
-        'q1_tcn_multi_tied': not separated(min(tcn_multi), max(tcn_multi), resolution),
         'q1_tcan_triple_pct': pct(1 - tcan_triple / tcan_pair),
-        'q1_tcan_triple_at_edge': at_edge(tcan_pair / tcan_triple - 1, resolution),
         **lo_hi(
             'q1_epochs',
             (
@@ -1071,15 +1006,7 @@ def q1_s4_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
             }
             for snr, row in rmse.items()
         ],
-        # The text: the gain peaks between 10 and 30 dB, is within the seed
-        # range at 0 dB and reverses at 40 dB, where the 515 nm cell alone
-        # trained into a third cycle.
-        'q1_s4_gain_shape': max(gain, key=gain.__getitem__) in (10.0, 20.0, 30.0)
-        and abs(gain[0.0]) < resolution
-        and gain[40.0] < 0,
         'q1_s4_40_epochs': str(epochs(long_single)),
-        'q1_s4_40_third_cycle': ran_third_cycle(long_single)
-        and not any(ran_third_cycle(s4(w, 40.0)) for w in Q1_MULTI),
         **lo_hi('q1_s4_oracle', oracle, lambda x: sig(x, 2)),
         'q1_s4_oracle_worse': min(oracle) > zero,
     }
@@ -1241,18 +1168,12 @@ def displacement_values(records: dict[str, RunRecord]) -> dict[str, object]:
     # Michelson: the families the velocity text calls tied (all but the
     # offline neural operator) and their spread on displacement.
     tied = [v for s, v in mich.items() if s != 'neuraloperator-offline-44k']
-    curve_rmse = [mean_metric(curve[c], signed) for c in sorted(Q3_FEEDBACK_C)]
-    velocity = {
-        s: mean_metric(synthetic_cell(records, f'{s}-T90', 'smi-a3'), 'velocity_rmse')
-        for s in ('tcn-44k', 'mamba-44k')
-    }
     return {
         'disp_pending': False,
         'disp_c_top': f'{top:g}',
         'disp_gain_top': sig(
             mean_metric(michelson, si) / mean_metric(curve[top], signed), 2
         ),
-        'disp_curve_monotone': all(a > b for a, b in itertools.pairwise(curve_rmse)),
         'disp_seed_range_pct': pct(resolution),
         **lo_hi('disp_lowest', lowest, lambda x: sig(x, 2)),
         'disp_tcn': sig(tcn, 2),
@@ -1263,15 +1184,7 @@ def displacement_values(records: dict[str, RunRecord]) -> dict[str, object]:
         == DISPLACEMENT_LOWEST
         and not separated(lowest[0], lowest[-1], resolution)
         and separated(lowest[-1], tcn, resolution),
-        # Mamba, tied with the TCN on velocity, is last of the trained
-        # families on displacement but not resolved from the TCN.
-        'disp_mamba_last': ranked[-1] == 'mamba-44k'
-        and not separated(tcn, smi['mamba-44k'], resolution)
-        and not separated(
-            velocity['tcn-44k'], velocity['mamba-44k'], seed_resolution(records)
-        ),
         'disp_mich_span': sig(max(tied) / min(tied), 2),
-        'disp_mich_spread': separated(min(tied), max(tied), resolution),
     }
 
 
@@ -1394,25 +1307,18 @@ def main() -> None:
         'causal_k3': sig(causal_k3, 2),
         'offline_k3': sig(offline_k3, 2),
         'info_ratio_k3_k1': sig(info[1] / info[0], 2),
-        # The sign-evidence caption: how much more three channels carry than one.
-        **lo_hi(
-            'sign_k3_k1',
-            (
-                bounds.sign_information(
-                    SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, c, NOMINAL_ALPHA),
-                    N_SHOTS,
-                    SEED,
-                )
-                / bounds.sign_information(
-                    SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM[:1], c, NOMINAL_ALPHA),
-                    N_SHOTS,
-                    SEED,
-                )
-                for c in TABLE_C
-            ),
-            lambda x: sig(x, 2),
-        ),
         'causal_ratio_k3_k1': sig(causal_k3 / causal_k1, 2),
+        # The bounds caption: what feedback over its whole range does to the
+        # three-channel causal bound, beside what the extra channels do.
+        'causal_ratio_c09_c0': sig(
+            velocity_bounds(
+                prior, SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.9, NOMINAL_ALPHA)
+            )[0]
+            / velocity_bounds(
+                prior, SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
+            )[0],
+            2,
+        ),
         'real_tcn_rmse': sig(real, 4),
         'real_gap': f'{real / causal_k3:.0f}',
         **exit_check_values(records),

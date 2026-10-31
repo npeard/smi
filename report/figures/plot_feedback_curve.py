@@ -89,32 +89,6 @@ def sign_agreement(
     )
 
 
-def slow_floor(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
-    """Print the slowest decile's error range over every C, per budget.
-
-    The floor is a training-budget property (section 2), so the panel states
-    its range at both budgets over Michelson and all six C, not only the
-    three plotted cells.
-    """
-    sims = ('michelson', *map(c_sim, Q3_FEEDBACK_C))
-    lines = []
-    for budget in Q3_BUDGETS:
-        slow = []
-        for sim in sims:
-            binned = synthetic_cell(records, budget.family, sim).binned
-            assert binned is not None, sim
-            slow.append(binned['abs_velocity'][0]['rmse_sign_invariant'])
-        lines.append(f'{budget.epochs} ep. {min(slow):.3f}-{max(slow):.3f}')
-    ax.text(
-        0.04,
-        0.88,
-        'slowest decile,\nall $C$:\n' + '\n'.join(lines),
-        transform=ax.transAxes,
-        fontsize=6.5,
-        va='top',
-    )
-
-
 def binned_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
     """Sign-invariant RMSE by |v| decile, at each decile's midpoint speed."""
     budget = Q3_BUDGETS[0]
@@ -155,11 +129,8 @@ def binned_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
                 fontsize=8,
                 color='0.35',
             )
-    slow_floor(ax, records)
     log_axes(ax, (0.01, 0.1, 1.0), (0.02, 0.05, 0.1, 0.2, 0.5))
     ax.set_xlim(right=8)
-    # Headroom above Michelson's slow bins for the floor's range.
-    ax.set_ylim(top=2.5)
     ax.set_xlabel(r'$|v|$ decile midpoint ($\mu$m/ms)')
     ax.set_ylabel(r'sign-inv. RMSE ($\mu$m/ms)')
     panel_label(ax, '(c)')

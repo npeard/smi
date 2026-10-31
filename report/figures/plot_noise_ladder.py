@@ -71,21 +71,6 @@ EQUAL_LENGTH = COLORS['highlight']
 PHASE = 'phase_drift_rad_per_sqrt_s'
 
 
-def snr_costs(ax: plt.Axes, x: list[float], y: list[float], base: float) -> None:
-    """Mark the cost over the base mean at 30 and 20 dB, which roughly doubles."""
-    for db in (30, 20):
-        xi = x.index(db)
-        ax.annotate(
-            f'+{y[xi] - base:.3f}',
-            (x[xi], y[xi]),
-            xytext=(-3, 6),
-            textcoords='offset points',
-            ha='right',
-            fontsize=6.5,
-            color=LINE,
-        )
-
-
 def main() -> None:
     args = parse_args(__doc__.splitlines()[0])
     records = synthetic_records()
@@ -129,8 +114,6 @@ def main() -> None:
                 markersize=4,
                 linewidth=1.5,
             )
-        if field == 'snr_db':
-            snr_costs(ax, x, y, base[2])
         if log_x:
             ax.set_xscale('log')
             ax.minorticks_off()

@@ -41,13 +41,12 @@ def rmse(record: RunRecord) -> float:
     return mean_metric(record, 'velocity_rmse')
 
 
-def band(ax: plt.Axes, runs: list[RunRecord], color: str) -> float:
+def band(ax: plt.Axes, runs: list[RunRecord], color: str) -> None:
     """Seed range of ``runs`` as a vertical band, with a line at its mean."""
     xs = [rmse(r) for r in runs]
     mean = sum(xs) / len(xs)
     ax.axvspan(min(xs), max(xs), color=color, alpha=0.25, lw=0)
     ax.axvline(mean, color=color, lw=1.2)
-    return mean
 
 
 def main() -> None:
@@ -63,27 +62,11 @@ def main() -> None:
     (equal_epochs,) = {r.epochs_run for r in equal.values()}
 
     fig, ax = plt.subplots(figsize=(4.8, 3.0))
-    nominal = band(ax, noise_seeds(records, 'nominal'), 'C3')
-    base = band(ax, noise_seeds(records, 'ladder-base'), COLORS['muted'])
-    # How much the longer, equal-length training alone buys each end: much
-    # at the base, little at the nominal point.
-    for name, label, mean, ls, side, y in (
-        ('ladder-base', 'noise-free', base, '--', 1, len(rows) - 3),
-        ('nominal', 'all nominal', nominal, ':', -1, 1.5),
-    ):
-        x = rmse(equal[name])
-        ax.axvline(x, color=EQUAL_LENGTH, ls=ls, lw=1.0 if ls == '--' else 1.2)
-        ax.annotate(
-            f'{label}, {equal_epochs} epochs:\n'
-            f'{100 * (1 - x / mean):.0f}% below its seed mean',
-            (x, y),
-            xytext=(3 * side, 0),
-            textcoords='offset points',
-            ha='left' if side > 0 else 'right',
-            va='center',
-            fontsize=7,
-            color=EQUAL_LENGTH,
-            bbox={'facecolor': 'white', 'edgecolor': 'none', 'pad': 1},
+    band(ax, noise_seeds(records, 'nominal'), 'C3')
+    band(ax, noise_seeds(records, 'ladder-base'), COLORS['muted'])
+    for name, ls in (('ladder-base', '--'), ('nominal', ':')):
+        ax.axvline(
+            rmse(equal[name]), color=EQUAL_LENGTH, ls=ls, lw=1.0 if ls == '--' else 1.2
         )
     for y, (_, stem, record) in enumerate(rows):
         third = (record.epochs_run or 0) > 2 * (record.T_0 or 0)
