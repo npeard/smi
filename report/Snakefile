@@ -85,7 +85,12 @@ ANALYSIS_CODE = [
 EXPERIMENTS_DIR = SMI_DIR / "analysis" / "experiments"
 GRIDS = [
     str(EXPERIMENTS_DIR / name)
-    for name in ("q3_s0c_ceiling.yaml", "q3_s3_noise_ladder.yaml", "q3_s3_spread.yaml")
+    for name in (
+        "q3_s0c_ceiling.yaml",
+        "q3_s3_noise_ladder.yaml",
+        "q3_s3_spread.yaml",
+        "q3_s3_leave_one_out.yaml",
+    )
 ]
 
 # The emitter instantiates the matched model configs to probe the input span of

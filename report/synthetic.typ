@@ -445,6 +445,11 @@ at $C = 0.2$.
 #assert(val("noise_electronics_flat"), message: "an ADC or PD-bandwidth row other than 8 bits or 3 kHz now leaves the base spread")
 #assert(val("noise_drift_20_like_snr"), message: "the 20% drift rows no longer match the 30 dB row")
 #assert(val("noise_dc_low_named"), message: "the DC-offset rows below the base are no longer the +/-0.3 and +/-1 rows")
+#assert(val("loo_outside_named"), message: "the leave-one-out cells clearly below the nominal spread are no longer phase drift, then visibility and PD bandwidth")
+#assert(val("loo_long_named"), message: "the leave-one-out cells that trained into a third cycle are no longer phase drift and PD bandwidth")
+#assert(val("loo_share_rel_most"), message: "the base's fractional gain from longer training no longer explains most of the phase-drift cut")
+#assert(val("loo_phase_net_outside"), message: "net of the base's longer-training gain, removing phase drift no longer leaves the nominal spread")
+#assert(val("loo_snr_subadditive"), message: "removing SNR from the nominal point now saves a third or more of its ladder cost")
 
 Phase drift dominates the error at the nominal operating point
 (@fig-noise). Each row trains the 30-epoch TCN of @fig-feedback at
@@ -454,8 +459,8 @@ against the mean of the noise-free base, phase drift alone at its nominal
 #val("noise_phase_share")% of the error that every knob at nominal adds, and
 30 dB white noise gives #val("noise_snr_share")%. No other knob gives more
 than #val("noise_minor_share_hi")%, against a base seed spread of
-#val("noise_spread_share")% on the same scale. The ladder does not show how
-the knobs combine, and no row removes phase drift from the nominal point.
+#val("noise_spread_share")% on the same scale. How the knobs combine the
+ladder cannot show; @tab-loo removes each from the nominal point instead.
 
 #fig(
   "noise_ladder",
@@ -479,19 +484,64 @@ nominal cost. A few-fold cut in drift therefore buys little. The ladder
 samples nothing between 0 and 0.5 fringes, so how far drift must fall to
 pay is untested.
 
-The ladder makes the case for optical changes before new electronics.
-Phase drift is optical path length and laser frequency drift, so the levers
-it supports are stabilizing the path or the laser, or reading the drift from
-a monitor channel; the ladder tests none of them. Raising $C$ to 0.9 is
-another optical lever: in one seed it cuts the nominal-point error by a
-factor #val("noise_c09_ratio"). SNR, photodiode bandwidth and the ADC are the
-electronics. Neither a better ADC nor a wider bandwidth is supported, since
-both sit on the base at their nominal values, and only 8 bits or a 3 kHz
-bandwidth rise above it. A quieter front end is the one electronics lever
-the ladder leaves open, and only if the rig's SNR is below the assumed
-30 dB.
+Removing phase drift from the nominal point cuts its error by
+#val("loo_phase_cut")%, the only large single removal (@tab-loo). Each cell
+is the nominal point with one knob returned to its noise-free value, at the
+ladder's budget and one seed. Of the other seven, only full visibility, at
+#val("loo_vis_cut")%, and the photodiode bandwidth, at
+#val("loo_pdbw_cut")%, fall below the nominal seeds by more than their own
+spread.
 
-That caveat applies to every assumed knob. The nominal drive gain and phase
+#figure(
+  align(center, table(
+    columns: 3,
+    align: (left, right, right),
+    stroke: 0.5pt + rgb("#d0d0d0"),
+    table.header([Knob removed], [RMSE], [Epochs]),
+    [none, #val("noise_n_seeds") seeds], [#val("loo_nominal_lo")--#val("loo_nominal_hi")],
+    [#val("loo_nominal_epochs_lo")--#val("loo_nominal_epochs_hi")],
+    ..val("loo_rows").map(row => ([#row.label], [#row.rmse], [#row.epochs])).flatten(),
+  )),
+  caption: [
+    Only phase drift, removed from the nominal point, takes the error far
+    below it. Test velocity RMSE ($mu$m/ms) on the frozen shots of
+    @fig-noise, TCN-44k on three channels at $C = 0.2$, $alpha = 3$, seed 0,
+    with the named knob noise-free and the rest at nominal. Epochs: when
+    patience stopped the run, under the 30-epoch cycle.
+  ],
+) <tab-loo>
+
+Longer training may account for part of that cut, and the records do not
+say how much. The phase-drift and photodiode-bandwidth cells trained
+#val("loo_long_epochs") epochs, into a third cosine cycle, against
+#val("loo_short_epochs_lo") to #val("loo_short_epochs_hi") for the rest, which
+can only favor them. On the noise-free base, the longer cycles of
+@sec-q3-curve trained #val("loo_base_long_epochs") epochs. Their gain over the
+base seeds, carried over in $mu$m/ms, would explain
+#val("loo_share_abs_lo") to #val("loo_share_abs_hi")% of the phase-drift cut;
+carried over as a fraction, most of it or more. The bandwidth cell, whose
+knob alone sits on the base, gained #val("loo_share_pdbw")% as much at the
+nominal point itself. Net of the base's larger gain in $mu$m/ms, removing
+phase drift still leaves the nominal spread.
+
+White noise and the other knobs do not add. Alone at 30 dB it raises the
+base error by #val("noise_snr_cost") $mu$m/ms, but removing it from the
+nominal point saves #val("loo_snr_saving") $mu$m/ms. These grids do not
+show which other knob its cost depends on.
+
+The leave-one-out makes the case against new electronics directly. With
+every other knob on, noise-free electronics (no white noise, no ADC, no
+bandwidth limit) move the error by at most #val("loo_pdbw_cut")%, and that
+largest move came with the longer training. In the ladder, too, only 8 bits
+or a 3 kHz bandwidth rise above the base. The case for optical changes
+stands, subject to the training caveat. Phase drift is optical path length
+and laser frequency drift, so the levers it supports are stabilizing the
+path or the laser, or reading the drift from a monitor channel. Full
+visibility is an alignment and speckle lever, and raising $C$ to 0.9, in one
+seed, cuts the nominal-point error by a factor #val("noise_c09_ratio"). No
+grid here tests any of these levers on the rig.
+
+Every nominal value is itself an assumption. The nominal drive gain and phase
 drift are anchored to numbers the baseline report published, as context
 rather than a calibration, and the phase-drift nominal is a lower bound on
 the true rate. SNR, visibility, DC offset, amplitude and contrast drift
@@ -514,8 +564,8 @@ epochs, into a third cosine cycle, against #val("noise_base_epochs_lo") to
 #val("noise_base_epochs_hi") for the base seeds. Whether the longer run or
 the offset causes the drop is untested, and nothing here rests on it.
 
-Each ladder row is one training seed at one budget, read against the seed
-spread of @fig-noise. Budgets also differ by row: #val("noise_n_long") of
+Each ladder row and leave-one-out cell is one training seed at one budget,
+read against the seed spread of @fig-noise. Budgets also differ by row: #val("noise_n_long") of
 the #val("noise_n_rows") rows, the nominal phase-drift row among them, trained #val("noise_long_epochs_lo")
 to #val("noise_long_epochs_hi") epochs, against
 #val("noise_short_epochs_lo") to #val("noise_short_epochs_hi") for the rest.

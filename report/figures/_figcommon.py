@@ -90,6 +90,7 @@ def mean_metric(record: RunRecord, metric: str) -> float:
 EXPERIMENTS_DIR = REPO_ROOT / 'smi' / 'analysis' / 'experiments'
 NOISE_LADDER_GRID = EXPERIMENTS_DIR / 'q3_s3_noise_ladder.yaml'
 NOISE_SPREAD_GRID = EXPERIMENTS_DIR / 'q3_s3_spread.yaml'
+LEAVE_ONE_OUT_GRID = EXPERIMENTS_DIR / 'q3_s3_leave_one_out.yaml'
 # forward.py sets the nominal phase drift at the geometric middle of the
 # published 1 to 2.7 fringes per shot; drift in fringes per shot is linear in
 # the rate, so this converts a swept rate to fringes.
@@ -158,10 +159,10 @@ def noise_ladder(records: dict[str, RunRecord]) -> dict[str, list[LadderRow]]:
 
 
 def noise_seeds(records: dict[str, RunRecord], sim_name: str) -> list[RunRecord]:
-    """Every seed of ``sim_name`` across the ladder and its spread grid."""
+    """Every seed of ``sim_name`` across the ladder, spread and leave-one-out grids."""
     found = {
         record.cell_key: record
-        for grid in (NOISE_LADDER_GRID, NOISE_SPREAD_GRID)
+        for grid in (NOISE_LADDER_GRID, NOISE_SPREAD_GRID, LEAVE_ONE_OUT_GRID)
         for name, _, record in _grid_records(records, grid)
         if name == sim_name
     }

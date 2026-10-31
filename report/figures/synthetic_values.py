@@ -280,10 +280,27 @@ def q3_values(records: dict[str, RunRecord]) -> dict[str, str | bool]:
     }
 
 
+# The leave-one-out grid's knobs, as (SimConfig field, sim-name stem, fig-noise
+# panel name); each cell is named nominal-no-<stem> (q3_s3_leave_one_out.yaml).
+LEAVE_ONE_OUT = (
+    ('phase_drift_rad_per_sqrt_s', 'phasedrift', 'phase drift'),
+    ('snr_db', 'snr', 'white noise'),
+    ('visibility_range', 'visibility', 'visibility'),
+    ('amplitude_drift_rel', 'ampdrift', 'amplitude drift'),
+    ('contrast_drift_rel', 'contrastdrift', 'contrast drift'),
+    ('dc_offset_range', 'dc', 'DC offset'),
+    ('pd_bandwidth_hz', 'pdbw', 'PD bandwidth'),
+    ('adc_bits', 'adc', 'ADC'),
+)
+# The families that trained section Q3's noise-free C = 0.2 cell for longer
+# cycles than the ladder's 30 epochs.
+LONGER_BASE = ('tcn-44k-T270', 'tcn-44k-T90')
+
+
 def noise_values(
     records: dict[str, RunRecord], prior: bounds.StateSpace
-) -> dict[str, str | bool]:
-    """Values the noise-ladder section quotes, from the ladder and spread grids."""
+) -> dict[str, object]:
+    """Values the noise-ladder section quotes, from its three grids."""
 
     def rmse(record: RunRecord) -> float:
         return mean_metric(record, 'velocity_rmse')
@@ -337,7 +354,87 @@ def noise_values(
         return [row.value for row in ladder[field] if rmse(row.record) > max(base)]
 
     snr_nominal = rmse(snr_row.record)
+
+    # Leave-one-out: the nominal point with one knob returned to noise-free,
+    # read as the drop below the nominal seeds' mean.
+    nominal_mean = sum(nominal) / len(nominal)
+    width = max(nominal) - min(nominal)
+    loo: dict[str, RunRecord] = {}
+    for field, stem, _ in LEAVE_ONE_OUT:
+        (loo[field],) = noise_seeds(records, f'nominal-no-{stem}')
+    labels = {field: label for field, _, label in LEAVE_ONE_OUT}
+
+    def cut(field: str) -> float:
+        return 1 - rmse(loo[field]) / nominal_mean
+
+    def outside(field: str) -> bool:
+        # Clearly outside: below the lowest nominal seed by more than the
+        # nominal seeds' own spread.
+        return rmse(loo[field]) < min(nominal) - width
+
+    loo_long = {f for f, r in loo.items() if (r.epochs_run or 0) > 2 * (r.T_0 or 0)}
+    phase_gain = nominal_mean - rmse(loo[phase])
+    # What longer training bought the noise-free base itself: the same sim
+    # trained under section Q3's longer cycles, against the ladder's base seeds.
+    longer_base = [
+        synthetic_cell(records, f, 'smi-a3-feedback_c=0.2') for f in LONGER_BASE
+    ]
+    assert all(r.sim_config_hash == base_runs[0].sim_config_hash for r in longer_base)
+    base_gains = [base_mean - rmse(r) for r in longer_base]
+    # The same gains as fractions, applied to the no-phase-drift cell: the
+    # share of its gain that the extra epochs would then account for.
+    rel_shares = [
+        (rmse(loo[phase]) / (1 - g / base_mean) - rmse(loo[phase])) / phase_gain
+        for g in base_gains
+    ]
+    pdbw = 'pd_bandwidth_hz'
+    loo_rows = sorted(loo.items(), key=lambda item: rmse(item[1]))
     return {
+        'loo_rows': [
+            {'label': labels[f], 'rmse': f'{rmse(r):.3f}', 'epochs': str(r.epochs_run)}
+            for f, r in loo_rows
+        ],
+        'loo_nominal_lo': f'{min(nominal):.3f}',
+        'loo_nominal_hi': f'{max(nominal):.3f}',
+        'loo_nominal_epochs_lo': str(
+            min(r.epochs_run or 0 for r in noise_seeds(records, 'nominal'))
+        ),
+        'loo_nominal_epochs_hi': str(
+            max(r.epochs_run or 0 for r in noise_seeds(records, 'nominal'))
+        ),
+        'loo_phase_cut': pct(cut(phase)),
+        'loo_vis_cut': pct(cut('visibility_range')),
+        'loo_pdbw_cut': pct(cut(pdbw)),
+        # The text: phase drift is the largest removal, then visibility and
+        # PD bandwidth are the only others clearly outside the nominal spread.
+        'loo_outside_named': {f for f in loo if outside(f)}
+        == {phase, 'visibility_range', pdbw}
+        and loo_rows[0][0] == phase,
+        # The text: only the phase-drift and PD-bandwidth cells trained into
+        # a third cosine cycle.
+        'loo_long_named': loo_long == {phase, pdbw},
+        'loo_long_epochs': ' and '.join(
+            sorted({str(loo[f].epochs_run) for f in loo_long})
+        ),
+        'loo_short_epochs_lo': str(
+            min(r.epochs_run or 0 for f, r in loo.items() if f not in loo_long)
+        ),
+        'loo_short_epochs_hi': str(
+            max(r.epochs_run or 0 for f, r in loo.items() if f not in loo_long)
+        ),
+        'loo_base_long_epochs': ' and '.join(str(r.epochs_run) for r in longer_base),
+        'loo_share_pdbw': pct((nominal_mean - rmse(loo[pdbw])) / phase_gain),
+        'loo_share_abs_lo': pct(min(base_gains) / phase_gain),
+        'loo_share_abs_hi': pct(max(base_gains) / phase_gain),
+        # The text: as fractions, the base's gains would explain most of it.
+        'loo_share_rel_most': min(rel_shares) > 0.5,
+        # The text: even net of the base's largest absolute gain, removing
+        # phase drift leaves the nominal spread.
+        'loo_phase_net_outside': rmse(loo[phase]) + max(base_gains)
+        < min(nominal) - width,
+        'loo_snr_saving': sig(nominal_mean - rmse(loo[snr]), 1),
+        # The text: removing SNR saves under a third of what it costs alone.
+        'loo_snr_subadditive': nominal_mean - rmse(loo[snr]) < snr_cost / 3,
         # The text: only 8 bits and a 3 kHz bandwidth leave the base spread.
         'noise_electronics_flat': above_base('adc_bits') == [8]
         and above_base('pd_bandwidth_hz') == [3e3],
