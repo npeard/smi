@@ -1,6 +1,7 @@
 """Experiment runner: grid expansion, resumability, locking, record contents."""
 
 import json
+import math
 import os
 import signal
 import subprocess
@@ -285,10 +286,13 @@ def test_rescore_restores_exactly_what_a_fresh_run_records(tmp_path):
     assert _run(_grid(tmp_path), tmp_path) == 0  # resume still skips both
 
 
-def test_rescore_refuses_a_velocity_mismatch_and_writes_nothing(tmp_path):
+# NaN: a comparison written as "differs by more than tol" is False for NaN, so
+# a corrupt recorded mean would have slipped through as a match.
+@pytest.mark.parametrize('edit', [1.0 + 2e-4, math.nan])
+def test_rescore_refuses_a_velocity_mismatch_and_writes_nothing(tmp_path, edit):
     _one_cell(tmp_path)
     out = tmp_path / 'results.json'
-    _strip_displacement_metrics(out, edit_velocity=1.0 + 2e-4)
+    _strip_displacement_metrics(out, edit_velocity=edit)
     before = out.read_text()
     with pytest.raises(ValueError, match='velocity_rmse'):
         _rescore(tmp_path)

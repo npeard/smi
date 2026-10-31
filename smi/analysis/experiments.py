@@ -653,7 +653,8 @@ def rescore_metrics(
                 )
             have = record.metrics['velocity_rmse']['mean']
             got = new.metrics['velocity_rmse']['mean']
-            if abs(got - have) > RESCORE_REL_TOL * abs(have):
+            # Written as "agrees", so a NaN on either side is refused.
+            if not (abs(got - have) <= RESCORE_REL_TOL * abs(have)):
                 raise ValueError(
                     f'{record.cell_key}: rescored velocity_rmse mean {got} does '
                     f'not reproduce the recorded {have} to {RESCORE_REL_TOL}; '
