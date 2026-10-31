@@ -82,7 +82,7 @@ def main() -> None:
         ax.set_ylim(0, None)
         panel_label(ax, tag)
     axes[0].set_ylabel(r'pooled RMSE ($\mu$m/ms)')
-    axes[0].plot([], [], color='k', linestyle=':', label='every channel near one')
+    axes[0].plot([], [], color='k', linestyle=':', label='channel farthest from one')
 
     ax = axes[2]
     prior = bounds.motion_prior(
