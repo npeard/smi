@@ -287,13 +287,14 @@ class LitModule(lightning_module.LightningModule):
 
         return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler}}
 
-    def _velocity_prediction(self, prediction: torch.Tensor) -> torch.Tensor:
+    def velocity_from_output(self, prediction: torch.Tensor) -> torch.Tensor:
         """Recover predicted velocity (um/ms) from the model's output.
 
         When the model targets displacement the velocity is differentiated
         back out, using the same conversion ``loss_function`` and
         ``predict_step`` use, so the logged RMSE describes exactly the
-        quantity those report.
+        quantity those report. Public because ``evaluate`` scores a
+        checkpoint's output through it.
 
         Args:
             prediction: Model output, velocity or displacement per
@@ -491,7 +492,7 @@ class LitModule(lightning_module.LightningModule):
         # loss.sign_invariant=True, val/velocity_loss is sign-invariant but this
         # signed RMSE deliberately is not: its collapse near std(v) is the
         # visible symptom of a Michelson model that cannot see direction.
-        velocity_hat = self._velocity_prediction(prediction)
+        velocity_hat = self.velocity_from_output(prediction)
         self.log(
             'val/velocity_rmse_um_per_ms',
             velocity_rmse(velocity_hat, velocity_target),
@@ -549,7 +550,7 @@ class LitModule(lightning_module.LightningModule):
 
         self.log(
             'test/velocity_rmse_um_per_ms',
-            velocity_rmse(self._velocity_prediction(prediction), velocity_target),
+            velocity_rmse(self.velocity_from_output(prediction), velocity_target),
             sync_dist=torch.distributed.is_available()
             and torch.distributed.is_initialized(),
         )

@@ -6,11 +6,15 @@ import subprocess
 import sys
 import time
 
+import h5py
+import numpy as np
 import pytest
 import torch
 import yaml
 
 from smi.analysis import experiments, synthetic_lit_module
+from smi.analysis.datasets import select_pd_keys
+from smi.analysis.evaluate import load_lit_module
 from smi.analysis.experiments import (
     RunnerLockedError,
     expand_grid,
@@ -20,6 +24,7 @@ from smi.analysis.experiments import (
 from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import read_results
 from smi.analysis.training_interface import SIGNED_RMSE_KEY
+from smi.synthetic.coil_driver import CoilDriver
 from tests._helpers import script_log
 
 MATCHED = experiments.ANALYSIS_DIR / 'models' / 'configs' / 'matched'
@@ -109,6 +114,35 @@ def _one_cell(tmp_path, **overrides):
     path = _grid(tmp_path, seeds=[0], **overrides)
     assert _run(path, tmp_path) == 1
     return path
+
+
+def test_displacement_target_cell_trains_and_scores_its_differentiated_output(tmp_path):
+    path = _grid(tmp_path, seeds=[0])
+    family_path = tmp_path / 'tiny-tcn.yaml'
+    family = yaml.safe_load(family_path.read_text())
+    family['training']['target'] = 'displacement'
+    family['loss'].update(velocity_loss_weight=0.0, displacement_loss_weight=1.0)
+    family_path.write_text(yaml.safe_dump(family))
+    assert _run(path, tmp_path) == 1
+    (record,) = read_results(tmp_path / 'results.json')
+    ckpt = tmp_path / 'runs' / f'{record.cell_key}.ckpt'
+    module = load_lit_module(ckpt, device='cpu')
+    assert module.target == 'displacement'
+    # Scored by hand: the raw output is displacement, so it is differentiated
+    # with the training code's sample rate before the velocity RMSE.
+    with h5py.File(tmp_path / 'frozen' / f'{record.dataset}.h5', 'r') as f:
+        keys = select_pd_keys(f, tuple(record.wavelengths_um))
+        signals = torch.from_numpy(np.stack([f[k][:] for k in keys], axis=1))
+        velocity = torch.from_numpy(f['velocity'][:])
+        sample_rate = float(f.attrs['sample_rate'])
+    with torch.no_grad():
+        displacement = module.model(signals)[:, 0]
+    pred = CoilDriver.derivative_displacement(displacement, sample_rate)
+    rmse = torch.sqrt(torch.mean((pred - velocity) ** 2, dim=-1)).mean()
+    assert record.metrics['velocity_rmse']['mean'] == pytest.approx(
+        float(rmse), rel=1e-5
+    )
+    assert 'displacement_rmse' in record.metrics
 
 
 def test_resume_refuses_a_key_recorded_under_another_budget(tmp_path):

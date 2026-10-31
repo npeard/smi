@@ -580,7 +580,7 @@ class SyntheticEnsembleModule(EnsembleModule):
             model_hparams,
             seeds,
             norm_stats=normalization_stats(
-                sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED
+                sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED, target
             ),
             target=target,
             **ensemble_kwargs,

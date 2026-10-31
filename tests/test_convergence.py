@@ -298,7 +298,7 @@ def test_grace_leaves_a_run_that_plateaus_after_it_unchanged(monkeypatch):
 def test_run_that_never_beats_the_zero_predictor_is_not_converged(monkeypatch):
     # A zero-output model: the monitored RMSE is the zero predictor's itself.
     monkeypatch.setattr(
-        LitModule, '_velocity_prediction', lambda _, p: torch.zeros_like(p)
+        LitModule, 'velocity_from_output', lambda _, p: torch.zeros_like(p)
     )
     interface = _run(_config(SIGNED, sign_invariant=False, max_epochs=40))
     stopping_reason = interface.convergence_callback.stopping_reason

@@ -636,24 +636,39 @@ def simulate_batch(
 
 
 def normalization_stats(
-    cfg: SimConfig, n_shots: int, seed: int
+    cfg: SimConfig, n_shots: int, seed: int, target: str
 ) -> dict[str, torch.Tensor]:
     """Fixed affine stats for ``Model``, from a seeded CPU sample of ``cfg``.
 
     Replaces the per-shot z-score, which used whole-shot statistics and so
-    leaked future samples into causal models. The output stats are the
-    velocity target's (the synthetic training target).
+    leaked future samples into causal models. The output stats are those of
+    ``target``, the quantity the network emits: scaling a displacement output
+    by the velocity's std would leave the network a target far from unit
+    variance. (A displacement's mean is irrelevant to the loss, which removes
+    each shot's start offset, but it centers the network's output range.)
+
+    Args:
+        cfg: Simulator config.
+        n_shots: Shots in the sample.
+        seed: Seed of the sample's generator.
+        target: ``'velocity'`` or ``'displacement'``.
 
     Returns:
         ``Model`` keyword arguments: ``input_mean`` / ``input_std`` ``[C]`` and
         scalar ``output_mean`` / ``output_std``.
+
+    Raises:
+        ValueError: For any other ``target``.
     """
+    if target not in ('velocity', 'displacement'):
+        raise ValueError(f"target must be 'velocity' or 'displacement', not {target!r}")
     batch = simulate_batch(
         cfg, n_shots, torch.device('cpu'), torch.Generator().manual_seed(seed)
     )
+    output = getattr(batch, target)
     return {
         'input_mean': batch.signals.mean(dim=(0, 2)),
         'input_std': batch.signals.std(dim=(0, 2)),
-        'output_mean': batch.velocity.mean(),
-        'output_std': batch.velocity.std(),
+        'output_mean': output.mean(),
+        'output_std': output.std(),
     }

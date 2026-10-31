@@ -178,11 +178,6 @@ class SyntheticLitModule(LitModule):
     @override
     def _make_model(self, inner: nn.Module) -> Model:
         """Wrap with the simulator config's fixed normalization stats."""
-        if self.target != 'velocity':
-            raise ValueError(
-                'synthetic normalization scales the velocity target, '
-                f'not {self.target!r}'
-            )
         if self._restoring_checkpoint:
             # Two tensors: Model keeps them as buffers without copying, and a
             # shared storage would let loading one overwrite the other.
@@ -195,7 +190,7 @@ class SyntheticLitModule(LitModule):
             }
         else:
             stats = normalization_stats(
-                self.sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED
+                self.sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED, self.target
             )
         return Model(inner, **stats)
 

@@ -140,7 +140,12 @@ class CheckpointEstimator:
     def predict_velocity(
         self, signals: Tensor, wavelengths_um: tuple[float, ...]
     ) -> Tensor:
-        """Run the checkpoint; refuses a channel subset it was not trained on."""
+        """Run the checkpoint; refuses a channel subset it was not trained on.
+
+        The output goes through ``velocity_from_output``, so a
+        displacement-target checkpoint is differentiated as in training
+        rather than scored as if its output were velocity.
+        """
         if len(wavelengths_um) != len(self.wavelengths_um) or any(
             abs(a - b) > WAVELENGTH_TOL_UM
             for a, b in zip(wavelengths_um, self.wavelengths_um, strict=True)
@@ -151,7 +156,8 @@ class CheckpointEstimator:
             )
         with torch.no_grad():
             out = self.module.model(signals.to(self.device))
-        return out[:, 0].cpu()
+            velocity = self.module.velocity_from_output(out[:, 0])
+        return velocity.cpu()
 
 
 class InverseFitEstimator:

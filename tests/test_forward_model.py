@@ -13,6 +13,7 @@ from smi.synthetic.forward import (
     SMI_NEWTON_ITERATIONS,
     SimConfig,
     fringe,
+    normalization_stats,
     pd_lowpass,
     simulate_batch,
     smi_excess_phase,
@@ -319,3 +320,19 @@ def test_nominal_phase_drift_rate_is_its_fringes_converted():
     assert forward.rad_per_sqrt_s_to_fringes(
         forward.NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S
     ) == pytest.approx(forward.NOMINAL_PHASE_DRIFT_FRINGES)
+
+
+def test_normalization_stats_scale_the_requested_target():
+    """Displacement targets get the displacement's scale; velocity is unchanged."""
+    batch = _simulate(_noise_free(), batch=8)
+    by_target = {t: normalization_stats(_noise_free(), 8, 0, t) for t in TARGETS}
+    for target, stats in by_target.items():
+        truth = getattr(batch, target)
+        torch.testing.assert_close(stats['output_mean'], truth.mean())
+        torch.testing.assert_close(stats['output_std'], truth.std())
+        torch.testing.assert_close(stats['input_std'], batch.signals.std(dim=(0, 2)))
+    with pytest.raises(ValueError, match='target'):
+        normalization_stats(_noise_free(), 8, 0, 'phase')
+
+
+TARGETS = ('velocity', 'displacement')

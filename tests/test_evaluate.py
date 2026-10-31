@@ -165,10 +165,10 @@ def test_velocity_dataset_selects_channels_by_wavelength(tmp_path):
     assert ds.pd_channel_keys == ['RP2_CH2', 'RP1_CH2']
 
 
-def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
-    tmp_path, michelson_set, monkeypatch
-):
-    module = SyntheticLitModule(
+def _tcn_module(target):
+    """A tiny TCN on the Michelson sim, predicting ``target``."""
+    velocity_weight = 1.0 if target == 'velocity' else 0.0
+    return SyntheticLitModule(
         model_hparams=dict(
             type='TCN',
             sequence_length=1024,
@@ -185,17 +185,23 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
         scheduler_hparams={},
         loss_hparams={
             'dynamic': False,
-            'velocity_loss_weight': 1.0,
+            'velocity_loss_weight': velocity_weight,
             'displacement_loss_weight': 1.0,
             'sign_invariant': False,
         },
-        training_hparams={'target': 'velocity'},
+        training_hparams={'target': target},
         data_hparams={},
         steps_per_epoch=1,
         train_crop_length=None,
         sim=dataclasses.asdict(michelson_sim()),
         restoring_checkpoint=False,
     )
+
+
+def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
+    tmp_path, michelson_set, monkeypatch
+):
+    module = _tcn_module('velocity')
     ckpt = tmp_path / 'm.ckpt'
     torch.save(
         {'hyper_parameters': dict(module.hparams), 'state_dict': module.state_dict()},
@@ -226,6 +232,23 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
     assert len(records) == 2
     assert records[0].estimator.startswith('TCN:')
     assert json.loads(out.read_text())['schema_version'] == 1
+
+
+def test_displacement_checkpoint_is_differentiated_before_scoring(tmp_path):
+    module = _tcn_module('displacement')
+    ckpt = tmp_path / 'd.ckpt'
+    torch.save(
+        {'hyper_parameters': dict(module.hparams), 'state_dict': module.state_dict()},
+        ckpt,
+    )
+    est = CheckpointEstimator(ckpt, 'cpu')
+    x = torch.randn(2, 3, 512)
+    with torch.no_grad():
+        displacement = module.eval().model(x)[:, 0]
+    torch.testing.assert_close(
+        est.predict_velocity(x, RIG),
+        CoilDriver.derivative_displacement(displacement, SAMPLE_RATE),
+    )
 
 
 def test_recurrent_checkpoint_records_unbounded_receptive_field(

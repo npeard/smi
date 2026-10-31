@@ -212,7 +212,9 @@ def test_synthetic_ensemble_bakes_simulator_stats():
         target='velocity',
         sign_invariant=False,
     )
-    expected = normalization_stats(_sim(), NORM_STATS_SHOTS, NORM_STATS_SEED)
+    expected = normalization_stats(
+        _sim(), NORM_STATS_SHOTS, NORM_STATS_SEED, 'velocity'
+    )
     member = ens.best_member_model(0)
     for name, value in expected.items():
         torch.testing.assert_close(getattr(member, name).flatten(), value.flatten())
