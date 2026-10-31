@@ -372,7 +372,7 @@ def _budget(config: TrainingConfig) -> dict[str, Any]:
     }
 
 
-def _fingerprint(
+def cell_fingerprint(
     cell: Cell, grid: dict[str, Any], config: TrainingConfig | None
 ) -> dict[str, Any]:
     """What a cell trained and was scored on, as its record carries it.
@@ -416,7 +416,7 @@ def _stable_hash(value: object) -> str:
 def _is_done(cell: Cell, want: dict[str, Any], records: list[RunRecord]) -> bool:
     """Whether ``cell`` is recorded under its current sim, simulator and setup.
 
-    ``want`` is the cell's :func:`_fingerprint`.
+    ``want`` is the cell's :func:`cell_fingerprint`.
 
     Raises:
         ValueError: If its key is recorded only under another setup.
@@ -488,7 +488,7 @@ def run_cell(
     """Train (unless oracle), evaluate and append the cell's record.
 
     ``config`` is the cell's :func:`_training_config` (None for the oracle),
-    and ``fingerprint`` its :func:`_fingerprint`.
+    and ``fingerprint`` its :func:`cell_fingerprint`.
     """
     test = grid['test_set']
     dataset = load_or_create(cell.sim, test['seed'], test['n_shots'], frozen_root)
@@ -552,7 +552,7 @@ def run_grid(
     configs = {
         c.key: None if c.seed is None else training_config(c, grid) for c in cells
     }
-    fingerprints = {c.key: _fingerprint(c, grid, configs[c.key]) for c in cells}
+    fingerprints = {c.key: cell_fingerprint(c, grid, configs[c.key]) for c in cells}
     with runner_lock(lock_path):
         # Read under the lock: the other runner may have just finished.
         records = read_results(out) if Path(out).exists() else []

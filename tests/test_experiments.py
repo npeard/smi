@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import h5py
 import numpy as np
@@ -19,10 +20,12 @@ from smi.analysis.datasets import select_pd_keys
 from smi.analysis.evaluate import load_lit_module
 from smi.analysis.experiments import (
     RunnerLockedError,
+    cell_fingerprint,
     expand_grid,
     rescore_metrics,
     run_grid,
     runner_lock,
+    training_config,
 )
 from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import read_results
@@ -482,6 +485,27 @@ def test_displacement_grid_retargets_the_s1_cells_and_nothing_else():
         matched['training']['target'] = 'displacement'
         matched['loss'].update(velocity_loss_weight=0.0, displacement_loss_weight=1.0)
         assert retargeted == matched, cell.family_config.name
+
+
+def test_shipped_velocity_cells_keep_their_fingerprints():
+    """Resume matches a recorded cell by its fingerprint, so a code change that
+    moved one would make every recorded cell of that grid retrain or be refused.
+    The golden values were computed at adb199e, before the convergence monitor
+    followed the target; they cover every velocity-target cell of every grid.
+    """
+    golden = json.loads(
+        (Path(__file__).parent / 'golden' / 'grid_fingerprints.json').read_text()
+    )
+    for name, want in golden.items():
+        grid, cells = expand_grid(EXPERIMENTS / name)
+        got = {
+            c.key: cell_fingerprint(
+                c, grid, None if c.seed is None else training_config(c, grid)
+            )['run_fingerprint']
+            for c in cells
+            if c.key in want
+        }
+        assert got == want, name
 
 
 def test_lock_refuses_second_holder_and_releases(tmp_path):
