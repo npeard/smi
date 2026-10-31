@@ -67,10 +67,12 @@ Q3_BUDGETS = (('tcn-44k-T90', 90), ('tcn-44k', 30))
 
 
 # The sign-collapse controls of synthetic.typ sections 1.1 (the exit check's
-# signed Michelson run) and 2A (alpha = 0 at both schedules). They predate the
-# min_epochs grace and stopped by patience at epoch 11 on the zero-output
-# plateau, which is exactly what the report quotes them for, so they are the
-# only pre-grace early stops that may be read beside new records.
+# signed Michelson run) and 2A (alpha = 0 at both schedules). These are the
+# only records without zero_predictor_monitor (written before the min_epochs
+# grace) that patience stopped inside the grace, at epoch 11 on the
+# zero-output plateau. The report quotes exactly that collapse, so they are
+# exempt from check_grace_protocol; every other such record ran past the grace
+# or to its epoch cap.
 SIGN_COLLAPSE_CONTROLS = frozenset(
     {
         'tcn-44k-E20__ch635-675-515__michelson-signed__seed0',

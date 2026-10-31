@@ -52,8 +52,9 @@ def _block_scan(a: Tensor, b: Tensor) -> tuple[Tensor, Tensor]:
 def diagonal_linear_scan(a: Tensor, b: Tensor) -> Tensor:
     """Solve h_t = a_t * h_{t-1} + b_t (h_{-1} = 0) along the last dim.
 
-    A chunked scan replacing the O(L) per-sample loop, whose one small kernel
-    launch per sample dominated MPS step time. Each level scans blocks of
+    A chunked scan: the sequential steps number about block * log_block(L)
+    rather than L, since on MPS one small kernel launch per sample dominates
+    step time. Each level scans blocks of
     ``block`` samples sequentially, every block at once, and hands the
     block-end values (a block's total decay and local state) up as a
     ``block``-times shorter recurrence; the way down adds each block's
@@ -68,10 +69,10 @@ def diagonal_linear_scan(a: Tensor, b: Tensor) -> Tensor:
     [batch, d_inner, d_state, seq_len] tensors per layer.
     """
     # Block length. The step count is about block * log_block(seq_len): 32
-    # gives 96 sequential steps at 4096 samples instead of 4096. On MPS 8, 16
-    # and 32 tied for training at 4096 samples and 32 was fastest for
-    # evaluation at 16384. A local, not a module constant: TorchScript cannot
-    # read a Python global int.
+    # gives 96 sequential steps at 4096 samples instead of 4096. The value
+    # rests on a single unreplicated MPS sweep, not a replicated benchmark.
+    # A local, not a module constant: TorchScript cannot read a Python global
+    # int.
     block = 32
     # Way up: per level, the (P, H) needed on the way down and its length.
     levels: list[tuple[Tensor, Tensor, int]] = []

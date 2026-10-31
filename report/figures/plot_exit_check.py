@@ -7,6 +7,9 @@ trained with signed MSE is predicted to collapse to. RMSE would need the test
 set's velocity std for that reference, which the records do not carry.
 
 Reads the runner's records in synthetic_results.json and recomputes nothing.
+The signed Michelson run lacks zero_predictor_monitor and was stopped by
+patience at epoch 11, inside the min_epochs grace; the report quotes that
+collapse, so it is exempt from the grace check (SIGN_COLLAPSE_CONTROLS).
 """
 
 from __future__ import annotations
