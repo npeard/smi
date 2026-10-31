@@ -863,6 +863,7 @@ def q1_s2_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
         best = smi[family][lowest(smi[family], Q1_SINGLES)]
         return best / min(smi[family][w] for w in Q1_MULTI)
 
+    lattice_nm = max(math.gcd(round(1e4 * a), round(1e4 * b)) for a, b in Q1_PAIRS) / 10
     tcn_multi = [smi['tcn-44k'][w] for w in Q1_MULTI]
     tcan_pair = min(smi['tcan-44k'][w] for w in Q1_PAIRS)
     tcan_triple = smi['tcan-44k'][triple]
@@ -897,12 +898,11 @@ def q1_s2_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
             sorted({str(epochs(r)) for r in single_records})
         ),
         'q1_stall_tol_pct': pct(STALL_TOLERANCE),
-        # The text: 515 nm is the best single channel in both families, and
-        # the singles fall in the lambda^-2 order of eq-fisher.
+        # The text: 515 nm is the best single channel in both families.
         'q1_515_best': all(ranked_singles(f)[0] == (0.515,) for f in Q1_FAMILIES),
-        'q1_fisher_order': all(
-            ranked_singles(f) == sorted(Q1_SINGLES) for f in Q1_FAMILIES
-        ),
+        # Spacing of the lattice 2 pi (lambda_1 Z + lambda_2 Z) that wraps the
+        # two-channel phase combination: the coarsest gcd over the pairs.
+        'q1_lattice_nm': f'{lattice_nm:g}',
         'q1_runner_up_tcn_pct': pct(runner_up('tcn-44k')),
         'q1_runner_up_tcan_pct': pct(runner_up('tcan-44k')),
         'q1_gain_tcn': sig(gain('tcn-44k'), 3),
@@ -981,6 +981,10 @@ def q1_binned_values(
         )
     ]
     v_edges = binned['abs_velocity_edges_um_per_ms']
+    slow_one, slow_three, slow_zero = (
+        cells['noise_free', w]['abs_velocity'][key][0]
+        for w, key in ((one, 'rmse'), (three, 'rmse'), (one, 'zero'))
+    )
     peak = v_gain.index(max(v_gain))
     bound_gap = min(
         min(cells['nominal_30db', w]['abs_velocity']['rmse'])
@@ -997,11 +1001,10 @@ def q1_binned_values(
         and rise('noise_free', one) <= 0,
         'q1_bin_nom_rise_one_pct': pct(rise('nominal_30db', one)),
         'q1_bin_nom_rise_three_pct': pct(rise('nominal_30db', three)),
-        # The text: at 30 dB the single channel rises toward its extremum a
-        # little, and more than the triple, both within FLAT_TOL.
+        # The text: at 30 dB both curves rise toward the extremum only a
+        # little, within FLAT_TOL.
         'q1_bin_nom_small_rise': flat('nominal_30db', one)
-        and flat('nominal_30db', three)
-        and rise('nominal_30db', one) > max(rise('nominal_30db', three), 0),
+        and flat('nominal_30db', three),
         'q1_bin_gain_near': sig(gain_near, 2),
         'q1_bin_gain_far': sig(gain_far, 2),
         'q1_bin_gain_not_near': gain_near < gain_far,
@@ -1017,6 +1020,11 @@ def q1_binned_values(
         'q1_bin_v_peak_hi': sig(v_edges[peak + 1], 2),
         'q1_bin_v_slow_hi': sig(v_edges[1], 1),
         'q1_bin_v_slow_gain': sig(v_gain[0], 2),
+        'q1_bin_v_slow_one': sig(slow_one, 2),
+        'q1_bin_v_slow_three': sig(slow_three, 2),
+        'q1_bin_v_slow_zero': sig(slow_zero, 2),
+        # The text: in the slowest bin both models score above zero.
+        'q1_bin_v_slow_above_zero': min(slow_one, slow_three) > slow_zero,
         # The text: no gain in the slowest bin, the largest above 1.5x.
         'q1_bin_v_shape': v_gain[0] < 1 and max(v_gain) > 1.5,
         'q1_bound_gap': f'{bound_gap:.0f}',
@@ -1054,15 +1062,15 @@ def q1_s4_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
     long_single = s4((0.515,), 40.0)
     label = dict(Q1_SUBSETS)
     return {
+        # The text quotes each subset's RMSE against zero at the ends of the
+        # sweep.
+        **lo_hi('q1_s4_0db', rmse[0.0].values(), lambda x: f'{x:.3f}'),
         **lo_hi(
-            'q1_s4_median',
-            (
-                s4(w, snr).metrics['velocity_nrmse']['median']
-                for w, _ in Q1_SUBSETS
-                for snr in Q1_SNR_DB
-            ),
-            lambda x: sig(x, 2),
+            'q1_s4_high',
+            (x for snr in (30.0, 40.0) for x in rmse[snr].values()),
+            lambda x: f'{x:.3f}',
         ),
+        'q1_s4_gain_max_pct': pct(max(gain.values())),
         'q1_s4_30_pair_no515': f'{at30[0.635, 0.6748]:.3f}',
         'q1_s4_30_gain_pct': pct(gain[30.0]),
         # The text: at 30 dB the gain is several times the nominal seed range,

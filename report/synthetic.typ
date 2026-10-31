@@ -593,10 +593,12 @@ used Python 3.14 and torch 2.15.0 on Apple MPS in float32.
   ],
 ) <fig-spectral>
 
-The displacement target puts #val("spec_x_low_pct")% of its power below
-100 Hz, against #val("spec_v_low_pct")% for the velocity target
-(@fig-spectral). The lowest resolved bin is #val("spec_bin_hz") Hz, so
-drive content below it enters each shot only as a trend. Each channel's
+@fig-spectral supports the choice of a velocity target rather than
+answering Q1. // math-ok: question label
+The displacement target weights the velocity spectrum by $1 \/ f^2$, so it
+puts #val("spec_x_low_pct")% of its power below 100 Hz, against
+#val("spec_v_low_pct")% for the velocity target. The lowest resolved bin is
+#val("spec_bin_hz") Hz, so drive content below it enters each shot only as a trend. Each channel's
 fringe frequency, which follows $|v|$, peaks at twice the velocity target's
 peak frequency and keeps power near its peak down to the lowest bin. Above
 1 kHz it sits on a broadband floor that the nominal noise raises
@@ -604,7 +606,6 @@ peak frequency and keeps power near its peak down to the lowest bin. Above
 
 #assert(val("q1_multi_beats_single"), message: "a multi-channel set no longer beats the best single channel at C = 0.2 by more than the seed range")
 #assert(val("q1_515_best"), message: "515 nm is no longer the best single channel at C = 0.2 for both families")
-#assert(val("q1_fisher_order"), message: "the single channels no longer rank in the lambda^-2 order at C = 0.2")
 #assert(val("q1_tcn_multi_tied"), message: "the TCN's multi-channel sets at C = 0.2 now span more than the seed range")
 #assert(val("q1_tcan_triple_apart"), message: "TCAN's three-channel set no longer beats its best pair by more than the seed range")
 #assert(val("q1_mich_single_at_zero"), message: "a Michelson single channel no longer scores at the zero predictor")
@@ -612,9 +613,10 @@ peak frequency and keeps power near its peak down to the lowest bin. Above
 #assert(val("q1_mich_multi_far"), message: "a Michelson multi-channel set now comes near the zero predictor")
 #assert(val("q1_oracle_single_above_zero"), message: "the single-channel Michelson oracle no longer scores above the zero predictor")
 #assert(val("q1_bin_nf_flat"), message: "noise-free, an error curve now rises toward the 515 nm extremum or departs from flat")
-#assert(val("q1_bin_nom_small_rise"), message: "at 30 dB the single channel no longer rises slightly, and more than three channels, toward its extremum")
+#assert(val("q1_bin_nom_small_rise"), message: "at 30 dB the one- or three-channel error now departs from flat in extremum distance")
 #assert(val("q1_bin_gain_not_near"), message: "the noise-free multi-channel gain is now larger near the 515 nm extremum than midway")
 #assert(val("q1_bin_v_shape"), message: "the noise-free multi-channel gain by |v| no longer vanishes in the slowest bin and exceeds 1.5 higher up")
+#assert(val("q1_bin_v_slow_above_zero"), message: "in the slowest |v| bin a noise-free model now scores at or below the zero predictor")
 #assert(val("q1_s4_gain_shape"), message: "the nominal-point multi-channel gain no longer peaks at 10 to 30 dB, vanishes at 0 dB and reverses at 40 dB")
 #assert(val("q1_s4_40_third_cycle"), message: "the 40 dB 515 nm cell is no longer the only one there trained into a third cycle")
 #assert(val("q1_s4_30_outside"), message: "at 30 dB the multi-channel gain is no longer several times the nominal seed range, or 635 + 674.8 nm now beats 515 nm alone")
@@ -627,11 +629,11 @@ for the TCN and #val("q1_gain_tcan") times for TCAN, against a
 #val("q2_seed_range_pct")% seed range (@sec-q3-noise). Each cell trains the
 TCN of @sec-sign or TCAN, a temporal convolutional network with attention
 matched to its 44k parameters, on one channel subset, noise-free, with the 30-epoch
-cycle of @sec-q3-noise and one seed, and is scored on #val("test_shots")
-frozen test shots. A third channel adds nothing the TCN resolves: its four
+cycle of @sec-q3-noise, and is scored on #val("test_shots") frozen test
+shots. A third channel adds nothing the TCN resolves: its four
 multi-channel sets lie within the seed range of each other. For TCAN the
-three channels sit #val("q1_tcan_triple_pct")% below the best pair, just
-outside it.
+three channels sit #val("q1_tcan_triple_pct")% below the best pair, at the
+edge of the seed range.
 
 #figure(
   align(center, table(
@@ -650,40 +652,48 @@ outside it.
     Noise-free test velocity RMSE ($mu$m/ms) of each channel subset, one
     training seed per cell, $alpha = 3$ at $C = 0.2$. The zero predictor
     scores #val("q1_zero"). The oracle is the baseline report's classical
-    inverse fit, given the true excursion; it decodes under the Michelson
-    model, so it was run on Michelson only.
+    inverse fit, given the true excursion, run on Michelson only.
   ],
 ) <tab-q1-subsets>
 
-The best single channel is 515 nm for both families, as the
-$lambda_k^(-2)$ factor of @eq-fisher predicts. Its lead over the runner-up,
-635 nm, is #val("q1_runner_up_tcn_pct")% for the TCN, at the edge of the seed
-range, and #val("q1_runner_up_tcan_pct")% for TCAN. The 635 and 674.8 nm
-channels also fall in the predicted order, but within the seed range.
+The best single channel is 515 nm for both families, in the
+$lambda_k^(-2)$ order of @eq-fisher, though noise-free that bound does not
+bind. Its lead over the runner-up, 635 nm, is
+#val("q1_runner_up_tcn_pct")% for the TCN, at the edge of the seed range, and
+#val("q1_runner_up_tcan_pct")% for TCAN.
 
 On Michelson one channel recovers nothing, not even up to sign. Every
 single-channel cell scores within #val("q1_mich_single_gap_pct")% of the zero
 predictor, sign-invariant, in both families, and the single-channel oracle
 scores above it, while every pair and the three-channel set recover the
-motion (@tab-q1-subsets). The single-channel runs stopped at epoch #val("q1_mich_single_epochs"), just
-after the grace, with their best validation error #val("q1_mich_single_monitor_lo")
-to #val("q1_mich_single_monitor_hi")% below the zero predictor's. That clears
-the runner's #val("q1_stall_tol_pct")% stall test, so they count as trained,
-but they learned no more than zero.
+motion (@tab-q1-subsets). The runner's #val("q1_stall_tol_pct")% stall test
+passes them, but by a thin margin, so the claim rests on the test score.
+Their best validation error sits #val("q1_mich_single_monitor_lo") to
+#val("q1_mich_single_monitor_hi")% below the zero predictor's, and they
+stopped at epoch #val("q1_mich_single_epochs"), the first the runner allows.
 
 The global mirror of @sec-sign cannot explain this, because the
 sign-invariant score forgives it. One argument, which these runs do not
-test, is that for one channel the mirror also acts window by window. A
-single fringe $cos(4 pi d \/ lambda + phi)$ reads the same under
-$(d, phi) -> (-d, -phi)$, and with $d$ known only up to a constant no window
-can fix which branch is meant. A window of #val("q2_matched_lo") to
-#val("q2_matched_hi") samples, against a 16384-sample shot, cannot carry the
-choice from one window to the next. Two channels share $d$, so
-$lambda_1 phi_1 - lambda_2 phi_2$ is free of it and flips sign under the
-mirror; every window can then read the direction against the same per-shot
-convention. With feedback the single-channel mirror needs the warp of
-@eq-warp, at the fringe rate, which a window can see; that fits the single
-channels' recovery at $C = 0.2$.
+test, is that for one channel the mirror also acts locally. Near $t_0$ the
+fringe is $cos(psi_0 + 4 pi [d(t) - d(t_0)] \/ lambda)$, with local offset
+$psi_0 = 4 pi d(t_0) \/ lambda + phi$, and it reads the same with $psi_0$
+and the displacement increment both negated. The offset is uniform whatever
+the window, so a window of #val("q2_matched_lo") to #val("q2_matched_hi")
+samples would need the parity of turning points since a shot-wide reference
+to fix the sign. The single-channel oracle fits the whole shot and also
+fails, which no window argument explains. @sec-sign treats only the global
+sign, so this local ambiguity is a gap it leaves open.
+
+Two channels would fix a direction convention per shot, in the same
+untested sense. Their full phases $psi_k = 4 pi d \/ lambda_k + phi_k$,
+unwrapped over a bounded excursion, give
+$lambda_1 psi_1 - lambda_2 psi_2 = lambda_1 phi_1 - lambda_2 phi_2$, which
+is free of $d$ and flips under the mirror. Wrapped, it is defined only
+modulo the lattice $2 pi (lambda_1 ZZ + lambda_2 ZZ)$, which is dense for
+incommensurate wavelengths and has spacing at most
+$2 pi times #val("q1_lattice_nm")$ nm for these. With feedback the
+single-channel mirror needs the warp of @eq-warp, at the fringe rate, which
+a window can see; that fits the single channels' recovery at $C = 0.2$.
 
 #fig(
   "q1_binned",
@@ -696,40 +706,48 @@ channels' recovery at $C = 0.2$.
     nearest extremum ($phi_F = 0 mod pi$): of the 515 nm channel (solid), and
     of the channel farthest from one, so that every channel is near an
     extremum at once (dotted); (a) noise-free, (b) the nominal point at
-    30 dB; (c) in $|v|$ deciles, with the zero predictor (grey) and the
-    causal bound of @sec-crb for each subset at 30 dB (dash-dotted).
+    30 dB; (c) in $|v|$ deciles, noise-free (solid) and at the nominal 30 dB
+    point (dashed), with the zero predictor (grey) and the causal bound of
+    @sec-crb for each subset at 30 dB (dash-dotted).
   ],
 ) <fig-q1-binned>
 
 The prediction of @sec-predictions fails noise-free. The single channel's
-error does not rise toward its extremum, and the three-channel gain is #val("q1_bin_gain_near") times near the 515 nm
-extremum against #val("q1_bin_gain_far") midway (#ref(<fig-q1-binned>)a). At
-the nominal point the single channel rises #val("q1_bin_nom_rise_one_pct")%
-toward its extremum and three channels #val("q1_bin_nom_rise_three_pct")%
-(#ref(<fig-q1-binned>)b), the predicted direction but far from a loss of all
-information. The per-bin seed spread was not measured. Error does rise where
-every channel is near an extremum at once, by #val("q1_bin_all_rise_lo") to
-#val("q1_bin_all_rise_hi")% noise-free, but those bins hold
-#val("q1_bin_all_share_pair")% of the samples for the pair and
-#val("q1_bin_all_share_three")% for three channels. Per-sample information
-vanishes at an extremum (@eq-fisher), but an estimator that sees a window
-can interpolate across it, as the prior does in the bounds of @sec-crb; the
-data fit that reading without testing it.
+error falls slightly toward its extremum, and the three-channel gain is
+#val("q1_bin_gain_near") times near the 515 nm extremum against
+#val("q1_bin_gain_far") midway (#ref(<fig-q1-binned>)a). The prediction
+rests on the Fisher information, a noise-limited claim, so the 30 dB panel
+is its proper test. There the single channel rises
+#val("q1_bin_nom_rise_one_pct")% toward its extremum and three channels
+#val("q1_bin_nom_rise_three_pct")% (#ref(<fig-q1-binned>)b), the predicted
+direction but far from a loss of all information. The per-bin seed spread
+was not measured.
+
+Error does rise where every channel is near an extremum at once, by
+#val("q1_bin_all_rise_lo") to #val("q1_bin_all_rise_hi")% noise-free, but
+those bins hold #val("q1_bin_all_share_pair")% of the samples for the pair
+and #val("q1_bin_all_share_three")% for three channels. One untested
+reading: per-sample information vanishes at an extremum (@eq-fisher), but
+an estimator that sees a window can interpolate across it, as the prior
+does in the bounds of @sec-crb.
 
 The noise-free gain grows with speed instead (#ref(<fig-q1-binned>)c). Below
-#val("q1_bin_v_slow_hi") $mu$m/ms three channels are no better than one (a
-ratio of #val("q1_bin_v_slow_gain")), and the gain peaks at
+#val("q1_bin_v_slow_hi") $mu$m/ms three channels are worse than one (a ratio
+of #val("q1_bin_v_slow_gain")), and both sit above the zero predictor's
+#val("q1_bin_v_slow_zero") $mu$m/ms there, one channel at
+#val("q1_bin_v_slow_one") and three at #val("q1_bin_v_slow_three"). The gain peaks at
 #val("q1_bin_v_gain_max") times between #val("q1_bin_v_peak_lo") and
 #val("q1_bin_v_peak_hi") $mu$m/ms. That contradicts the turning-point clause
-of the prediction, where the fringes stall. Which estimator property sets
-the speed dependence, these runs do not show. At 30 dB every bin lies at
+of the prediction, where the fringes stall. These runs do not show which
+estimator property sets the speed dependence. At 30 dB every bin lies at
 least #val("q1_bound_gap") times above its subset's causal bound, so the
 bound does not bind here either.
 
-At the nominal point phase drift masks most of the gain (@tab-q1-snr). There
-every subset sits near the zero predictor, with median NRMSE
-#val("q1_s4_median_lo") to #val("q1_s4_median_hi"), as @sec-q3-noise found
-for three channels. At 30 dB the
+At the nominal point, where phase drift dominates the error
+(@sec-q3-noise), the gain shrinks to at most #val("q1_s4_gain_max_pct")%
+(@tab-q1-snr). Against the zero predictor's #val("q1_zero") $mu$m/ms, every
+subset scores #val("q1_s4_0db_lo") to #val("q1_s4_0db_hi") at 0 dB and
+#val("q1_s4_high_lo") to #val("q1_s4_high_hi") at 30 and 40 dB. At 30 dB the
 #val("q1_s4_30_gain_pct")% that remains is several times the nominal seed spread
 (#val("q1_nominal_lo") to #val("q1_nominal_hi") $mu$m/ms), and it comes from
 pairing 515 nm with another channel; 635 + 674.8 nm, at
