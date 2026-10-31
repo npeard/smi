@@ -10,11 +10,7 @@ from torch import nn, optim
 
 # Conditional import for Muon optimizer
 try:
-    from muon import (  # ty: ignore[unresolved-import]  # optional dependency
-        Muon,
-        MuonWithAuxAdam,
-        SingleDeviceMuonWithAuxAdam,
-    )
+    from muon import Muon, MuonWithAuxAdam, SingleDeviceMuonWithAuxAdam  # ty: ignore[unresolved-import]  # optional dependency
 
     MUON_AVAILABLE = True
 except ImportError:
