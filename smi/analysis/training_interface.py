@@ -77,19 +77,34 @@ class RelativeEarlyStopping(EarlyStopping):
         self.min_rel_delta = min_rel_delta
         self.min_epochs = min_epochs
 
-    # The grace period: no check runs before min_epochs, so patience counts
-    # only from there. Trainer(min_epochs) cannot do this, because Lightning
-    # latches a stop signalled inside it and ends the run at min_epochs even
-    # if the run has since escaped the plateau.
+    # The grace period: before min_epochs every check still runs, so the best
+    # and the patience count are exactly those of a run without a grace, but a
+    # stop it signals is withdrawn. A run that would not have stopped inside
+    # the grace therefore trains and stops exactly as before; one that would
+    # have stops at the first check past the grace unless it has escaped by
+    # then. Trainer(min_epochs) cannot do this: Lightning latches a stop
+    # signalled inside it, so a run that escaped would still end at min_epochs.
     @override
     def on_validation_end(self, trainer: lightning_module.Trainer, pl_module: Any):
-        if trainer.current_epoch >= self.min_epochs:
-            super().on_validation_end(trainer, pl_module)
+        stopped_before = trainer.should_stop
+        super().on_validation_end(trainer, pl_module)
+        self._withdraw_stop_inside_grace(trainer, stopped_before)
 
     @override
     def on_train_epoch_end(self, trainer: lightning_module.Trainer, pl_module: Any):
-        if trainer.current_epoch >= self.min_epochs:
-            super().on_train_epoch_end(trainer, pl_module)
+        stopped_before = trainer.should_stop
+        super().on_train_epoch_end(trainer, pl_module)
+        self._withdraw_stop_inside_grace(trainer, stopped_before)
+
+    def _withdraw_stop_inside_grace(
+        self, trainer: lightning_module.Trainer, stopped_before: bool
+    ) -> None:
+        # Only this callback's own new signal: a stop already set by someone
+        # else before this check is left alone.
+        if trainer.current_epoch < self.min_epochs and not stopped_before:
+            trainer.should_stop = False
+            self.stopping_reason = EarlyStoppingReason.NOT_STOPPED
+            self.stopped_epoch = 0
 
     # Overrides a private Lightning hook (no public one exists for a relative
     # delta); written against lightning 2.6.x (pixi.lock: 2.6.6), and

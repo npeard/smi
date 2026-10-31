@@ -265,17 +265,17 @@ def test_plateau_waits_for_min_epochs(beats_zero_predictor):
     config.training_config['convergence'].update(min_rel_delta=0.5, min_epochs=12)
     interface = _run(config)
     assert interface.converged is True
-    # The first check is at epoch 12 (0-based) and sets the best; patience then
-    # runs out 5 checks later, at epoch 17, the 18th epoch run.
-    assert interface.epochs_run == 18
+    # Patience (5 checks) runs out inside the grace and is withdrawn; the first
+    # check past it, at epoch 12 (0-based), stops the run: 13 epochs run.
+    assert interface.epochs_run == 13
 
 
 def test_plateau_waits_for_min_epochs_when_checking_on_validation_end(
     beats_zero_predictor,
 ):
     # At cadence 2 Lightning checks in on_validation_end, not on_train_epoch_end.
-    # Validation runs at epochs 1, 3, ...: the first check past the grace is at
-    # epoch 13, and 5 checks of patience end the run at epoch 23.
+    # Validation runs at epochs 1, 3, ...; patience runs out inside the grace,
+    # so the first check past it, at epoch 13, stops the run.
     config = _config(SIGNED, sign_invariant=False, max_epochs=40)
     config.training_config['check_val_every_n_epoch'] = 2
     config.training_config['convergence'].update(
@@ -283,7 +283,7 @@ def test_plateau_waits_for_min_epochs_when_checking_on_validation_end(
     )
     interface = _run(config)
     assert interface.converged is True
-    assert interface.epochs_run == 24
+    assert interface.epochs_run == 14
 
 
 def test_stall_inside_grace_period_does_not_stop_a_run_that_escapes(monkeypatch):
@@ -300,6 +300,24 @@ def test_stall_inside_grace_period_does_not_stop_a_run_that_escapes(monkeypatch)
     assert interface.converged is True
     assert interface.best_monitor == pytest.approx(0.9**13)
     assert 25 <= interface.epochs_run < 40
+
+
+def test_grace_leaves_a_run_that_plateaus_after_it_unchanged(monkeypatch):
+    # Best at epoch 8, then worse, as after a cosine warm restart: without a
+    # grace patience (5) stops it at epoch 13, past a grace of 10. The best and
+    # the patience count from inside the grace must carry over, so the run
+    # stops on the same epoch, which is why min_epochs leaves every
+    # non-stalled S3/S4 row as it was.
+    _script_log(
+        monkeypatch, lambda e: 0.9**e if e <= 8 else 1.0, zero=lambda v: v * 1e6
+    )
+    runs = []
+    for min_epochs in (0, 10):
+        config = _config(SIGNED, sign_invariant=False, max_epochs=40)
+        config.training_config['convergence']['min_epochs'] = min_epochs
+        runs.append(_run(config))
+    assert runs[0].epochs_run == runs[1].epochs_run
+    assert runs[0].best_monitor == runs[1].best_monitor
 
 
 def test_run_that_never_beats_the_zero_predictor_is_not_converged(monkeypatch):
