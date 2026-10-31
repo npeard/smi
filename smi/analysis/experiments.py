@@ -33,6 +33,11 @@ Grid YAML keys (all required except where noted):
   epoch cap). ``convergence.monitor`` is derived from the sim's sign
   invariance, so one family YAML serves Michelson and SMI sims.
 * ``test_set: {seed, n_shots}``.
+
+``--rescore-metrics`` instead re-scores every recorded cell that lacks a
+metric added to :func:`~smi.analysis.evaluate.evaluate` after it ran
+(``RESCORED_METRICS``), from its checkpoint on its frozen test set, without
+retraining or touching its fingerprint.
 """
 
 import argparse
@@ -66,7 +71,12 @@ from smi.analysis.evaluate import (
     evaluate,
 )
 from smi.analysis.models.factory import create_model
-from smi.analysis.results_artifact import RunRecord, append_results, read_results
+from smi.analysis.results_artifact import (
+    RunRecord,
+    append_results,
+    read_results,
+    write_results,
+)
 from smi.analysis.training_interface import (
     TrainingConfig,
     TrainingInterface,
@@ -98,6 +108,12 @@ BUDGET_FIELDS = (
     'T_0',
     'lr',
 )
+# Metrics evaluate gained after records were written; rescore_metrics adds them.
+RESCORED_METRICS = ('displacement_rmse', 'displacement_rmse_sign_invariant')
+# A rescored velocity RMSE must reproduce the record to this (relative), or the
+# checkpoint or test set is not the one the record describes. CPU re-scoring of
+# MPS-trained checkpoints reproduced it to <= 1.2e-6.
+RESCORE_REL_TOL = 1e-4
 
 
 class RunnerLockedError(RuntimeError):
@@ -561,10 +577,101 @@ def run_grid(
     return len(todo)
 
 
+def rescore_metrics(
+    out: Path,
+    *,
+    runs_dir: Path,
+    lock_path: Path,
+    frozen_root: Path,
+    device: str,
+    include_oracle: bool,
+) -> int:
+    """Add ``RESCORED_METRICS`` to every recorded cell that lacks them.
+
+    Each cell is re-scored from ``runs_dir/<cell_key>.ckpt`` (or, with
+    ``include_oracle``, by the oracle) on its frozen set, found from the
+    record itself: ``record.dataset`` is the set's file stem. Only the new
+    metric keys are copied in; velocity metrics, bins, fingerprints, budget
+    and wall clock stay as recorded, so resume still skips every cell. The
+    artifact is written once, at the end, so a refused cell leaves it as it
+    was.
+
+    Args:
+        out: Results artifact, rewritten in place.
+        runs_dir: Directory of the cells' checkpoints.
+        lock_path: Single-instance lockfile shared with ``run_grid``, so a
+            rescore cannot race a training grid writing the same artifact.
+        frozen_root: Cache directory of frozen test sets.
+        device: Device the checkpoints are evaluated on.
+        include_oracle: Also re-score ``inverse_fit`` records (minutes per
+            cell on CPU, against seconds for a network).
+
+    Returns:
+        The number of records rescored.
+
+    Raises:
+        RunnerLockedError: If another runner is alive.
+        ValueError: If a re-scored cell's sim hash differs from its record's,
+            or its velocity RMSE mean differs by more than
+            ``RESCORE_REL_TOL``.
+    """
+    with runner_lock(lock_path):
+        records = read_results(out)
+        n = 0
+        for record in records:
+            if record.cell_key is None or RESCORED_METRICS[0] in record.metrics:
+                continue
+            dataset = Path(frozen_root) / f'{record.dataset}.h5'
+            est: Estimator
+            if record.model_type == ORACLE_FAMILY:
+                if not include_oracle:
+                    continue
+                est = InverseFitEstimator.for_dataset(dataset, None)
+            else:
+                ckpt = Path(runs_dir) / f'{record.cell_key}.ckpt'
+                if not ckpt.exists():
+                    logger.warning('%s: no checkpoint at %s', record.cell_key, ckpt)
+                    continue
+                est = CheckpointEstimator(ckpt, device)
+            assert record.wavelengths_um is not None
+            assert record.converged is not None
+            logger.info('rescoring %s', record.cell_key)
+            # n_shots None: a frozen set holds exactly the shots its cell was
+            # scored on (the stem's n<n_shots>).
+            new = evaluate(
+                est,
+                dataset,
+                tuple(record.wavelengths_um),
+                None,
+                record.converged,
+                record.train_seed,
+            ).record
+            if new.sim_config_hash != record.sim_config_hash:
+                raise ValueError(
+                    f'{record.cell_key}: {dataset} has sim hash '
+                    f'{new.sim_config_hash}, record says {record.sim_config_hash}'
+                )
+            have = record.metrics['velocity_rmse']['mean']
+            got = new.metrics['velocity_rmse']['mean']
+            if abs(got - have) > RESCORE_REL_TOL * abs(have):
+                raise ValueError(
+                    f'{record.cell_key}: rescored velocity_rmse mean {got} does '
+                    f'not reproduce the recorded {have} to {RESCORE_REL_TOL}; '
+                    'wrong checkpoint or test set'
+                )
+            record.metrics.update({k: new.metrics[k] for k in RESCORED_METRICS})
+            n += 1
+        if n:
+            write_results(out, records)
+    return n
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point; exits non-zero when another runner holds the lock."""
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    parser.add_argument('grid', type=Path, help='grid YAML')
+    parser.add_argument(
+        'grid', type=Path, nargs='?', help='grid YAML (omit with --rescore-metrics)'
+    )
     parser.add_argument('--out', type=Path, default=DEFAULT_OUT)
     parser.add_argument(
         '--only', action='append', help='glob over cell keys; repeatable (OR)'
@@ -572,9 +679,35 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--runs-dir', type=Path, default=DEFAULT_RUNS_DIR)
     parser.add_argument('--lock', type=Path, default=DEFAULT_LOCK)
     parser.add_argument('--frozen-root', type=Path, default=DEFAULT_ROOT)
+    parser.add_argument(
+        '--rescore-metrics',
+        action='store_true',
+        help='add RESCORED_METRICS to recorded cells instead of running a grid',
+    )
+    parser.add_argument(
+        '--include-oracle',
+        action='store_true',
+        help='with --rescore-metrics, also re-score the inverse_fit oracle',
+    )
+    parser.add_argument(
+        '--device', default='cpu', help='with --rescore-metrics: evaluation device'
+    )
     args = parser.parse_args(argv)
+    if args.rescore_metrics == (args.grid is not None):
+        parser.error('give either a grid or --rescore-metrics, not both or neither')
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     try:
+        if args.rescore_metrics:
+            n = rescore_metrics(
+                args.out,
+                runs_dir=args.runs_dir,
+                lock_path=args.lock,
+                frozen_root=args.frozen_root,
+                device=args.device,
+                include_oracle=args.include_oracle,
+            )
+            sys.stdout.write(f'rescored {n} records\n')
+            return 0
         n = run_grid(
             args.grid,
             args.out,

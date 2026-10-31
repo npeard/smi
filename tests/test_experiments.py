@@ -1,5 +1,6 @@
 """Experiment runner: grid expansion, resumability, locking, record contents."""
 
+import json
 import os
 import signal
 import subprocess
@@ -18,6 +19,7 @@ from smi.analysis.evaluate import load_lit_module
 from smi.analysis.experiments import (
     RunnerLockedError,
     expand_grid,
+    rescore_metrics,
     run_grid,
     runner_lock,
 )
@@ -226,6 +228,86 @@ def test_family_crop_does_not_override_the_grid_crop(tmp_path):
     assert config.synthetic_config['train_crop_length'] == 256
 
 
+DISPLACEMENT_KEYS = ('displacement_rmse', 'displacement_rmse_sign_invariant')
+
+
+def _strip_displacement_metrics(out, edit_velocity=1.0):
+    """Rewrite ``out`` as records scored before evaluate had displacement.
+
+    ``edit_velocity`` scales each recorded velocity RMSE mean, to fake a
+    record that does not belong to its checkpoint or test set.
+    """
+    payload = json.loads(out.read_text())
+    for records in payload['datasets'].values():
+        for record in records:
+            for key in DISPLACEMENT_KEYS:
+                del record['metrics'][key]
+            record['metrics']['velocity_rmse']['mean'] *= edit_velocity
+    # write_results' own formatting, so an untouched record stays byte-equal.
+    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+
+
+class _ConstantOracle:
+    name = model_type = 'inverse_fit'
+    causal = False
+    total_params = 0
+    receptive_field = None
+    device = 'cpu'
+    config: dict = {}  # noqa: RUF012 -- stub attribute, never mutated
+
+    def predict_velocity(self, signals, _wavelengths_um):
+        return signals[:, 0] * 0 + 1.0
+
+
+def _rescore(tmp_path, include_oracle=False):
+    return rescore_metrics(
+        tmp_path / 'results.json',
+        runs_dir=tmp_path / 'runs',
+        lock_path=tmp_path / '.runner.lock',
+        frozen_root=tmp_path / 'frozen',
+        device='cpu',
+        include_oracle=include_oracle,
+    )
+
+
+def test_rescore_restores_exactly_what_a_fresh_run_records(tmp_path):
+    """Only the new metric keys are added; fingerprints and the rest are kept."""
+    _run(_grid(tmp_path), tmp_path)
+    out = tmp_path / 'results.json'
+    fresh = out.read_text()
+    _strip_displacement_metrics(out)
+    assert out.read_text() != fresh
+    assert _rescore(tmp_path) == 2
+    assert out.read_text() == fresh
+    # Idempotent: every record now carries the metric, so nothing is rescored.
+    assert _rescore(tmp_path) == 0
+    assert out.read_text() == fresh
+    assert _run(_grid(tmp_path), tmp_path) == 0  # resume still skips both
+
+
+def test_rescore_refuses_a_velocity_mismatch_and_writes_nothing(tmp_path):
+    _one_cell(tmp_path)
+    out = tmp_path / 'results.json'
+    _strip_displacement_metrics(out, edit_velocity=1.0 + 2e-4)
+    before = out.read_text()
+    with pytest.raises(ValueError, match='velocity_rmse'):
+        _rescore(tmp_path)
+    assert out.read_text() == before
+
+
+def test_rescore_scores_oracle_records_only_when_asked(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        experiments.InverseFitEstimator, 'for_dataset', lambda *_: _ConstantOracle()
+    )
+    _run(_grid(tmp_path, oracle=True, seeds=[]), tmp_path)
+    out = tmp_path / 'results.json'
+    fresh = out.read_text()
+    _strip_displacement_metrics(out)
+    assert _rescore(tmp_path) == 0
+    assert _rescore(tmp_path, include_oracle=True) == 1
+    assert out.read_text() == fresh
+
+
 def test_only_filters_cells_by_glob(tmp_path):
     path = _grid(tmp_path)
     assert _run(path, tmp_path, only=['*seed1']) == 1
@@ -295,19 +377,8 @@ def test_patience_exhausted_cell_is_converged_only_below_the_zero_predictor(
 
 
 def test_oracle_cell_is_untrained_and_converged(tmp_path, monkeypatch):
-    class Stub:
-        name = model_type = 'inverse_fit'
-        causal = False
-        total_params = 0
-        receptive_field = 16384
-        device = 'cpu'
-        config: dict = {}  # noqa: RUF012 -- stub attribute, never mutated
-
-        def predict_velocity(self, signals, _wavelengths_um):
-            return signals[:, 0] * 0 + 1.0
-
     monkeypatch.setattr(
-        experiments.InverseFitEstimator, 'for_dataset', lambda *_: Stub()
+        experiments.InverseFitEstimator, 'for_dataset', lambda *_: _ConstantOracle()
     )
     path = _grid(tmp_path, oracle=True, seeds=[])
     assert _run(path, tmp_path) == 1
