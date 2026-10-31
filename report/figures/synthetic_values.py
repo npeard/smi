@@ -28,6 +28,8 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+import torch
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -48,6 +50,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from smi.analysis import bounds
 from smi.analysis.experiments import expand_grid
+from smi.analysis.models.factory import create_model
+from smi.analysis.models.sliding_window import SlidingWindowModel
 from smi.analysis.results_artifact import RunRecord
 from smi.synthetic.forward import (
     NOMINAL_ALPHA,
@@ -380,6 +384,263 @@ def noise_values(
     }
 
 
+# Section Q2's families as (runner family stem, table label), causal column
+# first. Each ran as ``<stem>-T90`` from configs/matched/<stem>.yaml. Mamba's
+# stage (q3_s1m_mamba.yaml) may not have run yet: its row reads "pending"
+# until its records exist, and the text's per-family claims name only the
+# other families, so its arrival fills the table without contradicting them.
+# Claims over all families (the best at C = 0.2, the oracle comparisons)
+# include it once it exists, so a Mamba row that overturns one fails the build.
+Q2_CAUSAL = (
+    ('tcn-44k', 'TCN'),
+    ('tcan-44k', 'TCAN'),
+    ('patchtransformer-causal-44k', 'PatchTransformer'),
+    ('unettransformer-causal-44k', 'UNet-Transformer'),
+    ('neuraloperator-causal-44k', 'Neural operator'),
+    ('lstm-44k', 'LSTM'),
+    ('mamba-44k', 'Mamba'),
+)
+Q2_OFFLINE = (
+    ('scnn-44k', 'SCNN'),
+    ('barland-44k', 'Barland CNN'),
+    ('mlp-44k', 'MLP'),
+    ('patchtransformer-offline-44k', 'PatchTransformer'),
+    ('unettransformer-offline-44k', 'UNet-Transformer'),
+    ('neuraloperator-offline-44k', 'Neural operator'),
+    ('lstm-bidir-44k', 'Bidirectional LSTM'),
+)
+Q2_OPTIONAL = ('mamba-44k',)
+Q2_STEMS = [stem for stem, _ in Q2_CAUSAL + Q2_OFFLINE]
+Q2_NAMED = [stem for stem in Q2_STEMS if stem not in Q2_OPTIONAL]
+# Each sim's score: Michelson's global sign is unobservable (section 1.1).
+Q2_SIMS = {'michelson': 'velocity_rmse_sign_invariant', 'smi-a3': 'velocity_rmse'}
+MATCHED_DIR = (
+    Path(__file__).resolve().parents[2] / 'smi/analysis/models/configs/matched'
+)
+# Long enough to hold Barland's widened field with margin on both sides.
+SPAN_PROBE_LENGTH = 2048
+# The text calls a cell stalled when its best validation error stays within
+# this fraction of the zero predictor's (the runner's own test, min_rel_delta).
+STALL_TOLERANCE = 0.01
+# A converged cell stopped well before its first restart; the rest end at it.
+EARLY_STOP_FRACTION = 0.95
+
+
+def sliding_span(stem: str) -> int | None:
+    """Samples one output of a sliding-window model depends on; else None.
+
+    The record's ``receptive_field`` counts one window, but every output
+    averages all the windows that cover it, so the field is wider. Measured by
+    a gradient probe of a seeded init, exact here because the windows have
+    hard edges. Other families' formulas are checked in
+    tests/test_receptive_field.py.
+    """
+    config = yaml.safe_load((MATCHED_DIR / f'{stem}.yaml').read_text('utf-8'))
+    torch.manual_seed(SEED)
+    model = create_model(config['model']).eval()
+    if not isinstance(model, SlidingWindowModel):
+        return None
+    x = torch.randn(1, config['model']['in_channels'], SPAN_PROBE_LENGTH)
+    x.requires_grad_(True)
+    model(x)[0, 0, SPAN_PROBE_LENGTH // 2].backward()
+    assert x.grad is not None
+    hit = (x.grad.abs().sum(dim=1)[0] > 0).nonzero().flatten()
+    return int(hit.max() - hit.min()) + 1
+
+
+def q2_record(records: dict[str, RunRecord], stem: str, sim: str) -> RunRecord | None:
+    """The family's seed-0 cell, or None for a family whose stage has not run."""
+    key = f'{stem}-T90__ch635-675-515__{sim}__seed0'
+    if key not in records and stem in Q2_OPTIONAL:
+        return None
+    return records[key]
+
+
+def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
+    """The rows of section Q2's table, and checks on what they are labeled."""
+
+    def cell(r: RunRecord | None, sim: str) -> str:
+        if r is None:
+            return 'pending'
+        if not r.converged:
+            # Labeled stalled only if it never left the zero-output plateau;
+            # any other non-convergence would need its own wording.
+            assert r.best_monitor is not None
+            assert r.zero_predictor_monitor is not None
+            assert r.best_monitor >= (1 - STALL_TOLERANCE) * r.zero_predictor_monitor, (
+                r.cell_key
+            )
+            return 'stalled'
+        return f'{mean_metric(r, Q2_SIMS[sim]):.3f}'
+
+    def context(r: RunRecord | None, stem: str) -> str:
+        if r is None:
+            return '--'
+        if r.receptive_field is None:
+            return 'unbounded' if r.causal else 'whole shot'
+        span = sliding_span(stem)
+        return str(r.receptive_field if span is None else span)
+
+    def rows(group: tuple[tuple[str, str], ...], causal: bool) -> list[dict]:
+        out = []
+        for stem, label in group:
+            cells = {sim: q2_record(records, stem, sim) for sim in Q2_SIMS}
+            assert all(r is None or r.causal is causal for r in cells.values()), stem
+            out.append(
+                {
+                    'label': label,
+                    'context': context(cells['smi-a3'], stem),
+                    'cells': [cell(r, sim) for sim, r in cells.items()],
+                }
+            )
+        return out
+
+    oracle = [
+        mean_metric(records[f'inverse_fit__ch635-675-515__{sim}__oracle'], metric)
+        for sim, metric in Q2_SIMS.items()
+    ]
+    stalled = sorted(
+        (stem, sim)
+        for stem in Q2_STEMS
+        for sim in Q2_SIMS
+        if (r := q2_record(records, stem, sim)) is not None and not r.converged
+    )
+    sliding = {s: span for s in Q2_NAMED if (span := sliding_span(s)) is not None}
+    mlp = records['mlp-44k-T90__ch635-675-515__smi-a3__seed0']
+    return {
+        'q2_causal_rows': rows(Q2_CAUSAL, True),
+        'q2_offline_rows': rows(Q2_OFFLINE, False),
+        'q2_oracle_cells': [f'{v:.3f}' for v in oracle],
+        'q2_mamba_pending': q2_record(records, 'mamba-44k', 'smi-a3') is None,
+        'q2_stalled_named': stalled
+        == [
+            ('lstm-44k', 'michelson'),
+            ('lstm-44k', 'smi-a3'),
+            ('lstm-bidir-44k', 'michelson'),
+            ('lstm-bidir-44k', 'smi-a3'),
+            ('neuraloperator-offline-44k', 'smi-a3'),
+        ],
+        'q2_stall_tol_pct': pct(STALL_TOLERANCE),
+        'q2_stall_epochs': '/'.join(
+            sorted(
+                {
+                    str(records[f'{s}-T90__ch635-675-515__{m}__seed0'].epochs_run)
+                    for s, m in stalled
+                }
+            )
+        ),
+        'q2_sliding_named': sorted(sliding) == ['barland-44k', 'mlp-44k'],
+        'q2_mlp_span': str(sliding['mlp-44k']),
+        'q2_barland_span': str(sliding['barland-44k']),
+        'q2_window_field': str(mlp.receptive_field),
+    }
+
+
+def q2_values(records: dict[str, RunRecord]) -> dict[str, object]:
+    """Values section Q2 quotes from the S1 and S1m family grids."""
+
+    def trained(sim: str, among: list[str]) -> dict[str, float]:
+        """Test score of each converged cell of ``among`` on ``sim``."""
+        return {
+            s: mean_metric(r, Q2_SIMS[sim])
+            for s in among
+            if (r := q2_record(records, s, sim)) is not None and r.converged
+        }
+
+    # The ranking resolution: the noise-free base's three-seed range over its
+    # mean (section 2B's grid, at the 30-epoch budget). Two cells closer than
+    # this are not ranked apart.
+    base = [
+        mean_metric(r, 'velocity_rmse') for r in noise_seeds(records, 'ladder-base')
+    ]
+    resolution = (max(base) - min(base)) / (sum(base) / len(base))
+
+    def apart(a: float, b: float) -> bool:
+        """Whether ``b`` exceeds ``a`` by more than the seed range."""
+        return b / a - 1 > resolution
+
+    mich, smi = trained('michelson', Q2_STEMS), trained('smi-a3', Q2_STEMS)
+    mich_named, smi_named = trained('michelson', Q2_NAMED), trained('smi-a3', Q2_NAMED)
+    oracle_mich, oracle_smi = (
+        records[f'inverse_fit__ch635-675-515__{sim}__oracle'] for sim in Q2_SIMS
+    )
+    oracle = mean_metric(oracle_mich, 'velocity_rmse_sign_invariant')
+    oracle_si = mean_metric(oracle_smi, 'velocity_rmse_sign_invariant')
+    tcn_mich, tcn_smi = mich['tcn-44k'], smi['tcn-44k']
+
+    weakest = max(mich_named, key=mich_named.__getitem__)
+    rest = [v for s, v in mich_named.items() if s != weakest]
+    best = min(smi, key=smi.__getitem__)
+    runner_up = min(v for s, v in smi.items() if s != best)
+    # The offline families the text calls unsettled: all trained but the MLP.
+    offline_top = sorted(
+        v for s, v in smi_named.items() if s in dict(Q2_OFFLINE) and s != 'mlp-44k'
+    )
+    below_tcn = sorted(s for s, v in smi_named.items() if apart(v, tcn_smi))
+    above_tcn = sorted(s for s, v in smi_named.items() if apart(tcn_smi, v))
+    epochs = [
+        (r.epochs_run or 0, r.T_0 or 0)
+        for s in Q2_NAMED
+        for sim in Q2_SIMS
+        if (r := q2_record(records, s, sim)) is not None and r.converged
+    ]
+    early = [n for n, t in epochs if n < EARLY_STOP_FRACTION * t]
+    late = [n for n, t in epochs if n >= EARLY_STOP_FRACTION * t]
+    return {
+        'q2_seed_range_pct': pct(resolution),
+        # Michelson: every trained family but the offline neural operator lies
+        # within the seed range, and that one lies above the rest.
+        'q2_mich_tied': weakest == 'neuraloperator-offline-44k'
+        and not apart(min(rest), max(rest))
+        and apart(max(rest), mich_named[weakest]),
+        'q2_mich_lo': sig(min(rest), 2),
+        'q2_mich_hi': sig(max(rest), 2),
+        'q2_mich_span_pct': pct(max(rest) / min(rest) - 1),
+        'q2_no_offline_mich': sig(mich_named[weakest], 2),
+        'q2_oracle_mich': sig(oracle, 2),
+        'q2_oracle_gap': sig(min(mich.values()) / oracle, 2),
+        'q2_oracle_beats_all': oracle < min(mich.values()),
+        # C = 0.2: the families the text names as beating or trailing the TCN.
+        'q2_smi_vs_tcn': below_tcn
+        == sorted(
+            [
+                'tcan-44k',
+                'patchtransformer-causal-44k',
+                'scnn-44k',
+                'barland-44k',
+                'patchtransformer-offline-44k',
+                'unettransformer-offline-44k',
+            ]
+        )
+        and above_tcn
+        == sorted(
+            ['unettransformer-causal-44k', 'neuraloperator-causal-44k', 'mlp-44k']
+        ),
+        'q2_tcan_gain': sig(tcn_smi / smi['tcan-44k'], 3),
+        'q2_patch_gain': sig(tcn_smi / smi['patchtransformer-causal-44k'], 3),
+        'q2_tcan_best': best == 'tcan-44k' and apart(smi[best], runner_up),
+        'q2_tcan_margin_pct': pct(runner_up / smi[best] - 1),
+        'q2_offline_span_pct': pct(offline_top[-1] / offline_top[0] - 1),
+        'q2_offline_span_close': offline_top[-1] / offline_top[0] - 1 < 2 * resolution,
+        'q2_scnn_gain_pct': pct(tcn_smi / smi['scnn-44k'] - 1),
+        # SCNN is the TCN with symmetric padding: the one matched pair.
+        'q2_scnn_pair': not apart(
+            min(tcn_mich, mich['scnn-44k']), max(tcn_mich, mich['scnn-44k'])
+        )
+        and apart(smi['scnn-44k'], tcn_smi),
+        'q2_oracle_smi_si': sig(oracle_si, 2),
+        'q2_oracle_smi_signed': sig(mean_metric(oracle_smi, 'velocity_rmse'), 2),
+        'q2_learned_beat_oracle_smi': max(smi.values()) < oracle_si,
+        'q2_oracle_smi_gap': sig(oracle_si / max(smi_named.values()), 2),
+        'q2_early_n': str(len(early)),
+        'q2_early_lo': str(min(early)),
+        'q2_early_hi': str(max(early)),
+        'q2_late_lo': str(min(late)),
+        'q2_late_hi': str(max(late)),
+        'q2_restart': str(max(t for _, t in epochs)),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--output', type=Path, required=True)
@@ -413,6 +674,8 @@ def main() -> None:
         **exit_check_values(records),
         **q3_values(records),
         **noise_values(records, prior),
+        **q2_table(records),
+        **q2_values(records),
         'sign_table': [
             {
                 'c': f'{c:g}',

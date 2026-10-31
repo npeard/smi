@@ -88,6 +88,13 @@ GRIDS = [
     for name in ("q3_s0c_ceiling.yaml", "q3_s3_noise_ladder.yaml", "q3_s3_spread.yaml")
 ]
 
+# The emitter instantiates the matched model configs to probe the input span of
+# the sliding-window families (section Q2), so a model or config edit reruns it.
+MODEL_DIR = SMI_DIR / "analysis" / "models"
+MODELS = sorted(
+    str(p) for p in [*MODEL_DIR.glob("*.py"), *(MODEL_DIR / "configs" / "matched").glob("*-44k.yaml")]
+)
+
 # Without this, the unconstrained {document} wildcard in `rule document` also
 # matches "figures/<name>", so Snakemake evaluates a figure PDF as a candidate
 # document output and its input function raises KeyError on every run. Pinning
@@ -134,6 +141,7 @@ rule synthetic_values:
         results=RESULTS,
         code=ANALYSIS_CODE,
         grids=GRIDS,
+        models=MODELS,
     output:
         f"{BUILD}/synthetic_values.json",
     shell:
