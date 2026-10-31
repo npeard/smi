@@ -71,13 +71,18 @@ RESULTS = [
     str(DATA_DIR / "synthetic_results.json"),
 ]
 
-# The library modules the synthetic figures compute from rather than read, so
-# a change to the bounds or to the forward model rebuilds them. Listed for all
-# figures for the same reason as RESULTS.
+# The library modules the synthetic figures compute from or read records
+# through, so a change to the bounds, the forward model, a preset or cell key
+# (expand_grid, whose sim hashes the records are checked against), the frozen
+# rig constants or the record loader rebuilds them. Listed for all figures for
+# the same reason as RESULTS.
 SMI_DIR = REPORT_DIR.parent / "smi"
 ANALYSIS_CODE = [
     str(SMI_DIR / "analysis" / "bounds.py"),
+    str(SMI_DIR / "analysis" / "experiments.py"),
+    str(SMI_DIR / "analysis" / "results_artifact.py"),
     str(SMI_DIR / "synthetic" / "forward.py"),
+    str(SMI_DIR / "synthetic" / "frozen.py"),
 ]
 
 # The experiment grids the synthetic figures expand to label records (the
