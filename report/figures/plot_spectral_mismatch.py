@@ -56,7 +56,7 @@ def main() -> None:
                 psd,
                 color=color,
                 lw=1,
-                label=f'fringe frequency, {wavelength_um * 1e3:.0f} nm',
+                label=f'fringe frequency, {wavelength_um * 1e3:.4g} nm',
             )
         ax.plot(f, spectra.velocity, color='k', lw=1.5, label='velocity target')
         ax.plot(

@@ -503,6 +503,22 @@ DISPLACEMENT_METRICS = {
 }
 
 
+# The S1d grid (q3_s1d_displacement.yaml): the families that stalled on the
+# velocity target, retrained on displacement, plus a TCN control. Each ran as
+# ``<stem>-disp-T90`` on the same sims and test shots as its S1 cell.
+S1D_FAMILIES = (
+    ('tcn-44k', 'TCN'),
+    ('lstm-44k', 'LSTM'),
+    ('lstm-bidir-44k', 'Bidirectional LSTM'),
+    ('neuraloperator-offline-44k', 'Neural operator (off.)'),
+)
+
+
+def s1d_record(records: dict[str, RunRecord], stem: str, sim: str) -> RunRecord:
+    """The displacement-target seed-0 cell of ``stem`` on ``sim``."""
+    return synthetic_cell(records, f'{stem}-disp-T90', sim)
+
+
 def displacement_pending(records: Iterable[RunRecord]) -> bool:
     """Whether none of ``records`` carries displacement RMSE yet.
 

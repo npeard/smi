@@ -55,6 +55,50 @@ def midpoints(edges: list[float]) -> np.ndarray:
     return (e[:-1] + e[1:]) / 2
 
 
+def extremum_rise(ax: plt.Axes, cells: dict) -> None:
+    """Print each 515 nm curve's rise toward the extremum: nearest bin over farthest."""
+    ax.text(0.05, 0.5, 'rise toward the extremum:', transform=ax.transAxes, fontsize=7)
+    for y, (wavelengths, label, color) in zip(
+        (0.43, 0.36), (SUBSETS[0], SUBSETS[2]), strict=True
+    ):
+        curve = cells['nominal_30db', wavelengths]['fringe_distance']['515']['rmse']
+        ax.text(
+            0.05,
+            y,
+            f'{label}: +{100 * (curve[0] / curve[-1] - 1):.0f}%',
+            transform=ax.transAxes,
+            fontsize=7,
+            color=color,
+        )
+
+
+def speed_gain(ax: plt.Axes, cells: dict, speed: np.ndarray) -> None:
+    """Print the noise-free 515 nm over all-three ratio at its peak and slowest bin."""
+    one = cells['noise_free', SUBSETS[0][0]]['abs_velocity']['rmse']
+    three = cells['noise_free', SUBSETS[2][0]]['abs_velocity']['rmse']
+    gain = [a / b for a, b in zip(one, three, strict=True)]
+    peak = gain.index(max(gain))
+    ax.annotate(
+        f'gain {gain[peak]:.2g}' + r'$\times$',
+        (speed[peak], three[peak]),
+        xytext=(0, -10),
+        textcoords='offset points',
+        ha='center',
+        va='top',
+        fontsize=7,
+        color=COLORS['highlight'],
+    )
+    ax.annotate(
+        f'gain {gain[0]:.2g}' + r'$\times$' + '\n(slowest decile)',
+        (speed[0], three[0]),
+        xytext=(0.12, 0.03),
+        textcoords='data',
+        fontsize=7,
+        color=COLORS['highlight'],
+        arrowprops={'arrowstyle': '->', 'color': COLORS['highlight'], 'lw': 0.8},
+    )
+
+
 def main() -> None:
     args = parse_args(__doc__.splitlines()[0])
     data = json.loads(Q1_BINNED_JSON.read_text('utf-8'))
@@ -75,6 +119,8 @@ def main() -> None:
             )
             if 'all' in table:
                 ax.plot(dist, table['all']['rmse'], color=color, linestyle=':')
+        if condition == 'nominal_30db':
+            extremum_rise(ax, cells)
         ax.set_title(title, fontsize=9, loc='right')
         ax.set_xlabel('distance to extremum (fringes)')
         ax.set_xlim(0, 0.25)
@@ -95,6 +141,7 @@ def main() -> None:
         cfg = SimConfig.nominal(wavelengths, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
         causal, _ = velocity_bounds(prior, cfg)
         ax.axhline(causal, color=color, linestyle='-.', lw=0.8)
+    speed_gain(ax, cells, speed)
     zero = next(iter(cells.values()))['abs_velocity']['zero']
     ax.plot(speed, zero, color=COLORS['muted'], lw=1, label='zero predictor')
     ax.plot([], [], color='k', linestyle='-', label='noise-free')

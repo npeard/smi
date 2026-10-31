@@ -105,6 +105,7 @@ GRIDS = [
         "q3_s3_leave_one_out.yaml",
         "q3_s3_matched_length.yaml",
         "q1_s2_subsets.yaml",
+        "q3_s1d_displacement.yaml",
     )
 ]
 

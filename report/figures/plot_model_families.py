@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 """Model families at a matched 44k parameters: noise-free test RMSE per family.
 
-One row per family, causal families above the offline ones and the classical
+(a) One row per family, causal families above the offline ones and the classical
 oracle last. Hollow grey markers are Michelson, scored sign-invariant; filled
 blue markers are C = 0.2, scored signed. Each sim's shaded band is the TCN's
 value widened by the seed range, so a family outside the band is resolved from
 the TCN. A cell that never left the zero-output plateau is drawn as a red cross
-at its score. Reads the runner's records in synthetic_results.json.
+at its score. (b) The S1d retargeting test: displacement RMSE of each family
+the S1d grid retrained on displacement, beside its velocity-target cell on the
+same test shots, in the same sim styles. Reads the runner's records in
+synthetic_results.json.
 """
 
 from __future__ import annotations
@@ -22,16 +25,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import (
     COLORS,
+    DISPLACEMENT_METRICS,
     Q2_CAUSAL,
     Q2_OFFLINE,
     Q2_SIMS,
+    S1D_FAMILIES,
     STALL_TOLERANCE,
     SYNTHETIC_WAVELENGTHS_UM,
     mean_metric,
     noise_seeds,
     oracle_cell,
+    panel_label,
     parse_args,
     q2_record,
+    s1d_record,
     save,
     synthetic_records,
 )
@@ -61,13 +68,104 @@ def seed_resolution(records: dict[str, RunRecord]) -> float:
     return (max(base) - min(base)) / (sum(base) / len(base))
 
 
+def sim_marker(ax: plt.Axes, x: float, y: float, sim: str, marker: str) -> None:
+    """One cell in its sim's style: hollow grey Michelson, filled blue C = 0.2."""
+    ax.plot(
+        x,
+        y,
+        marker=marker,
+        markersize=6,
+        color=SIM_STYLE[sim],
+        markerfacecolor=SIM_STYLE[sim] if sim == 'smi-a3' else 'white',
+        markeredgewidth=1.4,
+        linestyle='none',
+    )
+
+
+def annotate_scnn(
+    ax: plt.Axes, records: dict[str, RunRecord], rows: list[tuple[str, str]]
+) -> None:
+    """Label the C = 0.2 SCNN and Barland cells with their standing against the TCN.
+
+    SCNN is the TCN with symmetric padding, so its gain is what seeing the
+    future buys at a matched context; Barland's wider window then ties SCNN.
+    """
+    metric = Q2_SIMS['smi-a3']
+
+    def score(stem: str) -> float:
+        record = q2_record(records, stem, 'smi-a3')
+        assert record is not None
+        return mean_metric(record, metric)
+
+    stems = [stem for stem, _ in rows]
+    tcn, scnn = score('tcn-44k'), score('scnn-44k')
+    for stem, text in (
+        ('scnn-44k', f'{100 * (tcn / scnn - 1):.0f}% below TCN'),
+        ('barland-44k', 'ties SCNN'),
+    ):
+        ax.annotate(
+            text,
+            (score(stem), stems.index(stem)),
+            xytext=(7, 0),
+            textcoords='offset points',
+            ha='left',
+            va='center',
+            fontsize=7.5,
+            color=SIM_STYLE['smi-a3'],
+        )
+
+
+def retarget_panel(ax: plt.Axes, records: dict[str, RunRecord]) -> None:
+    """Displacement RMSE of each S1d family, velocity target against displacement.
+
+    The two sims of a family share its row, offset apart; a thin line joins a
+    family's velocity-target cell (circle) to its displacement-target cell
+    (square), and a stalled cell carries the red cross of panel (a).
+    """
+    for y, (stem, _) in enumerate(S1D_FAMILIES):
+        for sim, metric in Q2_SIMS.items():
+            row = y + (-0.17 if sim == 'michelson' else 0.17)
+            score = DISPLACEMENT_METRICS[metric]
+            velocity = q2_record(records, stem, sim)
+            assert velocity is not None
+            cells = ((velocity, 'o'), (s1d_record(records, stem, sim), 's'))
+            xs = [mean_metric(r, score) for r, _ in cells]
+            ax.plot(xs, [row, row], color=SIM_STYLE[sim], lw=0.8, alpha=0.6)
+            for x, (record, marker) in zip(xs, cells, strict=True):
+                sim_marker(ax, x, row, sim, marker)
+                if stalled(record):
+                    ax.plot(x, row, marker='x', color=STALLED, markersize=7, mew=1.6)
+    ax.set_yticks(
+        range(len(S1D_FAMILIES)), [lab for _, lab in S1D_FAMILIES], fontsize=8
+    )
+    ax.set_ylim(len(S1D_FAMILIES) - 0.5, -0.5)
+    ax.set_xscale('log')
+    ticks = (0.05, 0.1, 0.2, 0.5, 1.0)
+    ax.minorticks_off()
+    ax.set_xticks(ticks, [f'{t:g}' for t in ticks], fontsize=8)
+    ax.set_xlim(0.04, 1.0)
+    ax.set_xlabel(r'noise-free test displacement RMSE ($\mu$m)')
+    ax.legend(
+        handles=[
+            Line2D([], [], marker='o', color='k', mfc='white', ls='none'),
+            Line2D([], [], marker='s', color='k', mfc='white', ls='none'),
+        ],
+        labels=['trained on velocity', 'trained on displacement'],
+        loc='lower left',
+        fontsize=7.5,
+    )
+    panel_label(ax, '(b)')
+
+
 def main() -> None:
     args = parse_args(__doc__.splitlines()[0])
     records = synthetic_records()
     rows = [*Q2_CAUSAL, *Q2_OFFLINE]
     resolution = seed_resolution(records)
 
-    fig, ax = plt.subplots(figsize=(5.6, 4.4))
+    fig, (ax, ax_b) = plt.subplots(
+        2, 1, figsize=(5.6, 6.2), height_ratios=(15, 5.2), layout='constrained'
+    )
     for sim, metric in Q2_SIMS.items():
         tcn = mean_metric(
             records[cell_key('tcn-44k-T90', SYNTHETIC_WAVELENGTHS_UM, sim, 0)], metric
@@ -87,17 +185,7 @@ def main() -> None:
             if stalled(record):
                 ax.plot(x, y, marker='x', color=STALLED, markersize=7, mew=1.6)
                 continue
-            filled = sim == 'smi-a3'
-            ax.plot(
-                x,
-                y,
-                marker='o',
-                markersize=6,
-                color=SIM_STYLE[sim],
-                markerfacecolor=SIM_STYLE[sim] if filled else 'white',
-                markeredgewidth=1.4,
-                linestyle='none',
-            )
+            sim_marker(ax, x, y, sim, 'o')
         oracle = mean_metric(oracle_cell(records, sim), metric)
         ax.plot(
             oracle,
@@ -134,6 +222,9 @@ def main() -> None:
     ax.minorticks_off()
     ax.set_xticks(ticks, [f'{t:g}' for t in ticks], fontsize=8)
     ax.set_xlabel(r'noise-free test velocity RMSE ($\mu$m/ms)')
+    annotate_scnn(ax, records, rows)
+    panel_label(ax, '(a)')
+    retarget_panel(ax_b, records)
     handles = [
         Line2D(
             [],
@@ -166,7 +257,6 @@ def main() -> None:
         ncol=2,
         fontsize=7.5,
     )
-    fig.tight_layout()
     save(fig, args.output)
 
 

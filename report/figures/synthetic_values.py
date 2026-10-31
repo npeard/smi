@@ -60,6 +60,7 @@ from _figcommon import (
     Q2_STEMS,
     Q3_BUDGETS,
     Q3_FEEDBACK_C,
+    S1D_FAMILIES,
     STALL_TOLERANCE,
     SYNTHETIC_WAVELENGTHS_UM,
     LadderRow,
@@ -72,6 +73,7 @@ from _figcommon import (
     noise_seeds,
     oracle_cell,
     q2_record,
+    s1d_record,
     synthetic_cell,
     synthetic_records,
     velocity_bounds,
@@ -1273,6 +1275,61 @@ def displacement_values(records: dict[str, RunRecord]) -> dict[str, object]:
     }
 
 
+def s1d_values(records: dict[str, RunRecord]) -> dict[str, object]:
+    """Values section Q2 quotes from the displacement-target grid (S1d).
+
+    Each S1d cell is compared with its velocity-target S1 cell on the same
+    test shots, both scored on displacement: signed at C = 0.2, sign-invariant
+    on Michelson (``Q2_SIMS``).
+    """
+
+    def ratio(r: RunRecord) -> float:
+        assert r.best_monitor is not None
+        assert r.zero_predictor_monitor is not None
+        return r.best_monitor / r.zero_predictor_monitor
+
+    stems = [stem for stem, _ in S1D_FAMILIES]
+    smi = [s1d_record(records, s, 'smi-a3') for s in stems]
+    mich = {s: s1d_record(records, s, 'michelson') for s in stems}
+    si = DISPLACEMENT_METRICS['velocity_rmse_sign_invariant']
+    disp = {s: mean_metric(r, si) for s, r in mich.items()}
+    vel = {s: mean_metric(q2_record(records, s, 'michelson'), si) for s in stems}
+    lstms = ('lstm-44k', 'lstm-bidir-44k')
+    mamba = q2_record(records, 'mamba-44k', 'smi-a3')
+    assert mamba is not None
+
+    def three(x: float) -> str:
+        return sig(x, 3)
+
+    return {
+        **lo_hi('s1d_smi_ratio', map(ratio, smi), three),
+        **lo_hi('s1d_mich_ratio', map(ratio, mich.values()), lambda x: sig(x, 2)),
+        **lo_hi('s1d_epochs', map(epochs, [*smi, *mich.values()]), str),
+        # The text: at C = 0.2 every retargeted cell, the TCN control
+        # included, stalls; on Michelson every one trains.
+        's1d_smi_stalled': all(
+            not r.converged and ratio(r) >= 1 - STALL_TOLERANCE for r in smi
+        ),
+        's1d_mich_trained': all(
+            r.converged and ratio(r) < 1 - STALL_TOLERANCE for r in mich.values()
+        ),
+        **lo_hi('s1d_lstm_disp', (disp[s] for s in lstms), three),
+        **lo_hi('s1d_lstm_vel', (vel[s] for s in lstms), three),
+        's1d_no_disp': three(disp['neuraloperator-offline-44k']),
+        's1d_no_vel': three(vel['neuraloperator-offline-44k']),
+        's1d_tcn_disp': three(disp['tcn-44k']),
+        's1d_tcn_vel': three(vel['tcn-44k']),
+        # The text: retargeting helps the LSTMs and costs the neural operator
+        # and the TCN, and every retargeted cell stays behind the
+        # velocity-trained TCN.
+        's1d_shape': all(disp[s] < vel[s] for s in lstms)
+        and all(disp[s] > vel[s] for s in ('neuraloperator-offline-44k', 'tcn-44k'))
+        and min(disp.values()) > vel['tcn-44k'],
+        's1d_mamba_velocity': sig(mean_metric(mamba, 'velocity_rmse'), 2),
+        's1d_mamba_trained': mamba.converged,
+    }
+
+
 def prediction_values(records: dict[str, RunRecord], zero: float) -> dict[str, str]:
     """Synthetic error over the zero predictor's, for the real-data predictions.
 
@@ -1370,6 +1427,7 @@ def main() -> None:
         **prediction_values(records, zero),
         **methods_values(records, shot_length(records)),
         **displacement_values(records),
+        **s1d_values(records),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(values, indent=1) + '\n', encoding='utf-8')

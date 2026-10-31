@@ -63,10 +63,20 @@ def main() -> None:
         ax.bar(x + offset, values, width, label=label, color=color)
     ax.axhline(1.0, color=COLORS['muted'], linestyle='--', label='zero predictor')
     ax.set_xticks(x, [label for _, label in RUNS])
+    ax.set_xlabel('trained on: interferometer, training loss', fontsize=8)
     ax.set_ylabel('velocity NRMSE')
     # Headroom above the reference line so the legend clears the tallest bar.
-    ax.set_ylim(0, 1.4)
-    ax.legend(loc='upper center', fontsize=8, ncol=3, columnspacing=1.0)
+    ax.set_ylim(0, 1.5)
+    # Bar colour is the scoring rule, applied to every run; the tick labels
+    # carry the training loss, so the two cannot be confused.
+    ax.legend(
+        loc='upper center',
+        fontsize=8,
+        ncol=3,
+        columnspacing=1.0,
+        title='bar colour: scored',
+        title_fontsize=8,
+    )
     save(fig, args.output)
 
 

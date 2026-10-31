@@ -52,13 +52,14 @@ SIM_STYLE = {
 
 
 # The C = 0.2 families the caption names, as (label, offset in points,
-# alignment); offsets keep the clustered lowest three apart.
+# alignment). The lowest three cluster, so every label sits clear of the
+# points and a leader line ties it to its own.
 LABELED = {
-    'patchtransformer-offline-44k': ('PatchTr. (off.)', (5, -4), 'left'),
-    'tcan-44k': ('TCAN', (0, -8), 'center'),
-    'unettransformer-offline-44k': ('UNet-Tr. (off.)', (5, 4), 'left'),
-    'tcn-44k': ('TCN', (5, -5), 'left'),
-    'mamba-44k': ('Mamba', (-5, 3), 'right'),
+    'patchtransformer-offline-44k': ('PatchTr. (off.)', (24, -6), 'left'),
+    'tcan-44k': ('TCAN', (-14, -10), 'right'),
+    'unettransformer-offline-44k': ('UNet-Tr. (off.)', (-4, 24), 'right'),
+    'tcn-44k': ('TCN', (-22, 10), 'right'),
+    'mamba-44k': ('Mamba', (-16, 16), 'right'),
 }
 
 
@@ -133,13 +134,14 @@ def families_panel(ax: plt.Axes, cells: list[tuple[str, str, RunRecord]]) -> Non
                 va='center',
                 fontsize=7,
                 color=color,
+                arrowprops={'arrowstyle': '-', 'color': color, 'lw': 0.6},
             )
     for color, label in SIM_STYLE.values():
         ax.plot([], [], marker='o', color=color, ls='none', label=label)
     ax.set_xscale('log')
     ax.set_yscale('log')
     # Room for the labels of the lowest points inside the axes.
-    ax.margins(0.12)
+    ax.margins(x=0.45, y=0.15)
     plain_log(ax.xaxis)
     plain_log(ax.yaxis)
     ax.tick_params(labelsize=8)
