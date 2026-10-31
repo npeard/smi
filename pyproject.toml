@@ -195,7 +195,7 @@ polars = ">=2.1"
 # ruff/codespell live in the default env so the `format`/`lint`/`spell` tasks
 # (defined under [tool.pixi.tasks], which runs in the default env) use the
 # pinned, lockfile-backed tools instead of whatever happens to be on PATH.
-ruff = ">=0.15,<0.16"
+ruff = ">=0.17,<0.18"
 codespell = "*"
 
 # The PyPI lightgbm macOS wheel does not bundle libomp and looks for
@@ -238,7 +238,7 @@ nbstripout = "*"
 # Held below 0.0.81: 0.0.90 reports invalid-mutable-override on every
 # nn.Module.forward override, because torch types `forward` as a mutable
 # Callable attribute. Lift the pin when torch or ty resolves that.
-ty = "<0.0.81"
+ty = "<0.0.96"
 bandit = "*"
 marimo = "*"
 lmfit = "*"
