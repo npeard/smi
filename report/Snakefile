@@ -43,6 +43,7 @@ DOCUMENT_FIGURES = {
         "fisher_phase",
         "velocity_bounds",
         "spectral_mismatch",
+        "q1_binned",
     ],
 }
 
@@ -70,6 +71,8 @@ RESULTS = [
     str(DATA_DIR / "gain_sweep_results.json"),
     str(DATA_DIR / "learned_results.json"),
     str(DATA_DIR / "synthetic_results.json"),
+    # Per-sample binned errors of section Q1, from smi.analysis.q1_binned.
+    str(DATA_DIR / "q1_binned_errors.json"),
 ]
 
 # The library modules the synthetic figures compute from or read records
@@ -97,6 +100,7 @@ GRIDS = [
         "q3_s3_spread.yaml",
         "q3_s3_leave_one_out.yaml",
         "q3_s3_matched_length.yaml",
+        "q1_s2_subsets.yaml",
     )
 ]
 

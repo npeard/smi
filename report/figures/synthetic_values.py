@@ -40,12 +40,14 @@ from _figcommon import (
     MATCHED_DIR,
     MISMATCH_SHOTS,
     NOISE_KNOBS,
+    Q1_BINNED_JSON,
+    Q1_S2_GRID,
+    Q1_SUBSETS,
     Q3_BUDGETS,
     Q3_FEEDBACK_C,
     SYNTHETIC_WAVELENGTHS_UM,
     LadderRow,
     c_sim,
-    grid_cells,
     matched_length_cells,
     mean_metric,
     mismatch_spectra,
@@ -54,11 +56,13 @@ from _figcommon import (
     oracle_cell,
     synthetic_cell,
     synthetic_records,
+    velocity_bounds,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from smi.analysis import bounds
+from smi.analysis.experiments import ORACLE_FAMILY, cell_key, expand_grid
 from smi.analysis.models.factory import create_model
 from smi.analysis.models.sliding_window import SlidingWindowModel
 from smi.analysis.results_artifact import RunRecord
@@ -96,13 +100,13 @@ def sci(x: float) -> dict[str, str | int]:
     return {'mantissa': mantissa, 'exponent': int(exponent)}
 
 
-def velocity_bounds(prior: bounds.StateSpace, n_channels: int) -> tuple[float, float]:
-    cfg = SimConfig.nominal(
-        SYNTHETIC_WAVELENGTHS_UM[:n_channels], NOMINAL_C, NOMINAL_ALPHA
+def nominal_bounds(
+    prior: bounds.StateSpace, wavelengths_um: tuple[float, ...]
+) -> tuple[float, float]:
+    """Causal and offline bounds of ``wavelengths_um`` at the nominal point."""
+    return velocity_bounds(
+        prior, SimConfig.nominal(wavelengths_um, NOMINAL_C, NOMINAL_ALPHA)
     )
-    causal = float(bounds.pcrb_filter(prior, cfg, N_STEPS)[-1]) ** 0.5
-    offline = float(bounds.bcrb_smoother(prior, cfg, N_STEPS)[N_STEPS // 2]) ** 0.5
-    return causal, offline
 
 
 def real_tcn_rmse() -> float:
@@ -145,20 +149,18 @@ def test_shots(record: RunRecord) -> int:
     return int(record.dataset.rsplit('_n', 1)[1])
 
 
-def zero_predictor_rmse(records: dict[str, RunRecord]) -> float:
-    """Test RMSE of predicting zero velocity on the alpha = 0 control's test set.
+def zero_predictor_rmse(records: dict[str, RunRecord], grid: Path, key: str) -> float:
+    """Test RMSE of predicting zero velocity on cell ``key``'s test set.
 
-    That is each shot's velocity RMS, averaged over shots, for the 90-epoch
-    control. Its sim config comes from expanding the grid that produced the
-    record (hash-checked by ``grid_cells``), so the emitter cannot drift from
-    the runner or score another set after a grid edit.
+    That is each shot's velocity RMS, averaged over shots. The sim config
+    comes from expanding the grid that produced the record, hash-checked, so
+    the emitter cannot drift from the runner or score another set after a
+    grid edit.
     """
-    record = synthetic_cell(records, 'tcn-44k-T90', 'smi-a0')
-    (cfg,) = [
-        cell.sim
-        for cell, _ in grid_cells(records, CEILING_GRID)
-        if cell.key == record.cell_key
-    ]
+    record = records[key]
+    (cfg,) = [cell.sim for cell in expand_grid(grid)[1] if cell.key == key]
+    if record.sim_config_hash != cfg.hash():
+        raise ValueError(f'{key}: record was run under another sim config')
     if record.test_seed is None:
         raise ValueError(f'{record.cell_key}: no test seed recorded')
     path = load_or_create(cfg, record.test_seed, test_shots(record), DEFAULT_ROOT)
@@ -657,6 +659,23 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
     }
 
 
+def seed_resolution(records: dict[str, RunRecord]) -> float:
+    """The ranking resolution: the noise-free base's seed range over its mean.
+
+    Section 2B's grid: TCN-44k, three channels, C = 0.2, the 30-epoch budget.
+    Two cells closer than this are not ranked apart.
+    """
+    base = [
+        mean_metric(r, 'velocity_rmse') for r in noise_seeds(records, 'ladder-base')
+    ]
+    return (max(base) - min(base)) / (sum(base) / len(base))
+
+
+def separated(a: float, b: float, resolution: float) -> bool:
+    """Whether ``b`` exceeds ``a`` by more than ``resolution``."""
+    return b / a - 1 > resolution
+
+
 def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
     """Values section Q2 quotes from the S1 and S1m family grids.
 
@@ -673,17 +692,10 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
             if (r := q2_record(records, s, sim)) is not None and r.converged
         }
 
-    # The ranking resolution: the noise-free base's three-seed range over its
-    # mean (section 2B's grid, at the 30-epoch budget). Two cells closer than
-    # this are not ranked apart.
-    base = [
-        mean_metric(r, 'velocity_rmse') for r in noise_seeds(records, 'ladder-base')
-    ]
-    resolution = (max(base) - min(base)) / (sum(base) / len(base))
+    resolution = seed_resolution(records)
 
     def apart(a: float, b: float) -> bool:
-        """Whether ``b`` exceeds ``a`` by more than the seed range."""
-        return b / a - 1 > resolution
+        return separated(a, b, resolution)
 
     mich, smi = trained('michelson', Q2_STEMS), trained('smi-a3', Q2_STEMS)
     mich_named, smi_named = trained('michelson', Q2_NAMED), trained('smi-a3', Q2_NAMED)
@@ -776,6 +788,315 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
     }
 
 
+# Section Q1's two families and their scores (Michelson's global sign is
+# unobservable, section 1.1). The S2 grid also expands an oracle cell for its
+# SMI sim, which its header leaves unrun: the oracle decodes under the
+# Michelson model, so only its Michelson cells are read.
+Q1_FAMILIES = ('tcn-44k', 'tcan-44k')
+Q1_S2_SIMS = {
+    's2-michelson': 'velocity_rmse_sign_invariant',
+    's2-smi-a3': 'velocity_rmse',
+}
+Q1_SNR_DB = (0.0, 10.0, 20.0, 30.0, 40.0)
+Q1_SINGLES = [w for w, _ in Q1_SUBSETS if len(w) == 1]
+Q1_MULTI = [w for w, _ in Q1_SUBSETS if len(w) > 1]
+Q1_PAIRS = [w for w in Q1_MULTI if len(w) == 2]
+# The text says a Michelson single channel scores at the zero predictor, and
+# that pairs and triples sit far below it.
+AT_ZERO_TOL = 0.03
+FAR_FROM_ZERO = 0.6
+# The text calls an error curve flat in extremum distance when no bin departs
+# from the curve's mean over bins by more than this.
+FLAT_TOL = 0.1
+
+
+def lowest(scores: dict[tuple, float], among: list[tuple]) -> tuple:
+    """The subset of ``among`` with the lowest score."""
+    return min(among, key=scores.__getitem__)
+
+
+def q1_s2_values(records: dict[str, RunRecord], resolution: float) -> dict[str, object]:
+    """Values section Q1 quotes from the noise-free channel-subset grid (S2).
+
+    Args:
+        records: The synthetic records.
+        resolution: The seed range (``seed_resolution``).
+    """
+    triple = SYNTHETIC_WAVELENGTHS_UM
+    zero = zero_predictor_rmse(
+        records, Q1_S2_GRID, cell_key('tcn-44k', triple, 's2-smi-a3', 0)
+    )
+
+    def scores(family: str, sim: str) -> dict[tuple, float]:
+        seed = None if family == ORACLE_FAMILY else 0
+        return {
+            w: mean_metric(records[cell_key(family, w, sim, seed)], Q1_S2_SIMS[sim])
+            for w, _ in Q1_SUBSETS
+        }
+
+    mich = {f: scores(f, 's2-michelson') for f in Q1_FAMILIES}
+    smi = {f: scores(f, 's2-smi-a3') for f in Q1_FAMILIES}
+    oracle = scores(ORACLE_FAMILY, 's2-michelson')
+    mich_single = [mich[f][w] for f in Q1_FAMILIES for w in Q1_SINGLES]
+    mich_multi = [mich[f][w] for f in Q1_FAMILIES for w in Q1_MULTI]
+    single_records = [
+        records[cell_key(f, w, 's2-michelson', 0)]
+        for f in Q1_FAMILIES
+        for w in Q1_SINGLES
+    ]
+    # How far each Michelson single channel's best validation error sits below
+    # the zero predictor's: the quantity the runner's stall test reads.
+    monitor_gap = []
+    for r in single_records:
+        assert r.best_monitor is not None
+        assert r.zero_predictor_monitor is not None
+        monitor_gap.append(1 - r.best_monitor / r.zero_predictor_monitor)
+
+    def ranked_singles(family: str) -> list[tuple]:
+        return sorted(Q1_SINGLES, key=smi[family].__getitem__)
+
+    def runner_up(family: str) -> float:
+        first, second = ranked_singles(family)[:2]
+        return smi[family][second] / smi[family][first] - 1
+
+    def gain(family: str) -> float:
+        best = smi[family][lowest(smi[family], Q1_SINGLES)]
+        return best / min(smi[family][w] for w in Q1_MULTI)
+
+    tcn_multi = [smi['tcn-44k'][w] for w in Q1_MULTI]
+    tcan_pair = min(smi['tcan-44k'][w] for w in Q1_PAIRS)
+    tcan_triple = smi['tcan-44k'][triple]
+    table_columns = (
+        mich['tcn-44k'],
+        mich['tcan-44k'],
+        oracle,
+        smi['tcn-44k'],
+        smi['tcan-44k'],
+    )
+    return {
+        'q1_s2_rows': [
+            {'label': name, 'cells': [f'{col[w]:.3f}' for col in table_columns]}
+            for w, name in Q1_SUBSETS
+        ],
+        'q1_zero': sig(zero, 2),
+        # Michelson: one channel scores at the zero predictor, sign-invariant,
+        # in both families; every pair and the triple sit far below it.
+        'q1_mich_single_at_zero': all(
+            abs(x / zero - 1) < AT_ZERO_TOL for x in mich_single
+        ),
+        'q1_mich_single_gap_pct': sig(
+            100 * max(abs(x / zero - 1) for x in mich_single), 1
+        ),
+        'q1_mich_multi_far': max(mich_multi) < FAR_FROM_ZERO * zero,
+        'q1_oracle_single_above_zero': min(oracle[w] for w in Q1_SINGLES) > zero,
+        # The stall test passes the single channels, so the text calls them
+        # trained to the zero predictor, not stalled.
+        'q1_mich_single_converged': all(r.converged for r in single_records),
+        **lo_hi('q1_mich_single_monitor', monitor_gap, lambda x: f'{100 * x:.1f}'),
+        'q1_mich_single_epochs': '/'.join(
+            sorted({str(epochs(r)) for r in single_records})
+        ),
+        'q1_stall_tol_pct': pct(STALL_TOLERANCE),
+        # The text: 515 nm is the best single channel in both families, and
+        # the singles fall in the lambda^-2 order of eq-fisher.
+        'q1_515_best': all(ranked_singles(f)[0] == (0.515,) for f in Q1_FAMILIES),
+        'q1_fisher_order': all(
+            ranked_singles(f) == sorted(Q1_SINGLES) for f in Q1_FAMILIES
+        ),
+        'q1_runner_up_tcn_pct': pct(runner_up('tcn-44k')),
+        'q1_runner_up_tcan_pct': pct(runner_up('tcan-44k')),
+        'q1_gain_tcn': sig(gain('tcn-44k'), 3),
+        'q1_gain_tcan': sig(gain('tcan-44k'), 3),
+        # Every multi-channel set beats the best single channel by more than
+        # the seed range, in both families.
+        'q1_multi_beats_single': all(
+            separated(smi[f][w], smi[f][lowest(smi[f], Q1_SINGLES)], resolution)
+            for f in Q1_FAMILIES
+            for w in Q1_MULTI
+        ),
+        'q1_tcn_multi_tied': not separated(min(tcn_multi), max(tcn_multi), resolution),
+        'q1_tcan_triple_pct': pct(1 - tcan_triple / tcan_pair),
+        'q1_tcan_triple_apart': separated(tcan_triple, tcan_pair, resolution),
+        **lo_hi(
+            'q1_epochs',
+            (
+                epochs(records[cell_key(f, w, sim, 0)])
+                for f in Q1_FAMILIES
+                for w, _ in Q1_SUBSETS
+                for sim in Q1_S2_SIMS
+            ),
+            str,
+        ),
+    }
+
+
+def q1_binned_values(
+    records: dict[str, RunRecord], prior: bounds.StateSpace
+) -> dict[str, object]:
+    """Values section Q1 quotes from the binned errors (smi.analysis.q1_binned).
+
+    The JSON holds the TCN on 515 nm alone, on 635 + 515 nm and on all three
+    channels, noise-free and at the nominal point at 30 dB.
+    """
+    binned = json.loads(Q1_BINNED_JSON.read_text('utf-8'))
+    # It was rescored from the checkpoints the records came from.
+    assert all(
+        math.isclose(c['rmse'], mean_metric(records[k], 'velocity_rmse'), rel_tol=1e-3)
+        for k, c in binned['cells'].items()
+    )
+    cells = {
+        (c['condition'], tuple(c['wavelengths_um'])): c
+        for c in binned['cells'].values()
+    }
+    one, pair, three = (0.515,), (0.635, 0.515), SYNTHETIC_WAVELENGTHS_UM
+
+    def by_distance(condition: str, w: tuple, channel: str) -> list[float]:
+        return cells[condition, w]['fringe_distance'][channel]['rmse']
+
+    def rise(condition: str, w: tuple, channel: str = '515') -> float:
+        """Nearest-to-extremum bin over the farthest, minus one."""
+        curve = by_distance(condition, w, channel)
+        return curve[0] / curve[-1] - 1
+
+    def flat(condition: str, w: tuple) -> bool:
+        curve = by_distance(condition, w, '515')
+        mean = sum(curve) / len(curve)
+        return all(abs(x / mean - 1) <= FLAT_TOL for x in curve)
+
+    nf_one = by_distance('noise_free', one, '515')
+    nf_three = by_distance('noise_free', three, '515')
+    gain_near, gain_far = nf_one[0] / nf_three[0], nf_one[-1] / nf_three[-1]
+
+    def all_share(w: tuple) -> str:
+        """Share of samples in the nearest bin of every channel's extremum."""
+        n = cells['noise_free', w]['fringe_distance']['all']['n']
+        return sig(100 * n[0] / sum(n), 1)
+
+    v_gain = [
+        a / b
+        for a, b in zip(
+            cells['noise_free', one]['abs_velocity']['rmse'],
+            cells['noise_free', three]['abs_velocity']['rmse'],
+            strict=True,
+        )
+    ]
+    v_edges = binned['abs_velocity_edges_um_per_ms']
+    peak = v_gain.index(max(v_gain))
+    bound_gap = min(
+        min(cells['nominal_30db', w]['abs_velocity']['rmse'])
+        / nominal_bounds(prior, w)[0]
+        for w in (one, pair, three)
+    )
+    return {
+        'q1_bin_width': f'{binned["fringe_distance_edges_fringes"][1]:.3g}',
+        'q1_bin_nf_near': sig(nf_one[0], 3),
+        'q1_bin_nf_far': sig(nf_one[-1], 3),
+        # The text: noise-free, neither curve rises toward the extremum.
+        'q1_bin_nf_flat': flat('noise_free', one)
+        and flat('noise_free', three)
+        and rise('noise_free', one) <= 0,
+        'q1_bin_nom_rise_one_pct': pct(rise('nominal_30db', one)),
+        'q1_bin_nom_rise_three_pct': pct(rise('nominal_30db', three)),
+        # The text: at 30 dB the single channel rises toward its extremum a
+        # little, and more than the triple, both within FLAT_TOL.
+        'q1_bin_nom_small_rise': flat('nominal_30db', one)
+        and flat('nominal_30db', three)
+        and rise('nominal_30db', one) > max(rise('nominal_30db', three), 0),
+        'q1_bin_gain_near': sig(gain_near, 2),
+        'q1_bin_gain_far': sig(gain_far, 2),
+        'q1_bin_gain_not_near': gain_near < gain_far,
+        **lo_hi(
+            'q1_bin_all_rise',
+            (rise('noise_free', w, 'all') for w in (pair, three)),
+            pct,
+        ),
+        'q1_bin_all_share_pair': all_share(pair),
+        'q1_bin_all_share_three': all_share(three),
+        'q1_bin_v_gain_max': sig(max(v_gain), 2),
+        'q1_bin_v_peak_lo': sig(v_edges[peak], 2),
+        'q1_bin_v_peak_hi': sig(v_edges[peak + 1], 2),
+        'q1_bin_v_slow_hi': sig(v_edges[1], 1),
+        'q1_bin_v_slow_gain': sig(v_gain[0], 2),
+        # The text: no gain in the slowest bin, the largest above 1.5x.
+        'q1_bin_v_shape': v_gain[0] < 1 and max(v_gain) > 1.5,
+        'q1_bound_gap': f'{bound_gap:.0f}',
+    }
+
+
+def q1_s4_values(records: dict[str, RunRecord], resolution: float) -> dict[str, object]:
+    """Values section Q1 quotes from the nominal-point SNR sweep (S4), TCN only."""
+    triple = SYNTHETIC_WAVELENGTHS_UM
+
+    def s4(w: tuple, snr: float, seed: int | None = 0) -> RunRecord:
+        family = 'tcn-44k' if seed is not None else ORACLE_FAMILY
+        return records[cell_key(family, w, f'q1-nominal-snr_db={snr:g}', seed)]
+
+    rmse = {
+        snr: {w: mean_metric(s4(w, snr), 'velocity_rmse') for w, _ in Q1_SUBSETS}
+        for snr in Q1_SNR_DB
+    }
+    # Fraction by which the best multi-channel set beats the best single.
+    gain = {
+        snr: 1 - min(row[w] for w in Q1_MULTI) / min(row[w] for w in Q1_SINGLES)
+        for snr, row in rmse.items()
+    }
+    oracle = [
+        mean_metric(s4(w, snr, None), 'velocity_rmse')
+        for w in ((0.515,), triple)
+        for snr in Q1_SNR_DB
+    ]
+    zero = zero_predictor_rmse(
+        records, Q1_S2_GRID, cell_key('tcn-44k', triple, 's2-smi-a3', 0)
+    )
+    at30 = rmse[30.0]
+    nominal = [mean_metric(r, 'velocity_rmse') for r in noise_seeds(records, 'nominal')]
+    # The one cell the text names as trained longer.
+    long_single = s4((0.515,), 40.0)
+    label = dict(Q1_SUBSETS)
+    return {
+        **lo_hi(
+            'q1_s4_median',
+            (
+                s4(w, snr).metrics['velocity_nrmse']['median']
+                for w, _ in Q1_SUBSETS
+                for snr in Q1_SNR_DB
+            ),
+            lambda x: sig(x, 2),
+        ),
+        'q1_s4_30_pair_no515': f'{at30[0.635, 0.6748]:.3f}',
+        'q1_s4_30_gain_pct': pct(gain[30.0]),
+        # The text: at 30 dB the gain is several times the nominal seed range,
+        # and the pair without 515 nm does no better than 515 nm alone.
+        'q1_s4_30_outside': gain[30.0]
+        > 3 * (max(nominal) - min(nominal)) / min(nominal)
+        and not separated(at30[0.515,], at30[0.635, 0.6748], resolution),
+        **lo_hi('q1_nominal', nominal, lambda x: f'{x:.3f}'),
+        'q1_s4_rows': [
+            {
+                'snr': f'{snr:g}',
+                'single': f'{min(row[w] for w in Q1_SINGLES):.3f}',
+                'single_label': label[lowest(row, Q1_SINGLES)],
+                'pair': f'{min(row[w] for w in Q1_PAIRS):.3f}',
+                'pair_label': label[lowest(row, Q1_PAIRS)],
+                'three': f'{row[triple]:.3f}',
+                'gain': pct(gain[snr]),
+            }
+            for snr, row in rmse.items()
+        ],
+        # The text: the gain peaks between 10 and 30 dB, is within the seed
+        # range at 0 dB and reverses at 40 dB, where the 515 nm cell alone
+        # trained into a third cycle.
+        'q1_s4_gain_shape': max(gain, key=gain.__getitem__) in (10.0, 20.0, 30.0)
+        and abs(gain[0.0]) < resolution
+        and gain[40.0] < 0,
+        'q1_s4_40_epochs': str(epochs(long_single)),
+        'q1_s4_40_third_cycle': ran_third_cycle(long_single)
+        and not any(ran_third_cycle(s4(w, 40.0)) for w in Q1_MULTI),
+        **lo_hi('q1_s4_oracle', oracle, lambda x: sig(x, 2)),
+        'q1_s4_oracle_worse': min(oracle) > zero,
+    }
+
+
 def spectral_values() -> dict[str, str]:
     """Numbers quoted beside the data/target mismatch figure.
 
@@ -803,8 +1124,8 @@ def main() -> None:
     prior = bounds.motion_prior(
         SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
     )
-    causal_k1, _ = velocity_bounds(prior, 1)
-    causal_k3, offline_k3 = velocity_bounds(prior, 3)
+    causal_k1, _ = nominal_bounds(prior, SYNTHETIC_WAVELENGTHS_UM[:1])
+    causal_k3, offline_k3 = nominal_bounds(prior, SYNTHETIC_WAVELENGTHS_UM)
     info = [
         bounds.expected_information(
             SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM[:k], NOMINAL_C, NOMINAL_ALPHA)
@@ -813,7 +1134,12 @@ def main() -> None:
     ]
     real = real_tcn_rmse()
     records = synthetic_records()
-    zero = zero_predictor_rmse(records)
+    # The alpha = 0 control's test set, whose signed-MSE optimum is zero.
+    zero = zero_predictor_rmse(
+        records,
+        CEILING_GRID,
+        cell_key('tcn-44k-T90', SYNTHETIC_WAVELENGTHS_UM, 'smi-a0', 0),
+    )
 
     values = {
         'prior_psd_rms_db': sig(prior.psd_rms_db, 2),
@@ -831,6 +1157,9 @@ def main() -> None:
         **noise_values(records, prior),
         **q2_table(records),
         **q2_values(records, zero),
+        **q1_s2_values(records, seed_resolution(records)),
+        **q1_binned_values(records, prior),
+        **q1_s4_values(records, seed_resolution(records)),
         **spectral_values(),
         'sign_table': [
             {
