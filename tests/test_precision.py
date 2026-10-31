@@ -46,6 +46,7 @@ def test_missing_precision_names_the_field():
             'devices': 1,
             'use_logging': False,
             'check_val_every_n_epoch': 1,
+            'target': 'velocity',
             'convergence': {
                 'monitor': 'val/velocity_rmse_um_per_ms',
                 'patience_epochs': 5,
