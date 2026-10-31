@@ -1135,6 +1135,25 @@ def spectral_values() -> dict[str, str]:
     }
 
 
+def prediction_values(records: dict[str, RunRecord], zero: float) -> dict[str, str]:
+    """Synthetic error over the zero predictor's, for the real-data predictions.
+
+    A ratio to the zero predictor transfers to the real acquisitions better
+    than an absolute RMSE, whose scale is set by the motion prior.
+    """
+
+    def ratio(sim_name: str) -> str:
+        runs = [mean_metric(r, 'velocity_rmse') for r in noise_seeds(records, sim_name)]
+        return sig(sum(runs) / len(runs) / zero, 2)
+
+    return {
+        'pred_base_ratio': ratio('ladder-base'),
+        'pred_nominal_ratio': ratio('nominal'),
+        'pred_c09_ratio': ratio('nominal-c0.9'),
+        'pred_no_drift_ratio': ratio('nominal-no-phasedrift'),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--output', type=Path, required=True)
@@ -1180,6 +1199,7 @@ def main() -> None:
         **q1_binned_values(records, prior),
         **q1_s4_values(records, seed_resolution(records)),
         **spectral_values(),
+        **prediction_values(records, zero),
         'sign_table': [
             {
                 'c': f'{c:g}',

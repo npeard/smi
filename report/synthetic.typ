@@ -928,4 +928,160 @@ seed range is TCAN over the TCN at $C = 0.2$ (a factor #val("q2_tcan_gain")); mo
 seeds of both would test it. The order among families within the seed range
 of each other is not resolved.
 
+= Predictions for the real data <sec-real-predictions>
+
+#assert(
+  float(val("pred_base_ratio")) < 0.30 and 0.30 < float(val("pred_c09_ratio")),
+  message: "the real free-space ratio 0.30 no longer lies between the noise-free base and every nominal-point variant",
+)
+
+This section fixes what the synthetic program predicts for the real
+acquisitions before they are read (@tab-real-predictions). Each prediction
+names what it rests on and the observation that would refute it. Absolute
+synthetic errors should not transfer, because the rig's $C$, $alpha$, SNR and
+drift are unknown and its motion prior and training budget differ. The
+predictions are therefore ratios and orderings, against the real bars of the
+baseline report's results table (its Section 9.1): the causal TCN at 0.1116
+and 0.2540 $mu$m/ms and Barland at 0.0814 and 0.1643 $mu$m/ms, in free space
+and behind multimode fiber. Every synthetic cell is one seed, so no interval
+is narrower than the #val("q2_seed_range_pct")% seed range.
+
+#figure(
+  align(center, {
+    set par(justify: false)
+    table(
+    columns: (auto, 1.4fr, 1fr, 1.4fr),
+    align: (right, left, left, left),
+    stroke: 0.5pt + rgb("#d0d0d0"),
+    table.header([], [Prediction], [Interval], [Falsified if]),
+    [1],
+    [The TCN's signed and sign-invariant free-space test RMSE agree],
+    [within 10%],
+    [sign-invariant is more than 10% below signed],
+
+    [2],
+    [`calibrate_sim.py` reads feedback on the free-space file],
+    [$C >= 0.05$, $alpha != 0$],
+    [$C < 0.03$, or $alpha$ consistent with 0],
+
+    [3],
+    [The rig is less degraded than the nominal point],
+    [drift below #val("noise_phase_fringes") fringes, or $C > 0.2$, or SNR above 30 dB, or visibility above nominal],
+    [all four calibrate at or worse than nominal],
+
+    [4],
+    [A per-laser phase reference, or less drift, cuts the TCN's error],
+    [up to #val("loo_e60_cut")%],
+    [cut within the seed range while drift calibrates at or above nominal],
+
+    [5],
+    [515 nm is the best single channel],
+    [lowest single-channel RMSE],
+    [another channel is lower by more than the seed range],
+
+    [6],
+    [Three channels beat the best single channel],
+    [error ratio #(1 + int(val("q1_s4_30_gain_pct")) / 100) to #val("q1_gain_tcn")],
+    [ratio below 1, or above #val("q1_gain_tcn"), by more than the seed range],
+
+    [7],
+    [One channel alone recovers the signed motion],
+    [below the zero predictor],
+    [within the seed range of the zero predictor],
+
+    [8],
+    [TCAN beats the causal TCN],
+    [error ratio 1 to #val("q2_tcan_gain")],
+    [TCAN above the TCN by more than their seed range],
+
+    [9],
+    [Both LSTMs stall under this protocol],
+    [best validation within #val("q2_stall_tol_pct")% of the zero predictor],
+    [either leaves the plateau],
+
+    [10],
+    [No offline family beats Barland's 0.0814 $mu$m/ms],
+    [within the seed range of it, or above],
+    [one scores more than the seed range below it],
+  )}),
+  caption: [
+    Pre-registered predictions for the free-space acquisition, scored in P6. // math-ok: stage label
+    Errors are test velocity RMSE under the baseline report's protocol;
+    ratios are the single channel's or the TCN's error over the comparator's.
+    The seed range is #val("q2_seed_range_pct")%.
+  ],
+) <tab-real-predictions>
+
+The published bars already show that the rig breaks the global sign symmetry
+of @sec-sign. Those runs trained with a signed MSE loss, which on Michelson
+data leaves the TCN at the zero predictor (@fig-exit-check). The free-space
+TCN instead scores 0.1116 $mu$m/ms, 0.30 of the median true velocity RMS of
+0.373 $mu$m/ms (baseline report, Section 4.1), which is the zero predictor's
+per-shot error. That median comes from a different 200-shot subset, so the
+ratio is approximate. Prediction 1 holds the sign resolved on nearly every
+test shot, as in every 90-epoch cell of @sec-q3-curve. Its interval widens
+the #val("q3_sign_gap_pct")% noise-free gap to 10% for noise, which no cell
+measured.
+
+Feedback with $C > 0$ and $alpha != 0$ is one way to break the symmetry
+(@sec-feedback). Phase offsets that repeat from shot to shot, an amplitude
+that depends on position, or drive crosstalk into a photodiode would also
+break it, and the simulator models none of them. Prediction 2 therefore
+requires the calibration to read the feedback the sign needs. Its threshold,
+$C = 0.05$, is the weakest feedback sampled in @fig-feedback, and it already
+resolved the sign in RMSE. The calibration's synthetic round trip
+(`tests/test_calibrate_sim.py`) under-reads $C$ by up to 32% at high drift,
+so the falsifier sits at $C < 0.03$.
+
+The same ratio puts the rig's error well below the synthetic nominal point's. Over the
+zero predictor, the TCN scores #val("pred_base_ratio") noise-free,
+#val("pred_nominal_ratio") at the nominal point, #val("pred_no_drift_ratio")
+with phase drift removed and #val("pred_c09_ratio") at $C = 0.9$
+(@sec-q3-noise). The real 0.30 lies below every nominal variant and nearest
+the noise-free base. Training length does not close the gap, since extra
+epochs improved the nominal point by only #val("loo_e60_nominal_gain")%.
+Hence prediction 3: at least one nominal value is pessimistic for the rig.
+
+If every knob of prediction 3 calibrates at or beyond nominal, the
+simulator's noise model or its motion prior does not describe the rig. Its independent
+per-channel phase drift is the likely culprit, since the 1 to 2.7 fringes it
+is anchored to come from a global fit that attributes no source (baseline
+report, Section 5.1). Prediction 4 needs new hardware, either a per-laser
+phase monitor or a more stable acquisition. Its ceiling is the cut the
+nominal point gives at equal length; a rig less drift-limited than nominal
+should gain less.
+
+The Q1 gain should fall between its two synthetic limits (@sec-q1). // math-ok: question label
+Noise-free, the best multi-channel set beats the best single channel by a
+factor #val("q1_gain_tcn") for the TCN. At the nominal 30 dB point the gain
+is #val("q1_s4_30_gain_pct")%, carried by pairs with 515 nm (@tab-q1-snr).
+Prediction 6 expects the real ratio nearer the noise-free end the further
+prediction 3 places the rig from nominal. On another rig,
+@matha2023multichannel found its best single channel ahead of all three, so
+a ratio below 1 is a live outcome.
+
+Predictions 5 and 7 rest on thinner evidence. 515 nm leads in the
+$lambda_k^(-2)$ order of @eq-fisher and in every synthetic cell, but its noise-free TCN lead is at the edge
+of the seed range. One channel alone recovers the motion at $C = 0.2$, while
+on Michelson it scores at the zero predictor (@tab-q1-subsets). A real
+single channel at the zero predictor would mean feedback too weak for one
+channel to read the sign.
+
+The Q2 predictions claim orderings only, because the synthetic family ranks // math-ok: question label
+already transferred imperfectly once. On the real data Barland beats SCNN by
+15% (baseline report, Section 9.1), where the synthetic cells tie them
+(@tab-families). TCAN's #val("q2_tcan_gain")-fold gain over the TCN was
+measured noise-free; under noise, the Q1 multi-channel gain shrank from // math-ok: question label
+#val("q1_gain_tcn") to #val("q1_s4_30_gain_pct")%, so prediction 8 runs from
+parity to that factor. The LSTMs stalled on both simulations, with and
+without the grace period. Prediction 9 applies only to the same protocol of
+default initialization, signed loss and patience. Mamba has no prediction,
+because its $C = 0.2$ cell had not run at this commit.
+
+The program makes no prediction about the fiber penalty. It has no model of
+mode scrambling, which is Q4 and outside P0 to P3, so the published fiber // math-ok: question and stage labels
+over free-space ratios of 2.28 for the TCN and 2.02 for Barland (baseline
+report, Section 9.6) have no synthetic counterpart. Every prediction above
+is for free space.
+
 #bibliography("refs.bib")
