@@ -21,6 +21,8 @@ default, which would make otherwise-identical runs differ byte-for-byte.
 from __future__ import annotations
 
 import argparse
+import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +35,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.typing import RcKeyType
 
+from smi.analysis.experiments import expand_grid
 from smi.analysis.results_artifact import RunRecord, read_results
+from smi.synthetic.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
 from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
 
 # Repository root, resolved from this file so scripts work from any cwd
@@ -79,6 +83,89 @@ def synthetic_cell(records: dict[str, RunRecord], family: str, sim: str) -> RunR
 def mean_metric(record: RunRecord, metric: str) -> float:
     """Mean over test shots of a per-shot metric of ``record``."""
     return record.metrics[metric]['mean']
+
+
+# The noise ladder (each knob swept alone from the noise-free base) and the
+# grid that reruns its base and nominal cells at more seeds.
+EXPERIMENTS_DIR = REPO_ROOT / 'smi' / 'analysis' / 'experiments'
+NOISE_LADDER_GRID = EXPERIMENTS_DIR / 'q3_s3_noise_ladder.yaml'
+NOISE_SPREAD_GRID = EXPERIMENTS_DIR / 'q3_s3_spread.yaml'
+# forward.py sets the nominal phase drift at the geometric middle of the
+# published 1 to 2.7 fringes per shot; drift in fringes per shot is linear in
+# the rate, so this converts a swept rate to fringes.
+NOMINAL_PHASE_DRIFT_FRINGES = math.sqrt(2.7)
+
+
+@dataclass(frozen=True)
+class LadderRow:
+    """One single-knob cell of the noise ladder.
+
+    Attributes:
+        field: The swept SimConfig field.
+        value: Its value in this cell.
+        nominal: Whether that value is SimConfig.nominal's.
+        sim: The cell's sim config.
+        record: The cell's run record.
+    """
+
+    field: str
+    value: object
+    nominal: bool
+    sim: SimConfig
+    record: RunRecord
+
+
+def _is_nominal(field: str, value: object) -> bool:
+    nominal = getattr(
+        SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA),
+        field,
+    )
+    if isinstance(value, float) and isinstance(nominal, float):
+        return math.isclose(value, nominal)
+    return value == nominal
+
+
+def _grid_records(
+    records: dict[str, RunRecord], grid: Path
+) -> list[tuple[str, SimConfig, RunRecord]]:
+    """``(sim name, sim, record)`` per cell of ``grid``, hash-checked.
+
+    The sim config comes from expanding the grid, so a grid edited after its
+    run fails here instead of labelling a record with the wrong knob value.
+    """
+    _, cells = expand_grid(grid)
+    out = []
+    for cell in cells:
+        record = records[cell.key]
+        assert record.sim_config_hash == cell.sim.hash(), cell.key
+        out.append((cell.sim_name, cell.sim, record))
+    return out
+
+
+def noise_ladder(records: dict[str, RunRecord]) -> dict[str, list[LadderRow]]:
+    """The ladder's single-knob rows, keyed by swept field, in sweep order."""
+    rows: dict[str, list[LadderRow]] = {}
+    for name, sim, record in _grid_records(records, NOISE_LADDER_GRID):
+        if not name.startswith('ladder-'):
+            continue
+        # Sweep cells are named <entry>-<field>=<value> (experiments._build_sims).
+        field = name.partition('=')[0].split('-', 2)[2]
+        value = getattr(sim, field)
+        rows.setdefault(field, []).append(
+            LadderRow(field, value, _is_nominal(field, value), sim, record)
+        )
+    return rows
+
+
+def noise_seeds(records: dict[str, RunRecord], sim_name: str) -> list[RunRecord]:
+    """Every seed of ``sim_name`` across the ladder and its spread grid."""
+    found = {
+        record.cell_key: record
+        for grid in (NOISE_LADDER_GRID, NOISE_SPREAD_GRID)
+        for name, _, record in _grid_records(records, grid)
+        if name == sim_name
+    }
+    return list(found.values())
 
 
 # Photodiode channels, in the order the dataset feeds them to the model, with

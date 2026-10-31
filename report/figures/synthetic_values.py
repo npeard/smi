@@ -33,9 +33,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import (
     DATA_DIR,
+    NOMINAL_PHASE_DRIFT_FRINGES,
     Q3_FEEDBACK_C,
     SYNTHETIC_WAVELENGTHS_UM,
+    LadderRow,
     mean_metric,
+    noise_ladder,
+    noise_seeds,
     synthetic_cell,
     synthetic_records,
 )
@@ -45,7 +49,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from smi.analysis import bounds
 from smi.analysis.experiments import expand_grid
 from smi.analysis.results_artifact import RunRecord
-from smi.synthetic.forward import NOMINAL_ALPHA, SimConfig
+from smi.synthetic.forward import (
+    NOMINAL_ALPHA,
+    NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S,
+    SimConfig,
+)
 from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
 # Matches plot_velocity_bounds.py and plot_sign_information.py.
@@ -268,6 +276,110 @@ def q3_values(records: dict[str, RunRecord]) -> dict[str, str | bool]:
     }
 
 
+def noise_values(
+    records: dict[str, RunRecord], prior: bounds.StateSpace
+) -> dict[str, str | bool]:
+    """Values the noise-ladder section quotes, from the ladder and spread grids."""
+
+    def rmse(record: RunRecord) -> float:
+        return mean_metric(record, 'velocity_rmse')
+
+    ladder = noise_ladder(records)
+    base_runs = noise_seeds(records, 'ladder-base')
+    base = [rmse(r) for r in base_runs]
+    nominal = [rmse(r) for r in noise_seeds(records, 'nominal')]
+    base_mean = sum(base) / len(base)
+    excess = sum(nominal) / len(nominal) - base_mean
+
+    def at_nominal(field: str) -> LadderRow:
+        (row,) = [row for row in ladder[field] if row.nominal]
+        return row
+
+    def share(field: str) -> float:
+        """Fraction of the nominal point's excess over the base this knob gives."""
+        return (rmse(at_nominal(field).record) - base_mean) / excess
+
+    phase, snr = 'phase_drift_rad_per_sqrt_s', 'snr_db'
+    minor = [f for f in ladder if f not in (phase, snr)]
+    minor_shares = [share(f) for f in minor]
+    # The sweep runs 0.5, 1, 1.64, 2.7, 5.4 fringes per shot (forward.py):
+    # first is half the published low end, the middle three the published
+    # range.
+    half_fringe, *published_rows, _ = (row.record for row in ladder[phase])
+    published = [rmse(r) for r in published_rows]
+    (c09,) = noise_seeds(records, 'nominal-c0.9')
+    (nominal0,) = [r for r in noise_seeds(records, 'nominal') if r.seed == 0]
+    # The causal bound at the 30 dB row's own config (unit visibility, no
+    # drift), so it is the floor for exactly what that row adds to the base.
+    snr_row = at_nominal(snr)
+    snr_bound = float(bounds.pcrb_filter(prior, snr_row.sim, N_STEPS)[-1]) ** 0.5
+    snr_cost = rmse(snr_row.record) - base_mean
+    # The DC-offset rows that score below every base seed; the text names them
+    # as the +/-0.3 and +/-1 rows and reports how long they trained.
+    dc_low = [row for row in ladder['dc_offset_range'] if rmse(row.record) < min(base)]
+    base_epochs = [r.epochs_run or 0 for r in base_runs]
+    rows = [row for rows in ladder.values() for row in rows]
+    # Rows that trained past their second warm restart, i.e. into a third
+    # cosine cycle, unlike every base seed.
+    long_rows = [
+        row for row in rows if (row.record.epochs_run or 0) > 2 * (row.record.T_0 or 0)
+    ]
+    assert all(
+        n <= 2 * (r.T_0 or 0) for n, r in zip(base_epochs, base_runs, strict=True)
+    )
+    short_rows = [row for row in rows if row not in long_rows]
+
+    def above_base(field: str) -> list[object]:
+        return [row.value for row in ladder[field] if rmse(row.record) > max(base)]
+
+    snr_nominal = rmse(snr_row.record)
+    return {
+        # The text: only 8 bits and a 3 kHz bandwidth leave the base spread.
+        'noise_electronics_flat': above_base('adc_bits') == [8]
+        and above_base('pd_bandwidth_hz') == [3e3],
+        # The text: at 20% each drift costs about what 30 dB white noise does.
+        'noise_drift_20_like_snr': all(
+            abs(rmse(row.record) / snr_nominal - 1) < 0.1
+            for f in ('amplitude_drift_rel', 'contrast_drift_rel')
+            for row in ladder[f]
+            if row.value == 0.2
+        ),
+        'noise_n_seeds': str(len(base)),
+        'noise_phase_fringes': sig(NOMINAL_PHASE_DRIFT_FRINGES, 3),
+        'noise_phase_rad': sig(NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S, 3),
+        'noise_phase_share': pct(share(phase)),
+        'noise_snr_share': pct(share(snr)),
+        'noise_minor_share_hi': pct(max(minor_shares)),
+        'noise_spread_share': pct((max(base) - min(base)) / excess),
+        # The ranking the text states: phase drift, then SNR, then the rest.
+        'noise_ranking': share(phase) > share(snr) > max(minor_shares),
+        # The text calls the error over the published range nearly flat.
+        'noise_phase_flat': max(published) / min(published) < 1.1,
+        'noise_phase_half_above_base': rmse(half_fringe) > max(base),
+        'noise_phase_half_kept': pct(
+            (rmse(half_fringe) - base_mean)
+            / (rmse(at_nominal(phase).record) - base_mean)
+        ),
+        'noise_c09_ratio': sig(rmse(nominal0) / rmse(c09), 2),
+        'noise_snr_cost': sig(snr_cost, 2),
+        'noise_snr_bound': sig(snr_bound, 2),
+        'noise_snr_cost_over_bound': f'{snr_cost / snr_bound:.0f}',
+        'noise_snr_above_bound': snr_cost > snr_bound,
+        'noise_dc_low_named': sorted(row.value[1] for row in dc_low) == [0.3, 1.0],
+        'noise_dc_low_epochs': '/'.join(
+            sorted({str(row.record.epochs_run) for row in dc_low})
+        ),
+        'noise_base_epochs_lo': str(min(base_epochs)),
+        'noise_base_epochs_hi': str(max(base_epochs)),
+        'noise_n_long': str(len(long_rows)),
+        'noise_n_rows': str(len(rows)),
+        'noise_long_epochs_lo': str(min(r.record.epochs_run or 0 for r in long_rows)),
+        'noise_long_epochs_hi': str(max(r.record.epochs_run or 0 for r in long_rows)),
+        'noise_short_epochs_lo': str(min(r.record.epochs_run or 0 for r in short_rows)),
+        'noise_short_epochs_hi': str(max(r.record.epochs_run or 0 for r in short_rows)),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--output', type=Path, required=True)
@@ -300,6 +412,7 @@ def main() -> None:
         'real_gap': f'{real / causal_k3:.0f}',
         **exit_check_values(records),
         **q3_values(records),
+        **noise_values(records, prior),
         'sign_table': [
             {
                 'c': f'{c:g}',

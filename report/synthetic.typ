@@ -438,10 +438,89 @@ at $C = 0.2$.
 
 == Noise ladder <sec-q3-noise>
 
-_To be written from `smi/analysis/data/synthetic_results.json` when the
-noise-ladder grid finishes: which noise term moves the error most at the
-nominal operating point, and the case it makes for or against new
-electronics._
+#assert(val("noise_ranking"), message: "the noise ladder no longer ranks phase drift, then SNR, then the rest")
+#assert(val("noise_phase_flat"), message: "the phase-drift rows over the published range are no longer within 10%")
+#assert(val("noise_phase_half_above_base"), message: "the half-fringe phase-drift row no longer lies above the base spread")
+#assert(val("noise_snr_above_bound"), message: "the 30 dB row's cost no longer exceeds the causal bound")
+#assert(val("noise_electronics_flat"), message: "an ADC or PD-bandwidth row other than 8 bits or 3 kHz now leaves the base spread")
+#assert(val("noise_drift_20_like_snr"), message: "the 20% drift rows no longer match the 30 dB row")
+#assert(val("noise_dc_low_named"), message: "the DC-offset rows below the base are no longer the +/-0.3 and +/-1 rows")
+
+Phase drift dominates the error at the nominal operating point
+(@fig-noise). Each row trains the 30-epoch TCN of @fig-feedback at
+$C = 0.2$ with one detector or drift knob switched on at a time. Measured
+against the mean of the noise-free base, phase drift alone at its nominal
+#val("noise_phase_fringes") fringes per shot gives
+#val("noise_phase_share")% of the error that every knob at nominal adds, and
+30 dB white noise gives #val("noise_snr_share")%. No other knob gives more
+than #val("noise_minor_share_hi")%, against a base seed spread of
+#val("noise_spread_share")% on the same scale. The ladder does not show how
+the knobs combine, and no row removes phase drift from the nominal point.
+
+#fig(
+  "noise_ladder",
+  caption: [
+    Of the eight knobs, only phase drift at its nominal value moves the error
+    far from the noise-free base. Test velocity RMSE, mean over the
+    #val("test_shots") frozen shots (seed #val("test_seed")), of TCN-44k on
+    three channels at $C = 0.2$, $alpha = 3$, seed 0, with one knob on and the
+    rest noise-free. Ringed: the knob's nominal value. Grey band: the
+    noise-free base over #val("noise_n_seeds") seeds; red band: every knob at
+    nominal over #val("noise_n_seeds") seeds; dotted: every knob at nominal at
+    $C = 0.9$, one seed. Each x axis runs toward the worse signal; the nominal
+    phase drift is #val("noise_phase_rad") rad$\/sqrt("s")$.
+  ],
+) <fig-noise>
+
+Across the published range of 1 to 2.7 fringes per shot the phase-drift
+error is nearly flat (@fig-noise). At 0.5 fringes, half the
+published low end, it still keeps #val("noise_phase_half_kept")% of its
+nominal cost. A few-fold cut in drift therefore buys little. The ladder
+samples nothing between 0 and 0.5 fringes, so how far drift must fall to
+pay is untested.
+
+The ladder makes the case for optical changes before new electronics.
+Phase drift is optical path length and laser frequency drift, so the levers
+it supports are stabilizing the path or the laser, or reading the drift from
+a monitor channel; the ladder tests none of them. Raising $C$ to 0.9 is
+another optical lever: in one seed it cuts the nominal-point error by a
+factor #val("noise_c09_ratio"). SNR, photodiode bandwidth and the ADC are the
+electronics. Neither a better ADC nor a wider bandwidth is supported, since
+both sit on the base at their nominal values, and only 8 bits or a 3 kHz
+bandwidth rise above it. A quieter front end is the one electronics lever
+the ladder leaves open, and only if the rig's SNR is below the assumed
+30 dB.
+
+That caveat applies to every assumed knob. The nominal drive gain and phase
+drift are anchored to numbers the baseline report published, as context
+rather than a calibration, and the phase-drift nominal is a lower bound on
+the true rate. SNR, visibility, DC offset, amplitude and contrast drift
+and the photodiode bandwidth are stated guesses with wide sweeps. At 20%,
+four times their assumed value, amplitude and contrast drift each cost about
+what 30 dB white noise does (@fig-noise). Measuring these drifts and the
+rig's SNR would therefore test the verdict above.
+
+The pre-registered noise prediction of @sec-predictions holds, with a wide
+margin. The 30 dB row exceeds the noise-free base by
+#val("noise_snr_cost") $mu$m/ms, #val("noise_snr_cost_over_bound") times
+the causal bound of #val("noise_snr_bound") $mu$m/ms at that row's own
+settings. The bound floors the total error of an efficient estimator, within
+the simplifications of @sec-crb, so a learned model above it is expected.
+The ladder measures how far the TCN falls short of it at this budget.
+
+Two DC-offset rows, $plus.minus 0.3$ and $plus.minus 1$, score below every
+seed of the noise-free base. Both trained #val("noise_dc_low_epochs")
+epochs, into a third cosine cycle, against #val("noise_base_epochs_lo") to
+#val("noise_base_epochs_hi") for the base seeds. Whether the longer run or
+the offset causes the drop is untested, and nothing here rests on it.
+
+Each ladder row is one training seed at one budget, read against the seed
+spread of @fig-noise. Budgets also differ by row: #val("noise_n_long") of
+the #val("noise_n_rows") rows, the nominal phase-drift row among them, trained #val("noise_long_epochs_lo")
+to #val("noise_long_epochs_hi") epochs, against
+#val("noise_short_epochs_lo") to #val("noise_short_epochs_hi") for the rest.
+The ladder covers three channels at $C = 0.2$, $alpha = 3$ only. Every run
+used Python 3.14 and torch 2.15.0 on Apple MPS in float32.
 
 = Q1: does multi-channel beat any single channel? <sec-q1> // math-ok: question label
 

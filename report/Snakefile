@@ -39,6 +39,7 @@ DOCUMENT_FIGURES = {
         "exit_check",
         "sign_information",
         "feedback_curve",
+        "noise_ladder",
         "fisher_phase",
         "velocity_bounds",
     ],
@@ -79,6 +80,14 @@ ANALYSIS_CODE = [
     str(SMI_DIR / "synthetic" / "forward.py"),
 ]
 
+# The experiment grids the synthetic figures expand to label records (the
+# sweep value of a cell comes from its grid), so a grid edit rebuilds them.
+EXPERIMENTS_DIR = SMI_DIR / "analysis" / "experiments"
+GRIDS = [
+    str(EXPERIMENTS_DIR / name)
+    for name in ("q3_s0c_ceiling.yaml", "q3_s3_noise_ladder.yaml", "q3_s3_spread.yaml")
+]
+
 # Without this, the unconstrained {document} wildcard in `rule document` also
 # matches "figures/<name>", so Snakemake evaluates a figure PDF as a candidate
 # document output and its input function raises KeyError on every run. Pinning
@@ -110,6 +119,7 @@ rule figure:
         common="figures/_figcommon.py",
         results=RESULTS,
         code=ANALYSIS_CODE,
+        grids=GRIDS,
     output:
         f"{FIGDIR}/{{name}}.pdf",
     shell:
@@ -123,6 +133,7 @@ rule synthetic_values:
         common="figures/_figcommon.py",
         results=RESULTS,
         code=ANALYSIS_CODE,
+        grids=GRIDS,
     output:
         f"{BUILD}/synthetic_values.json",
     shell:
