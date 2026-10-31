@@ -133,8 +133,10 @@ def zero_predictor_rmse(record: RunRecord) -> float:
     """
     _, cells = expand_grid(CEILING_GRID)
     (cfg,) = [cell.sim for cell in cells if cell.key == record.cell_key]
-    assert cfg.hash() == record.sim_config_hash, record.cell_key
-    assert record.test_seed is not None
+    if cfg.hash() != record.sim_config_hash:
+        raise ValueError(f'{record.cell_key}: grid sim config no longer matches')
+    if record.test_seed is None:
+        raise ValueError(f'{record.cell_key}: no test seed recorded')
     path = load_or_create(cfg, record.test_seed, test_shots(record), DEFAULT_ROOT)
     with h5py.File(path, 'r') as f:
         velocity = f['velocity'][:]
