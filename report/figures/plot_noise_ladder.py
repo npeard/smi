@@ -77,16 +77,17 @@ def main() -> None:
     records = synthetic_records(SIGN_COLLAPSE_CONTROLS)
     ladder = noise_ladder(records)
 
-    def rmse_span(sim: str) -> tuple[float, float, float]:
+    def rmse_span(sim: str) -> tuple[float, float, float, int]:
         values = [mean_metric(r, 'velocity_rmse') for r in noise_seeds(records, sim)]
-        return min(values), max(values), sum(values) / len(values)
+        return min(values), max(values), sum(values) / len(values), len(values)
 
-    base = rmse_span('ladder-base')
-    nominal = rmse_span('nominal')
+    *base, n_base = rmse_span('ladder-base')
+    *nominal, n_nominal = rmse_span('nominal')
     (c09,) = noise_seeds(records, 'nominal-c0.9')
     # The 60-epoch reruns share the ladder's sim configs, so the config hash
     # pairs each with its ladder row.
     cells = matched_length_cells(records)
+    (epochs,) = {r.epochs_run for r in cells.values()}
     e60 = {r.sim_config_hash: mean_metric(r, 'velocity_rmse') for r in cells.values()}
     e60_base = mean_metric(cells['ladder-base'], 'velocity_rmse')
 
@@ -149,11 +150,11 @@ def main() -> None:
     labels = [
         'one knob on',
         'its nominal value',
-        'noise-free, 3 seeds',
-        'all knobs nominal, 3 seeds',
+        f'noise-free, {n_base} seeds',
+        f'all knobs nominal, {n_nominal} seeds',
         r'all nominal, $C=0.9$',
-        'phase drift, 60 epochs',
-        'noise-free, 60 epochs',
+        f'phase drift, {epochs} epochs',
+        f'noise-free, {epochs} epochs',
     ]
     fig.legend(
         handles=handles,
