@@ -38,6 +38,7 @@ from _figcommon import (
     CEILING_GRID,
     DATA_DIR,
     MATCHED_DIR,
+    MISMATCH_SHOTS,
     NOISE_KNOBS,
     Q3_BUDGETS,
     Q3_FEEDBACK_C,
@@ -47,6 +48,7 @@ from _figcommon import (
     grid_cells,
     matched_length_cells,
     mean_metric,
+    mismatch_spectra,
     noise_ladder,
     noise_seeds,
     oracle_cell,
@@ -774,6 +776,25 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
     }
 
 
+def spectral_values() -> dict[str, str]:
+    """Numbers quoted beside the data/target mismatch figure.
+
+    The PSDs share one bin grid, so sums over bins are power shares.
+    """
+    spectra = mismatch_spectra(False)
+    low = spectra.freq_hz < 100
+
+    def low_share(psd: np.ndarray) -> str:
+        return pct(psd[low].sum() / psd.sum())
+
+    return {
+        'spec_shots': str(MISMATCH_SHOTS),
+        'spec_bin_hz': f'{spectra.freq_hz[0]:.0f}',
+        'spec_v_low_pct': low_share(spectra.velocity),
+        'spec_x_low_pct': low_share(spectra.displacement),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--output', type=Path, required=True)
@@ -810,6 +831,7 @@ def main() -> None:
         **noise_values(records, prior),
         **q2_table(records),
         **q2_values(records, zero),
+        **spectral_values(),
         'sign_table': [
             {
                 'c': f'{c:g}',

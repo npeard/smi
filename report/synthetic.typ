@@ -579,7 +579,31 @@ used Python 3.14 and torch 2.15.0 on Apple MPS in float32.
 
 = Q1: does multi-channel beat any single channel? <sec-q1> // math-ok: question label
 
-_To be written from `smi/analysis/data/synthetic_results.json` when the
+#fig(
+  "spectral_mismatch",
+  caption: [
+    Shot-averaged power spectral densities, each divided by its own peak, of
+    the velocity target (solid), the displacement target (dashed) and each
+    channel's instantaneous fringe frequency (colored), over
+    #val("spec_shots") simulated shots at $C = 0.2$, $alpha = 3$. (a) Every
+    noise knob at nominal; (b) noise-free, with the same trajectories. The
+    fringe frequency is the time derivative of the analytic signal's phase
+    over $2 pi$; each periodogram is Hann-windowed over the whole
+    16384-sample shot. Shaded: the drive band.
+  ],
+) <fig-spectral>
+
+The displacement target puts #val("spec_x_low_pct")% of its power below
+100 Hz, against #val("spec_v_low_pct")% for the velocity target
+(@fig-spectral). The lowest resolved bin is #val("spec_bin_hz") Hz, so
+drive content below it enters each shot only as a trend. Each channel's
+fringe frequency, which follows $|v|$, peaks at twice the velocity target's
+peak frequency and keeps power near its peak down to the lowest bin. Above
+1 kHz it sits on a broadband floor that the nominal noise raises
+(#ref(<fig-spectral>)a against b).
+
+_The channel-subset (S2) results are to be written // math-ok: stage label
+from `smi/analysis/data/synthetic_results.json` when the
 Q1 grid // math-ok: question label
  finishes._
 

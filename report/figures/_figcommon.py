@@ -34,7 +34,9 @@ matplotlib.use('Agg')
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from matplotlib.typing import RcKeyType
+from scipy import signal
 
 from smi.analysis.experiments import (
     ANALYSIS_DIR,
@@ -45,7 +47,12 @@ from smi.analysis.experiments import (
     training_config,
 )
 from smi.analysis.results_artifact import RunRecord, read_results
-from smi.synthetic.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
+from smi.synthetic.forward import (
+    NOMINAL_ALPHA,
+    NOMINAL_FEEDBACK_C,
+    SimConfig,
+    simulate_batch,
+)
 from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
 
 # Resolved by the package, not the cwd (pytest runs scripts from the repo
@@ -303,6 +310,84 @@ def matched_length_cells(
     by_name = {cell.sim_name: record for cell, record in cells}
     by_sweep = {cell.sweep: record for cell, record in cells if cell.sweep}
     return by_name, by_sweep
+
+
+# Shots averaged per spectrum in the data/target mismatch figure and the
+# values quoted beside it.
+MISMATCH_SHOTS = 256
+
+
+@dataclass(frozen=True)
+class MismatchSpectra:
+    """Shot-averaged one-sided PSDs of the targets and of the traces' fringe rate.
+
+    Each PSD is divided by its own maximum over the nonzero bins, so the
+    curves compare shapes, not units.
+
+    Attributes:
+        freq_hz: Bin frequencies, DC excluded.
+        velocity: PSD of the velocity target.
+        displacement: PSD of the displacement target.
+        fringe_rate: ``[C, F]`` PSD of each channel's instantaneous fringe
+            frequency, in SYNTHETIC_WAVELENGTHS_UM order.
+    """
+
+    freq_hz: np.ndarray
+    velocity: np.ndarray
+    displacement: np.ndarray
+    fringe_rate: np.ndarray
+
+
+def mismatch_spectra(noise_free: bool) -> MismatchSpectra:
+    """Spectra of MISMATCH_SHOTS seeded shots at the nominal operating point.
+
+    The fringe rate is estimated from the analytic signal: the phase of
+    ``scipy.signal.hilbert`` of the mean-removed trace, unwrapped and
+    differentiated with ``np.gradient``, divided by 2 pi. For a clean fringe
+    this tracks 2|v|/lambda. Every series is mean-removed and Hann-windowed
+    over the whole shot (``scipy.signal.periodogram``), so the lowest nonzero
+    bin is 1 / shot length.
+
+    Args:
+        noise_free: Simulate with every detector knob at its identity value
+            instead of at nominal. The trajectory draws come first, so both
+            settings see the same motion.
+    """
+    cfg = _NOMINAL_SIM
+    if noise_free:
+        cfg = SimConfig.noise_free(
+            wavelengths_um=cfg.wavelengths_um,
+            sample_rate=cfg.sample_rate,
+            start_freq_hz=cfg.start_freq_hz,
+            end_freq_hz=cfg.end_freq_hz,
+            drive_gain=cfg.drive_gain,
+            feedback_c=cfg.feedback_c,
+            alpha=cfg.alpha,
+        )
+    batch = simulate_batch(
+        cfg,
+        MISMATCH_SHOTS,
+        torch.device('cpu'),
+        torch.Generator().manual_seed(FIGURE_SEED),
+    )
+    fs = cfg.sample_rate
+
+    def psd(x: np.ndarray) -> np.ndarray:
+        _, p = signal.periodogram(x, fs=fs, window='hann', detrend='constant', axis=-1)
+        p = p.mean(axis=0)[..., 1:]
+        return p / p.max(axis=-1, keepdims=True)
+
+    traces = batch.signals.double().numpy()
+    analytic = signal.hilbert(traces - traces.mean(axis=-1, keepdims=True), axis=-1)
+    phase = np.unwrap(np.angle(analytic), axis=-1)
+    fringe_rate = np.gradient(phase, axis=-1) * fs / (2 * np.pi)
+    freq = np.fft.rfftfreq(traces.shape[-1], d=1 / fs)[1:]
+    return MismatchSpectra(
+        freq_hz=freq,
+        velocity=psd(batch.velocity.double().numpy()),
+        displacement=psd(batch.displacement.double().numpy()),
+        fringe_rate=psd(fringe_rate),
+    )
 
 
 # Photodiode channels, in the order the dataset feeds them to the model, with

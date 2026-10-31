@@ -42,6 +42,7 @@ DOCUMENT_FIGURES = {
         "noise_ladder",
         "fisher_phase",
         "velocity_bounds",
+        "spectral_mismatch",
     ],
 }
 
