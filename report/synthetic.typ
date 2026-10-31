@@ -673,8 +673,8 @@ spread measured on three channels, and the nominal point ran for the TCN only.
 #assert(val("s1d_shape"), message: "on Michelson, retargeting no longer helps the LSTMs and costs the neural operator and TCN, or a retargeted cell now reaches the velocity-trained TCN")
 #assert(val("s1d_mamba_trained"), message: "Mamba no longer trains on velocity at C = 0.2")
 
-Without feedback no family separates from the TCN, and all sit far above the
-classical oracle; with feedback TCAN is best on velocity, and the LSTMs and
+Without feedback no family that trains separates from the TCN, and all sit far
+above the classical oracle; with feedback TCAN is best on velocity, and the LSTMs and
 the offline neural operator do not train under this protocol, on either
 target (@fig-families). Every
 result so far uses the TCN, so we ask whether the architecture is the limit.
