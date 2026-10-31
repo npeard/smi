@@ -1146,7 +1146,19 @@ def prediction_values(records: dict[str, RunRecord], zero: float) -> dict[str, s
         runs = [mean_metric(r, 'velocity_rmse') for r in noise_seeds(records, sim_name)]
         return sig(sum(runs) / len(runs) / zero, 2)
 
+    def triple_ratio(sim: str, metric: str) -> str:
+        """The best single channel's TCN error over the three-channel set's."""
+        rmse = {
+            w: mean_metric(records[cell_key('tcn-44k', w, sim, 0)], metric)
+            for w in [*Q1_SINGLES, SYNTHETIC_WAVELENGTHS_UM]
+        }
+        best = min(rmse[w] for w in Q1_SINGLES)
+        return sig(best / rmse[SYNTHETIC_WAVELENGTHS_UM], 3)
+
     return {
+        # The two ends of prediction 6: noise-free, and the nominal 30 dB point.
+        'pred_triple_free': triple_ratio('s2-smi-a3', Q1_S2_SIMS['s2-smi-a3']),
+        'pred_triple_30': triple_ratio('q1-nominal-snr_db=30', 'velocity_rmse'),
         'pred_base_ratio': ratio('ladder-base'),
         'pred_nominal_ratio': ratio('nominal'),
         'pred_c09_ratio': ratio('nominal-c0.9'),
