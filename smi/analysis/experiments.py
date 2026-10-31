@@ -313,7 +313,8 @@ def _family(text: str) -> tuple[dict[str, Any], bool]:
     return family, create_model(family['model']).requires_full_length
 
 
-def _training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
+def training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
+    """The resolved training config of a trained ``cell`` of ``grid``."""
     cached, requires_full_length = _family(cell.family_config.read_text())
     # A copy: TrainingInterface writes in_channels into its model config.
     family = copy.deepcopy(cached)
@@ -533,7 +534,7 @@ def run_grid(
         cells = [c for c in cells if any(fnmatch.fnmatch(c.key, p) for p in only)]
     # Resolved once, before any training: TrainingInterface edits its config.
     configs = {
-        c.key: None if c.seed is None else _training_config(c, grid) for c in cells
+        c.key: None if c.seed is None else training_config(c, grid) for c in cells
     }
     fingerprints = {c.key: _fingerprint(c, grid, configs[c.key]) for c in cells}
     with runner_lock(lock_path):

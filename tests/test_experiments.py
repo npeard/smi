@@ -179,7 +179,7 @@ def test_full_length_model_ignores_the_grid_crop(tmp_path):
     (tmp_path / family).write_text((MATCHED / family).read_text())
     path = _grid(tmp_path, families=[{'name': 'no', 'config': family}])
     grid, (cell, *_) = expand_grid(path)
-    config = experiments._training_config(cell, grid)
+    config = experiments.training_config(cell, grid)
     assert config.synthetic_config['train_crop_length'] is None
     assert config.synthetic_config['steps_per_epoch'] == 1  # grid value kept
 
@@ -187,7 +187,7 @@ def test_full_length_model_ignores_the_grid_crop(tmp_path):
 def test_family_crop_does_not_override_the_grid_crop(tmp_path):
     path = _grid(tmp_path, family_synthetic={'train_crop_length': None})
     grid, (cell, *_) = expand_grid(path)
-    config = experiments._training_config(cell, grid)
+    config = experiments.training_config(cell, grid)
     assert config.synthetic_config['train_crop_length'] == 256
 
 

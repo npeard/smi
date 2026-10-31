@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import argparse
 import math
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.typing import RcKeyType
 
-from smi.analysis.experiments import Cell, expand_grid
+from smi.analysis.experiments import Cell, expand_grid, training_config
 from smi.analysis.results_artifact import RunRecord, read_results
 from smi.synthetic.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
 from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
@@ -66,11 +66,6 @@ Q3_FEEDBACK_C = (0.05, 0.1, 0.2, 0.4, 0.7, 0.9)
 Q3_BUDGETS = (('tcn-44k-T90', 90), ('tcn-44k', 30))
 
 
-# training.convergence.min_epochs, as every family YAML under
-# smi/analysis/models/configs/ sets it. Records do not store it, and the
-# artifact's records are not tied to one grid, so it is named here.
-GRACE_MIN_EPOCHS = 30
-
 # The sign-collapse controls of synthetic.typ sections 1.1 (the exit check's
 # signed Michelson run) and 2A (alpha = 0 at both schedules). They predate the
 # min_epochs grace and stopped by patience at epoch 11 on the zero-output
@@ -86,7 +81,9 @@ SIGN_COLLAPSE_CONTROLS = frozenset(
 
 
 def check_grace_protocol(
-    records: Iterable[RunRecord], min_epochs: int, expected_collapses: Collection[str]
+    records: Iterable[RunRecord],
+    min_epochs: Mapping[str, int],
+    expected_collapses: Collection[str],
 ) -> None:
     """Reject a record trained before the min_epochs grace that the grace would change.
 
@@ -101,7 +98,9 @@ def check_grace_protocol(
 
     Args:
         records: Records to check.
-        min_epochs: The grace the current family configs set.
+        min_epochs: The grace of each cell key under the current configs; a
+            legacy record whose key is absent has no grace to compare against
+            and is rejected like one stopped inside it.
         expected_collapses: Cell keys of such records the caller quotes as
             zero-output collapses stopped by patience under the old protocol,
             which is what the caller reports them as.
@@ -114,15 +113,31 @@ def check_grace_protocol(
         for record in records
         if record.zero_predictor_monitor is None
         and record.epochs_run is not None
-        and record.epochs_run <= min_epochs
         and record.epochs_run != record.max_epochs
         and record.cell_key not in expected_collapses
+        and (
+            record.cell_key not in min_epochs
+            or record.epochs_run <= min_epochs[record.cell_key]
+        )
     ]
     if stale:
         raise ValueError(
-            f'records trained before the min_epochs={min_epochs} grace stopped '
-            f'inside it; rerun them or name them as expected collapses: {stale}'
+            'records trained before the min_epochs grace stopped inside it, or '
+            'match no cell of a shipped grid; rerun them or name them as '
+            f'expected collapses: {stale}'
         )
+
+
+def grace_by_cell() -> dict[str, int]:
+    """``training.convergence.min_epochs`` of every trained cell of every grid."""
+    grace = {}
+    for path in sorted(EXPERIMENTS_DIR.glob('*.yaml')):
+        grid, cells = expand_grid(path)
+        for cell in cells:
+            if cell.seed is not None:
+                config = training_config(cell, grid)
+                grace[cell.key] = config.training_config['convergence']['min_epochs']
+    return grace
 
 
 def synthetic_records(expected_collapses: Collection[str]) -> dict[str, RunRecord]:
@@ -133,7 +148,7 @@ def synthetic_records(expected_collapses: Collection[str]) -> dict[str, RunRecor
             any other raises (see ``check_grace_protocol``).
     """
     records = read_results(SYNTHETIC_RESULTS_JSON)
-    check_grace_protocol(records, GRACE_MIN_EPOCHS, expected_collapses)
+    check_grace_protocol(records, grace_by_cell(), expected_collapses)
     return {r.cell_key: r for r in records if r.cell_key is not None}
 
 
