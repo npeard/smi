@@ -469,8 +469,9 @@ EXPERIMENTS = experiments.ANALYSIS_DIR / 'experiments'
 
 
 def test_displacement_grid_retargets_the_s1_cells_and_nothing_else():
-    """Each family is its matched config with only the target and loss weights
-    changed, on S1's sims and test sets, so each cell pairs with its S1 cell.
+    """Each family is its matched config with only the target, its monitor and
+    the loss weights changed, on S1's sims and test sets, so each cell pairs
+    with its S1 cell.
     """
     grid, cells = expand_grid(EXPERIMENTS / 'q3_s1d_displacement.yaml')
     s1_grid, s1_cells = expand_grid(EXPERIMENTS / 'q3_s1_families.yaml')
@@ -483,6 +484,7 @@ def test_displacement_grid_retargets_the_s1_cells_and_nothing_else():
         retargeted = yaml.safe_load(cell.family_config.read_text())
         matched = yaml.safe_load((MATCHED / cell.family_config.name).read_text())
         matched['training']['target'] = 'displacement'
+        matched['training']['convergence']['monitor'] = 'val/displacement_rmse_um'
         matched['loss'].update(velocity_loss_weight=0.0, displacement_loss_weight=1.0)
         assert retargeted == matched, cell.family_config.name
         monitor = training_config(cell, grid).training_config['convergence']

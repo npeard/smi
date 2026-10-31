@@ -19,7 +19,7 @@ training:
   max_epochs: 30
   check_val_every_n_epoch: 1  # validate every epoch; patience_epochs counts these
   convergence:  # stop on a plateau; max_epochs above stays the cap
-    monitor: "val/velocity_rmse_um_per_ms"  # the runner derives it from the loss
+    monitor: "val/displacement_rmse_um"  # the runner derives it from the loss and target
     patience_epochs: 10
     min_rel_delta: 0.01  # improvement below 1% of the best counts as none
     min_epochs: 30  # no stop sooner: S1 zero-output stalls lasted ~15 epochs, then escaped
