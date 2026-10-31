@@ -1,7 +1,11 @@
 """Tests for the report-side helpers shared by the synthetic figures."""
 
+from pathlib import Path
+
 import pytest
+import yaml
 from _figcommon import (
+    MATCHED_LENGTH_GRID,
     NOISE_LADDER_GRID,
     check_grace_protocol,
     grace_by_cell,
@@ -98,3 +102,17 @@ def test_record_run_under_another_sim_config_names_its_cell():
     stale = _record(cell_key=first.key, sim_config_hash='not-the-grid-hash')
     with pytest.raises(ValueError, match=first.key):
         noise_ladder({first.key: stale})
+
+
+def test_matched_length_grid_repeats_the_ladders_phase_drift_sweep():
+    """plot_noise_ladder pairs the 60-epoch cells to ladder rows by sim hash."""
+
+    def sweep(grid: Path) -> dict:
+        (entry,) = [
+            s
+            for s in yaml.safe_load(grid.read_text())['sims']
+            if s['name'] == 'ladder-phasedrift'
+        ]
+        return entry
+
+    assert sweep(MATCHED_LENGTH_GRID) == sweep(NOISE_LADDER_GRID)
