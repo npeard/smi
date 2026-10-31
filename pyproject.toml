@@ -36,6 +36,8 @@ build-backend = "flit_core.buildapi"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The figure scripts import _figcommon as a sibling module.
+pythonpath = ["report/figures"]
 python_files = "test_*.py"
 addopts = "--verbose"
 filterwarnings = [
@@ -328,6 +330,8 @@ python-version = "3.14"
 # `ty` is deterministic whether invoked via `pixi run typecheck` (env activated)
 # or directly by the pre-commit hook (`.pixi/envs/dev/bin/ty`, env not active).
 python = ".pixi/envs/dev"
+# The figure scripts and their tests import _figcommon as a sibling module.
+extra-paths = ["report/figures"]
 
 [tool.ty.src]
 # notebooks/ are exploratory marimo apps (like .ipynb, already excluded) with
