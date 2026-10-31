@@ -55,7 +55,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/11/3c/8740f5b4e1bd57333e4f84265b9b6363da4f7cf70f5622dd1e2fde7a0bd5/alembic-1.20.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/12/43/7da7fe42f254ce57777d1a86eece3f86d1b3329fc568d48e2bc16c8b7ebc/lightning-2.6.6-py3-none-any.whl
@@ -184,7 +184,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hbeba79b_4.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://files.pythonhosted.org/packages/04/37/b751de2b59b0197a1d92a5dd491de88e8a5e928c2e6562581974f1e85263/rpds_py-2026.9.1-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/04/5a/513484208742f65af2648c519f0b7ab034616e183c4403538024c136a1ab/contourpy-1.4.0-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl
@@ -294,7 +294,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/0c/41/3e3528f3b0f9ffae69310d2e71f81ff74d272ee3b6c0600c4f4abaa31a80/numba-0.68.0-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/11/3c/8740f5b4e1bd57333e4f84265b9b6363da4f7cf70f5622dd1e2fde7a0bd5/alembic-1.20.1-py3-none-any.whl
@@ -416,7 +416,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
@@ -587,7 +587,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hbeba79b_4.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/04/37/b751de2b59b0197a1d92a5dd491de88e8a5e928c2e6562581974f1e85263/rpds_py-2026.9.1-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
@@ -739,7 +739,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/02/8b/b83f7780dad22e0878e4c7bd9158ebd24ed12bc3d5e3a471cd0576f77ded/pyzmq-27.2.0-cp312-abi3-win_amd64.whl
@@ -904,7 +904,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/05/d1/8952806fbf9583004ab479d8f58a9496c3d35f6b6009ddd458bdd9978eaf/dpath-2.2.0-py3-none-any.whl
@@ -1039,7 +1039,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/typst-0.15.1-hc2d82ec_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/04/37/b751de2b59b0197a1d92a5dd491de88e8a5e928c2e6562581974f1e85263/rpds_py-2026.9.1-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/04/5a/513484208742f65af2648c519f0b7ab034616e183c4403538024c136a1ab/contourpy-1.4.0-cp314-cp314-macosx_11_0_arm64.whl
@@ -1155,7 +1155,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/05/d1/8952806fbf9583004ab479d8f58a9496c3d35f6b6009ddd458bdd9978eaf/dpath-2.2.0-py3-none-any.whl
@@ -1283,7 +1283,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/11/3c/8740f5b4e1bd57333e4f84265b9b6363da4f7cf70f5622dd1e2fde7a0bd5/alembic-1.20.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/12/43/7da7fe42f254ce57777d1a86eece3f86d1b3329fc568d48e2bc16c8b7ebc/lightning-2.6.6-py3-none-any.whl
@@ -1412,7 +1412,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hbeba79b_4.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://files.pythonhosted.org/packages/04/37/b751de2b59b0197a1d92a5dd491de88e8a5e928c2e6562581974f1e85263/rpds_py-2026.9.1-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/04/5a/513484208742f65af2648c519f0b7ab034616e183c4403538024c136a1ab/contourpy-1.4.0-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl
@@ -1522,7 +1522,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
       - pypi: ./
-      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+      - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/0c/41/3e3528f3b0f9ffae69310d2e71f81ff74d272ee3b6c0600c4f4abaa31a80/numba-0.68.0-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/11/3c/8740f5b4e1bd57333e4f84265b9b6363da4f7cf70f5622dd1e2fde7a0bd5/alembic-1.20.1-py3-none-any.whl
@@ -2689,9 +2689,9 @@ packages:
   - uncertainties ; extra == 'dev'
   - schemdraw ; extra == 'dev'
   requires_python: '>=3.14'
-- pypi: git+https://github.com/npeard/agent-config?tag=v0.1.0#1fb8e71836af5000c18caa13fcf59dfe98b9f367
+- pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
   name: agent-config
-  version: 0.1.0
+  version: 0.1.1
   requires_python: '>=3.11'
 - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-manylinux_2_28_x86_64.whl
   name: torch

@@ -210,7 +210,7 @@ scripts = ["scripts/link-torch-libomp.sh"]
 smi = { path = ".", editable = true }
 # The generic gates (check-ascii, preflight), pinned to the same tag as the
 # pre-commit hook. Bump both together.
-agent-config = { git = "https://github.com/npeard/agent-config", tag = "v0.1.0" }
+agent-config = { git = "https://github.com/npeard/agent-config", tag = "v0.1.1" }
 
 # Torch arrives via the editable `smi` install, and PyPI's default win-64 torch
 # wheel is CPU-only -- which cannot answer the GPU-residency question this
