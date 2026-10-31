@@ -344,3 +344,19 @@ def test_converged_needs_min_rel_delta_below_the_zero_predictor(
     stopping_reason = interface.convergence_callback.stopping_reason
     assert stopping_reason == EarlyStoppingReason.PATIENCE_EXHAUSTED
     assert interface.converged is converged
+
+
+def test_non_finite_monitor_inside_grace_still_stops_the_run(monkeypatch):
+    # The grace withdraws patience stops only: a NaN at epoch 5 ends the run
+    # there, as it did before the grace existed, even though the monitor is
+    # finite again later and patience would otherwise run out past the grace.
+    _script_log(
+        monkeypatch, lambda e: math.nan if e == 5 else 1.0, zero=lambda v: v * 1e6
+    )
+    config = _config(SIGNED, sign_invariant=False, max_epochs=40)
+    config.training_config['convergence']['min_epochs'] = 10
+    interface = _run(config)
+    stopping_reason = interface.convergence_callback.stopping_reason
+    assert stopping_reason == EarlyStoppingReason.NON_FINITE_METRIC
+    assert interface.epochs_run == 6
+    assert interface.converged is False

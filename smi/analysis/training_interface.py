@@ -99,9 +99,15 @@ class RelativeEarlyStopping(EarlyStopping):
     def _withdraw_stop_inside_grace(
         self, trainer: lightning_module.Trainer, stopped_before: bool
     ) -> None:
-        # Only this callback's own new signal: a stop already set by someone
-        # else before this check is left alone.
-        if trainer.current_epoch < self.min_epochs and not stopped_before:
+        # Only this callback's own new patience signal: a stop already set by
+        # someone else before this check is left alone, and a non-finite stop
+        # stands, since a NaN run is not "still converging" and must end with
+        # converged=False as it did before the grace existed.
+        if (
+            trainer.current_epoch < self.min_epochs
+            and not stopped_before
+            and self.stopping_reason == EarlyStoppingReason.PATIENCE_EXHAUSTED
+        ):
             trainer.should_stop = False
             self.stopping_reason = EarlyStoppingReason.NOT_STOPPED
             self.stopped_epoch = 0
