@@ -321,11 +321,6 @@ def noise_values(
     phase, snr = 'phase_drift_rad_per_sqrt_s', 'snr_db'
     minor = [f for f in ladder if f not in (phase, snr)]
     minor_shares = [share(f) for f in minor]
-    # The sweep runs 0.5, 1, 1.64, 2.7, 5.4 fringes per shot (forward.py):
-    # first is half the published low end, the middle three the published
-    # range.
-    half_fringe, *published_rows, _ = (row.record for row in ladder[phase])
-    published = [rmse(r) for r in published_rows]
     (c09,) = noise_seeds(records, 'nominal-c0.9')
     (nominal0,) = [r for r in noise_seeds(records, 'nominal') if r.seed == 0]
     # The causal bound at the 30 dB row's own config (unit visibility, no
@@ -333,6 +328,9 @@ def noise_values(
     snr_row = at_nominal(snr)
     snr_bound = float(bounds.pcrb_filter(prior, snr_row.sim, N_STEPS)[-1]) ** 0.5
     snr_cost = rmse(snr_row.record) - base_mean
+    (snr20_cost,) = [
+        rmse(row.record) - base_mean for row in ladder[snr] if row.value == 20
+    ]
     # The DC-offset rows that score below every base seed; the text names them
     # as the +/-0.3 and +/-1 rows and reports how long they trained.
     dc_low = [row for row in ladder['dc_offset_range'] if rmse(row.record) < min(base)]
@@ -350,8 +348,6 @@ def noise_values(
 
     def above_base(field: str) -> list[object]:
         return [row.value for row in ladder[field] if rmse(row.record) > max(base)]
-
-    snr_nominal = rmse(snr_row.record)
 
     # Leave-one-out: the nominal point with one knob returned to noise-free,
     # read as the drop below the nominal seeds' mean.
@@ -378,6 +374,15 @@ def noise_values(
     e60_nominal = e60['nominal']
     e60_nodrift = e60['nominal-no-phasedrift']
     e60_base = e60['ladder-base']
+    # The ladder's drift sweep rerun at 60 epochs on the same sim configs,
+    # matched to the ladder rows by config hash, in sweep order.
+    e60_by_hash = {
+        r.sim_config_hash: rmse(r) for r in matched_length_cells(records).values()
+    }
+    phase_rows = [row.record for row in ladder[phase]]
+    e60_drift_rmse = [e60_by_hash[r.sim_config_hash] for r in phase_rows]
+    e60_drift_nominal = e60_by_hash[at_nominal(phase).record.sim_config_hash]
+    e60_half_kept = (e60_drift_rmse[0] - e60_base) / (e60_drift_nominal - e60_base)
     # Fractional gain from 35 to 60 epochs, against the ladder's seeds.
     nominal_gain = 1 - e60_nominal / nominal_mean
     base_gain = 1 - e60_base / base_mean
@@ -410,9 +415,9 @@ def noise_values(
         'loo_e60_cut': pct(1 - e60_nodrift / e60_nominal),
         'loo_e60_base_gain': pct(base_gain),
         'loo_e60_nominal_gain': pct(nominal_gain),
-        # The text: at equal length the cut still clears the nominal spread
+        # The text: at equal length the cut exceeds the nominal seed spread,
         # and the ranking base < no-phase-drift < nominal is unchanged.
-        'loo_e60_outside': e60_nodrift < min(nominal) - width,
+        'loo_e60_outside': e60_nodrift < e60_nominal - width,
         'loo_e60_same_ranking': e60_base < e60_nodrift < e60_nominal,
         'loo_snr_saving': sig(nominal_mean - rmse(loo[snr]), 1),
         # The text: removing SNR saves under a third of what it costs alone.
@@ -420,9 +425,13 @@ def noise_values(
         # The text: only 8 bits and a 3 kHz bandwidth leave the base spread.
         'noise_electronics_flat': above_base('adc_bits') == [8]
         and above_base('pd_bandwidth_hz') == [3e3],
-        # The text: at 20% each drift costs about what 30 dB white noise does.
+        # The text: removing any one electronic knob moves the error at most
+        # as much as removing the bandwidth limit.
+        'loo_electronics_max_pdbw': max(cut(f) for f in (snr, 'adc_bits', pdbw))
+        == cut(pdbw),
+        # The text: at 20% each drift costs comparably to 30 dB white noise.
         'noise_drift_20_like_snr': all(
-            abs(rmse(row.record) / snr_nominal - 1) < 0.1
+            2 / 3 < (rmse(row.record) - base_mean) / snr_cost < 3 / 2
             for f in ('amplitude_drift_rel', 'contrast_drift_rel')
             for row in ladder[f]
             if row.value == 0.2
@@ -436,18 +445,30 @@ def noise_values(
         'noise_spread_share': pct((max(base) - min(base)) / excess),
         # The ranking the text states: phase drift, then SNR, then the rest.
         'noise_ranking': share(phase) > share(snr) > max(minor_shares),
-        # The text calls the error over the published range nearly flat.
-        'noise_phase_flat': max(published) / min(published) < 1.1,
-        'noise_phase_half_above_base': rmse(half_fringe) > max(base),
-        'noise_phase_half_kept': pct(
-            (rmse(half_fringe) - base_mean)
-            / (rmse(at_nominal(phase).record) - base_mean)
+        'noise_phase_epochs_lo': str(min(r.epochs_run or 0 for r in phase_rows)),
+        'noise_phase_epochs_hi': str(max(r.epochs_run or 0 for r in phase_rows)),
+        # The text: at equal length the drift curve rises monotonically, and
+        # cutting drift to its lowest swept level keeps most of its cost.
+        'noise_e60_phase_monotone': e60_base < e60_drift_rmse[0]
+        and all(a < b for a, b in itertools.pairwise(e60_drift_rmse)),
+        'noise_e60_low_fringes': sig(
+            ladder[phase][0].sim.phase_drift_rad_per_sqrt_s
+            / NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S
+            * NOMINAL_PHASE_DRIFT_FRINGES,
+            1,
         ),
+        'noise_e60_half_kept': pct(e60_half_kept),
+        'noise_e60_half_keeps_most': e60_half_kept > 0.5,
         'noise_c09_ratio': sig(rmse(nominal0) / rmse(c09), 2),
         'noise_snr_cost': sig(snr_cost, 2),
         'noise_snr_bound': sig(snr_bound, 2),
-        'noise_snr_cost_over_bound': f'{snr_cost / snr_bound:.0f}',
-        'noise_snr_above_bound': snr_cost > snr_bound,
+        # The text: the base alone sits this far above the bound, so the
+        # prediction's floor cannot bind at this budget.
+        'noise_base_over_bound': f'{base_mean / snr_bound:.0f}',
+        'noise_bound_no_power': base_mean > 5 * snr_bound,
+        # The text: at 20 dB the white-noise cost about doubles.
+        'noise_snr20_cost': sig(snr20_cost, 2),
+        'noise_snr20_doubles': 1.7 < snr20_cost / snr_cost < 2.3,
         'noise_dc_low_named': sorted(row.value[1] for row in dc_low) == [0.3, 1.0],
         'noise_dc_low_epochs': '/'.join(
             sorted({str(row.record.epochs_run) for row in dc_low})

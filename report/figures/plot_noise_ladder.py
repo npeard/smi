@@ -3,9 +3,11 @@
 
 One panel per knob, each swept alone from the noise-free base, with every x
 axis ordered so the knob degrades the signal to the right. Shaded bands are
-the seed spread of the noise-free base and of every knob at nominal; the
-dotted line is every knob at nominal with C = 0.9. Reads the runner's records
-in synthetic_results.json and recomputes nothing.
+the seed spread of the noise-free base and of every knob at nominal, each
+with a line at its seed mean; the dotted line is every knob at nominal with
+C = 0.9. The phase-drift panel adds the same sweep and base rerun at exactly
+60 epochs, since the ladder's drift rows stopped at different lengths. Reads
+the runner's records in synthetic_results.json and recomputes nothing.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from _figcommon import (
     COLORS,
     FIGSIZE_TALL,
     NOMINAL_PHASE_DRIFT_FRINGES,
+    matched_length_cells,
     mean_metric,
     noise_ladder,
     noise_seeds,
@@ -40,8 +43,8 @@ PANELS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ('phase_drift_rad_per_sqrt_s', 'phase drift', 'fringes per shot', True, False),
     ('snr_db', 'white noise', 'SNR (dB)', False, True),
     ('visibility_range', 'visibility', r'lowest $V$', False, True),
-    ('amplitude_drift_rel', 'amplitude drift', 'relative', True, False),
-    ('contrast_drift_rel', 'contrast drift', 'relative', True, False),
+    ('amplitude_drift_rel', 'amplitude drift', 'relative std at shot end', True, False),
+    ('contrast_drift_rel', 'contrast drift', 'relative std at shot end', True, False),
     ('dc_offset_range', 'DC offset', 'half-range (fringe units)', True, False),
     ('pd_bandwidth_hz', 'PD bandwidth', 'kHz', True, True),
     ('adc_bits', 'ADC', 'bits', False, True),
@@ -64,6 +67,8 @@ def knob_x(field: str, value: object) -> float:
 LINE = COLORS['accent']
 BASE = COLORS['muted']
 NOMINAL = COLORS['ch635']
+EQUAL_LENGTH = COLORS['highlight']
+PHASE = 'phase_drift_rad_per_sqrt_s'
 
 
 def main() -> None:
@@ -71,13 +76,18 @@ def main() -> None:
     records = synthetic_records()
     ladder = noise_ladder(records)
 
-    def rmse_span(sim: str) -> tuple[float, float]:
+    def rmse_span(sim: str) -> tuple[float, float, float]:
         values = [mean_metric(r, 'velocity_rmse') for r in noise_seeds(records, sim)]
-        return min(values), max(values)
+        return min(values), max(values), sum(values) / len(values)
 
     base = rmse_span('ladder-base')
     nominal = rmse_span('nominal')
     (c09,) = noise_seeds(records, 'nominal-c0.9')
+    # The 60-epoch reruns share the ladder's sim configs, so the config hash
+    # pairs each with its ladder row.
+    cells = matched_length_cells(records)
+    e60 = {r.sim_config_hash: mean_metric(r, 'velocity_rmse') for r in cells.values()}
+    e60_base = mean_metric(cells['ladder-base'], 'velocity_rmse')
 
     fig, axes = plt.subplots(2, 4, figsize=FIGSIZE_TALL, sharey=True)
     for ax, (field, title, xlabel, log_x, invert) in zip(
@@ -86,14 +96,25 @@ def main() -> None:
         rows = ladder[field]
         x = [knob_x(field, row.value) for row in rows]
         y = [mean_metric(row.record, 'velocity_rmse') for row in rows]
-        ax.axhspan(*base, color=BASE, alpha=0.35, linewidth=0)
-        ax.axhspan(*nominal, color=NOMINAL, alpha=0.35, linewidth=0)
+        for (lo, hi, mean), color in ((base, BASE), (nominal, NOMINAL)):
+            ax.axhspan(lo, hi, color=color, alpha=0.25, linewidth=0)
+            ax.axhline(mean, color=color, lw=1.2)
         ax.axhline(mean_metric(c09, 'velocity_rmse'), color=NOMINAL, ls=':', lw=1.2)
         ax.plot(x, y, color=LINE, marker='o', markersize=4, linewidth=1.5)
         (nom,) = [
             (xi, yi) for xi, yi, row in zip(x, y, rows, strict=True) if row.nominal
         ]
         ax.plot(*nom, marker='o', markersize=9, markerfacecolor='none', color=NOMINAL)
+        if field == PHASE:
+            ax.axhline(e60_base, color=EQUAL_LENGTH, ls='--', lw=1.2)
+            ax.plot(
+                x,
+                [e60[row.record.sim_config_hash] for row in rows],
+                color=EQUAL_LENGTH,
+                marker='s',
+                markersize=4,
+                linewidth=1.5,
+            )
         if log_x:
             ax.set_xscale('log')
             ax.minorticks_off()
@@ -118,9 +139,11 @@ def main() -> None:
             color=NOMINAL,
             ls='',
         ),
-        Patch(color=BASE, alpha=0.35, linewidth=0),
-        Patch(color=NOMINAL, alpha=0.35, linewidth=0),
+        (Patch(color=BASE, alpha=0.25, linewidth=0), Line2D([], [], color=BASE)),
+        (Patch(color=NOMINAL, alpha=0.25, linewidth=0), Line2D([], [], color=NOMINAL)),
         Line2D([], [], color=NOMINAL, ls=':', lw=1.2),
+        Line2D([], [], color=EQUAL_LENGTH, marker='s', markersize=4),
+        Line2D([], [], color=EQUAL_LENGTH, ls='--', lw=1.2),
     ]
     labels = [
         'one knob on',
@@ -128,12 +151,14 @@ def main() -> None:
         'noise-free, 3 seeds',
         'all knobs nominal, 3 seeds',
         r'all nominal, $C=0.9$',
+        'phase drift, 60 epochs',
+        'noise-free, 60 epochs',
     ]
     fig.legend(
         handles=handles,
         labels=labels,
         loc='lower center',
-        ncol=5,
+        ncol=4,
         fontsize=8,
         bbox_to_anchor=(0.5, 1.0),
     )

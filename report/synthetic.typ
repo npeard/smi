@@ -439,15 +439,17 @@ at $C = 0.2$.
 == Noise ladder <sec-q3-noise>
 
 #assert(val("noise_ranking"), message: "the noise ladder no longer ranks phase drift, then SNR, then the rest")
-#assert(val("noise_phase_flat"), message: "the phase-drift rows over the published range are no longer within 10%")
-#assert(val("noise_phase_half_above_base"), message: "the half-fringe phase-drift row no longer lies above the base spread")
-#assert(val("noise_snr_above_bound"), message: "the 30 dB row's cost no longer exceeds the causal bound")
+#assert(val("noise_e60_phase_monotone"), message: "at equal length the phase-drift error no longer rises monotonically with drift")
+#assert(val("noise_e60_half_keeps_most"), message: "at equal length the lowest swept drift no longer keeps over half the nominal drift's cost")
+#assert(val("noise_bound_no_power"), message: "the noise-free base no longer sits over 5 times the 30 dB causal bound")
 #assert(val("noise_electronics_flat"), message: "an ADC or PD-bandwidth row other than 8 bits or 3 kHz now leaves the base spread")
-#assert(val("noise_drift_20_like_snr"), message: "the 20% drift rows no longer match the 30 dB row")
+#assert(val("loo_electronics_max_pdbw"), message: "removing white noise or the ADC now moves the nominal error more than removing the PD bandwidth limit")
+#assert(val("noise_drift_20_like_snr"), message: "the 20% drift rows' cost is no longer within a factor 1.5 of the 30 dB row's")
+#assert(val("noise_snr20_doubles"), message: "the 20 dB row's cost is no longer about twice the 30 dB row's")
 #assert(val("noise_dc_low_named"), message: "the DC-offset rows below the base are no longer the +/-0.3 and +/-1 rows")
 #assert(val("loo_outside_named"), message: "the leave-one-out cells clearly below the nominal spread are no longer phase drift, then visibility and PD bandwidth")
 #assert(val("loo_long_named"), message: "the leave-one-out cells that trained into a third cycle are no longer phase drift and PD bandwidth")
-#assert(val("loo_e60_outside"), message: "at equal length, removing phase drift no longer leaves the nominal seed spread")
+#assert(val("loo_e60_outside"), message: "at equal length, removing phase drift no longer cuts the nominal error by more than the nominal seed spread")
 #assert(val("loo_e60_same_ranking"), message: "at equal length, the base, no-phase-drift and nominal cells no longer rank in that order")
 #assert(val("loo_snr_subadditive"), message: "removing SNR from the nominal point now saves a third or more of its ladder cost")
 
@@ -465,24 +467,26 @@ ladder cannot show; @tab-loo removes each from the nominal point instead.
 #fig(
   "noise_ladder",
   caption: [
-    Of the eight knobs, only phase drift at its nominal value moves the error
-    far from the noise-free base. Test velocity RMSE, mean over the
+    Test velocity RMSE, mean over the
     #val("test_shots") frozen shots (seed #val("test_seed")), of TCN-44k on
     three channels at $C = 0.2$, $alpha = 3$, seed 0, with one knob on and the
-    rest noise-free. Ringed: the knob's nominal value. Grey band: the
-    noise-free base over #val("noise_n_seeds") seeds; red band: every knob at
-    nominal over #val("noise_n_seeds") seeds; dotted: every knob at nominal at
-    $C = 0.9$, one seed. Each x axis runs toward the worse signal; the nominal
+    rest noise-free. Ringed: the knob's nominal value. Grey and red bands, each
+    with a line at its mean: the noise-free base and every knob at nominal,
+    over #val("noise_n_seeds") seeds; dotted: every knob at nominal at
+    $C = 0.9$, one seed. Squares and dashed line (phase drift only): the drift
+    sweep and the base trained exactly #val("loo_e60_epochs") epochs. Each x axis runs toward the worse signal; the nominal
     phase drift is #val("noise_phase_rad") rad$\/sqrt("s")$.
   ],
 ) <fig-noise>
 
-Across the published range of 1 to 2.7 fringes per shot the phase-drift
-error is nearly flat (@fig-noise). At 0.5 fringes, half the
-published low end, it still keeps #val("noise_phase_half_kept")% of its
-nominal cost. A few-fold cut in drift therefore buys little. The ladder
-samples nothing between 0 and 0.5 fringes, so how far drift must fall to
-pay is untested.
+A partial cut in phase drift recovers only part of its cost (@fig-noise,
+squares). The ladder's drift rows stopped at #val("noise_phase_epochs_lo")
+to #val("noise_phase_epochs_hi") epochs, so the sweep was rerun at exactly
+#val("loo_e60_epochs"), where the error rises monotonically with drift.
+Cutting drift from the nominal #val("noise_phase_fringes") to
+#val("noise_e60_low_fringes") fringes per shot keeps
+#val("noise_e60_half_kept")% of its cost over the equal-length base. No run
+sampled drift between 0 and #val("noise_e60_low_fringes") fringes.
 
 Removing phase drift from the nominal point cuts its error by
 #val("loo_phase_cut")%, the only large single removal (@tab-loo). Each cell
@@ -503,8 +507,7 @@ spread.
     ..val("loo_rows").map(row => ([#row.label], [#row.rmse], [#row.epochs])).flatten(),
   )),
   caption: [
-    Only phase drift, removed from the nominal point, takes the error far
-    below it. Test velocity RMSE ($mu$m/ms) on the frozen shots of
+    Test velocity RMSE ($mu$m/ms) on the frozen shots of
     @fig-noise, TCN-44k on three channels at $C = 0.2$, $alpha = 3$, seed 0,
     with the named knob noise-free and the rest at nominal. Epochs: when
     patience stopped the run, under the 30-epoch cycle.
@@ -515,7 +518,7 @@ Training length does not explain the cut. With plateau stopping disabled, the
 nominal point, the nominal point without phase drift and the noise-free base
 each trained exactly #val("loo_e60_epochs") epochs, one seed each. At equal
 length, removing phase drift cuts the nominal error by #val("loo_e60_cut")%,
-outside the nominal seed spread. The same runs leave the ranking unchanged, though the
+far more than the nominal seed spread. The same runs leave the ranking unchanged, though the
 extra epochs help the base (#val("loo_e60_base_gain")%) far more than the
 nominal point (#val("loo_e60_nominal_gain")%), against the ladder's seeds.
 
@@ -524,34 +527,41 @@ base error by #val("noise_snr_cost") $mu$m/ms, but removing it from the
 nominal point saves #val("loo_snr_saving") $mu$m/ms. These grids do not
 show which other knob its cost depends on.
 
-The leave-one-out makes the case against new electronics directly. With
-every other knob on, noise-free electronics (no white noise, no ADC, no
-bandwidth limit) move the error by at most #val("loo_pdbw_cut")%, and that
-largest move came with the longer training. In the ladder, too, only 8 bits
-or a 3 kHz bandwidth rise above the base. The case for optical changes
-stands. Phase drift is optical path length
-and laser frequency drift, so the levers it supports are stabilizing the
-path or the laser, or reading the drift from a monitor channel. Full
-visibility is an alignment and speckle lever, and raising $C$ to 0.9, in one
-seed, cuts the nominal-point error by a factor #val("noise_c09_ratio"). No
-grid here tests any of these levers on the rig.
+With every other knob on, removing any one electronic knob (white noise,
+the ADC or the bandwidth limit) moves the error by at most
+#val("loo_pdbw_cut")%, and that largest move came with the longer training.
+No run removed all three together, and the knobs do not add. In the ladder,
+the ADC and bandwidth rows rise above the base only at 8 bits or 3 kHz.
+White noise alone gives #val("noise_snr_share")% of the nominal excess, so
+it is the likely next limit once drift is fixed.
+
+In the simulation, phase drift is an independent random walk per channel,
+as per-laser frequency drift would be. A path-length drift shared by all
+channels would read as displacement and was not simulated. The measured 1
+to 2.7 fringes is the phase wander the baseline report's global fit leaves,
+with no source attributed. The lever this supports is per-laser frequency
+stability or a per-laser phase monitor, not a common-path stabilization.
+Full visibility is an alignment and speckle lever, and raising $C$ to 0.9,
+in one seed, cuts the nominal-point error by a factor
+#val("noise_c09_ratio"). No grid here tests any of these levers on the rig.
 
 Every nominal value is itself an assumption. The nominal drive gain and phase
 drift are anchored to numbers the baseline report published, as context
 rather than a calibration, and the phase-drift nominal is a lower bound on
 the true rate. SNR, visibility, DC offset, amplitude and contrast drift
 and the photodiode bandwidth are stated guesses with wide sweeps. At 20%,
-four times their assumed value, amplitude and contrast drift each cost about
-what 30 dB white noise does (@fig-noise). Measuring these drifts and the
-rig's SNR would therefore test the verdict above.
+four times their assumed value, amplitude and contrast drift each cost
+comparably to 30 dB white noise (@fig-noise). The verdict also rests on the
+guessed 30 dB: at 20 dB the white-noise cost doubles, to
+#val("noise_snr20_cost") $mu$m/ms. Measuring these drifts and the rig's SNR
+would therefore test the verdict above.
 
-The pre-registered noise prediction of @sec-predictions holds, with a wide
-margin. The 30 dB row exceeds the noise-free base by
-#val("noise_snr_cost") $mu$m/ms, #val("noise_snr_cost_over_bound") times
-the causal bound of #val("noise_snr_bound") $mu$m/ms at that row's own
-settings. The bound floors the total error of an efficient estimator, within
-the simplifications of @sec-crb, so a learned model above it is expected.
-The ladder measures how far the TCN falls short of it at this budget.
+The 30 dB row is consistent with the causal floor of @sec-predictions, but
+the comparison has no power here. The bound floors the total error of an
+efficient estimator, within the simplifications of @sec-crb, not the
+increase a knob adds. The noise-free base alone sits
+#val("noise_base_over_bound") times above the bound of
+#val("noise_snr_bound") $mu$m/ms at the 30 dB row's settings.
 
 Two DC-offset rows, $plus.minus 0.3$ and $plus.minus 1$, score below every
 seed of the noise-free base. Both trained #val("noise_dc_low_epochs")
