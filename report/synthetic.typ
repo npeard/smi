@@ -447,8 +447,8 @@ at $C = 0.2$.
 #assert(val("noise_dc_low_named"), message: "the DC-offset rows below the base are no longer the +/-0.3 and +/-1 rows")
 #assert(val("loo_outside_named"), message: "the leave-one-out cells clearly below the nominal spread are no longer phase drift, then visibility and PD bandwidth")
 #assert(val("loo_long_named"), message: "the leave-one-out cells that trained into a third cycle are no longer phase drift and PD bandwidth")
-#assert(val("loo_share_rel_most"), message: "the base's fractional gain from longer training no longer explains most of the phase-drift cut")
-#assert(val("loo_phase_net_outside"), message: "net of the base's longer-training gain, removing phase drift no longer leaves the nominal spread")
+#assert(val("loo_e60_outside"), message: "at equal length, removing phase drift no longer leaves the nominal seed spread")
+#assert(val("loo_e60_same_ranking"), message: "at equal length, the base, no-phase-drift and nominal cells no longer rank in that order")
 #assert(val("loo_snr_subadditive"), message: "removing SNR from the nominal point now saves a third or more of its ladder cost")
 
 Phase drift dominates the error at the nominal operating point
@@ -511,18 +511,13 @@ spread.
   ],
 ) <tab-loo>
 
-Longer training may account for part of that cut, and the records do not
-say how much. The phase-drift and photodiode-bandwidth cells trained
-#val("loo_long_epochs") epochs, into a third cosine cycle, against
-#val("loo_short_epochs_lo") to #val("loo_short_epochs_hi") for the rest, which
-can only favor them. On the noise-free base, the longer cycles of
-@sec-q3-curve trained #val("loo_base_long_epochs") epochs. Their gain over the
-base seeds, carried over in $mu$m/ms, would explain
-#val("loo_share_abs_lo") to #val("loo_share_abs_hi")% of the phase-drift cut;
-carried over as a fraction, most of it or more. The bandwidth cell, whose
-knob alone sits on the base, gained #val("loo_share_pdbw")% as much at the
-nominal point itself. Net of the base's larger gain in $mu$m/ms, removing
-phase drift still leaves the nominal spread.
+Training length does not explain the cut. With plateau stopping disabled, the
+nominal point, the nominal point without phase drift and the noise-free base
+each trained exactly #val("loo_e60_epochs") epochs, one seed each. At equal
+length, removing phase drift cuts the nominal error by #val("loo_e60_cut")%,
+outside the nominal seed spread. The same runs leave the ranking unchanged, though the
+extra epochs help the base (#val("loo_e60_base_gain")%) far more than the
+nominal point (#val("loo_e60_nominal_gain")%), against the ladder's seeds.
 
 White noise and the other knobs do not add. Alone at 30 dB it raises the
 base error by #val("noise_snr_cost") $mu$m/ms, but removing it from the
@@ -534,7 +529,7 @@ every other knob on, noise-free electronics (no white noise, no ADC, no
 bandwidth limit) move the error by at most #val("loo_pdbw_cut")%, and that
 largest move came with the longer training. In the ladder, too, only 8 bits
 or a 3 kHz bandwidth rise above the base. The case for optical changes
-stands, subject to the training caveat. Phase drift is optical path length
+stands. Phase drift is optical path length
 and laser frequency drift, so the levers it supports are stabilizing the
 path or the laser, or reading the drift from a monitor channel. Full
 visibility is an alignment and speckle lever, and raising $C$ to 0.9, in one

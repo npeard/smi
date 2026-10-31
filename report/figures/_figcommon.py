@@ -91,6 +91,7 @@ EXPERIMENTS_DIR = REPO_ROOT / 'smi' / 'analysis' / 'experiments'
 NOISE_LADDER_GRID = EXPERIMENTS_DIR / 'q3_s3_noise_ladder.yaml'
 NOISE_SPREAD_GRID = EXPERIMENTS_DIR / 'q3_s3_spread.yaml'
 LEAVE_ONE_OUT_GRID = EXPERIMENTS_DIR / 'q3_s3_leave_one_out.yaml'
+MATCHED_LENGTH_GRID = EXPERIMENTS_DIR / 'q3_s3_matched_length.yaml'
 # forward.py sets the nominal phase drift at the geometric middle of the
 # published 1 to 2.7 fringes per shot; drift in fringes per shot is linear in
 # the rate, so this converts a swept rate to fringes.
@@ -167,6 +168,13 @@ def noise_seeds(records: dict[str, RunRecord], sim_name: str) -> list[RunRecord]
         if name == sim_name
     }
     return list(found.values())
+
+
+def matched_length_cells(records: dict[str, RunRecord]) -> dict[str, RunRecord]:
+    """The equal-length grid's records, keyed by sim name."""
+    return {
+        name: record for name, _, record in _grid_records(records, MATCHED_LENGTH_GRID)
+    }
 
 
 # Photodiode channels, in the order the dataset feeds them to the model, with

@@ -39,6 +39,7 @@ from _figcommon import (
     Q3_FEEDBACK_C,
     SYNTHETIC_WAVELENGTHS_UM,
     LadderRow,
+    matched_length_cells,
     mean_metric,
     noise_ladder,
     noise_seeds,
@@ -292,9 +293,6 @@ LEAVE_ONE_OUT = (
     ('pd_bandwidth_hz', 'pdbw', 'PD bandwidth'),
     ('adc_bits', 'adc', 'ADC'),
 )
-# The families that trained section Q3's noise-free C = 0.2 cell for longer
-# cycles than the ladder's 30 epochs.
-LONGER_BASE = ('tcn-44k-T270', 'tcn-44k-T90')
 
 
 def noise_values(
@@ -373,21 +371,16 @@ def noise_values(
         return rmse(loo[field]) < min(nominal) - width
 
     loo_long = {f for f, r in loo.items() if (r.epochs_run or 0) > 2 * (r.T_0 or 0)}
-    phase_gain = nominal_mean - rmse(loo[phase])
-    # What longer training bought the noise-free base itself: the same sim
-    # trained under section Q3's longer cycles, against the ladder's base seeds.
-    longer_base = [
-        synthetic_cell(records, f, 'smi-a3-feedback_c=0.2') for f in LONGER_BASE
-    ]
-    assert all(r.sim_config_hash == base_runs[0].sim_config_hash for r in longer_base)
-    base_gains = [base_mean - rmse(r) for r in longer_base]
-    # The same gains as fractions, applied to the no-phase-drift cell: the
-    # share of its gain that the extra epochs would then account for.
-    rel_shares = [
-        (rmse(loo[phase]) / (1 - g / base_mean) - rmse(loo[phase])) / phase_gain
-        for g in base_gains
-    ]
     pdbw = 'pd_bandwidth_hz'
+    # The equal-length grid: all three cells trained exactly 60 epochs.
+    e60 = {name: rmse(r) for name, r in matched_length_cells(records).items()}
+    assert {r.epochs_run for r in matched_length_cells(records).values()} == {60}
+    e60_nominal = e60['nominal']
+    e60_nodrift = e60['nominal-no-phasedrift']
+    e60_base = e60['ladder-base']
+    # Fractional gain from 35 to 60 epochs, against the ladder's seeds.
+    nominal_gain = 1 - e60_nominal / nominal_mean
+    base_gain = 1 - e60_base / base_mean
     loo_rows = sorted(loo.items(), key=lambda item: rmse(item[1]))
     return {
         'loo_rows': [
@@ -413,25 +406,14 @@ def noise_values(
         # The text: only the phase-drift and PD-bandwidth cells trained into
         # a third cosine cycle.
         'loo_long_named': loo_long == {phase, pdbw},
-        'loo_long_epochs': ' and '.join(
-            sorted({str(loo[f].epochs_run) for f in loo_long})
-        ),
-        'loo_short_epochs_lo': str(
-            min(r.epochs_run or 0 for f, r in loo.items() if f not in loo_long)
-        ),
-        'loo_short_epochs_hi': str(
-            max(r.epochs_run or 0 for f, r in loo.items() if f not in loo_long)
-        ),
-        'loo_base_long_epochs': ' and '.join(str(r.epochs_run) for r in longer_base),
-        'loo_share_pdbw': pct((nominal_mean - rmse(loo[pdbw])) / phase_gain),
-        'loo_share_abs_lo': pct(min(base_gains) / phase_gain),
-        'loo_share_abs_hi': pct(max(base_gains) / phase_gain),
-        # The text: as fractions, the base's gains would explain most of it.
-        'loo_share_rel_most': min(rel_shares) > 0.5,
-        # The text: even net of the base's largest absolute gain, removing
-        # phase drift leaves the nominal spread.
-        'loo_phase_net_outside': rmse(loo[phase]) + max(base_gains)
-        < min(nominal) - width,
+        'loo_e60_epochs': '60',
+        'loo_e60_cut': pct(1 - e60_nodrift / e60_nominal),
+        'loo_e60_base_gain': pct(base_gain),
+        'loo_e60_nominal_gain': pct(nominal_gain),
+        # The text: at equal length the cut still clears the nominal spread
+        # and the ranking base < no-phase-drift < nominal is unchanged.
+        'loo_e60_outside': e60_nodrift < min(nominal) - width,
+        'loo_e60_same_ranking': e60_base < e60_nodrift < e60_nominal,
         'loo_snr_saving': sig(nominal_mean - rmse(loo[snr]), 1),
         # The text: removing SNR saves under a third of what it costs alone.
         'loo_snr_subadditive': nominal_mean - rmse(loo[snr]) < snr_cost / 3,

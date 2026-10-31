@@ -90,6 +90,7 @@ GRIDS = [
         "q3_s3_noise_ladder.yaml",
         "q3_s3_spread.yaml",
         "q3_s3_leave_one_out.yaml",
+        "q3_s3_matched_length.yaml",
     )
 ]
 
