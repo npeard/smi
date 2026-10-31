@@ -361,8 +361,13 @@ class LitModule(lightning_module.LightningModule):
             raise ValueError(f'Unknown target: {self.target}')
 
         if self.sign_invariant:
+            trained = (
+                (velocity_hat, velocity_target)
+                if self.target == 'velocity'
+                else (displacement_hat, displacement_target)
+            )
             velocity_hat, displacement_hat = apply_best_sign(
-                velocity_hat, displacement_hat, velocity_target
+                velocity_hat, displacement_hat, *trained
             )
 
         # No unit conversion here. Velocity is um/ms and displacement is um as
@@ -521,6 +526,33 @@ class LitModule(lightning_module.LightningModule):
             velocity_rmse(torch.zeros_like(velocity_hat), velocity_target),
             sync_dist=torch.distributed.is_available()
             and torch.distributed.is_initialized(),
+        )
+        if self.target == 'displacement':
+            self._log_displacement_rmse(prediction, displacement_target)
+
+    def _log_displacement_rmse(
+        self, displacement_hat: torch.Tensor, displacement_target: torch.Tensor
+    ) -> None:
+        """Log a displacement target's own monitor keys, start offsets removed.
+
+        A displacement-target run is monitored on these, not on its velocity
+        (see ``training_interface.convergence_monitor``). Same three variants
+        and reduction as the velocity keys; ``velocity_rmse`` is a plain RMSE,
+        here in um.
+        """
+        d_hat = displacement_hat - displacement_hat[:, :1]
+        d = displacement_target - displacement_target[:, :1]
+        sync = torch.distributed.is_available() and torch.distributed.is_initialized()
+        self.log('val/displacement_rmse_um', velocity_rmse(d_hat, d), sync_dist=sync)
+        self.log(
+            'val/displacement_rmse_sign_invariant_um',
+            velocity_rmse(best_sign(d_hat, d) * d_hat, d),
+            sync_dist=sync,
+        )
+        self.log(
+            'val/displacement_rmse_zero_predictor_um',
+            velocity_rmse(torch.zeros_like(d), d),
+            sync_dist=sync,
         )
 
     @override

@@ -24,6 +24,8 @@ from tests.test_synthetic_train_cli import CONFIG
 
 SIGNED = 'val/velocity_rmse_um_per_ms'
 INVARIANT = 'val/velocity_rmse_sign_invariant_um_per_ms'
+DISPLACEMENT = 'val/displacement_rmse_um'
+DISPLACEMENT_INVARIANT = 'val/displacement_rmse_sign_invariant_um'
 
 
 # Calls the private hook that RelativeEarlyStopping overrides (see its comment
@@ -60,9 +62,22 @@ def test_relative_delta_scales_with_the_best_value():
     assert _feed(large, [1.0, 0.95]) == [False, True]
 
 
-@pytest.mark.parametrize(('flag', 'key'), [(False, SIGNED), (True, INVARIANT)])
-def test_monitor_follows_loss_sign_invariance(flag, key):
-    assert convergence_monitor({'sign_invariant': flag}) == key
+@pytest.mark.parametrize(
+    ('target', 'flag', 'key'),
+    [
+        ('velocity', False, SIGNED),
+        ('velocity', True, INVARIANT),
+        ('displacement', False, DISPLACEMENT),
+        ('displacement', True, DISPLACEMENT_INVARIANT),
+    ],
+)
+def test_monitor_follows_the_target_and_loss_sign_invariance(target, flag, key):
+    assert convergence_monitor({'sign_invariant': flag}, target) == key
+
+
+def test_monitor_rejects_an_unknown_target():
+    with pytest.raises(ValueError, match='target'):
+        convergence_monitor({'sign_invariant': False}, 'phase')
 
 
 def _config(monitor: str, *, sign_invariant: bool, max_epochs: int) -> TrainingConfig:
@@ -335,3 +350,25 @@ def test_non_finite_monitor_inside_grace_still_stops_the_run(monkeypatch):
     assert stopping_reason == EarlyStoppingReason.NON_FINITE_METRIC
     assert interface.epochs_run == 6
     assert interface.converged is False
+
+
+def test_displacement_run_is_judged_against_the_displacement_zero_predictor():
+    # With velocity loss weight 0 a displacement model's differentiated
+    # velocity carries amplified ripple, so judging it on velocity against the
+    # velocity zero predictor would call a good run stalled.
+    config = _config(DISPLACEMENT, sign_invariant=False, max_epochs=1)
+    config.training_config['target'] = 'displacement'
+    config.loss_config.update(velocity_loss_weight=0.0, displacement_loss_weight=1.0)
+    interface = _run(config)
+    metrics = interface.trainer.callback_metrics
+    assert interface.checkpoint_callback.monitor == DISPLACEMENT
+    zero = float(metrics['val/displacement_rmse_zero_predictor_um'])
+    assert interface.zero_predictor_monitor == zero
+    assert zero != float(metrics['val/velocity_rmse_zero_predictor_um_per_ms'])
+
+
+def test_configured_monitor_must_match_the_target():
+    config = _config(SIGNED, sign_invariant=False, max_epochs=1)
+    config.training_config['target'] = 'displacement'
+    with pytest.raises(ValueError, match='displacement'):
+        TrainingInterface(config=config)

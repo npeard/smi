@@ -101,8 +101,13 @@ def physics_loss(
         raise ValueError(f'Unknown target: {target}')
 
     if sign_invariant:
+        trained = (
+            (velocity_hat, velocity_target)
+            if target == 'velocity'
+            else (displacement_hat, displacement_target)
+        )
         velocity_hat, displacement_hat = apply_best_sign(
-            velocity_hat, displacement_hat, velocity_target
+            velocity_hat, displacement_hat, *trained
         )
 
     # No unit conversion here: velocity is already um/ms as stored (converted

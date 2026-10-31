@@ -31,7 +31,8 @@ Grid YAML keys (all required except where noted):
   ``train_crop_length`` reports what it trained on.
 * ``training``: shallow overrides of the family's ``training`` block (device,
   epoch cap). ``convergence.monitor`` is derived from the sim's sign
-  invariance, so one family YAML serves Michelson and SMI sims.
+  invariance and the family's target, so one family YAML serves Michelson
+  and SMI sims.
 * ``test_set: {seed, n_shots}``.
 
 ``--rescore-metrics`` instead re-scores every recorded cell that lacks a
@@ -336,12 +337,13 @@ def training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
     family = copy.deepcopy(cached)
     training = {**family['training'], **grid['training']}
     loss = {**family['loss'], 'sign_invariant': cell.sign_invariant}
-    # Derived, not chosen: the monitor must follow the loss (Task 11 rule), and
-    # a grid mixes Michelson (sign-invariant) and SMI sims over one family. So
-    # a family YAML's own ``convergence.monitor`` line is overridden here.
+    # Derived, not chosen: the monitor must follow the loss (Task 11 rule) and
+    # the target, and a grid mixes Michelson (sign-invariant) and SMI sims over
+    # one family. So a family YAML's own ``convergence.monitor`` line is
+    # overridden here.
     training['convergence'] = {
         **training['convergence'],
-        'monitor': convergence_monitor(loss),
+        'monitor': convergence_monitor(loss, training['target']),
     }
     synthetic = {
         'use_synthetic_training': True,

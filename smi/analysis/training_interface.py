@@ -31,6 +31,19 @@ SIGN_INVARIANT_RMSE_KEY = 'val/velocity_rmse_sign_invariant_um_per_ms'
 # the value of both monitors above for a zero output (zero == -zero), so a best
 # monitor that never beats it marks a run stalled at the zero-output plateau.
 ZERO_PREDICTOR_RMSE_KEY = 'val/velocity_rmse_zero_predictor_um_per_ms'
+# The same three for a displacement target, logged only for one: start offsets
+# removed, so the zero predictor is RMS(d - d[:, :1]).
+DISPLACEMENT_RMSE_KEY = 'val/displacement_rmse_um'
+DISPLACEMENT_SIGN_INVARIANT_RMSE_KEY = 'val/displacement_rmse_sign_invariant_um'
+DISPLACEMENT_ZERO_PREDICTOR_RMSE_KEY = 'val/displacement_rmse_zero_predictor_um'
+# Each monitor's zero-predictor value, which TrainingInterface.converged
+# compares the best monitored value against.
+ZERO_PREDICTOR_KEYS = {
+    SIGNED_RMSE_KEY: ZERO_PREDICTOR_RMSE_KEY,
+    SIGN_INVARIANT_RMSE_KEY: ZERO_PREDICTOR_RMSE_KEY,
+    DISPLACEMENT_RMSE_KEY: DISPLACEMENT_ZERO_PREDICTOR_RMSE_KEY,
+    DISPLACEMENT_SIGN_INVARIANT_RMSE_KEY: DISPLACEMENT_ZERO_PREDICTOR_RMSE_KEY,
+}
 
 # Floor on ceil(patience_epochs / check_val_every_n_epoch), the number of
 # validation checks patience spans: fewer and a noisy mid-schedule dip can pass
@@ -38,21 +51,33 @@ ZERO_PREDICTOR_RMSE_KEY = 'val/velocity_rmse_zero_predictor_um_per_ms'
 MIN_PATIENCE_CHECKS = 5
 
 
-def convergence_monitor(loss_config: dict[str, Any]) -> str:
-    """Validation metric a run must plateau on, decided by the loss.
+def convergence_monitor(loss_config: dict[str, Any], target: str) -> str:
+    """Validation metric a run must plateau on, decided by the loss and target.
 
     A sign-invariant (Michelson) run never drives the signed RMSE down, so
-    monitoring it would never converge.
+    monitoring it would never converge. A displacement-target run is monitored
+    on displacement: with no velocity loss its differentiated velocity carries
+    amplified high-frequency ripple, which can hold the velocity RMSE at the
+    zero predictor's while the displacement fits well.
 
     Args:
         loss_config: The ``loss`` section; ``sign_invariant`` is required.
+        target: ``training.target``, ``'velocity'`` or ``'displacement'``.
 
     Returns:
         The validation metric key to monitor.
+
+    Raises:
+        ValueError: If ``target`` is neither.
     """
-    if loss_config['sign_invariant']:
-        return SIGN_INVARIANT_RMSE_KEY
-    return SIGNED_RMSE_KEY
+    invariant = loss_config['sign_invariant']
+    if target == 'velocity':
+        return SIGN_INVARIANT_RMSE_KEY if invariant else SIGNED_RMSE_KEY
+    if target == 'displacement':
+        return (
+            DISPLACEMENT_SIGN_INVARIANT_RMSE_KEY if invariant else DISPLACEMENT_RMSE_KEY
+        )
+    raise ValueError(f"target must be 'velocity' or 'displacement', got {target!r}")
 
 
 class RelativeEarlyStopping(EarlyStopping):
@@ -441,12 +466,13 @@ class TrainingInterface:
         """
         convergence = self.config.training_config['convergence']
         monitor = convergence['monitor']
-        expected = convergence_monitor(self.config.loss_config)
+        target = self.config.training_config['target']
+        expected = convergence_monitor(self.config.loss_config, target)
         if monitor != expected:
             raise ValueError(
                 f'training.convergence.monitor is {monitor!r} but '
                 f'loss.sign_invariant={self.config.loss_config["sign_invariant"]} '
-                f'requires {expected!r}'
+                f'with target {target!r} requires {expected!r}'
             )
         # Required, no default: S1 runs sat at the zero-output plateau for up
         # to ~15 epochs before escaping, so the grace changes what gets published.
@@ -514,7 +540,8 @@ class TrainingInterface:
         Read from the last validation check; the validation data are the same
         at every check (fixed real split, or the reseeded synthetic stream).
         """
-        return float(self.trainer.callback_metrics[ZERO_PREDICTOR_RMSE_KEY])
+        key = ZERO_PREDICTOR_KEYS[self.convergence_callback.monitor]
+        return float(self.trainer.callback_metrics[key])
 
     @property
     def epochs_run(self) -> int:

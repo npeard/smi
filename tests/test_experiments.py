@@ -485,6 +485,12 @@ def test_displacement_grid_retargets_the_s1_cells_and_nothing_else():
         matched['training']['target'] = 'displacement'
         matched['loss'].update(velocity_loss_weight=0.0, displacement_loss_weight=1.0)
         assert retargeted == matched, cell.family_config.name
+        monitor = training_config(cell, grid).training_config['convergence']
+        assert monitor['monitor'] == (
+            'val/displacement_rmse_sign_invariant_um'
+            if cell.sign_invariant
+            else 'val/displacement_rmse_um'
+        )
 
 
 def test_shipped_velocity_cells_keep_their_fingerprints():

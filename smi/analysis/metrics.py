@@ -78,24 +78,29 @@ def best_sign(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 def apply_best_sign(
     velocity_hat: torch.Tensor,
     displacement_hat: torch.Tensor,
-    velocity_target: torch.Tensor,
+    trained_hat: torch.Tensor,
+    trained_target: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Flip each shot's velocity and displacement prediction by one shared sign.
 
-    The sign is chosen on velocity, the quantity the model is trained on;
-    displacement is its integral, so it must follow the same choice rather
-    than pick its own. Both training losses (``LitModule`` and the vmap
-    ensemble) call this, so the choice lives in one place.
+    The sign is chosen on the quantity the model is trained on (velocity or
+    displacement, passed as ``trained_hat``/``trained_target``); the other is
+    its integral or derivative, so it must follow the same choice rather than
+    pick its own. For a displacement target the differentiated velocity is
+    dominated by amplified ripple, so a sign chosen on it would be noise. Both
+    training losses (``LitModule`` and the vmap ensemble) call this, so the
+    choice lives in one place.
 
     Args:
         velocity_hat: Predicted velocity, ``[batch, length]``.
         displacement_hat: Predicted displacement, same shape.
-        velocity_target: Ground-truth velocity, same shape.
+        trained_hat: Whichever of the two the model outputs.
+        trained_target: Its ground truth, same shape.
 
     Returns:
         ``(sign * velocity_hat, sign * displacement_hat)``.
     """
-    sign = best_sign(velocity_hat, velocity_target)
+    sign = best_sign(trained_hat, trained_target)
     return sign * velocity_hat, sign * displacement_hat
 
 
