@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.typing import RcKeyType
 
-from smi.analysis.experiments import expand_grid
+from smi.analysis.experiments import Cell, expand_grid
 from smi.analysis.results_artifact import RunRecord, read_results
 from smi.synthetic.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
 from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
@@ -195,32 +195,35 @@ def _is_nominal(field: str, value: object) -> bool:
 
 def _grid_records(
     records: dict[str, RunRecord], grid: Path
-) -> list[tuple[str, SimConfig, RunRecord]]:
-    """``(sim name, sim, record)`` per cell of ``grid``, hash-checked.
+) -> list[tuple[Cell, RunRecord]]:
+    """``(cell, record)`` per cell of ``grid``, hash-checked.
 
-    The sim config comes from expanding the grid, so a grid edited after its
-    run fails here instead of labelling a record with the wrong knob value.
+    The cell's sim config comes from expanding the grid, so a grid edited after
+    its run fails here instead of labelling a record with the wrong knob value.
+
+    Raises:
+        ValueError: Naming the cell whose record's sim hash differs.
     """
     _, cells = expand_grid(grid)
     out = []
     for cell in cells:
         record = records[cell.key]
-        assert record.sim_config_hash == cell.sim.hash(), cell.key
-        out.append((cell.sim_name, cell.sim, record))
+        if record.sim_config_hash != cell.sim.hash():
+            raise ValueError(f'{cell.key}: record was run under another sim config')
+        out.append((cell, record))
     return out
 
 
 def noise_ladder(records: dict[str, RunRecord]) -> dict[str, list[LadderRow]]:
     """The ladder's single-knob rows, keyed by swept field, in sweep order."""
     rows: dict[str, list[LadderRow]] = {}
-    for name, sim, record in _grid_records(records, NOISE_LADDER_GRID):
-        if not name.startswith('ladder-'):
+    for cell, record in _grid_records(records, NOISE_LADDER_GRID):
+        if cell.sweep is None:
             continue
-        # Sweep cells are named <entry>-<field>=<value> (experiments._build_sims).
-        field = name.partition('=')[0].split('-', 2)[2]
-        value = getattr(sim, field)
+        field, _ = cell.sweep
+        value = getattr(cell.sim, field)
         rows.setdefault(field, []).append(
-            LadderRow(field, value, _is_nominal(field, value), sim, record)
+            LadderRow(field, value, _is_nominal(field, value), cell.sim, record)
         )
     return rows
 
@@ -230,8 +233,8 @@ def noise_seeds(records: dict[str, RunRecord], sim_name: str) -> list[RunRecord]
     found = {
         record.cell_key: record
         for grid in (NOISE_LADDER_GRID, NOISE_SPREAD_GRID, LEAVE_ONE_OUT_GRID)
-        for name, _, record in _grid_records(records, grid)
-        if name == sim_name
+        for cell, record in _grid_records(records, grid)
+        if cell.sim_name == sim_name
     }
     return list(found.values())
 
@@ -239,7 +242,8 @@ def noise_seeds(records: dict[str, RunRecord], sim_name: str) -> list[RunRecord]
 def matched_length_cells(records: dict[str, RunRecord]) -> dict[str, RunRecord]:
     """The equal-length grid's records, keyed by sim name."""
     return {
-        name: record for name, _, record in _grid_records(records, MATCHED_LENGTH_GRID)
+        cell.sim_name: record
+        for cell, record in _grid_records(records, MATCHED_LENGTH_GRID)
     }
 
 

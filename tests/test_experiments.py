@@ -315,6 +315,31 @@ def test_sweep_and_subsets_expand_to_stable_readable_keys(tmp_path):
     assert cells[-1].sim.visibility_range == (0.9, 1.0)
     assert cells[-1].wavelengths_um == (0.635, 0.6748)
     assert expand_grid(path)[1] == cells
+    # Resume matches records by key, so the sweep field is carried beside the
+    # key rather than recovered from it, and the keys stay as they were.
+    assert [(c.key, c.sweep) for c in cells if c.seed is None] == [
+        (
+            'inverse_fit__ch635__nominal-visibility_range=0.5-1__oracle',
+            ('visibility_range', (0.5, 1.0)),
+        ),
+        (
+            'inverse_fit__ch635__nominal-visibility_range=0.9-1__oracle',
+            ('visibility_range', (0.9, 1.0)),
+        ),
+        (
+            'inverse_fit__ch635-675__nominal-visibility_range=0.5-1__oracle',
+            ('visibility_range', (0.5, 1.0)),
+        ),
+        (
+            'inverse_fit__ch635-675__nominal-visibility_range=0.9-1__oracle',
+            ('visibility_range', (0.9, 1.0)),
+        ),
+    ]
+
+
+def test_a_sim_without_a_sweep_carries_none(tmp_path):
+    _, cells = expand_grid(_grid(tmp_path))
+    assert {c.sweep for c in cells} == {None}
 
 
 def test_shipped_grids_expand_and_name_existing_configs():

@@ -108,7 +108,9 @@ class RunnerLockedError(RuntimeError):
 class Cell:
     """One unit of work: a trained network (or the oracle) on one sim/subset.
 
-    ``seed`` is ``None`` for the oracle, which is not trained.
+    ``seed`` is ``None`` for the oracle, which is not trained. ``sweep`` is
+    the ``(field, value)`` a ``sweep`` entry set for this sim, ``None`` for a
+    sim that is not a sweep point.
     """
 
     key: str
@@ -117,6 +119,7 @@ class Cell:
     wavelengths_um: tuple[float, ...]
     sim_name: str
     sim: SimConfig
+    sweep: tuple[str, object] | None
     sign_invariant: bool
     seed: int | None
 
@@ -149,8 +152,11 @@ def cell_key(
 
 def _build_sims(
     entry: dict[str, Any], wavelengths_um: tuple[float, ...]
-) -> list[tuple[str, SimConfig]]:
-    """Expand one ``sims`` entry (and its sweep) for a channel subset."""
+) -> list[tuple[str, SimConfig, tuple[str, object] | None]]:
+    """Expand one ``sims`` entry (and its sweep) for a channel subset.
+
+    Each item is ``(sim name, sim, (field, value) swept or None)``.
+    """
     preset = entry['preset']
     args = {
         'wavelengths_um': wavelengths_um,
@@ -174,13 +180,14 @@ def _build_sims(
     base = dataclasses.replace(base, **override)
     sweep = entry['sweep']
     if not sweep:
-        return [(entry['name'], base)]
+        return [(entry['name'], base, None)]
     # One field per sweep: a Cartesian product would hide cell counts.
     ((field, values),) = sweep.items()
     return [
         (
             f'{entry["name"]}-{field}={_fmt(value)}',
             dataclasses.replace(base, **{field: _as_field_value(field, value)}),
+            (field, _as_field_value(field, value)),
         )
         for value in values
     ]
@@ -208,7 +215,7 @@ def expand_grid(path: Path) -> tuple[dict[str, Any], list[Cell]]:
         )
         for subset in grid['channel_subsets']:
             wavelengths = tuple(float(w) for w in subset)
-            for sim_name, sim in _build_sims(entry, wavelengths):
+            for sim_name, sim, sweep in _build_sims(entry, wavelengths):
                 if grid['oracle']:
                     cells.append(
                         Cell(
@@ -218,6 +225,7 @@ def expand_grid(path: Path) -> tuple[dict[str, Any], list[Cell]]:
                             wavelengths,
                             sim_name,
                             sim,
+                            sweep,
                             sign_invariant,
                             None,
                         )
@@ -230,6 +238,7 @@ def expand_grid(path: Path) -> tuple[dict[str, Any], list[Cell]]:
                         wavelengths,
                         sim_name,
                         sim,
+                        sweep,
                         sign_invariant,
                         int(seed),
                     )
