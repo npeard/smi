@@ -173,3 +173,6 @@ runs/
 # report, like the baseline files above. Regenerate with
 # `python -m smi.analysis.experiments <grid.yaml>`.
 !smi/analysis/data/synthetic_results.json
+# Section Q1's binned errors, from gitignored checkpoints:
+# `python -m smi.analysis.q1_binned`.
+!smi/analysis/data/q1_binned_errors.json

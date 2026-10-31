@@ -38,6 +38,7 @@ import torch
 from matplotlib.typing import RcKeyType
 from scipy import signal
 
+from smi.analysis import bounds
 from smi.analysis.experiments import (
     ANALYSIS_DIR,
     ORACLE_FAMILY,
@@ -310,6 +311,33 @@ def matched_length_cells(
     by_name = {cell.sim_name: record for cell, record in cells}
     by_sweep = {cell.sweep: record for cell, record in cells if cell.sweep}
     return by_name, by_sweep
+
+
+# Section Q1's noise-free channel-subset grid, and the per-sample binned
+# errors smi.analysis.q1_binned writes from the Q1 checkpoints, which are
+# gitignored and so cannot be read at build time.
+Q1_S2_GRID = EXPERIMENTS_DIR / 'q1_s2_subsets.yaml'
+Q1_BINNED_JSON = DATA_DIR / 'q1_binned_errors.json'
+# The seven subsets of the Q1 grids, singles first, as (wavelengths, label).
+Q1_SUBSETS: tuple[tuple[tuple[float, ...], str], ...] = (
+    ((0.635,), '635'),
+    ((0.6748,), '674.8'),
+    ((0.515,), '515'),
+    ((0.635, 0.6748), '635 + 674.8'),
+    ((0.635, 0.515), '635 + 515'),
+    ((0.6748, 0.515), '674.8 + 515'),
+    ((0.635, 0.6748, 0.515), 'all three'),
+)
+# The record length the causal bound has converged by and the smoother's
+# mid-record value is stationary at (see plot_velocity_bounds.py).
+BOUND_STEPS = 2000
+
+
+def velocity_bounds(prior: bounds.StateSpace, cfg: SimConfig) -> tuple[float, float]:
+    """Stationary RMS velocity bounds of ``cfg``: causal, then offline."""
+    causal = float(bounds.pcrb_filter(prior, cfg, BOUND_STEPS)[-1]) ** 0.5
+    offline = float(bounds.bcrb_smoother(prior, cfg, BOUND_STEPS)[BOUND_STEPS // 2])
+    return causal, offline**0.5
 
 
 # Shots averaged per spectrum in the data/target mismatch figure and the
