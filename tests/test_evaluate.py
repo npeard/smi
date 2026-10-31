@@ -451,7 +451,7 @@ def test_constant_velocity_bias_gives_the_ramp_rms(tmp_path):
     )
 
 
-def test_sign_flip_is_chosen_on_velocity_for_displacement(tmp_path):
+def test_sign_flip_scores_zero_sign_invariant_displacement(tmp_path):
     path, centered = _integrable_file(tmp_path / 'int.h5', [5.0, -2.0, 0.0])
     result = evaluate(_Truth(path, scale=-1.0), path, RIG[:1], None, **TRAINED)
     assert result.record.metrics['displacement_rmse_sign_invariant']['max'] < 1e-9
@@ -459,6 +459,21 @@ def test_sign_flip_is_chosen_on_velocity_for_displacement(tmp_path):
         result.per_shot['displacement_rmse'],
         2 * np.sqrt(np.mean(centered**2, axis=1)),
         rtol=1e-5,
+    )
+
+
+def test_displacement_sign_invariant_is_the_per_shot_min_over_signs(tmp_path):
+    # A small negative scale plus a bias: velocity and displacement can then
+    # prefer different signs, which is where reusing the velocity's sign would
+    # score above the signed value.
+    path, _ = _integrable_file(tmp_path / 'int.h5', [5.0, -2.0, 0.0])
+    plus = evaluate(_Truth(path, -0.1, -1.0), path, RIG[:1], None, **TRAINED)
+    minus = evaluate(_Truth(path, 0.1, 1.0), path, RIG[:1], None, **TRAINED)
+    signed = plus.per_shot['displacement_rmse']
+    invariant = plus.per_shot['displacement_rmse_sign_invariant']
+    assert np.all(invariant <= signed)
+    np.testing.assert_allclose(
+        invariant, np.minimum(signed, minus.per_shot['displacement_rmse']), rtol=1e-12
     )
 
 

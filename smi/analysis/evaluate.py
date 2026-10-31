@@ -15,8 +15,9 @@ Conventions that matter when reading the numbers:
 * ``displacement_rmse`` (um) is the per-shot RMSE of the integrated predicted
   velocity against the true displacement, both with their start sample
   removed, as in ``LitModule.loss_function``'s displacement term. Its
-  ``_sign_invariant`` variant reuses the sign chosen on velocity, so a shot's
-  two sign-invariant metrics agree on one sign.
+  ``_sign_invariant`` variant is, like the velocity one, the per-shot minimum
+  over ``+d_hat`` and ``-d_hat``; the sign is chosen on displacement, so it can
+  differ from the shot's velocity sign but never exceeds the signed value.
 * Per-sample errors are binned by the true ``|v|`` (10 quantile bins over the
   evaluated set) and by the phase distance to the nearest fringe extremum of
   the shortest selected wavelength. The sign-invariant bin errors use the sign
@@ -359,7 +360,7 @@ def evaluate(
                     'undefined (invalid data)'
                 )
             shot += len(std)
-            sign = best_sign(pred, velocity).double()
+            sign = best_sign(pred, velocity)
             # float64: a cumulative sum over 16384 float32 samples would carry
             # its own rounding into the metric. integrate_velocity starts each
             # shot at zero, which removes the predicted start offset.
@@ -373,12 +374,12 @@ def evaluate(
                 ('velocity_nrmse', rmse / std),
                 ('velocity_nrmse_sign_invariant', rmse_si / std),
                 ('displacement_rmse', per_shot_rmse(d_hat, d)),
-                ('displacement_rmse_sign_invariant', per_shot_rmse(sign * d_hat, d)),
+                ('displacement_rmse_sign_invariant', sign_invariant_rmse(d_hat, d)),
             ):
                 per_shot[key].append(value)
 
             sq = ((pred - velocity) ** 2).numpy().astype(np.float64)
-            sq_si = ((sign.float() * pred - velocity) ** 2).numpy().astype(np.float64)
+            sq_si = ((sign * pred - velocity) ** 2).numpy().astype(np.float64)
             half = np.abs(phase - np.pi * np.round(phase / np.pi))
             for name, idx in (
                 ('v', np.digitize(velocity.abs().numpy(), v_edges[1:-1])),
