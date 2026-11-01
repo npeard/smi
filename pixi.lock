@@ -2535,6 +2535,7 @@ packages:
   requires_dist:
   - numpy>=2
   - matplotlib
+  - pytest ; extra == 'test'
   requires_python: '>=3.14'
 - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
   name: agent-config

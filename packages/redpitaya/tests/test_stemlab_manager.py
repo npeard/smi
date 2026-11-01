@@ -4,6 +4,7 @@ import sys
 import matplotlib
 import numpy as np
 import pytest
+
 from stemlab import STEMLAB_125_14_SPEC, AcquisitionTrigger, RedPitayaManager
 from stemlab.live_view import LiveView
 from stemlab.testing import FakeTransport
@@ -27,7 +28,7 @@ def test_generation_sends_samples(manager):
         0, 2, samples, sample_rate_hz=1e6, amplitude_v=0.8, offset_v=0.1, trigger='INT'
     )
     sent = manager.devices[0].sent
-    assert sent[0] == 'GEN:RST'
+    assert 'GEN:RST' not in sent
     assert 'SOUR2:FUNC ARBITRARY' in sent
     assert 'SOUR2:VOLT 0.8' in sent
     assert 'SOUR2:VOLT:OFFS 0.1' in sent
@@ -37,6 +38,15 @@ def test_generation_sends_samples(manager):
     sent_values = np.array(data_cmd.split(' ', 1)[1].split(','), dtype=float)
     np.testing.assert_allclose(sent_values, samples, atol=5e-6)
     assert manager.devices[1].sent == []
+
+
+def test_second_channel_does_not_wipe_first(manager):
+    manager.configure_generation(0, 1, np.array([0.1, 0.2]), 1e6, 0.5, 0.0, 'INT')
+    first = list(manager.devices[0].sent)
+    manager.configure_generation(0, 2, np.array([0.3, 0.4]), 1e6, 0.7, 0.0, 'INT')
+    second = manager.devices[0].sent[len(first) :]
+    assert 'GEN:RST' not in first + second
+    assert all(c.startswith('SOUR2') for c in second)
 
 
 def test_generation_rejects_out_of_range(manager):
@@ -133,4 +143,4 @@ def test_import_has_no_side_effects():
         'socket.create_connection = refuse\n'
         'import stemlab, stemlab.live_view, stemlab.testing\n'
     )
-    subprocess.run([sys.executable, '-c', probe], check=True)  # noqa: S603
+    subprocess.run([sys.executable, '-c', probe], check=True)

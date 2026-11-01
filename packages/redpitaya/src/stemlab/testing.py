@@ -33,7 +33,8 @@ class FakeTransport(SCPI):
         self.sent.append(msg)
         self._reply = self._answer(msg)
 
-    def rx_txt(self, _chunksize: int = 4096) -> str | None:
+    def rx_txt(self, chunksize: int = 4096) -> str | None:
+        del chunksize  # replies are whole messages; kept for SCPI's signature
         return self._reply
 
     def _answer(self, msg: str) -> str | None:

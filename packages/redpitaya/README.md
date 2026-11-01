@@ -43,14 +43,16 @@ from stemlab.testing import FakeTransport
   - `configure_generation(device, channel, samples, sample_rate_hz, amplitude_v, offset_v, trigger)` -
     load one period of an arbitrary waveform (`samples` in [-1, 1], at most
     `buffer_size` long, sent at 5 decimal places) played at `sample_rate_hz`.
-    `trigger` is `INT`, `EXT_PE`, `EXT_NE` or `GATED`.
+    `trigger` is `INT`, `EXT_PE`, `EXT_NE` or `GATED`. It does not reset the
+    generator (GEN:RST clears both channels); call `reset()` once first.
   - `enable_output(device, channel, enable)`, `trigger_generation(device, channel)`.
   - `configure_acquisition(device, decimation, trigger, n_samples, channels)` -
     `trigger` is `AcquisitionTrigger(source, delay_samples, level_v)`;
     only configured boards are armed and read.
   - `start_acquisition()` - arm every configured board, primary last.
   - `acquire(timeout_s) -> Acquisition` - wait for trigger and buffer fill
-    (raises `TimeoutError`), then read. `Acquisition.data` maps
+    (raises `TimeoutError`; `timeout_s` bounds each wait on each board, so
+    the worst case is `2 * timeout_s * n_boards`), then read. `Acquisition.data` maps
     `(board, channel)` to a `(n_samples,)` float array;
     `Acquisition.metadata` holds `timestamp` (UTC), `board_ids`, and per-board
     `decimation`, `sample_rate_hz` and `trigger`.
@@ -95,5 +97,6 @@ shot = rp.acquire(timeout_s=5.0)
 ## Tests
 
 ```bash
+pip install -e 'packages/redpitaya[test]'
 pytest packages/redpitaya/tests
 ```

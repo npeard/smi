@@ -170,6 +170,9 @@ class RedPitayaManager:
     ) -> None:
         """Load an arbitrary waveform onto one output channel.
 
+        Does not reset the generator: GEN:RST clears both channels, so it lives
+        in ``reset()``, called once before configuring either channel.
+
         Args:
             device: Board index.
             channel: Output channel, 1 or 2.
@@ -189,7 +192,6 @@ class RedPitayaManager:
         if np.max(np.abs(samples)) > 1.0:
             raise ValueError('samples must lie in [-1, 1]; scale with amplitude_v')
         transport = self._device(device)
-        transport.tx_txt('GEN:RST')
         # The board stretches the array over its buffer and repeats it at FREQ,
         # so one array period lasts len(samples) / sample_rate_hz.
         transport.sour_set(
@@ -246,7 +248,10 @@ class RedPitayaManager:
         """Wait for every armed board to trigger and fill, then read its buffers.
 
         Raises:
-            TimeoutError: A board did not trigger or fill within ``timeout_s``.
+            TimeoutError: A board did not trigger, or did not fill, within
+                ``timeout_s``. The limit applies to each of those two waits on
+                each board in turn, so the worst case is
+                ``2 * timeout_s * n_boards``.
         """
         if not self._acquisition:
             raise RuntimeError('configure_acquisition first')
