@@ -288,7 +288,6 @@ ascii = "check-ascii"
 # `python -m pytest` (not bare `pytest`) so it runs via the env's interpreter.
 test = "python -m pytest"
 spell = "python -m codespell_lib ."
-precommit = "pre-commit run --all-files"
 # Step 0 of the workflow spine: is this project fit to start work in?
 # The agent-config command checks the repo it runs in (branch, clean tree, hook
 # installation, interpreter). Add --with-tests when starting fresh work,
@@ -299,6 +298,8 @@ preflight = "preflight"
 experiments = "python -m smi.analysis.experiments"
 
 [tool.pixi.feature.dev.tasks]
+# pre-commit is a dev-feature dependency, so the task must run in dev.
+precommit = "pre-commit run --all-files"
 typecheck = "ty check"
 all = { depends-on = ["format", "lint", "ascii", "typecheck", "test"] }
 # Step 7 of the workflow spine, and the reflect skill's detection half.
