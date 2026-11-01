@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torch.utils.data import DataLoader
 
+from smi.core.paths import DATA_DIR
 from smi.data.datasets import VelocityDataset
 from smi.data.schema import CHANNEL_KEYS, DRIVE_KEY, PD_KEYS, read_sample_rate
 
@@ -262,8 +263,7 @@ def analyze_dataset(dataset_path: str | Path):
 
 if __name__ == '__main__':
     # Example usage
-    # dataset_path = './analysis/data/free-space-all-amplitude-10000.h5'
-    dataset_path = './analysis/data/free-space-synchro_10k.h5'
+    dataset_path = DATA_DIR / 'free-space-synchro_10k.h5'
 
     # Visualize samples from the dataset
     visualize_dataset(dataset_path, max_samples=10)

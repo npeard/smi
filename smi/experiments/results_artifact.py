@@ -1,6 +1,6 @@
 """Read and write the learned-model results artifact.
 
-Mirrors the shape of ``smi/analysis/data/baseline_results.json``: a
+Mirrors the shape of ``results/baseline_results.json``: a
 ``schema_version`` at the top and a ``datasets`` mapping keyed by dataset name,
 so a figure or a report table can index the analytic and the learned artifact
 identically.

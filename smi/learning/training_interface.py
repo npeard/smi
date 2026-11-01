@@ -190,6 +190,21 @@ class TrainingConfig:
         )
 
 
+def resolve_data_dir(data_dir: str) -> Path:
+    """Resolve a config's ``data_dir`` against the repo root; it must exist.
+
+    The matched and displacement configs keep a stale ``./analysis/data``
+    because ``data_dir`` is hashed into the run fingerprints that resume
+    matches recorded cells by. Creating the directory would silently turn
+    that stale value into an empty folder, so a missing one is an error.
+    """
+    abs_dir = REPO_ROOT / str(data_dir).lstrip('./')
+    if not abs_dir.is_dir():
+        msg = f'data_dir {data_dir!r} resolves to {abs_dir}, which does not exist'
+        raise FileNotFoundError(msg)
+    return abs_dir
+
+
 class TrainingInterface:
     """Main trainer class for managing model training."""
 
@@ -295,19 +310,10 @@ class TrainingInterface:
             return
 
         # Real data: build a Lightning DataModule over the HDF5 dataset.
-        base_dir = REPO_ROOT
-
-        def resolve_path(data_dir: str, filename: str | None = None) -> str:
-            """Resolve path relative to project root."""
-            data_dir = str(data_dir).lstrip('./')
-            abs_dir = base_dir / data_dir
-            Path(abs_dir).mkdir(parents=True, exist_ok=True)
-            return str(abs_dir / filename) if filename else str(abs_dir)
-
         if dataset_path is None:
             data_dir = self.config.data_config['data_dir']
-            dataset_path = resolve_path(
-                data_dir, self.config.data_config['dataset_file']
+            dataset_path = str(
+                resolve_data_dir(data_dir) / self.config.data_config['dataset_file']
             )
 
         if split_ratios is None:

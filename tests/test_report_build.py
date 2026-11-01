@@ -28,9 +28,8 @@ from pathlib import Path
 
 import pytest
 
-from smi.core.paths import DATA_DIR
+from smi.core.paths import DATA_DIR, REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 REPORT_DIR = REPO_ROOT / 'report'
 FIGURE_DIR = REPORT_DIR / 'figures'
 SNAKEFILE = REPORT_DIR / 'Snakefile'

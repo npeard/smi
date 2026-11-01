@@ -10,7 +10,7 @@ features while the rest of the codebase works in raw physical units.
 Usage::
 
     pixi run python -m smi.data.features.compute_norm_stats \
-        smi/analysis/data/circuit-noise-600.h5
+        data/circuit-noise-600.h5
 """
 
 import argparse
