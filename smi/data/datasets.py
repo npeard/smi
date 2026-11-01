@@ -9,7 +9,13 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from smi.data.frozen import RIG_WAVELENGTH_TOL_UM, pd_keys
-from smi.data.schema import DRIVE_KEY, PD_KEYS, PD_WAVELENGTHS_UM, read_sample_rate
+from smi.data.schema import (
+    DRIVE_KEY,
+    PD_KEYS,
+    PD_WAVELENGTHS_ATTR,
+    PD_WAVELENGTHS_UM,
+    read_sample_rate,
+)
 from smi.theory.coil_driver import CoilDriver
 
 logger = logging.getLogger(__name__)
@@ -22,9 +28,9 @@ def file_pd_channels(f: h5py.File) -> dict[str, float]:
     attr; acquired files do not, and are the rig's three lasers by
     construction, so they fall back to the rig constants.
     """
-    if 'pd_wavelengths_um' not in f.attrs:
+    if PD_WAVELENGTHS_ATTR not in f.attrs:
         return dict(PD_WAVELENGTHS_UM)
-    wavelengths = tuple(float(w) for w in f.attrs['pd_wavelengths_um'])
+    wavelengths = tuple(float(w) for w in f.attrs[PD_WAVELENGTHS_ATTR])
     return dict(zip(pd_keys(wavelengths), wavelengths, strict=True))
 
 
@@ -259,17 +265,17 @@ class GPUResidentDataset(Dataset):
         with h5py.File(self.file_path, 'r') as f:
             if wavelengths_um is not None:
                 channel_keys = select_pd_keys(f, wavelengths_um)
-            for key in [*channel_keys, 'RP1_CH1']:
+            for key in [*channel_keys, DRIVE_KEY]:
                 if key not in f:
                     raise ValueError(f"Channel key '{key}' not found in file")
-            total = len(f['RP1_CH1'])
+            total = len(f[DRIVE_KEY])
             n = total if max_shots is None else min(max_shots, total)
             self.sample_rate = read_sample_rate(f.attrs)
             signals = np.stack(
                 [np.asarray(f[key][:n], dtype=np.float32) for key in channel_keys],
                 axis=1,
             )
-            voltage = np.asarray(f['RP1_CH1'][:n], dtype=np.float32)
+            voltage = np.asarray(f[DRIVE_KEY][:n], dtype=np.float32)
 
         # Do the drive-voltage physics once for the whole file, batched, rather
         # than once per sample per epoch. On a CUDA device this runs on-device
@@ -308,7 +314,7 @@ class GPUResidentDataset(Dataset):
     ) -> int:
         """Bytes the resident tensors will occupy for this file."""
         with h5py.File(file_path, 'r') as f:
-            total, signal_length = f['RP1_CH1'].shape
+            total, signal_length = f[DRIVE_KEY].shape
         n = total if max_shots is None else min(max_shots, total)
         channels = min(max(1, num_pd_channels), 3) + 2  # + velocity + displacement
         return 4 * int(n) * int(signal_length) * channels

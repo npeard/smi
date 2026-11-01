@@ -21,12 +21,12 @@ def _():
     from torch.utils.data import DataLoader
 
     from smi.analysis.evaluate import load_lit_module
-    from smi.core.acquisition import STEMLAB_125_14
     from smi.data.datasets import VelocityDataset, get_data_loaders
     from smi.data.frozen import DEFAULT_ROOT, load_or_create
+    from smi.data.schema import LEGACY_SAMPLE_RATE_HZ
     from smi.theory.forward import SimConfig
 
-    ACQ_SAMPLE_RATE = STEMLAB_125_14.sample_rate_dec1_hz / 256
+    ACQ_SAMPLE_RATE = LEGACY_SAMPLE_RATE_HZ
     CHANNEL_NAMES = ['PD1 (635 nm)', 'PD2 (675 nm)', 'PD3 (515 nm)']
     return (
         ACQ_SAMPLE_RATE,

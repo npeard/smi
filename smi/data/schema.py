@@ -36,6 +36,7 @@ DISPLACEMENT_KEY = 'displacement'
 OPTICAL_PHASE_KEY = 'optical_phase'
 
 SAMPLE_RATE_ATTR = 'sample_rate'
+PD_WAVELENGTHS_ATTR = 'pd_wavelengths_um'
 NUM_SAMPLES_ATTR = 'num_samples'
 
 # Files written before the ``sample_rate`` attribute existed were all acquired

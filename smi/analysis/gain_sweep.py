@@ -138,7 +138,7 @@ from smi.analysis.baseline_fit import (
     forward_model_residual,
     windowed_forward_model_residual,
 )
-from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, SAMPLE_RATE_ATTR
 from smi.theory.calib_params import CalibrationParameters
 from smi.theory.coil_driver import MS_PER_S, CoilDriver
 
@@ -1146,7 +1146,7 @@ def sweep_dataset(
     wavelengths = [PD_WAVELENGTHS_UM[c] for c in channels]
 
     with h5py.File(file_path, 'r') as handle:
-        sample_rate = float(handle.attrs['sample_rate'])
+        sample_rate = float(handle.attrs[SAMPLE_RATE_ATTR])
         n_shots = min(n_shots, handle[DRIVE_KEY].shape[0])
         drive = np.asarray(handle[DRIVE_KEY][:n_shots], dtype=np.float64)
         pd_raw = np.stack(

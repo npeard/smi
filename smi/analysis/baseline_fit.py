@@ -92,7 +92,7 @@ import torch
 from scipy.signal import savgol_filter
 
 from smi.core.metrics import summarize_per_shot
-from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, SAMPLE_RATE_ATTR
 from smi.theory.coil_driver import MS_PER_S, CoilDriver
 
 logger = logging.getLogger(__name__)
@@ -1539,7 +1539,7 @@ def evaluate_dataset(
     wavelengths = np.array([PD_WAVELENGTHS_UM[c] for c in channels])
 
     with h5py.File(file_path, 'r') as handle:
-        sample_rate = float(handle.attrs['sample_rate'])
+        sample_rate = float(handle.attrs[SAMPLE_RATE_ATTR])
         n_shots = min(n_shots, handle[DRIVE_KEY].shape[0])
         n_shots_method2 = min(n_shots_method2, n_shots)
         n_time = int(handle[DRIVE_KEY].shape[1])

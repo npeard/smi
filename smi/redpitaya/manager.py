@@ -19,7 +19,7 @@ from numpy.fft import fft
 # Import our custom classes
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement, integrate_velocity
-from smi.data.schema import write_shot
+from smi.data.schema import SAMPLE_RATE_ATTR, write_shot
 
 try:
     # Try relative imports first (when used as a package)
@@ -691,7 +691,7 @@ class RedPitayaManager:
         file_exists = file_path.exists()
 
         attrs: dict[str, object] = {
-            'sample_rate': self.SAMPLE_RATE_DEC1 / self.settings['acq_dec'],
+            SAMPLE_RATE_ATTR: self.SAMPLE_RATE_DEC1 / self.settings['acq_dec'],
             'decimation': self.settings['acq_dec'],
             'buffer_size': self.BUFFER_SIZE,
         }

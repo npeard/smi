@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 import numpy as np
 
+from smi.data.schema import DRIVE_KEY
 from smi.theory.coil_driver import CoilDriver
 
 from .registry import RawShot, register_feature
@@ -47,7 +48,7 @@ for _feat_name, _channel in PD_FEATURE_TO_CHANNEL.items():
 @register_feature('velocity', 'target')
 def velocity(raw: RawShot) -> np.ndarray:
     """Velocity waveform (microns/ms) from the drive voltage RP1_CH1."""
-    voltage = np.asarray(raw['RP1_CH1'])
+    voltage = np.asarray(raw[DRIVE_KEY])
     sample_rate = float(raw['sample_rate'])
     return _coil_driver.get_velocity(voltage, sample_rate)[0]
 
@@ -55,6 +56,6 @@ def velocity(raw: RawShot) -> np.ndarray:
 @register_feature('displacement', 'target')
 def displacement(raw: RawShot) -> np.ndarray:
     """Displacement waveform (microns) from the drive voltage RP1_CH1."""
-    voltage = np.asarray(raw['RP1_CH1'])
+    voltage = np.asarray(raw[DRIVE_KEY])
     sample_rate = float(raw['sample_rate'])
     return _coil_driver.get_displacement(voltage, sample_rate)[0]

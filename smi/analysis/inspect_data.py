@@ -9,9 +9,16 @@ import numpy as np
 from torch.utils.data import DataLoader
 
 from smi.data.datasets import VelocityDataset
-from smi.data.schema import read_sample_rate
+from smi.data.schema import CHANNEL_KEYS, DRIVE_KEY, PD_KEYS, read_sample_rate
 
 logger = logging.getLogger(__name__)
+
+CHANNEL_LABELS = {
+    DRIVE_KEY: 'Speaker Drive Voltage',
+    PD_KEYS[0]: 'PD1 (635nm Red)',
+    PD_KEYS[1]: 'PD2 (675nm Deep Red)',
+    PD_KEYS[2]: 'PD3 (515nm Green)',
+}
 
 
 def visualize_dataset(
@@ -135,10 +142,10 @@ def plot_histograms(dataset_path: str | Path):
 
         # Channel mapping and colors
         channel_info = {
-            'RP1_CH1': {'label': 'Speaker Drive Voltage', 'color': 'blue', 'col': 0},
-            'RP1_CH2': {'label': 'PD1 (635nm Red)', 'color': 'red', 'col': 1},
-            'RP2_CH1': {'label': 'PD2 (675nm Deep Red)', 'color': 'darkred', 'col': 2},
-            'RP2_CH2': {'label': 'PD3 (515nm Green)', 'color': 'green', 'col': 3},
+            key: {'label': CHANNEL_LABELS[key], 'color': color, 'col': col}
+            for col, (key, color) in enumerate(
+                zip(CHANNEL_KEYS, ('blue', 'red', 'darkred', 'green'), strict=True)
+            )
         }
 
         # Calculate FFT frequencies
@@ -231,16 +238,7 @@ def analyze_dataset(dataset_path: str | Path):
 
         # Calculate statistics for each channel
         for key in f:
-            if key == 'RP1_CH1':
-                label = 'Speaker Drive Voltage'
-            elif key == 'RP1_CH2':
-                label = 'PD1 (635nm Red)'
-            elif key == 'RP2_CH1':
-                label = 'PD2 (675nm Deep Red)'
-            elif key == 'RP2_CH2':
-                label = 'PD3 (515nm Green)'
-            else:
-                label = key
+            label = CHANNEL_LABELS.get(key, key)
 
             # Get data and calculate statistics
             data = f[key][:]

@@ -52,6 +52,7 @@ from smi.data.schema import (
     DISPLACEMENT_KEY,
     DRIVE_KEY,
     PD_WAVELENGTHS_UM,
+    SAMPLE_RATE_ATTR,
     VELOCITY_KEY,
     read_sample_rate,
 )
@@ -200,7 +201,7 @@ class InverseFitEstimator:
         """Size the search grid from the stored displacement of the shots scored."""
         with h5py.File(dataset, 'r') as f:
             disp = np.asarray(f['displacement'][:n_shots], dtype=np.float64)
-            sample_rate = float(f.attrs['sample_rate'])
+            sample_rate = float(f.attrs[SAMPLE_RATE_ATTR])
         centered = disp - disp.mean(axis=1, keepdims=True)
         limit = float(np.abs(centered).max()) * DISPLACEMENT_LIMIT_MARGIN
         return cls(sample_rate, limit)

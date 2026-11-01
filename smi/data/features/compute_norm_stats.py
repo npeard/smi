@@ -20,7 +20,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from smi.data.schema import CHANNEL_KEYS, DRIVE_KEY, read_sample_rate, read_shots
+from smi.data.schema import CHANNEL_KEYS, DRIVE_KEY, read_sample_rate
 
 from .registry import default_registry
 
@@ -61,7 +61,7 @@ def compute_stats(dataset_path: str | Path, chunk_size: int = 500) -> dict[str, 
 
         for start in range(0, n_shots, chunk_size):
             end = min(start + chunk_size, n_shots)
-            chunk, _ = read_shots(dataset_path, ALL_CHANNELS, start, end)
+            chunk = {ch: f[ch][start:end] for ch in ALL_CHANNELS}
             for i in range(end - start):
                 raw = {ch: chunk[ch][i] for ch in ALL_CHANNELS}
                 raw['sample_rate'] = sample_rate

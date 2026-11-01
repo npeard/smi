@@ -18,6 +18,7 @@ from smi.data.schema import (
     DRIVE_KEY,
     NUM_SAMPLES_ATTR,
     OPTICAL_PHASE_KEY,
+    PD_WAVELENGTHS_ATTR,
     PD_WAVELENGTHS_UM,
     SAMPLE_RATE_ATTR,
     VELOCITY_KEY,
@@ -79,7 +80,7 @@ def write_frozen_set(cfg: SimConfig, seed: int, n_shots: int, path: Path) -> Pat
 
     with h5py.File(tmp, 'w') as f:
         f.attrs[SAMPLE_RATE_ATTR] = cfg.sample_rate
-        f.attrs['pd_wavelengths_um'] = np.asarray(cfg.wavelengths_um)
+        f.attrs[PD_WAVELENGTHS_ATTR] = np.asarray(cfg.wavelengths_um)
         f.attrs['sim_config'] = json.dumps(asdict(cfg), sort_keys=True)
         f.attrs['seed'] = seed
         f.attrs['chunk_shots'] = CHUNK_SHOTS

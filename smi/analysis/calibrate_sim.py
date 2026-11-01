@@ -87,7 +87,7 @@ from scipy.signal import periodogram
 from smi.analysis.baseline_fit import fit_window_basis, window_fringe_coefficients
 from smi.core.acquisition import BOARDS, AcquisitionConfig
 from smi.data.datasets import file_pd_channels
-from smi.data.schema import DRIVE_KEY
+from smi.data.schema import DRIVE_KEY, SAMPLE_RATE_ATTR
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.forward import (
     NOMINAL_DRIVE_BAND_HZ,
@@ -141,7 +141,7 @@ def _shot_arrays(
 ) -> tuple[dict[str, np.ndarray], dict[str, float], np.ndarray, float]:
     """PD signals and wavelengths by key, drive voltage and sample rate."""
     with h5py.File(path, 'r') as f:
-        sample_rate = float(f.attrs['sample_rate'])
+        sample_rate = float(f.attrs[SAMPLE_RATE_ATTR])
         wavelengths = file_pd_channels(f)
         available = int(f[DRIVE_KEY].shape[0])
         if n_shots > available:

@@ -87,7 +87,7 @@ from smi.analysis.baseline_fit import (
     scrambled_theta_control,
     windowed_forward_model_residual,
 )
-from smi.data.schema import DRIVE_KEY
+from smi.data.schema import DRIVE_KEY, SAMPLE_RATE_ATTR
 from smi.theory.coil_driver import CoilDriver
 
 # Matches the artifact's method-1 shot count, so the percentiles below are
@@ -152,7 +152,7 @@ def _displacements(n_shots: int) -> tuple[np.ndarray, float]:
         ``(n_shots, n_time)``, sample rate in Hz).
     """
     with h5py.File(FREE_SPACE_H5, 'r') as handle:
-        sample_rate = float(handle.attrs['sample_rate'])
+        sample_rate = float(handle.attrs[SAMPLE_RATE_ATTR])
         n_shots = min(n_shots, handle[DRIVE_KEY].shape[0])
         drive = np.asarray(handle[DRIVE_KEY][:n_shots], dtype=np.float64)
 
