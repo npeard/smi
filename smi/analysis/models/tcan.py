@@ -112,8 +112,6 @@ class TCAN(SequenceModel):
        at each time step independently (no temporal lookahead).
     3. Decoder: a single TCN that takes all attended channel features concatenated
        along the channel dimension and produces a 1-channel sequence output.
-
-    The per-channel encoder outputs are exposed via ``encode()``.
     """
 
     def __init__(self, config: TCANConfig):
@@ -174,7 +172,7 @@ class TCAN(SequenceModel):
             features: [batch, in_channels * embed_dim, seq_len] concatenated
                 per-channel encoder outputs, ready for cross-attention.
             channel_features: list of in_channels tensors each
-                [batch, embed_dim, seq_len] -- exposed for VICReg.
+                [batch, embed_dim, seq_len].
         """
         batch_size, _, seq_len = x.shape
         # Fold channels into batch for a single batched forward pass through

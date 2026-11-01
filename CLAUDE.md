@@ -13,7 +13,6 @@ For everything else, see:
 
 - **`README.md`** -- project intro, quickstart, install.
 - **`docs/data-storage-evaluation.md`** -- why HDF5, and the alternatives measured.
-- **`docs/hyperparameter-search-pipeline-design.md`** -- the two-level search design.
 - **`TASKS.md`** -- the live task list this project works from.
 
 ## Core development principles
@@ -170,8 +169,8 @@ Normalization stats are NOT computed in the dataset. Instead:
    inner model.
 
 Models are TorchScript-scriptable (`Model.to_torchscript()`), verified by
-`tests/test_torchscript.py`. TorchScript is for packaging the trained model. HDF5 (gzip-4, chunked per shot)
-is the chosen storage format - see `docs/data-storage-evaluation.md`.
+`tests/test_torchscript.py`. TorchScript is for packaging the trained model.
+HDF5 (gzip-4, chunked per shot) is the chosen storage format - see `docs/data-storage-evaluation.md`.
 
 ## Hyperparameter / architecture search
 

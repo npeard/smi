@@ -1,8 +1,8 @@
 """TorchScript scriptability sanity check for packaged models.
 
-torch.compile is the training-speed path (see lit_module.py); TorchScript is the
-PACKAGING path -- a trained model is scripted into a self-contained artifact that
-takes raw device outputs (Model.to_torchscript / scripts/export_torchscript.py).
+TorchScript is the PACKAGING path -- a trained model is scripted into a
+self-contained artifact that takes raw device outputs (Model.to_torchscript /
+scripts/export_torchscript.py).
 These tests verify that each architecture, wrapped in the normalization Model,
 can be scripted and produces output matching eager execution.
 

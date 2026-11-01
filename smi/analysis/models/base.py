@@ -173,33 +173,15 @@ class Model(nn.Module):
         out = self.inner(x)
         return out * self.output_std + self.output_mean
 
-    @torch.jit.unused
-    def encode(self, x: Tensor) -> object:
-        """Delegate to ``inner.encode`` on normalized inputs (for VICReg).
-
-        Excluded from TorchScript: only ``forward`` is part of the packaged
-        interface, and not every inner model defines ``encode``.
-
-        Note: model-size metadata (``total_params``/``receptive_field``) is read
-        off the inner model directly (e.g. by ``LitModule``); the wrapper does
-        not re-expose it as scripted properties, which TorchScript would try to
-        compile.
-        """
-        x = self.feature_map(x)
-        x = (x - self.input_mean) / self.input_std
-        # `encode` is a duck-typed extension, not part of nn.Module: only the
-        # TCAN models define it, and only the VICReg path calls this. Typing
-        # `inner` as a Protocol would force every architecture to satisfy it
-        # for the sake of one caller, so the narrow ignore is the honest cost
-        # of the delegation. AttributeError here means an inner model without
-        # `encode` was used with a VICReg loss weight.
-        return self.inner.encode(x)  # ty: ignore[call-non-callable]
+    # Model-size metadata (``total_params``/``receptive_field``) is read off the
+    # inner model directly (e.g. by ``LitModule``); the wrapper does not
+    # re-expose it as scripted properties, which TorchScript would try to compile.
 
     @torch.jit.unused
     def to_torchscript(self) -> torch.jit.ScriptModule:
         """Compile this wrapped model to TorchScript for packaging/export.
 
         TorchScript is the packaging path (a self-contained artifact that takes
-        raw device outputs); ``torch.compile`` remains the training-speed path.
+        raw device outputs).
         """
         return torch.jit.script(self)
