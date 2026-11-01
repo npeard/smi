@@ -8,8 +8,8 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from smi.analysis.lit_module import LitModule
-from smi.analysis.models.base import Model
+from smi.learning.lit_module import LitModule
+from smi.learning.models.base import Model
 from smi.theory.forward import SimConfig, normalization_stats, simulate_batch
 
 logger = logging.getLogger(__name__)

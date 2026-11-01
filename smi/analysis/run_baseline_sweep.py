@@ -38,9 +38,7 @@ import numpy as np
 import torch
 from torch.utils.data import Subset
 
-from smi.analysis.models.factory import create_model
 from smi.analysis.results_artifact import RunRecord, write_results
-from smi.analysis.training_interface import TrainingConfig, TrainingInterface
 from smi.core.metrics import (
     displacement_from_velocity,
     per_shot_rmse,
@@ -55,6 +53,8 @@ from smi.estimators.tabular import (
     predict_windows,
     windowize,
 )
+from smi.learning.models.factory import create_model
+from smi.learning.training_interface import TrainingConfig, TrainingInterface
 from smi.theory.coil_driver import MS_PER_S
 
 logger = logging.getLogger(__name__)

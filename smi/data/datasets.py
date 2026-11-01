@@ -69,7 +69,7 @@ class VelocityDataset(Dataset):
 
     The dataset returns RAW photodiode signals. Input/output normalization is no
     longer done here: it is baked into the model via the Model wrapper
-    (analysis/models/base.py), using version-controlled per-feature statistics
+    (learning/models/base.py), using version-controlled per-feature statistics
     (data/features/normalization.py). The rest of the pipeline works in raw
     physical units.
 

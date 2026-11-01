@@ -4,9 +4,9 @@ from collections.abc import Callable
 
 import torch
 
-from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import RunRecord
-from smi.analysis.training_interface import SIGNED_RMSE_KEY, ZERO_PREDICTOR_RMSE_KEY
+from smi.learning.lit_module import LitModule
+from smi.learning.training_interface import SIGNED_RMSE_KEY, ZERO_PREDICTOR_RMSE_KEY
 
 
 def run_record(**overrides) -> RunRecord:

@@ -36,9 +36,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import RunRecord
-from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.core.kinematics import integrate_velocity
 from smi.core.metrics import (
     best_sign,
@@ -56,6 +54,8 @@ from smi.data.schema import (
     read_sample_rate,
 )
 from smi.estimators.inverse import inverse_fit
+from smi.learning.lit_module import LitModule
+from smi.learning.synthetic_lit_module import SyntheticLitModule
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.forward import MAX_SPEED_UM_PER_MS, SimConfig
 

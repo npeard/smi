@@ -4,7 +4,7 @@ Points at an HDF5 dataset, evaluates every registered feature
 (:data:`~smi.data.features.registry.default_registry`) for
 each shot, and writes per-feature mean/std to ``normalization.py`` for version
 control. Models bake these stats into ``register_buffer`` s (see
-``analysis/models/base.py``) so internal layers see zero-mean/unit-variance
+``learning/models/base.py``) so internal layers see zero-mean/unit-variance
 features while the rest of the codebase works in raw physical units.
 
 Usage::

@@ -71,20 +71,20 @@ from smi.analysis.evaluate import (
     InverseFitEstimator,
     evaluate,
 )
-from smi.analysis.models.factory import create_model
 from smi.analysis.results_artifact import (
     RunRecord,
     append_results,
     read_results,
     write_results,
 )
-from smi.analysis.training_interface import (
+from smi.core.acquisition import STEMLAB_125_14
+from smi.data.frozen import DEFAULT_ROOT, load_or_create
+from smi.learning.models.factory import create_model
+from smi.learning.training_interface import (
     TrainingConfig,
     TrainingInterface,
     convergence_monitor,
 )
-from smi.core.acquisition import STEMLAB_125_14
-from smi.data.frozen import DEFAULT_ROOT, load_or_create
 from smi.theory.forward import NOMINAL_SWEEPS, SIMULATOR_VERSION, SimConfig
 
 logger = logging.getLogger(__name__)

@@ -12,11 +12,11 @@ import pytest
 import torch
 import yaml
 
-from smi.analysis.models.barland_cnn import conv_position_field
-from smi.analysis.models.base import Model
-from smi.analysis.models.factory import MODEL_REGISTRY, count_parameters, create_model
-from smi.analysis.models.sliding_window import SlidingWindowModel
-from smi.analysis.training_interface import MIN_PATIENCE_CHECKS, TrainingConfig
+from smi.learning.models.barland_cnn import conv_position_field
+from smi.learning.models.base import Model
+from smi.learning.models.factory import MODEL_REGISTRY, count_parameters, create_model
+from smi.learning.models.sliding_window import SlidingWindowModel
+from smi.learning.training_interface import MIN_PATIENCE_CHECKS, TrainingConfig
 from smi.theory.forward import SimConfig
 from tests.test_receptive_field import measure_worst_phase_field, phase_period
 

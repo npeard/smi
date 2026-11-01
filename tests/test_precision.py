@@ -3,9 +3,9 @@
 import pytest
 import torch
 
-from smi.analysis.models.base import Model
-from smi.analysis.models.factory import MODEL_REGISTRY, create_model
-from smi.analysis.training_interface import TrainingConfig, TrainingInterface
+from smi.learning.models.base import Model
+from smi.learning.models.factory import MODEL_REGISTRY, create_model
+from smi.learning.training_interface import TrainingConfig, TrainingInterface
 from tests._devices import devices
 from tests._dtype_guard import no_float64
 from tests.test_torchscript import MODEL_CONFIGS

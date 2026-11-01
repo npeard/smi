@@ -12,8 +12,8 @@ import torch
 import yaml
 from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 
-from smi.analysis.lit_module import LitModule
-from smi.analysis.training_interface import (
+from smi.learning.lit_module import LitModule
+from smi.learning.training_interface import (
     RelativeEarlyStopping,
     TrainingConfig,
     TrainingInterface,

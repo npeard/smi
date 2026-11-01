@@ -10,7 +10,7 @@ def _():
     import yaml
     from torchview import draw_graph
 
-    from smi.analysis.models.factory import create_model
+    from smi.learning.models.factory import create_model
 
     return create_model, draw_graph, mo, yaml
 

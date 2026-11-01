@@ -14,8 +14,8 @@ rather than hidden.
 import pytest
 import torch
 
-from smi.analysis.models.base import Model
-from smi.analysis.models.factory import create_model
+from smi.learning.models.base import Model
+from smi.learning.models.factory import create_model
 
 IN_CHANNELS = 3
 SEQ_LEN = 256

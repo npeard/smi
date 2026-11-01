@@ -18,11 +18,11 @@ removed; anchoring to the physical definitions is what makes re-inserting a
 import numpy as np
 import torch
 
-from smi.analysis.lit_module import LitModule
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import integrate_velocity
 from smi.data.features import default_registry
 from smi.data.features.normalization import NORMALIZATION_STATS
+from smi.learning.lit_module import LitModule
 from smi.theory.coil_driver import MS_PER_S, CoilDriver
 from smi.theory.interferometers import MichelsonInterferometer
 from smi.theory.waveform import Waveform

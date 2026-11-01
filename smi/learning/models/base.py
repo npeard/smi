@@ -173,10 +173,6 @@ class Model(nn.Module):
         out = self.inner(x)
         return out * self.output_std + self.output_mean
 
-    # Model-size metadata (``total_params``/``receptive_field``) is read off the
-    # inner model directly (e.g. by ``LitModule``); the wrapper does not
-    # re-expose it as scripted properties, which TorchScript would try to compile.
-
     @torch.jit.unused
     def to_torchscript(self) -> torch.jit.ScriptModule:
         """Compile this wrapped model to TorchScript for packaging/export.

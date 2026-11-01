@@ -20,7 +20,7 @@ For everything else, see:
 See the master CLAUDE.md's "Core philosophy" for the general rule (every line
 carries maintenance cost; write the smallest clear amount; reuse before writing
 new). In this repo that means: add a feature to the existing `FeatureRegistry`,
-an architecture under `analysis/models/`, or a figure to `report/`, rather than
+an architecture under `learning/models/`, or a figure to `report/`, rather than
 building a parallel path beside one of them.
 
 
@@ -241,7 +241,7 @@ These override defaults; follow them unless explicitly told otherwise.
 - **Always run `pixi run format`** after code changes. It is the verification
   entry point -- do not call `ruff check` separately as its own step.
 - **Run the full suite (`pixi run -e dev python -m pytest`) when you touch
-  `analysis/models/`, `data/features/`, or `synthetic/`** -- the
+  `learning/models/`, `data/features/`, or `synthetic/`** -- the
   normalization stats, the TorchScript scriptability check and the model
   forward tests are all coupled through those. It takes about 95 seconds.
 - **Otherwise** run the single most relevant test file. Scope tests to the

@@ -77,9 +77,9 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-from smi.analysis.models.tcn import TCN, TCNConfig
 from smi.data.datasets import VelocityDataset
 from smi.data.schema import DRIVE_KEY, PD_KEYS, read_sample_rate
+from smi.learning.models.tcn import TCN, TCNConfig
 from smi.theory.coil_driver import CoilDriver
 
 logger = logging.getLogger(__name__)

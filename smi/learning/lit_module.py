@@ -18,12 +18,12 @@ except ImportError:
     MuonWithAuxAdam: type | None = None
     SingleDeviceMuonWithAuxAdam: type | None = None
 
-from smi.analysis.models.base import Model, SequenceModel
-from smi.analysis.models.factory import create_model
 from smi.core.kinematics import derivative_displacement, integrate_velocity
 from smi.core.metrics import apply_best_sign, best_sign, velocity_rmse
 from smi.data.features import default_registry
 from smi.data.features.normalization import NORMALIZATION_STATS
+from smi.learning.models.base import Model, SequenceModel
+from smi.learning.models.factory import create_model
 
 logger = logging.getLogger(__name__)
 

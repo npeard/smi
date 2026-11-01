@@ -20,7 +20,7 @@ just a flat directory:
 - **The simulator depends on analysis.** `synthetic/frozen.py` imports
   `analysis.baseline_fit`.
 - **The simulator and analysis depend on hardware config.**
-  `synthetic/forward.py`, `synthetic/waveform.py`, `analysis/lit_module.py`,
+  `synthetic/forward.py`, `synthetic/waveform.py`, `learning/lit_module.py`,
   `datasets.py`, `ensemble.py` and `calibrate_sim.py` import
   `redpitaya.redpitaya_config` for sample-rate and buffer constants.
   `waveform.py` <-> `RedPitayaConfig` is the cycle the spec's I1 calls out.

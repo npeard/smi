@@ -761,7 +761,7 @@ approach to three channels at 207,905 parameters, reporting a correlation of
 0.96 and a velocity RMSE of 0.13 um/ms; its best single channel reaches 0.97
 and 0.11 um/ms.
 
-`smi/analysis/models/barland_cnn.py` is a port of the 2021 architecture. At
+`smi/learning/models/barland_cnn.py` is a port of the 2021 architecture. At
 one input channel it comes to 57,153 trainable parameters, an exact match
 with the total the paper states, which is the check that establishes the port
 is faithful rather than merely similar. At the three channels this data

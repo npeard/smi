@@ -2,8 +2,8 @@
 
 import torch
 
-from smi.analysis.models.factory import create_model
-from smi.analysis.synthetic_lit_module import random_crop
+from smi.learning.models.factory import create_model
+from smi.learning.synthetic_lit_module import random_crop
 
 
 def test_crop_keeps_signals_and_targets_aligned():

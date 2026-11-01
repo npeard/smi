@@ -7,7 +7,7 @@ from pathlib import Path
 import lightning as lightning_module
 
 from smi.analysis.generate_data import generate_dataset_from_rp
-from smi.analysis.training_interface import TrainingConfig, TrainingInterface
+from smi.learning.training_interface import TrainingConfig, TrainingInterface
 from smi.redpitaya.manager import RedPitayaManager
 
 

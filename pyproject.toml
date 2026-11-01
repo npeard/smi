@@ -398,7 +398,7 @@ report-synthetic = { cmd = "snakemake --cores all --scheduler greedy build/synth
 # Scoped to the model package so the rule still guards everything else; drop
 # this override when torch or ty resolves it.
 [[tool.ty.overrides]]
-include = ["smi/analysis/models/**"]
+include = ["smi/learning/models/**"]
 rules = { invalid-mutable-override = "ignore" }
 
 # Package layering; tests/test_import_contracts.py runs this in the suite.
@@ -428,3 +428,9 @@ name = "smi.estimators depends only on smi.core and smi.theory"
 type = "forbidden"
 source_modules = ["smi.estimators"]
 forbidden_modules = ["smi.analysis", "smi.data", "smi.experiments", "smi.redpitaya", "smi.main"]
+
+[[tool.importlinter.contracts]]
+name = "smi.learning does not import estimators, experiments or hardware"
+type = "forbidden"
+source_modules = ["smi.learning"]
+forbidden_modules = ["smi.analysis", "smi.estimators", "smi.experiments", "smi.redpitaya", "smi.main"]

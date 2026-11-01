@@ -82,12 +82,12 @@ from _figcommon import (
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from smi.analysis.experiments import ORACLE_FAMILY, cell_key, expand_grid
-from smi.analysis.models.factory import create_model
-from smi.analysis.models.sliding_window import SlidingWindowModel
 from smi.analysis.results_artifact import RunRecord
-from smi.analysis.synthetic_lit_module import VAL_SEED
 from smi.core.acquisition import STEMLAB_125_14
 from smi.data.frozen import DEFAULT_ROOT, load_or_create
+from smi.learning.models.factory import create_model
+from smi.learning.models.sliding_window import SlidingWindowModel
+from smi.learning.synthetic_lit_module import VAL_SEED
 from smi.theory import bounds
 from smi.theory.forward import (
     NOMINAL_ALPHA,

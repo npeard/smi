@@ -5,22 +5,22 @@ import pytest
 import torch
 from torch.nn import functional
 
-from smi.analysis.models.barland_cnn import BarlandCNN, BarlandCNNConfig
-from smi.analysis.models.lstm import LSTM, LSTMConfig
-from smi.analysis.models.mamba import Mamba, MambaConfig
-from smi.analysis.models.neural_operator import (
+from smi.learning.models.barland_cnn import BarlandCNN, BarlandCNNConfig
+from smi.learning.models.lstm import LSTM, LSTMConfig
+from smi.learning.models.mamba import Mamba, MambaConfig
+from smi.learning.models.neural_operator import (
     CausalSpectralConv1d,
     NeuralOperator,
     NeuralOperatorConfig,
 )
-from smi.analysis.models.patch_transformer import (
+from smi.learning.models.patch_transformer import (
     PatchTransformer,
     PatchTransformerConfig,
 )
-from smi.analysis.models.scnn import SCNN, SCNNConfig
-from smi.analysis.models.tcan import TCAN, TCANConfig
-from smi.analysis.models.tcn import TCN, TCNConfig
-from smi.analysis.models.unet_transformer import UNetTransformer, UNetTransformerConfig
+from smi.learning.models.scnn import SCNN, SCNNConfig
+from smi.learning.models.tcan import TCAN, TCANConfig
+from smi.learning.models.tcn import TCN, TCNConfig
+from smi.learning.models.unet_transformer import UNetTransformer, UNetTransformerConfig
 from tests._devices import devices
 
 SEQUENCE_LENGTH = 256

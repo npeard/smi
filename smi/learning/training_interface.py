@@ -20,10 +20,10 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 from lightning.pytorch.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
-from smi.analysis.lit_module import LitModule
-from smi.analysis.synthetic_lit_module import SyntheticIndexDataset, SyntheticLitModule
 from smi.data.datamodule import VelocityDataModule
 from smi.data.schema import read_sample_rate
+from smi.learning.lit_module import LitModule
+from smi.learning.synthetic_lit_module import SyntheticIndexDataset, SyntheticLitModule
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +192,9 @@ class TrainingConfig:
 class TrainingInterface:
     """Main trainer class for managing model training."""
 
-    CHECKPOINT_DIR = Path(__file__).parent / 'models' / 'checkpoints'
+    CHECKPOINT_DIR = (
+        Path(__file__).parent.parent / 'analysis' / 'models' / 'checkpoints'
+    )
 
     def __init__(
         self,

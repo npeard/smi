@@ -14,7 +14,7 @@ physics transforms (targets). When tabular/scalar EDA features are added later
 they can be expressed as Polars ``pl.Expr`` over a per-shot DataFrame -- Polars
 is a project dependency for exactly that EDA path -- but the training-time path
 here uses plain callables, which is also what the TorchScript ``FeatureMap``
-(``analysis/models/base.py``) will mirror for packaging.
+(``learning/models/base.py``) will mirror for packaging.
 """
 
 from collections.abc import Callable

@@ -6,8 +6,8 @@ import math
 import pytest
 import torch
 
-from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.core.acquisition import STEMLAB_125_14
+from smi.learning.synthetic_lit_module import SyntheticLitModule
 from smi.theory import forward
 from smi.theory.forward import (
     NOMINAL_DRIVE_GAIN,

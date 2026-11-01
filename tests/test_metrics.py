@@ -3,7 +3,6 @@
 import numpy as np
 import torch
 
-from smi.analysis.models.factory import count_parameters, create_model
 from smi.core.metrics import (
     displacement_from_velocity,
     per_shot_rmse,
@@ -11,6 +10,7 @@ from smi.core.metrics import (
     summarize_per_shot,
     velocity_rmse,
 )
+from smi.learning.models.factory import count_parameters, create_model
 
 #: Dataset sample rate (Hz) after the decimate-by-256 acquisition setting.
 SAMPLE_RATE_HZ = 488281.25

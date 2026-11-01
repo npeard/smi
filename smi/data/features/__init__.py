@@ -8,7 +8,7 @@ module-level :data:`default_registry`.
 
 Normalization statistics for every registered feature are computed offline by
 ``compute_norm_stats.py`` and version-controlled in ``normalization.py``; the
-model's normalization wrapper (``analysis/models/base.py``) bakes those stats
+model's normalization wrapper (``learning/models/base.py``) bakes those stats
 into ``register_buffer`` s so the rest of the codebase works in raw units.
 """
 

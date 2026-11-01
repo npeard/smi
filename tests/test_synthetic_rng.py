@@ -14,7 +14,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from smi.analysis.synthetic_lit_module import (
+from smi.learning.synthetic_lit_module import (
     VAL_SEED,
     SyntheticIndexDataset,
     SyntheticLitModule,

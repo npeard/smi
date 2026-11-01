@@ -9,17 +9,17 @@ gradient -- ground truth the formula cannot talk its way around.
 import pytest
 import torch
 
-from smi.analysis.models.barland_cnn import BarlandCNN, BarlandCNNConfig
-from smi.analysis.models.mlp import MLP, MLPConfig
-from smi.analysis.models.neural_operator import NeuralOperator, NeuralOperatorConfig
-from smi.analysis.models.patch_transformer import (
+from smi.learning.models.barland_cnn import BarlandCNN, BarlandCNNConfig
+from smi.learning.models.mlp import MLP, MLPConfig
+from smi.learning.models.neural_operator import NeuralOperator, NeuralOperatorConfig
+from smi.learning.models.patch_transformer import (
     PatchTransformer,
     PatchTransformerConfig,
 )
-from smi.analysis.models.scnn import SCNN, SCNNConfig
-from smi.analysis.models.tcan import TCAN, TCANConfig
-from smi.analysis.models.tcn import TCN, TCNConfig
-from smi.analysis.models.unet_transformer import UNetTransformer, UNetTransformerConfig
+from smi.learning.models.scnn import SCNN, SCNNConfig
+from smi.learning.models.tcan import TCAN, TCANConfig
+from smi.learning.models.tcn import TCN, TCNConfig
+from smi.learning.models.unet_transformer import UNetTransformer, UNetTransformerConfig
 
 
 def measure_receptive_field(

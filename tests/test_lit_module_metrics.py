@@ -7,9 +7,9 @@ comparable to the analytic baseline's RMSE without a separate evaluation pass.
 import pytest
 import torch
 
-from smi.analysis.lit_module import LitModule
 from smi.core.kinematics import derivative_displacement
 from smi.core.metrics import best_sign
+from smi.learning.lit_module import LitModule
 from tests._sims import SAMPLE_RATE
 
 IN_CHANNELS = 3
