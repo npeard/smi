@@ -67,7 +67,7 @@ def test_run_shots_appends_to_existing_file(tmp_path, waveform):
 def test_timeout_aborts_without_fabricating_data(tmp_path, waveform):
     manager = make_manager(NeverTriggers)
     path = tmp_path / 'd.h5'
-    with pytest.raises(RuntimeError, match='consecutive shots timed out'):
+    with pytest.raises(RuntimeError, match='consecutive shots failed'):
         run_shots(manager, waveform, CoilDriver(), 10, path, 0.0, 0.0)
     assert not path.exists()
 
@@ -91,6 +91,39 @@ def test_timeout_shot_is_skipped_then_run_continues(tmp_path, waveform, monkeypa
     assert arrays['RP1_CH1'].shape[0] == 2
     # A pause follows every shot but the last, the skipped one included.
     assert [s for s in sleeps if s == 7.5] == [7.5, 7.5]
+
+
+def test_out_of_range_drive_shot_is_skipped_then_run_continues(
+    tmp_path, waveform, monkeypatch
+):
+    manager = make_manager()
+    real = manager.configure_generation
+    calls = []
+
+    def flaky(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise ValueError('samples must lie in [-1, 1]')
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(manager, 'configure_generation', flaky)
+    path = run_shots(manager, waveform, CoilDriver(), 3, tmp_path / 'd.h5', 1.0, 0.0)
+    arrays, _ = read_shots(path)
+    assert arrays['RP1_CH1'].shape[0] == 2
+
+
+def test_output_is_off_while_each_shot_is_reconfigured(tmp_path, waveform):
+    manager = make_manager()
+    run_shots(manager, waveform, CoilDriver(), 2, tmp_path / 'd.h5', 1.0, 0.0)
+    sent = [c.upper() for c in manager.devices[PRIMARY].sent]
+    off = [i for i, c in enumerate(sent) if c == 'OUTPUT1:STATE OFF']
+    on = [i for i, c in enumerate(sent) if c == 'OUTPUT1:STATE ON']
+    arm = [i for i, c in enumerate(sent) if c == 'ACQ:TRIG CH1_PE']
+    load = [i for i, c in enumerate(sent) if c.startswith('SOUR1:TRAC:DATA:DATA')]
+    trig = [i for i, c in enumerate(sent) if c == 'SOUR1:TRIG:INT']
+    assert len(off) == len(on) == len(arm) == len(load) == 2
+    for shot in range(2):
+        assert off[shot] < load[shot] < arm[shot] < on[shot] < trig[shot]
 
 
 def test_live_view_runs_forever_view_on_a_driven_rig(waveform, monkeypatch):

@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 
 DRIVE_CHANNEL = 1
 ACQUIRED_CHANNELS = (1, 2)
-# A rig that times out this many shots in a row is disconnected or mis-wired;
+# A rig that fails this many shots in a row is disconnected or mis-wired;
 # stop rather than loop forever.
-MAX_CONSECUTIVE_TIMEOUTS = 3
+MAX_CONSECUTIVE_FAILURES = 3
 
 
 def channel_key(board: int, channel: int) -> str:
@@ -36,7 +36,12 @@ def configure_shot(
     The primary triggers on the drive's own positive edge and forwards that
     trigger to the others, which wait on ``EXT_NE``. ``manager.reset()`` must
     have been called once beforehand.
+
+    ``reset()`` is no longer sent per shot (GEN:RST clears both channels), so
+    the output is switched off first: otherwise the previous drive keeps
+    playing while CH1_PE arms and the primary triggers on the stale drive.
     """
+    manager.enable_output(PRIMARY, DRIVE_CHANNEL, False)
     # Pre-compensate the coil's gain so the displacement spectrum comes out flat.
     _, drive, _ = coil.sample(waveform, normalize_gain=True)
     manager.configure_generation(
@@ -92,8 +97,9 @@ def run_shots(
     """Acquire ``n_shots`` shots, appending each to ``path`` as soon as it is read.
 
     Writing per shot means a lost connection keeps every finished shot. A shot
-    whose trigger times out is logged and skipped, never filled in, so the file
-    may hold fewer than ``n_shots``. Velocity and displacement are not stored:
+    whose trigger times out, whose transport errors, or whose drive falls out
+    of the generator's range is logged and skipped, never filled in, so the
+    file may hold fewer than ``n_shots``. Velocity and displacement are not stored:
     they are recomputed from the drive channel by the readers.
 
     Args:
@@ -109,27 +115,29 @@ def run_shots(
         ``path``.
 
     Raises:
-        RuntimeError: ``MAX_CONSECUTIVE_TIMEOUTS`` shots timed out in a row.
+        RuntimeError: ``MAX_CONSECUTIVE_FAILURES`` shots failed in a row.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     written = 0
-    timeouts = 0
+    failures = 0
     manager.reset()
     try:
         for i in range(n_shots):
             logger.info(f'Shot {i + 1}/{n_shots}')
-            configure_shot(manager, waveform, coil)
             try:
+                # ValueError: configure_generation rejects an out-of-range drive.
+                # OSError covers TimeoutError and a dropped connection.
+                configure_shot(manager, waveform, coil)
                 acquisition = manager.acquire(timeout_s)
-            except TimeoutError:
-                timeouts += 1
-                logger.warning(f'Shot {i + 1} timed out; skipped')
-                if timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
+            except (OSError, ValueError) as err:
+                failures += 1
+                logger.warning(f'Shot {i + 1} failed ({err!r}); skipped')
+                if failures >= MAX_CONSECUTIVE_FAILURES:
                     raise RuntimeError(
-                        f'{timeouts} consecutive shots timed out; check the rig'
-                    ) from None
+                        f'{failures} consecutive shots failed; check the rig'
+                    ) from err
             else:
-                timeouts = 0
+                failures = 0
                 _write(path, acquisition, waveform)
                 written += 1
             # The rig needs the settle time after a skipped shot as well.
