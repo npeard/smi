@@ -14,6 +14,7 @@ import time
 
 import lightning as lightning_module
 
+from smi.core.cli import add_verbosity, setup_logging
 from smi.core.paths import CONFIGS_DIR
 from smi.learning.training_interface import TrainingConfig, TrainingInterface
 
@@ -28,13 +29,7 @@ def parse_args() -> argparse.Namespace:
         default=str(CONFIGS_DIR / 'models' / 'tcn-config.yaml'),
         help='Path to YAML config file for training.',
     )
-    parser.add_argument(
-        '--verbosity',
-        type=str,
-        default='INFO',
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-        help='Set the logging verbosity level (default: INFO)',
-    )
+    add_verbosity(parser)
     return parser.parse_args()
 
 
@@ -62,11 +57,7 @@ def train_model(config_path: str) -> None:
 
 def main() -> None:
     args = parse_args()
-    logging.basicConfig(
-        level=args.verbosity,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-    )
+    setup_logging(args.verbosity)
     train_model(args.config)
 
 

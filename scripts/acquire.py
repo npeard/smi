@@ -19,6 +19,7 @@ from smi.acquisition.rig import (
     connect,
 )
 from smi.acquisition.shots import run_shots
+from smi.core.cli import add_verbosity, setup_logging
 from smi.core.paths import DATA_DIR
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.waveform import Waveform
@@ -37,23 +38,13 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help='Dataset filename under data/ (e.g. "my-data.h5").',
     )
-    parser.add_argument(
-        '--verbosity',
-        type=str,
-        default='INFO',
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-        help='Set the logging verbosity level (default: INFO)',
-    )
+    add_verbosity(parser)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    logging.basicConfig(
-        level=args.verbosity,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-    )
+    setup_logging(args.verbosity)
     name = args.dataset_name
     if not name.endswith('.h5'):
         name += '.h5'
