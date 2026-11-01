@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from smi.core.acquisition import STEMLAB_125_14, AcquisitionConfig
+
 from .coil_driver import MS_PER_S, CoilDriver
 from .waveform import Waveform
 
@@ -235,6 +237,7 @@ class InterferometerArray:
 
     def sample_simulated(
         self,
+        acquisition: AcquisitionConfig,
         start_freq: float = 1,
         end_freq: float = 1000,
         coil_driver: CoilDriver | None = None,
@@ -251,6 +254,7 @@ class InterferometerArray:
         to the interferometer array.
 
         Args:
+            acquisition: Board whose buffer size and sample rate set the grid
             start_freq: The lower bound of the valid frequency range (Hz)
             end_freq: The upper bound of the valid frequency range (Hz)
             coil_driver: CoilDriver instance to use (creates a new one if None)
@@ -274,7 +278,9 @@ class InterferometerArray:
             coil_driver = CoilDriver()
 
         # Create a Waveform generator
-        waveform = Waveform(start_freq=start_freq, end_freq=end_freq)
+        waveform = Waveform(
+            start_freq=start_freq, end_freq=end_freq, acquisition=acquisition
+        )
 
         # Generate a random voltage waveform using CoilDriver.sample()
         time, voltage, _voltage_spectrum = coil_driver.sample(
@@ -296,7 +302,7 @@ class InterferometerArray:
 
         # Calculate how many samples we would see at the acquisition rate
         # The acquisition buffer size is the same as the generation buffer size
-        acq_buffer_size = waveform.BUFFER_SIZE
+        acq_buffer_size = waveform.buffer_size
 
         # Calculate how many samples from the original waveform we'll actually see
         # due to the slower acquisition rate (aliasing effect)
@@ -501,10 +507,12 @@ if __name__ == '__main__':
 
     # Method 1: Generate a simulated sample and get the data
     time, signals, acq_voltage, displacement, velocity = (
-        interferometer_array.sample_simulated(start_freq=1, end_freq=1000)
+        interferometer_array.sample_simulated(
+            STEMLAB_125_14, start_freq=1, end_freq=1000
+        )
     )
 
     # Method 2: Generate and plot in one step
     interferometer_array.plot_sample_simulated(
-        start_freq=1, end_freq=1000, normalize_gain=True
+        acquisition=STEMLAB_125_14, start_freq=1, end_freq=1000, normalize_gain=True
     )

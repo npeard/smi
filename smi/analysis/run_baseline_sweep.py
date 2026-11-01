@@ -47,14 +47,14 @@ from smi.analysis.baselines import (
     windowize,
 )
 from smi.analysis.datamodule import VelocityDataModule
-from smi.analysis.metrics import (
+from smi.analysis.models.factory import create_model
+from smi.analysis.results_artifact import RunRecord, write_results
+from smi.analysis.training_interface import TrainingConfig, TrainingInterface
+from smi.core.metrics import (
     displacement_from_velocity,
     per_shot_rmse,
     summarize_per_shot,
 )
-from smi.analysis.models.factory import create_model
-from smi.analysis.results_artifact import RunRecord, write_results
-from smi.analysis.training_interface import TrainingConfig, TrainingInterface
 from smi.synthetic.coil_driver import MS_PER_S
 
 logger = logging.getLogger(__name__)

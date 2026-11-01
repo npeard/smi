@@ -9,6 +9,7 @@ import pytest
 import torch
 
 from smi.analysis.datasets import VelocityDataset
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic import frozen
 from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SIMULATOR_VERSION, SimConfig
 from smi.synthetic.frozen import (
@@ -24,6 +25,7 @@ pytestmark = pytest.mark.usefixtures('small_chunks')
 
 def _cfg(wavelengths=WAVELENGTHS_UM, feedback_c=0.5, alpha=3.0) -> SimConfig:
     return SimConfig(
+        acquisition=STEMLAB_125_14,
         wavelengths_um=wavelengths,
         sample_rate=SAMPLE_RATE,
         start_freq_hz=1.0,
@@ -87,7 +89,9 @@ def test_hash_changes_with_any_field(tmp_path):
         'adc_bits': 10,
         'adc_full_scale': 3.0,
     }
-    assert set(perturbed) == {f.name for f in dataclasses.fields(SimConfig)}
+    # `acquisition` is deliberately unhashed (see SimConfig.hash).
+    hashed = {f.name for f in dataclasses.fields(SimConfig)} - {'acquisition'}
+    assert set(perturbed) == hashed
     paths = {frozen_set_path(cfg, 0, 4, tmp_path)}
     for name, value in perturbed.items():
         # Bypass validation: only the identity of the config is under test.

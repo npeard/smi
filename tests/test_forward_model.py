@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic import forward
 from smi.synthetic.forward import (
     NOMINAL_DRIVE_GAIN,
@@ -231,6 +232,7 @@ def test_hash_is_stable_and_field_sensitive():
 def test_hash_ignores_int_vs_float_spelling():
     float_cfg = _noise_free()
     int_cfg = SimConfig.noise_free(
+        acquisition=STEMLAB_125_14,
         wavelengths_um=list(WAVELENGTHS_UM),
         sample_rate=SAMPLE_RATE,
         start_freq_hz=1,
@@ -369,3 +371,13 @@ def test_synthetic_module_rejects_a_sim_at_another_sample_rate():
             sim=dataclasses.asdict(sim),
             restoring_checkpoint=True,
         )
+
+
+def test_simconfig_requires_acquisition():
+    fields = {
+        f.name: getattr(michelson_sim(), f.name)
+        for f in dataclasses.fields(SimConfig)
+        if f.name != 'acquisition'
+    }
+    with pytest.raises(TypeError, match='acquisition'):
+        SimConfig(**fields)

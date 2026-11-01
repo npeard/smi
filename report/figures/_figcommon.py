@@ -48,6 +48,7 @@ from smi.analysis.experiments import (
     training_config,
 )
 from smi.analysis.results_artifact import RunRecord, read_results
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic.forward import (
     NOMINAL_ALPHA,
     NOMINAL_FEEDBACK_C,
@@ -242,7 +243,7 @@ class LadderRow:
 
 
 _NOMINAL_SIM = SimConfig.nominal(
-    SYNTHETIC_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
+    STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
 )
 
 
@@ -384,6 +385,7 @@ def mismatch_spectra(noise_free: bool) -> MismatchSpectra:
     cfg = _NOMINAL_SIM
     if noise_free:
         cfg = SimConfig.noise_free(
+            acquisition=STEMLAB_125_14,
             wavelengths_um=cfg.wavelengths_um,
             sample_rate=cfg.sample_rate,
             start_freq_hz=cfg.start_freq_hz,

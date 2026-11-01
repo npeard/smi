@@ -17,16 +17,17 @@ import numpy as np
 from numpy.fft import fft
 
 # Import our custom classes
+from smi.core.acquisition import STEMLAB_125_14
+from smi.core.kinematics import derivative_displacement, integrate_velocity
+
 try:
     # Try relative imports first (when used as a package)
     from ..synthetic.coil_driver import CoilDriver
     from ..synthetic.interferometers import MichelsonInterferometer
     from ..synthetic.waveform import Waveform
-    from .redpitaya_config import RedPitayaConfig
     from .scpi import SCPI
 except ImportError:
     # Fall back to absolute imports (when run as a script)
-    from smi.redpitaya.redpitaya_config import RedPitayaConfig
     from smi.redpitaya.scpi import SCPI
     from smi.synthetic.coil_driver import CoilDriver
     from smi.synthetic.interferometers import MichelsonInterferometer
@@ -50,8 +51,8 @@ class RedPitayaManager:
     """
 
     # Constants
-    BUFFER_SIZE = RedPitayaConfig.BUFFER_SIZE
-    SAMPLE_RATE_DEC1 = RedPitayaConfig.SAMPLE_RATE_DEC1
+    BUFFER_SIZE = STEMLAB_125_14.buffer_size
+    SAMPLE_RATE_DEC1 = STEMLAB_125_14.sample_rate_dec1_hz
 
     def __init__(
         self,
@@ -265,6 +266,7 @@ class RedPitayaManager:
         if self.settings['wave_form'] == 'ARBITRARY':
             # Use our Waveform class to generate a random waveform
             waveform_generator = Waveform(
+                acquisition=STEMLAB_125_14,
                 start_freq=self.settings['start_freq'],
                 end_freq=self.settings['end_freq'],
                 gen_dec=self.settings['gen_dec'],
@@ -633,7 +635,7 @@ class RedPitayaManager:
         # accepts NumPy or Torch; this path passes a NumPy array, so the result is a
         # NumPy array (np.asarray is a no-op for an existing ndarray).
         velocity_derivative = np.asarray(
-            self.coil_driver.derivative_displacement(displacement, sample_rate)
+            derivative_displacement(displacement, sample_rate)
         )
 
         return velocity_tf, velocity_derivative, velocity_spectrum, freq
@@ -661,9 +663,7 @@ class RedPitayaManager:
         # Integrate velocity to get displacement. integrate_velocity accepts NumPy or
         # Torch; this path passes a NumPy array, so the result is a NumPy array
         # (np.asarray is a no-op for an existing ndarray).
-        displacement_integrated = np.asarray(
-            self.coil_driver.integrate_velocity(velocity, sample_rate)
-        )
+        displacement_integrated = np.asarray(integrate_velocity(velocity, sample_rate))
 
         # Enforce that displacement starts at zero for each trace for easier comparison
         displacement_integrated -= displacement_integrated[0]

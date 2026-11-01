@@ -20,7 +20,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from smi.redpitaya.redpitaya_config import RedPitayaConfig
+from smi.core.acquisition import STEMLAB_125_14
 
 from .registry import default_registry
 
@@ -36,7 +36,7 @@ def _resolve_sample_rate(f: h5py.File) -> float:
     """Read the sample rate from file attrs, falling back to the dec-256 rate."""
     if 'sample_rate' in f.attrs:
         return float(f.attrs['sample_rate'])
-    default = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+    default = STEMLAB_125_14.sample_rate_dec1_hz / 256
     logger.warning('No sample_rate attr; using default %.2f Hz', default)
     return default
 

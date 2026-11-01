@@ -83,6 +83,7 @@ from smi.analysis.training_interface import (
     TrainingInterface,
     convergence_monitor,
 )
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic.forward import NOMINAL_SWEEPS, SIMULATOR_VERSION, SimConfig
 from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
@@ -180,11 +181,13 @@ def _build_sims(
         'feedback_c': entry['feedback_c'],
         'alpha': entry['alpha'],
     }
-    nominal = SimConfig.nominal(**args)
+    # The grid YAMLs describe the one rig the data was taken on.
+    nominal = SimConfig.nominal(STEMLAB_125_14, **args)
     if preset == 'nominal':
         base = nominal
     elif preset == 'noise_free':
         base = SimConfig.noise_free(
+            acquisition=STEMLAB_125_14,
             **args,
             sample_rate=nominal.sample_rate,
             start_freq_hz=nominal.start_freq_hz,
@@ -389,7 +392,7 @@ def cell_fingerprint(
     blocks: dict[str, Any] = {'test_set': test}
     if config is None:
         budget = dict.fromkeys(BUDGET_FIELDS)
-        blocks['sim'] = dataclasses.asdict(cell.sim)
+        blocks['sim'] = cell.sim.identity_fields()
     else:
         budget = _budget(config)
         blocks.update(
@@ -397,7 +400,9 @@ def cell_fingerprint(
             training=config.training_config,
             data=config.data_config,
             loss=config.loss_config,
-            synthetic=config.synthetic_config,
+            # The sim is hashed as SimConfig.hash() does, so recorded
+            # fingerprints survive the acquisition field.
+            synthetic={**config.synthetic_config, 'sim': cell.sim.identity_fields()},
         )
     block_hashes = {k: _stable_hash(v) for k, v in blocks.items()}
     return {

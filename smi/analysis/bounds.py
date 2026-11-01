@@ -24,6 +24,7 @@ import scipy.linalg
 import scipy.optimize
 import torch
 
+from smi.core.acquisition import AcquisitionConfig
 from smi.synthetic.forward import (
     SimConfig,
     drive,
@@ -133,7 +134,7 @@ class IdealShots:
 def ideal_shots(cfg: SimConfig, n_shots: int, seed: int) -> IdealShots:
     """Trajectories from ``sample_trajectory`` with uniform phases, U visibility."""
     gen = torch.Generator().manual_seed(seed)
-    waveform, coil = drive(cfg.start_freq_hz, cfg.end_freq_hz)
+    waveform, coil = drive(cfg.acquisition, cfg.start_freq_hz, cfg.end_freq_hz)
     _, velocity, displacement = sample_trajectory(
         n_shots, waveform, coil, cfg.drive_gain, cfg.sample_rate, _CPU, gen
     )
@@ -284,9 +285,13 @@ def _stationary_cov(params: np.ndarray) -> np.ndarray:
 
 @functools.cache
 def _fit_prior(
-    drive_gain: float, start_hz: float, end_hz: float, sample_rate: float
+    acquisition: AcquisitionConfig,
+    drive_gain: float,
+    start_hz: float,
+    end_hz: float,
+    sample_rate: float,
 ) -> StateSpace:
-    cfg_drive = drive(start_hz, end_hz)
+    cfg_drive = drive(acquisition, start_hz, end_hz)
     gen = torch.Generator().manual_seed(_PRIOR_SEED)
     _, v, d = sample_trajectory(
         _PRIOR_SHOTS, *cfg_drive, drive_gain, sample_rate, _CPU, gen
@@ -362,7 +367,11 @@ def motion_prior(cfg: SimConfig) -> StateSpace:
     mean PSD, so bounds under it are bounds for that second-order surrogate.
     """
     return _fit_prior(
-        cfg.drive_gain, cfg.start_freq_hz, cfg.end_freq_hz, cfg.sample_rate
+        cfg.acquisition,
+        cfg.drive_gain,
+        cfg.start_freq_hz,
+        cfg.end_freq_hz,
+        cfg.sample_rate,
     )
 
 

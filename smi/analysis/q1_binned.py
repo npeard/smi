@@ -29,8 +29,8 @@ import torch
 from smi.analysis.datasets import select_pd_keys
 from smi.analysis.evaluate import EVAL_CHUNK_SHOTS, N_BINS, CheckpointEstimator
 from smi.analysis.experiments import ANALYSIS_DIR, Cell, cell_key, expand_grid
-from smi.analysis.metrics import best_sign, per_shot_rmse
 from smi.analysis.results_artifact import read_results
+from smi.core.metrics import best_sign, per_shot_rmse
 from smi.synthetic.forward import smi_excess_phase
 from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 

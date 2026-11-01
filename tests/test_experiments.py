@@ -30,7 +30,7 @@ from smi.analysis.experiments import (
 from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import read_results
 from smi.analysis.training_interface import SIGNED_RMSE_KEY
-from smi.synthetic.coil_driver import CoilDriver
+from smi.core.kinematics import derivative_displacement
 from tests._helpers import script_log
 
 MATCHED = experiments.ANALYSIS_DIR / 'models' / 'configs' / 'matched'
@@ -143,7 +143,7 @@ def test_displacement_target_cell_trains_and_scores_its_differentiated_output(tm
         sample_rate = float(f.attrs['sample_rate'])
     with torch.no_grad():
         displacement = module.model(signals)[:, 0]
-    pred = CoilDriver.derivative_displacement(displacement, sample_rate)
+    pred = derivative_displacement(displacement, sample_rate)
     rmse = torch.sqrt(torch.mean((pred - velocity) ** 2, dim=-1)).mean()
     assert record.metrics['velocity_rmse']['mean'] == pytest.approx(
         float(rmse), rel=1e-5

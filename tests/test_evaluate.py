@@ -12,7 +12,6 @@ import torch
 from smi.analysis import synthetic_lit_module
 from smi.analysis.datasets import VelocityDataset, select_pd_keys
 from smi.analysis.evaluate import CheckpointEstimator, InverseFitEstimator, evaluate
-from smi.analysis.metrics import sign_invariant_rmse
 from smi.analysis.results_artifact import (
     RunRecord,
     append_results,
@@ -20,8 +19,9 @@ from smi.analysis.results_artifact import (
     write_results,
 )
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
+from smi.core.kinematics import derivative_displacement, integrate_velocity
+from smi.core.metrics import sign_invariant_rmse
 from smi.synthetic import frozen
-from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.forward import SIMULATOR_VERSION
 from smi.synthetic.frozen import pd_keys, write_frozen_set
 from tests._sims import SAMPLE_RATE, SMALL_CHUNK_SHOTS, michelson_sim
@@ -246,8 +246,7 @@ def test_displacement_checkpoint_is_differentiated_before_scoring(tmp_path):
     with torch.no_grad():
         displacement = module.eval().model(x)[:, 0]
     torch.testing.assert_close(
-        est.predict_velocity(x, RIG),
-        CoilDriver.derivative_displacement(displacement, SAMPLE_RATE),
+        est.predict_velocity(x, RIG), derivative_displacement(displacement, SAMPLE_RATE)
     )
 
 
@@ -417,9 +416,7 @@ def _integrable_file(path, offset_um):
     shots, length = 3, 256
     velocity = np.cumsum(rng.normal(size=(shots, length)), axis=1).astype('float32')
     displacement = (
-        CoilDriver.integrate_velocity(
-            torch.from_numpy(velocity).double(), SAMPLE_RATE
-        ).numpy()
+        integrate_velocity(torch.from_numpy(velocity).double(), SAMPLE_RATE).numpy()
         + np.asarray(offset_um)[:, None]
     )
     with h5py.File(path, 'w') as f:

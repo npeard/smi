@@ -9,12 +9,13 @@ import sympy as sp
 import torch
 
 from smi.analysis import bounds
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic.forward import SimConfig, fringe, noise_std, smi_excess_phase
 from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
 
 
 def _cfg(wavelengths_um, feedback_c, alpha):
-    return SimConfig.nominal(wavelengths_um, feedback_c, alpha)
+    return SimConfig.nominal(STEMLAB_125_14, wavelengths_um, feedback_c, alpha)
 
 
 @pytest.fixture(scope='module')

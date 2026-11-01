@@ -25,6 +25,7 @@ from _figcommon import COLORS, FIGSIZE_HALF, SYNTHETIC_WAVELENGTHS_UM, parse_arg
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from smi.analysis import bounds
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic.forward import NOMINAL_ALPHA, SimConfig
 
 FEEDBACK_C = np.linspace(0.0, 0.9, 19)
@@ -38,7 +39,7 @@ CHANNEL_COLORS = (COLORS['ch635'], COLORS['accent'], COLORS['highlight'])
 def main() -> None:
     args = parse_args(__doc__.splitlines()[0])
     prior = bounds.motion_prior(
-        SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
+        SimConfig.nominal(STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
     )
 
     fig, ax = plt.subplots(figsize=(FIGSIZE_HALF[0] * 1.3, FIGSIZE_HALF[1]))
@@ -46,7 +47,10 @@ def main() -> None:
         causal, offline = [], []
         for feedback_c in FEEDBACK_C:
             cfg = SimConfig.nominal(
-                SYNTHETIC_WAVELENGTHS_UM[:n_channels], float(feedback_c), NOMINAL_ALPHA
+                STEMLAB_125_14,
+                SYNTHETIC_WAVELENGTHS_UM[:n_channels],
+                float(feedback_c),
+                NOMINAL_ALPHA,
             )
             causal.append(float(bounds.pcrb_filter(prior, cfg, N_STEPS)[-1]) ** 0.5)
             offline.append(

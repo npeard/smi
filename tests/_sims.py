@@ -6,6 +6,7 @@ available to every test module.
 
 import pytest
 
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic import frozen
 from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SimConfig
 from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
@@ -20,6 +21,7 @@ SMALL_CHUNK_SHOTS = 4
 def michelson_sim() -> SimConfig:
     """Noise-free Michelson (C = 0, alpha = 0) on the rig's three channels."""
     return SimConfig.noise_free(
+        acquisition=STEMLAB_125_14,
         wavelengths_um=WAVELENGTHS_UM,
         sample_rate=SAMPLE_RATE,
         start_freq_hz=1.0,

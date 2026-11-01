@@ -9,7 +9,7 @@ Conventions that matter when reading the numbers:
 
 * ``velocity_rmse`` is the per-shot RMSE of the signed prediction.
   ``velocity_rmse_sign_invariant`` takes, per shot, the better of ``+pred`` and
-  ``-pred`` (see :func:`smi.analysis.metrics.sign_invariant_rmse`).
+  ``-pred`` (see :func:`smi.core.metrics.sign_invariant_rmse`).
 * NRMSE is that RMSE divided by the per-shot population std of the true
   velocity, for both variants.
 * ``displacement_rmse`` (um) is the per-shot RMSE of the integrated predicted
@@ -39,14 +39,15 @@ from torch import Tensor
 from smi.analysis.baseline_fit import PD_WAVELENGTHS_UM, inverse_fit
 from smi.analysis.datasets import file_pd_channels, file_sample_rate, select_pd_keys
 from smi.analysis.lit_module import LitModule
-from smi.analysis.metrics import (
+from smi.analysis.results_artifact import RunRecord
+from smi.analysis.synthetic_lit_module import SyntheticLitModule
+from smi.core.kinematics import integrate_velocity
+from smi.core.metrics import (
     best_sign,
     per_shot_rmse,
     sign_invariant_rmse,
     summarize_per_shot,
 )
-from smi.analysis.results_artifact import RunRecord
-from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.forward import MAX_SPEED_UM_PER_MS, SimConfig
 
@@ -364,9 +365,7 @@ def evaluate(
             # float64: a cumulative sum over 16384 float32 samples would carry
             # its own rounding into the metric. integrate_velocity starts each
             # shot at zero, which removes the predicted start offset.
-            d_hat = cast(
-                Tensor, CoilDriver.integrate_velocity(pred.double(), sample_rate)
-            )
+            d_hat = cast(Tensor, integrate_velocity(pred.double(), sample_rate))
             d = disp - disp[:, :1]
             for key, value in (
                 ('velocity_rmse', rmse),

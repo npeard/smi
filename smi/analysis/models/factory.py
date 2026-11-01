@@ -62,3 +62,22 @@ def create_model(model_hparams: dict[str, Any]) -> SequenceModel:
     config_cls, model_cls = MODEL_REGISTRY[model_type]
     logger.debug(f'Creating {model_cls.__name__} model...')
     return model_cls(config_cls(**params))
+
+
+def count_parameters(model_hparams: dict[str, Any]) -> int:
+    """Count the trainable parameters of the model a config would build.
+
+    Instantiates via :func:`create_model` rather than predicting the count
+    from the config, so the number can never drift from the architecture.
+
+    Args:
+        model_hparams: Model configuration, including the ``'type'`` key.
+
+    Returns:
+        Number of trainable (``requires_grad``) parameters.
+
+    Raises:
+        ValueError: If the configuration names an unknown model type.
+    """
+    model = create_model(model_hparams)
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)

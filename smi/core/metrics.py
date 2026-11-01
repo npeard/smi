@@ -6,13 +6,10 @@ artifact reports: velocity RMSE in um/ms and displacement RMSE in um,
 summarized per shot with the same six keys ``baseline_results.json`` uses.
 """
 
-from typing import Any
-
 import numpy as np
 import torch
 
-from smi.analysis.models.factory import create_model
-from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
+from smi.core.kinematics import MS_PER_S, integrate_velocity
 
 #: The six summary keys, in the order ``baseline_results.json`` defines them.
 SUMMARY_KEYS = ('mean', 'median', 'p25', 'p75', 'min', 'max')
@@ -113,7 +110,7 @@ def displacement_from_velocity(velocity: torch.Tensor, dt_ms: float) -> torch.Te
     not measured the same way and a table placing them side by side must say
     so.
 
-    Integration is delegated to :meth:`CoilDriver.integrate_velocity` rather
+    Integration is delegated to :func:`smi.core.kinematics.integrate_velocity` rather
     than re-deriving the rule here. That method accepts only 1-D or 2-D input,
     while every model in this project emits ``[batch, 1, length]``; the
     channel axis is squeezed for the call and restored afterwards.
@@ -145,7 +142,7 @@ def displacement_from_velocity(velocity: torch.Tensor, dt_ms: float) -> torch.Te
     else:
         raise ValueError(f'Unsupported velocity shape: {tuple(velocity.shape)}')
 
-    displacement = CoilDriver.integrate_velocity(flat, sample_rate)
+    displacement = integrate_velocity(flat, sample_rate)
     assert isinstance(displacement, torch.Tensor)
 
     return displacement.unsqueeze(1) if velocity.ndim == 3 else displacement
@@ -171,22 +168,3 @@ def summarize_per_shot(values: np.ndarray) -> dict[str, float]:
         'min': float(np.min(values)),
         'max': float(np.max(values)),
     }
-
-
-def count_parameters(model_hparams: dict[str, Any]) -> int:
-    """Count the trainable parameters of the model a config would build.
-
-    Instantiates via :func:`create_model` rather than predicting the count
-    from the config, so the number can never drift from the architecture.
-
-    Args:
-        model_hparams: Model configuration, including the ``'type'`` key.
-
-    Returns:
-        Number of trainable (``requires_grad``) parameters.
-
-    Raises:
-        ValueError: If the configuration names an unknown model type.
-    """
-    model = create_model(model_hparams)
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)

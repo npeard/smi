@@ -90,7 +90,7 @@ from smi.analysis.baseline_fit import (
     window_fringe_coefficients,
 )
 from smi.analysis.datasets import file_pd_channels
-from smi.redpitaya.redpitaya_config import RedPitayaConfig
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.forward import (
     NOMINAL_DRIVE_BAND_HZ,
@@ -161,7 +161,7 @@ def _drive_gain(voltage: np.ndarray, sample_rate: float) -> float:
     acquisition schema records no band, so a file driven over another band
     would read a wrong gain.
     """
-    waveform = Waveform(*NOMINAL_DRIVE_BAND_HZ)
+    waveform = Waveform(*NOMINAL_DRIVE_BAND_HZ, acquisition=STEMLAB_125_14)
     if waveform.acq_sample_rate != sample_rate:
         raise ValueError(
             f'sample_rate {sample_rate} does not match the rig drive grid '
@@ -493,7 +493,7 @@ def calibrate(path: Path, n_shots: int, units: Units) -> dict:
         if units == 'volts':
             dc_level = float(x.mean())
             x = x / dc_level - 1
-            full_scale = RedPitayaConfig.INPUT_FULL_SCALE_LV_V / dc_level
+            full_scale = STEMLAB_125_14.input_full_scale_v / dc_level
         theta = 4 * np.pi / lam * displacement
         est = _channel(x, theta, sample_rate)
         channels[key] = {
@@ -508,7 +508,7 @@ def calibrate(path: Path, n_shots: int, units: Units) -> dict:
         'n_shots': n_shots,
         'sample_rate': sample_rate,
         'drive_gain': _drive_gain(voltage, sample_rate),
-        'adc_bits': RedPitayaConfig.ADC_BITS,
+        'adc_bits': STEMLAB_125_14.adc_bits,
         'channels': channels,
     }
 

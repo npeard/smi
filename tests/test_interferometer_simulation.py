@@ -3,6 +3,8 @@
 
 import numpy as np
 
+from smi.core.acquisition import STEMLAB_125_14
+from smi.core.kinematics import derivative_displacement, integrate_velocity
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.interferometers import InterferometerArray, MichelsonInterferometer
 from smi.synthetic.waveform import Waveform
@@ -30,19 +32,24 @@ class TestInterferometerSimulation:
         self.coil_driver = CoilDriver()
 
         # Create a Waveform generator
-        self.waveform = Waveform(start_freq=1, end_freq=1000)
+        self.waveform = Waveform(
+            acquisition=STEMLAB_125_14, start_freq=1, end_freq=1000
+        )
 
         # Run a simulation to get test data
         self.time, self.signals, self.acq_voltage, self.displacement, self.velocity = (
             self.interferometer_array.sample_simulated(
-                start_freq=1, end_freq=1000, coil_driver=self.coil_driver
+                STEMLAB_125_14,
+                start_freq=1,
+                end_freq=1000,
+                coil_driver=self.coil_driver,
             )
         )
 
     def test_buffer_size(self):
         """Test that all output arrays have the correct buffer size."""
         # All output arrays should have length equal to BUFFER_SIZE
-        buffer_size = self.waveform.BUFFER_SIZE
+        buffer_size = self.waveform.buffer_size
 
         # Check time array
         assert len(self.time) <= buffer_size, (
@@ -79,7 +86,7 @@ class TestInterferometerSimulation:
     def test_time_consistency(self):
         """Test that the time array is consistent with the acquisition sample rate."""
         # Get a new waveform to ensure we have the correct parameters
-        waveform = Waveform(start_freq=1, end_freq=1000)
+        waveform = Waveform(acquisition=STEMLAB_125_14, start_freq=1, end_freq=1000)
 
         # Calculate expected time step based on acquisition sample rate
         expected_dt = 1 / waveform.acq_sample_rate
@@ -106,8 +113,8 @@ class TestInterferometerSimulation:
         # can produce different results but should be correlated and have similar
         # magnitudes.
 
-        # Calculate velocity from displacement using CoilDriver.derivative_displacement
-        calculated_velocity = self.coil_driver.derivative_displacement(
+        # Calculate velocity from displacement using derivative_displacement
+        calculated_velocity = derivative_displacement(
             self.displacement, 1 / (self.time[1] - self.time[0])
         )
 
@@ -127,8 +134,8 @@ class TestInterferometerSimulation:
             f'ratio={ratio}'
         )
 
-        # Calculate displacement from velocity using CoilDriver.integrate_velocity
-        calculated_displacement = self.coil_driver.integrate_velocity(
+        # Calculate displacement from velocity using integrate_velocity
+        calculated_displacement = integrate_velocity(
             self.velocity, 1 / (self.time[1] - self.time[0])
         )
 

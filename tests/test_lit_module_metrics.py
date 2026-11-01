@@ -8,8 +8,8 @@ import pytest
 import torch
 
 from smi.analysis.lit_module import SAMPLE_RATE, LitModule
-from smi.analysis.metrics import best_sign
-from smi.synthetic.coil_driver import CoilDriver
+from smi.core.kinematics import derivative_displacement
+from smi.core.metrics import best_sign
 
 IN_CHANNELS = 3
 SEQ_LEN = 1024
@@ -192,7 +192,7 @@ def test_sign_invariant_displacement_target_chooses_the_sign_on_displacement():
     # so a sign chosen on velocity is wrong for displacement on every shot.
     d = torch.cumsum(torch.randn(2, SEQ_LEN, dtype=torch.float64), dim=-1)
     d = (d - d[:, :1]).float()
-    velocity = -CoilDriver.derivative_displacement(d, SAMPLE_RATE)
+    velocity = -derivative_displacement(d, SAMPLE_RATE)
     prediction = d + 0.01 * torch.randn_like(d)
     loss = _module('displacement', sign_invariant=True).loss_function(
         prediction, velocity, d.clone()

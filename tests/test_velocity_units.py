@@ -21,6 +21,8 @@ import torch
 from smi.analysis.features import default_registry
 from smi.analysis.features.normalization import NORMALIZATION_STATS
 from smi.analysis.lit_module import LitModule
+from smi.core.acquisition import STEMLAB_125_14
+from smi.core.kinematics import integrate_velocity
 from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
 from smi.synthetic.interferometers import MichelsonInterferometer
 from smi.synthetic.waveform import Waveform
@@ -39,7 +41,13 @@ def _drive_velocity_and_displacement() -> tuple[np.ndarray, np.ndarray, float]:
         Tuple of (velocity in um/ms, displacement in um, sample rate in Hz).
     """
     rng = np.random.default_rng(0)
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=256,
+    )
     t, _voltage, _spectrum = waveform.sample()
     sample_rate = float(1 / (t[1] - t[0]))
     # A fixed drive rather than the randomized sample, so the magnitudes this
@@ -115,7 +123,7 @@ def test_integrate_velocity_uses_a_millisecond_time_step():
     dt_ms = 1000.0 / sample_rate
     # A constant 1 um/ms velocity must cover exactly dt_ms microns per sample.
     unit_velocity = np.ones(64)
-    integrated = CoilDriver.integrate_velocity(unit_velocity, sample_rate)
+    integrated = integrate_velocity(unit_velocity, sample_rate)
     assert np.isclose(float(integrated[1] - integrated[0]), dt_ms, rtol=1e-9)
 
 
@@ -215,7 +223,7 @@ def test_integrate_velocity_round_trips_um_per_ms():
     1000x off and the multi-task weights would be meaningless.
     """
     velocity, displacement, sample_rate = _drive_velocity_and_displacement()
-    integrated = CoilDriver.integrate_velocity(velocity, sample_rate)
+    integrated = integrate_velocity(velocity, sample_rate)
     assert np.allclose(
         integrated - integrated[0],
         displacement - displacement[0],

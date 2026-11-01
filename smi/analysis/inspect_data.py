@@ -9,7 +9,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 
 from smi.analysis.datasets import VelocityDataset
-from smi.redpitaya.redpitaya_config import RedPitayaConfig
+from smi.core.acquisition import STEMLAB_125_14
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def visualize_dataset(
             logger.info(f'Using sample rate from HDF5 file: {sample_rate:.2f} Hz')
         else:
             # Default sample rate for Red Pitaya with decimation of 256
-            sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+            sample_rate = STEMLAB_125_14.sample_rate_dec1_hz / 256
             logger.warning(f'Using default sample rate of {sample_rate:.2f} Hz')
 
         # Print dataset information
@@ -138,7 +138,7 @@ def plot_histograms(dataset_path: str | Path):
             sample_rate = float(f.attrs['sample_rate'])
         else:
             # Default sample rate for Red Pitaya with decimation of 256
-            sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+            sample_rate = STEMLAB_125_14.sample_rate_dec1_hz / 256
 
         logger.info(f'Using sample rate: {sample_rate:.2f} Hz')
         # Create figure with subplots (2 rows, 4 columns)

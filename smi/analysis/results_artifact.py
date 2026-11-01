@@ -38,7 +38,7 @@ class RunRecord:
         dataset: Dataset key, matching baseline_results.json's ('free-space'
             or 'mmfiber').
         metrics: Metric name -> summary, each summary using the six keys from
-            :func:`smi.analysis.metrics.summarize_per_shot`.
+            :func:`smi.core.metrics.summarize_per_shot`.
         estimator: Estimator name when the record comes from
             :mod:`smi.analysis.evaluate` (``model_type`` then names the
             architecture or ``inverse_fit``); absent from older records.

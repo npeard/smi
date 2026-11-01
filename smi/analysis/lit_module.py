@@ -20,17 +20,17 @@ except ImportError:
 
 from smi.analysis.features import default_registry
 from smi.analysis.features.normalization import NORMALIZATION_STATS
-from smi.analysis.metrics import apply_best_sign, best_sign, velocity_rmse
 from smi.analysis.models.base import Model, SequenceModel
 from smi.analysis.models.factory import create_model
-from smi.redpitaya.redpitaya_config import RedPitayaConfig
-from smi.synthetic.coil_driver import CoilDriver
+from smi.core.acquisition import STEMLAB_125_14
+from smi.core.kinematics import derivative_displacement, integrate_velocity
+from smi.core.metrics import apply_best_sign, best_sign, velocity_rmse
 
 logger = logging.getLogger(__name__)
 
 #: Rate (Hz) the loss and ``velocity_from_output`` integrate and differentiate
 #: at: the rig's 125 MHz ADC decimated by 256, which every acquisition uses.
-SAMPLE_RATE = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+SAMPLE_RATE = STEMLAB_125_14.sample_rate_dec1_hz / 256
 
 
 class LitModule(lightning_module.LightningModule):
@@ -274,9 +274,7 @@ class LitModule(lightning_module.LightningModule):
         if self.target == 'velocity':
             return prediction
         sample_rate = SAMPLE_RATE
-        return cast(
-            torch.Tensor, CoilDriver.derivative_displacement(prediction, sample_rate)
-        )
+        return cast(torch.Tensor, derivative_displacement(prediction, sample_rate))
 
     def loss_function(
         self,
@@ -307,7 +305,7 @@ class LitModule(lightning_module.LightningModule):
             # Model predicts velocity
             velocity_hat = prediction
             # Auxiliary loss: displacement (physics-informed, derived from velocity)
-            displacement_hat = CoilDriver.integrate_velocity(velocity_hat, sample_rate)
+            displacement_hat = integrate_velocity(velocity_hat, sample_rate)
             # Shift displacements to start at 0 for fair comparison
             displacement_hat = displacement_hat - displacement_hat[:, :1]
             displacement_target = displacement_target - displacement_target[:, :1]
@@ -318,9 +316,7 @@ class LitModule(lightning_module.LightningModule):
             displacement_hat = displacement_hat - displacement_hat[:, :1]
             displacement_target = displacement_target - displacement_target[:, :1]
             # Auxiliary loss: velocity (physics-informed, derived from displacement)
-            velocity_hat = CoilDriver.derivative_displacement(
-                displacement_hat, sample_rate
-            )
+            velocity_hat = derivative_displacement(displacement_hat, sample_rate)
         else:
             raise ValueError(f'Unknown target: {self.target}')
 
@@ -544,14 +540,12 @@ class LitModule(lightning_module.LightningModule):
             # CoilDriver returns ndarray | Tensor; the tensor input path always
             # yields a Tensor here.
             displacement_hat = cast(
-                torch.Tensor,
-                CoilDriver.integrate_velocity(velocity_hat, sample_rate=sample_rate),
+                torch.Tensor, integrate_velocity(velocity_hat, sample_rate=sample_rate)
             )
         else:  # self.target == 'displacement'
             displacement_hat = prediction
             velocity_hat = cast(
-                torch.Tensor,
-                CoilDriver.derivative_displacement(displacement_hat, sample_rate),
+                torch.Tensor, derivative_displacement(displacement_hat, sample_rate)
             )
 
         # Shift all displacements to start at zero for easy comparison

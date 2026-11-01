@@ -15,6 +15,7 @@ from matplotlib.figure import Figure
 from numpy.fft import fft, fftfreq
 from scipy import stats
 
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.waveform import Waveform
 
@@ -384,7 +385,13 @@ def plot_waveform_histograms(
 
 if __name__ == '__main__':
     # Create a waveform generator
-    waveform = Waveform(start_freq=1, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=1,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=256,
+    )
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()

@@ -243,12 +243,14 @@ marimo = "*"
 lmfit = "*"
 uncertainties = "*"
 schemdraw = "*"
+import-linter = "*"
 
 [tool.pixi.feature.test.pypi-dependencies]
 pytest = ">=8.0"
 pytest-cov = ">=3.0"
 pytest-xdist = ">=2.5"
 pytest-benchmark = "*"
+import-linter = "*"
 coverage = { version = "*", extras = ["toml"] }
 
 # Non-torch reference models (smi/analysis/baselines/). Included in every
@@ -398,3 +400,13 @@ report-synthetic = { cmd = "snakemake --cores all --scheduler greedy build/synth
 [[tool.ty.overrides]]
 include = ["smi/analysis/models/**"]
 rules = { invalid-mutable-override = "ignore" }
+
+# Package layering; tests/test_import_contracts.py runs this in the suite.
+[tool.importlinter]
+root_packages = ["smi"]
+
+[[tool.importlinter.contracts]]
+name = "smi.core is the bottom layer"
+type = "forbidden"
+source_modules = ["smi.core"]
+forbidden_modules = ["smi.analysis", "smi.synthetic", "smi.redpitaya"]

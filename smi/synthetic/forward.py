@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, fields
 
 import torch
 
-from smi.redpitaya.redpitaya_config import RedPitayaConfig
+from smi.core.acquisition import STEMLAB_125_14, AcquisitionConfig
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.waveform import Waveform
 
@@ -102,12 +102,13 @@ NOMINAL_FEEDBACK_C = 0.2
 # Linewidth enhancement factor: literature-typical 3-5 for diode lasers;
 # spec nominal 3.
 NOMINAL_ALPHA = 3.0
-# Shot length 16384 samples (RedPitayaConfig.BUFFER_SIZE) at fs = 125 MHz /
-# 256: T = 33.55 ms.
+# Shot length 16384 samples at fs = 125 MHz / 256: T = 33.55 ms. The published
+# drift below was measured on this rig, so it names it rather than taking a
+# board.
 _SHOT_S = (
-    RedPitayaConfig.BUFFER_SIZE
+    STEMLAB_125_14.buffer_size
     * NOMINAL_ACQ_DECIMATION
-    / (RedPitayaConfig.SAMPLE_RATE_DEC1)
+    / STEMLAB_125_14.sample_rate_dec1_hz
 )
 # Published within-shot drift: 1 to 2.7 fringes per shot (report/report.typ
 # sec 5.1), measured as the peak-to-peak of the windowed phase. One fringe is
@@ -172,6 +173,11 @@ class SimConfig:
     Michelson channel is exactly ``cos(phase)``.
 
     Attributes:
+        acquisition: The board the simulated rig is read out by (shot length
+            and base clock). Not part of ``hash()``: the fields it implies for
+            the nominal rig are ``sample_rate``, ``adc_bits`` and
+            ``adc_full_scale``, which are hashed, and the rest is the fixed
+            buffer size.
         wavelengths_um: One wavelength per channel (um).
         sample_rate: Acquisition rate (Hz); must match the Waveform grid.
         start_freq_hz: Lower edge of the drive spectrum (Hz).
@@ -202,6 +208,7 @@ class SimConfig:
             units; out-of-range samples clip to the end codes.
     """
 
+    acquisition: AcquisitionConfig
     wavelengths_um: tuple[float, ...]
     sample_rate: float
     start_freq_hz: float
@@ -221,6 +228,11 @@ class SimConfig:
     adc_full_scale: float
 
     def _coerce(self) -> None:
+        # Checkpoints and frozen sets store the config as asdict() output.
+        if isinstance(self.acquisition, dict):
+            object.__setattr__(
+                self, 'acquisition', AcquisitionConfig(**self.acquisition)
+            )
         # YAML gives lists and ints; the frozen config's hash must not depend on
         # the spelling (json writes 1 vs 1.0), so coerce to tuples of floats.
         for name in ('wavelengths_um', 'visibility_range', 'dc_offset_range'):
@@ -274,20 +286,36 @@ class SimConfig:
         if self.adc_full_scale <= 0:
             raise ValueError(f'adc_full_scale must be > 0, got {self.adc_full_scale}')
 
+    def identity_fields(self) -> dict[str, object]:
+        """The fields ``hash()`` covers, as ``asdict`` spells them.
+
+        ``acquisition`` is left out so the hashes recorded in the checked-in
+        results stay valid: every one of them was taken on the STEMlab 125-14,
+        whose clock and ADC already show up in ``sample_rate``, ``adc_bits``
+        and ``adc_full_scale``. A config on a board with another buffer size
+        would hash like its STEMlab twin; add it here when one exists.
+        """
+        return {k: v for k, v in asdict(self).items() if k != 'acquisition'}
+
     def hash(self) -> str:
-        """Stable sha1 of the field values (keys frozen test sets)."""
-        blob = json.dumps(asdict(self), sort_keys=True)
+        """Stable sha1 of ``identity_fields`` (keys frozen test sets)."""
+        blob = json.dumps(self.identity_fields(), sort_keys=True)
         return hashlib.sha1(blob.encode(), usedforsecurity=False).hexdigest()
 
     @classmethod
     def nominal(
-        cls, wavelengths_um: tuple[float, ...], feedback_c: float, alpha: float
+        cls,
+        acquisition: AcquisitionConfig,
+        wavelengths_um: tuple[float, ...],
+        feedback_c: float,
+        alpha: float,
     ) -> SimConfig:
         """Blinded nominal rig configuration; see NOMINAL_SWEEPS for ranges."""
         return cls(
+            acquisition=acquisition,
             wavelengths_um=wavelengths_um,
-            # 125 MHz board clock (RedPitayaConfig) over acq_dec = 256.
-            sample_rate=RedPitayaConfig.SAMPLE_RATE_DEC1 / NOMINAL_ACQ_DECIMATION,
+            # Board clock over acq_dec = 256.
+            sample_rate=acquisition.sample_rate_dec1_hz / NOMINAL_ACQ_DECIMATION,
             start_freq_hz=NOMINAL_DRIVE_BAND_HZ[0],
             end_freq_hz=NOMINAL_DRIVE_BAND_HZ[1],
             # Published median velocity RMS (see NOMINAL_DRIVE_GAIN).
@@ -313,17 +341,19 @@ class SimConfig:
             # boxcar at 125 MHz) is -3 dB at 0.443 fs = 216 kHz and costs 0.1%
             # at 10 kHz fringes, so it does not set this and only caps the sweep.
             pd_bandwidth_hz=100e3,
-            # STEMlab 125-14 board spec (RedPitayaConfig.ADC_BITS).
-            adc_bits=RedPitayaConfig.ADC_BITS,
-            # LV input range +/-1 V (RedPitayaConfig) over an ASSUMED 0.5 V DC
+            adc_bits=acquisition.adc_bits,
+            # LV input range +/-1 V (the board's) over an ASSUMED 0.5 V DC
             # level, in signal units. The step matches the rig; clipping does
             # not (the rig range is fixed in volts, this one centred on DC).
-            adc_full_scale=RedPitayaConfig.INPUT_FULL_SCALE_LV_V / 0.5,
+            adc_full_scale=acquisition.input_full_scale_v / 0.5,
         )
 
     @classmethod
     def from_calibration(
-        cls, calibration: dict, wavelengths_um: tuple[float, ...]
+        cls,
+        acquisition: AcquisitionConfig,
+        calibration: dict,
+        wavelengths_um: tuple[float, ...],
     ) -> SimConfig:
         """Config from ``smi.analysis.calibrate_sim.calibrate`` output.
 
@@ -334,7 +364,9 @@ class SimConfig:
         fallback is never silent.
         """
         channels = list(calibration['channels'].values())
-        nominal = cls.nominal(wavelengths_um, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
+        nominal = cls.nominal(
+            acquisition, wavelengths_um, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
+        )
         values: dict[str, object] = {
             'sample_rate': calibration['sample_rate'],
             'drive_gain': calibration['drive_gain'],
@@ -364,6 +396,7 @@ class SimConfig:
     def noise_free(
         cls,
         *,
+        acquisition: AcquisitionConfig,
         wavelengths_um: tuple[float, ...],
         sample_rate: float,
         start_freq_hz: float,
@@ -374,6 +407,7 @@ class SimConfig:
     ) -> SimConfig:
         """Config with every detector knob at its exact-identity value."""
         return cls(
+            acquisition=acquisition,
             wavelengths_um=wavelengths_um,
             sample_rate=sample_rate,
             start_freq_hz=start_freq_hz,
@@ -535,12 +569,19 @@ def _walk(
 
 
 @functools.cache
-def drive(start_freq_hz: float, end_freq_hz: float) -> tuple[Waveform, CoilDriver]:
+def drive(
+    acquisition: AcquisitionConfig, start_freq_hz: float, end_freq_hz: float
+) -> tuple[Waveform, CoilDriver]:
     """The drive ``simulate_batch`` feeds ``sample_trajectory`` for this band.
 
     Cached because Waveform builds its frequency grid in Python.
     """
-    return Waveform(start_freq=start_freq_hz, end_freq=end_freq_hz), CoilDriver()
+    return (
+        Waveform(
+            start_freq=start_freq_hz, end_freq=end_freq_hz, acquisition=acquisition
+        ),
+        CoilDriver(),
+    )
 
 
 def simulate_batch(
@@ -569,7 +610,7 @@ def simulate_batch(
             the result to ``device``.
     """
     sim_device = generator.device if generator is not None else device
-    waveform, coil = drive(cfg.start_freq_hz, cfg.end_freq_hz)
+    waveform, coil = drive(cfg.acquisition, cfg.start_freq_hz, cfg.end_freq_hz)
     if waveform.acq_sample_rate != cfg.sample_rate:
         raise ValueError(
             f'sample_rate {cfg.sample_rate} does not match the Waveform grid '

@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from smi.analysis.calibrate_sim import calibrate, main
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic.forward import (
     NOMINAL_ALPHA,
     NOMINAL_DRIVE_GAIN,
@@ -50,7 +51,9 @@ DC_VOLTS = 0.5
 
 def _known(pd_bandwidth_hz: float, **changes) -> SimConfig:
     # Nominal, except a visibility top below 1 so both bounds are tested.
-    nominal = SimConfig.nominal(RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
+    nominal = SimConfig.nominal(
+        STEMLAB_125_14, RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
+    )
     return dataclasses.replace(
         nominal, visibility_range=(0.5, 0.9), pd_bandwidth_hz=pd_bandwidth_hz, **changes
     )
@@ -133,7 +136,7 @@ def test_round_trip_recovers_known_knobs(known_set):
             assert ch[name] is None, f'{name} has no estimator, got {ch[name]}'
         assert ch['adc_full_scale'] is None, 'a signal-units file carries no volts'
 
-    rebuilt = SimConfig.from_calibration(result, cfg.wavelengths_um)
+    rebuilt = SimConfig.from_calibration(STEMLAB_125_14, result, cfg.wavelengths_um)
     assert abs(rebuilt.snr_db - cfg.snr_db) <= SNR_TOL_DB
     for name in ('drive_gain', 'feedback_c', 'alpha', 'pd_bandwidth_hz'):
         assert _close(getattr(rebuilt, name), getattr(cfg, name)), name
@@ -203,7 +206,9 @@ def test_cli_writes_json(known_set, tmp_path):
 
 
 def test_nominal_sits_inside_every_sweep():
-    nominal = SimConfig.nominal(RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
+    nominal = SimConfig.nominal(
+        STEMLAB_125_14, RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
+    )
     names = {f.name for f in dataclasses.fields(SimConfig)}
     for name, sweep in NOMINAL_SWEEPS.items():
         assert name in names, name

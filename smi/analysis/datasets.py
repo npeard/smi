@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from smi.analysis.baseline_fit import PD_WAVELENGTHS_UM
-from smi.redpitaya.redpitaya_config import RedPitayaConfig
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.frozen import RIG_WAVELENGTH_TOL_UM, pd_keys
 
@@ -37,7 +37,7 @@ def file_sample_rate(f: h5py.File) -> float:
     """
     if 'sample_rate' in f.attrs:
         return float(f.attrs['sample_rate'])
-    rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+    rate = STEMLAB_125_14.sample_rate_dec1_hz / 256
     logger.warning('Using default sample rate of %.2f Hz', rate)
     return rate
 

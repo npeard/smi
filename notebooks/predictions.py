@@ -22,11 +22,11 @@ def _():
 
     from smi.analysis.datasets import VelocityDataset, get_data_loaders
     from smi.analysis.evaluate import load_lit_module
-    from smi.redpitaya.redpitaya_config import RedPitayaConfig
+    from smi.core.acquisition import STEMLAB_125_14
     from smi.synthetic.forward import SimConfig
     from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
-    ACQ_SAMPLE_RATE = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+    ACQ_SAMPLE_RATE = STEMLAB_125_14.sample_rate_dec1_hz / 256
     CHANNEL_NAMES = ['PD1 (635 nm)', 'PD2 (675 nm)', 'PD3 (515 nm)']
     return (
         ACQ_SAMPLE_RATE,

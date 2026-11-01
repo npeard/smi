@@ -35,6 +35,7 @@ from _figcommon import (
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from smi.analysis import bounds
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
 
 # Subsets as smi.analysis.q1_binned evaluates them; the pair and the triple
@@ -86,13 +87,15 @@ def main() -> None:
 
     ax = axes[2]
     prior = bounds.motion_prior(
-        SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
+        SimConfig.nominal(STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
     )
     for wavelengths, _, color in SUBSETS:
         for condition, _, linestyle in CONDITIONS:
             rmse = cells[condition, wavelengths]['abs_velocity']['rmse']
             ax.plot(speed, rmse, color=color, linestyle=linestyle, marker='o', ms=2.5)
-        cfg = SimConfig.nominal(wavelengths, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
+        cfg = SimConfig.nominal(
+            STEMLAB_125_14, wavelengths, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
+        )
         causal, _ = velocity_bounds(prior, cfg)
         ax.axhline(causal, color=color, linestyle='-.', lw=0.8)
     zero = next(iter(cells.values()))['abs_velocity']['zero']

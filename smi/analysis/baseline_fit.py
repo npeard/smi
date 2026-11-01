@@ -91,7 +91,7 @@ import numpy as np
 import torch
 from scipy.signal import savgol_filter
 
-from smi.analysis.metrics import summarize_per_shot
+from smi.core.metrics import summarize_per_shot
 from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
 
 logger = logging.getLogger(__name__)

@@ -87,6 +87,7 @@ from smi.analysis.models.factory import create_model
 from smi.analysis.models.sliding_window import SlidingWindowModel
 from smi.analysis.results_artifact import RunRecord
 from smi.analysis.synthetic_lit_module import VAL_SEED
+from smi.core.acquisition import STEMLAB_125_14
 from smi.synthetic.forward import (
     NOMINAL_ALPHA,
     NOMINAL_PHASE_DRIFT_FRINGES,
@@ -121,7 +122,8 @@ def nominal_bounds(
 ) -> tuple[float, float]:
     """Causal and offline bounds of ``wavelengths_um`` at the nominal point."""
     return velocity_bounds(
-        prior, SimConfig.nominal(wavelengths_um, NOMINAL_C, NOMINAL_ALPHA)
+        prior,
+        SimConfig.nominal(STEMLAB_125_14, wavelengths_um, NOMINAL_C, NOMINAL_ALPHA),
     )
 
 
@@ -1280,13 +1282,15 @@ def main() -> None:
     output = parser.parse_args().output
 
     prior = bounds.motion_prior(
-        SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
+        SimConfig.nominal(STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
     )
     causal_k1, _ = nominal_bounds(prior, SYNTHETIC_WAVELENGTHS_UM[:1])
     causal_k3, offline_k3 = nominal_bounds(prior, SYNTHETIC_WAVELENGTHS_UM)
     info = [
         bounds.expected_information(
-            SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM[:k], NOMINAL_C, NOMINAL_ALPHA)
+            SimConfig.nominal(
+                STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM[:k], NOMINAL_C, NOMINAL_ALPHA
+            )
         )
         for k in (1, 3)
     ]
@@ -1312,10 +1316,16 @@ def main() -> None:
         # three-channel causal bound, beside what the extra channels do.
         'causal_ratio_c09_c0': sig(
             velocity_bounds(
-                prior, SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.9, NOMINAL_ALPHA)
+                prior,
+                SimConfig.nominal(
+                    STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.9, NOMINAL_ALPHA
+                ),
             )[0]
             / velocity_bounds(
-                prior, SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
+                prior,
+                SimConfig.nominal(
+                    STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA
+                ),
             )[0],
             2,
         ),
