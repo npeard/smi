@@ -122,7 +122,9 @@ def load_or_create(cfg: SimConfig, seed: int, n_shots: int, root: Path) -> Path:
     A file written with a different ``CHUNK_SHOTS`` holds different random
     streams under the same name, and one written by another
     ``SIMULATOR_VERSION`` holds another simulator's shots, so either is
-    regenerated rather than reused.
+    regenerated rather than reused. So is one whose stored ``sim_config``
+    lacks ``acquisition``: sets written before ``SimConfig`` grew that field
+    cannot be rebuilt into a ``SimConfig`` by the evaluator.
     """
     path = frozen_set_path(cfg, seed, n_shots, root)
     if path.exists():
@@ -130,6 +132,7 @@ def load_or_create(cfg: SimConfig, seed: int, n_shots: int, root: Path) -> Path:
             if (
                 f.attrs.get('chunk_shots') == CHUNK_SHOTS
                 and f.attrs.get('simulator_version') == SIMULATOR_VERSION
+                and 'acquisition' in json.loads(f.attrs.get('sim_config', '{}'))
             ):
                 return path
     write_frozen_set(cfg, seed, n_shots, path)

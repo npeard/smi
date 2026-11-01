@@ -538,3 +538,19 @@ ORACLE_SHOTS = 4
 # Measured mean sign-invariant velocity NRMSE 0.280 (signed 1.692: the decoder
 # returns an arbitrary sign per shot) on 4 shots, seed 7; pinned at 1.5x.
 ORACLE_NRMSE_BOUND = 0.42
+
+
+def test_load_or_create_regenerates_a_set_without_acquisition(tmp_path):
+    """Pre-acquisition sets cannot rebuild a SimConfig, so they are stale."""
+    cfg = michelson_sim()
+    path = frozen.load_or_create(cfg, 2, 5, tmp_path)
+    with h5py.File(path, 'a') as f:
+        stored = json.loads(f.attrs['sim_config'])
+        del stored['acquisition']
+        f.attrs['sim_config'] = json.dumps(stored)
+    assert frozen.load_or_create(cfg, 2, 5, tmp_path) == path
+    with h5py.File(path, 'r') as f:
+        assert 'acquisition' in json.loads(f.attrs['sim_config'])
+    rig = tuple(cfg.wavelengths_um)
+    record = evaluate(_Truth(path), path, rig, None, True, 0).record
+    assert record.sim_config_hash == cfg.hash()
