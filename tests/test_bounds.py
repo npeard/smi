@@ -101,6 +101,21 @@ def test_k_channel_fi_adds():
         assert joint == pytest.approx(singles, rel=1e-8)
 
 
+@pytest.mark.parametrize('n_channels', [2, 3, 5])
+def test_spaced_offsets_remove_michelson_blind_spots(n_channels):
+    """Equal-wavelength offsets j pi / K sum sin^2 to K / 2 at every phase."""
+    sigma, lam = 0.02, 0.635
+    peak = (4 * math.pi / lam / sigma) ** 2
+    theta = torch.tensor([0.0, 0.4, 2.3], dtype=torch.float64)
+    total = sum(
+        bounds.fisher_single(
+            theta + j * math.pi / n_channels, 1.0, 1.0, sigma, lam, 0.0, 0.0
+        )
+        for j in range(n_channels)
+    )
+    assert torch.allclose(total, torch.full_like(theta, n_channels / 2 * peak))
+
+
 def test_sign_information_zero_for_michelson():
     for alpha in (0.0, 3.0):
         cfg = _cfg(RIG_WAVELENGTHS_UM[:2], 0.0, alpha)
