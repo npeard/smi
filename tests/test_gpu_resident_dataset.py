@@ -9,11 +9,11 @@ faster but returns different numbers is a silent training bug.
 import pytest
 import torch
 
-from smi.core.paths import DATA_DIR
+from smi.core.paths import DATA_DIR, DATASETS
 from smi.data.datamodule import VelocityDataModule, _same_device
 from smi.data.datasets import GPUResidentDataset, VelocityDataset
 
-DATASET = DATA_DIR / 'free-space-synchro_10k.h5'
+DATASET = DATA_DIR / DATASETS['free-space']
 SIGNAL_LENGTH = 16384
 NUM_PD_CHANNELS = 3
 MAX_SHOTS = 8

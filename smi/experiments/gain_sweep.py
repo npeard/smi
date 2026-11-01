@@ -16,7 +16,7 @@ from typing import Any
 import h5py
 import numpy as np
 
-from smi.core.paths import DATA_DIR, RESULTS_DIR
+from smi.core.paths import DATA_DIR, DATASETS, RESULTS_DIR
 from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, SAMPLE_RATE_ATTR
 from smi.estimators.gain_sweep import (
     LEGACY_K,
@@ -29,7 +29,6 @@ from smi.estimators.gain_sweep import (
     unit_gain_displacement,
 )
 from smi.estimators.phase_fit import DEFAULT_WINDOW_SAMPLES
-from smi.experiments.baselines import DEFAULT_DATASETS
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +155,7 @@ def run_gain_sweep(
     Returns:
         The results dictionary that was written to disk.
     """
-    datasets = datasets or DEFAULT_DATASETS
+    datasets = datasets or DATASETS
     output = output or DEFAULT_RESULTS_PATH
     data_dir = data_dir or DATA_DIR
     if gains is None:

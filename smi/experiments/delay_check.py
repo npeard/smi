@@ -41,7 +41,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from smi.core.paths import DATA_DIR
+from smi.core.paths import DATA_DIR, DATASETS
 from smi.data.schema import DRIVE_KEY, LEGACY_SAMPLE_RATE_HZ, PD_KEYS, read_sample_rate
 from smi.theory.coil_driver import CoilDriver
 
@@ -55,11 +55,6 @@ MIN_PEAK_CORRELATION = 0.3
 # Photodiode channels, in the order VelocityDataset feeds them to the model.
 PD_CHANNELS = PD_KEYS
 DRIVE_CHANNEL = DRIVE_KEY
-
-DATASETS: dict[str, str] = {
-    'free-space': 'free-space-synchro_10k.h5',
-    'mmfiber': 'mmfiber-synchro_10k.h5',
-}
 
 
 @dataclass

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torch.utils.data import DataLoader
 
-from smi.core.paths import DATA_DIR
+from smi.core.paths import DATA_DIR, DATASETS
 from smi.data.datasets import VelocityDataset
 from smi.data.schema import CHANNEL_KEYS, DRIVE_KEY, PD_KEYS, read_sample_rate
 
@@ -268,7 +268,7 @@ def main() -> None:
         'dataset',
         nargs='?',
         type=Path,
-        default=DATA_DIR / 'free-space-synchro_10k.h5',
+        default=DATA_DIR / DATASETS['free-space'],
         help='HDF5 dataset to inspect.',
     )
     parser.add_argument('--max-samples', type=int, default=10)

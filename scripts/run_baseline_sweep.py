@@ -43,7 +43,7 @@ from smi.core.metrics import (
     per_shot_rmse,
     summarize_per_shot,
 )
-from smi.core.paths import CONFIGS_DIR, DATA_DIR, RESULTS_DIR
+from smi.core.paths import CONFIGS_DIR, DATA_DIR, DATASETS, RESULTS_DIR
 from smi.data.datamodule import VelocityDataModule
 from smi.estimators.tabular import CAUSAL as TABULAR_CAUSAL
 from smi.estimators.tabular import (
@@ -69,12 +69,6 @@ DEFAULT_SEEDS = (0, 1, 2)
 
 CONFIG_DIR = CONFIGS_DIR / 'models' / 'matched'
 DEFAULT_OUTPUT = RESULTS_DIR / 'learned_results.json'
-
-#: Dataset label -> HDF5 file, keyed as ``baseline_results.json`` keys them.
-DATASETS: dict[str, str] = {
-    'free-space': 'free-space-synchro_10k.h5',
-    'mmfiber': 'mmfiber-synchro_10k.h5',
-}
 
 #: Torch configs to sweep, in the order the report tabulates them.
 TORCH_CONFIGS: tuple[str, ...] = (

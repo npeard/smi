@@ -89,7 +89,7 @@ import numpy as np
 import torch
 
 from smi.core.metrics import summarize_per_shot
-from smi.core.paths import DATA_DIR, RESULTS_DIR
+from smi.core.paths import DATA_DIR, DATASETS, RESULTS_DIR
 from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, SAMPLE_RATE_ATTR
 from smi.estimators.inverse import inverse_fit
 from smi.estimators.phase_fit import (
@@ -108,11 +108,7 @@ from smi.theory.coil_driver import CoilDriver
 logger = logging.getLogger(__name__)
 
 
-# Default location of the acquired datasets and committed artifacts.
-DEFAULT_DATASETS: dict[str, str] = {
-    'free-space': 'free-space-synchro_10k.h5',
-    'mmfiber': 'mmfiber-synchro_10k.h5',
-}
+# Default location of the committed artifacts.
 DEFAULT_RESULTS_PATH = RESULTS_DIR / 'baseline_results.json'
 
 
@@ -501,7 +497,7 @@ def run_baselines(
     Returns:
         The results dictionary that was written to disk.
     """
-    datasets = datasets or DEFAULT_DATASETS
+    datasets = datasets or DATASETS
     output = output or DEFAULT_RESULTS_PATH
 
     results: dict[str, Any] = {
