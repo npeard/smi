@@ -90,7 +90,7 @@ from smi.analysis.baseline_fit import (
     window_fringe_coefficients,
 )
 from smi.analysis.datasets import file_pd_channels
-from smi.core.acquisition import STEMLAB_125_14
+from smi.core.acquisition import BOARDS, AcquisitionConfig
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.forward import (
     NOMINAL_DRIVE_BAND_HZ,
@@ -154,14 +154,16 @@ def _shot_arrays(
     return signals, wavelengths, voltage, sample_rate
 
 
-def _drive_gain(voltage: np.ndarray, sample_rate: float) -> float:
+def _drive_gain(
+    voltage: np.ndarray, sample_rate: float, acquisition: AcquisitionConfig
+) -> float:
     """File drive RMS over the simulator's at unit gain.
 
     Assumes the rig's 1-1000 Hz drive band (``NOMINAL_DRIVE_BAND_HZ``): the
     acquisition schema records no band, so a file driven over another band
     would read a wrong gain.
     """
-    waveform = Waveform(*NOMINAL_DRIVE_BAND_HZ, acquisition=STEMLAB_125_14)
+    waveform = Waveform(*NOMINAL_DRIVE_BAND_HZ, acquisition=acquisition)
     if waveform.acq_sample_rate != sample_rate:
         raise ValueError(
             f'sample_rate {sample_rate} does not match the rig drive grid '
@@ -470,7 +472,9 @@ def _visibility_range(
     return (max(m - half, 0.0), min(m + half, 1.0))
 
 
-def calibrate(path: Path, n_shots: int, units: Units) -> dict:
+def calibrate(
+    path: Path, n_shots: int, units: Units, acquisition: AcquisitionConfig
+) -> dict:
     """Estimate every identifiable ``SimConfig`` knob from the first shots.
 
     Args:
@@ -478,6 +482,7 @@ def calibrate(path: Path, n_shots: int, units: Units) -> dict:
         n_shots: Number of leading shots to use.
         units: ``'signal'`` for frozen synthetic sets (nominal-DC units, DC
             subtracted), ``'volts'`` for acquisitions. See the module doc.
+        acquisition: Board the file was taken on (ADC bits, input range, buffer).
 
     Returns:
         JSON-ready dict: file-level ``sample_rate``, ``drive_gain``,
@@ -493,7 +498,7 @@ def calibrate(path: Path, n_shots: int, units: Units) -> dict:
         if units == 'volts':
             dc_level = float(x.mean())
             x = x / dc_level - 1
-            full_scale = STEMLAB_125_14.input_full_scale_v / dc_level
+            full_scale = acquisition.input_full_scale_v / dc_level
         theta = 4 * np.pi / lam * displacement
         est = _channel(x, theta, sample_rate)
         channels[key] = {
@@ -507,8 +512,8 @@ def calibrate(path: Path, n_shots: int, units: Units) -> dict:
         'units': units,
         'n_shots': n_shots,
         'sample_rate': sample_rate,
-        'drive_gain': _drive_gain(voltage, sample_rate),
-        'adc_bits': STEMLAB_125_14.adc_bits,
+        'drive_gain': _drive_gain(voltage, sample_rate, acquisition),
+        'adc_bits': acquisition.adc_bits,
         'channels': channels,
     }
 
@@ -520,8 +525,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--n-shots', type=int, required=True)
     parser.add_argument('--units', choices=('signal', 'volts'), required=True)
+    parser.add_argument('--board', choices=sorted(BOARDS), required=True)
     args = parser.parse_args(argv)
-    result = calibrate(args.dataset, args.n_shots, args.units)
+    result = calibrate(args.dataset, args.n_shots, args.units, BOARDS[args.board])
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2) + '\n')
     logger.info('wrote %s', args.out)

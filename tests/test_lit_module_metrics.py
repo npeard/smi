@@ -7,9 +7,10 @@ comparable to the analytic baseline's RMSE without a separate evaluation pass.
 import pytest
 import torch
 
-from smi.analysis.lit_module import SAMPLE_RATE, LitModule
+from smi.analysis.lit_module import LitModule
 from smi.core.kinematics import derivative_displacement
 from smi.core.metrics import best_sign
+from tests._sims import SAMPLE_RATE
 
 IN_CHANNELS = 3
 SEQ_LEN = 1024
@@ -32,6 +33,7 @@ MODEL_HPARAMS = dict(
 
 def _module(target: str = 'velocity', sign_invariant: bool = False) -> LitModule:
     return LitModule(
+        sample_rate=SAMPLE_RATE,
         model_hparams=dict(MODEL_HPARAMS),
         optimizer_hparams={'name': 'Adam', 'lr': 1e-3, 'weight_decay': 0.0},
         scheduler_hparams={},
@@ -206,6 +208,7 @@ def test_lit_module_requires_target():
     """A missing target must fail loudly, not silently train a velocity model."""
     with pytest.raises((KeyError, TypeError)):
         LitModule(
+            sample_rate=SAMPLE_RATE,
             model_hparams=dict(MODEL_HPARAMS),
             optimizer_hparams={'name': 'Adam', 'lr': 1e-3, 'weight_decay': 0.0},
             scheduler_hparams={},

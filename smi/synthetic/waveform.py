@@ -49,16 +49,17 @@ class Waveform:
         self.acq_dec = acq_dec
         self.allowed_freqs = allowed_freqs
         self.acquisition = acquisition
-        self.buffer_size = acquisition.buffer_size
 
         # Calculate sample rates
         self.gen_sample_rate = acquisition.sample_rate_dec1_hz / self.gen_dec
         self.acq_sample_rate = acquisition.sample_rate_dec1_hz / self.acq_dec
 
         # Calculate time array and frequency array
-        self.burst_time = self.buffer_size / self.gen_sample_rate
-        self.t = np.linspace(0, self.burst_time, self.buffer_size, endpoint=False)
-        self.freq = fftfreq(self.buffer_size, d=1 / self.gen_sample_rate)
+        self.burst_time = self.acquisition.buffer_size / self.gen_sample_rate
+        self.t = np.linspace(
+            0, self.burst_time, self.acquisition.buffer_size, endpoint=False
+        )
+        self.freq = fftfreq(self.acquisition.buffer_size, d=1 / self.gen_sample_rate)
 
         # Initialize spectrum and phases to None (will be randomized on first
         # sample). Annotated because the assignment alone infers `None`, and
@@ -76,7 +77,9 @@ class Waveform:
             # Since our acquisition window size and resolution is fixed, we need to
             # choose generation frequencies that are compatible with that window
             # due to fundamental limitations of FFT (Nyquist and Rayleigh frequencies)
-            self.valid_freqs = fftfreq(self.buffer_size, d=1 / self.acq_sample_rate)
+            self.valid_freqs = fftfreq(
+                self.acquisition.buffer_size, d=1 / self.acq_sample_rate
+            )
             # Filter to only include frequencies in the specified range
             self.valid_freqs = np.array(
                 [
@@ -237,7 +240,7 @@ class Waveform:
         Precomputes frequency grid, valid-frequency mask, and Hermitian symmetry
         index mappings on the target device. Called once and cached.
         """
-        N = self.buffer_size
+        N = self.acquisition.buffer_size
         freq_t = torch.fft.fftfreq(N, d=1.0 / self.acq_sample_rate, device=device)
 
         # Valid positive frequency mask

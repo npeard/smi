@@ -22,15 +22,10 @@ from smi.analysis.features import default_registry
 from smi.analysis.features.normalization import NORMALIZATION_STATS
 from smi.analysis.models.base import Model, SequenceModel
 from smi.analysis.models.factory import create_model
-from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement, integrate_velocity
 from smi.core.metrics import apply_best_sign, best_sign, velocity_rmse
 
 logger = logging.getLogger(__name__)
-
-#: Rate (Hz) the loss and ``velocity_from_output`` integrate and differentiate
-#: at: the rig's 125 MHz ADC decimated by 256, which every acquisition uses.
-SAMPLE_RATE = STEMLAB_125_14.sample_rate_dec1_hz / 256
 
 
 class LitModule(lightning_module.LightningModule):
@@ -42,6 +37,7 @@ class LitModule(lightning_module.LightningModule):
     def __init__(
         self,
         training_hparams: dict,
+        sample_rate: float,
         model_hparams: dict | None = None,
         optimizer_hparams: dict | None = None,
         scheduler_hparams: dict | None = None,
@@ -53,6 +49,8 @@ class LitModule(lightning_module.LightningModule):
         Args:
         training_hparams: Hyperparameters for training configuration; ``target``
             is required (no default)
+        sample_rate: Sample rate (Hz) of the data the module sees; the loss
+            integrates and differentiates at it
         model_hparams: Hyperparameters for the model
         optimizer_hparams: Hyperparameters for the optimizer
         scheduler_hparams: Hyperparameters for the learning rate scheduler
@@ -66,6 +64,7 @@ class LitModule(lightning_module.LightningModule):
         self.loss_hparams = loss_hparams
         self.training_hparams = training_hparams
         self.data_hparams = data_hparams
+        self.sample_rate = sample_rate
 
         # Determine what the model should target (needed before wrapping, since
         # the normalization wrapper scales the output by the target's stats).
@@ -273,8 +272,7 @@ class LitModule(lightning_module.LightningModule):
         """
         if self.target == 'velocity':
             return prediction
-        sample_rate = SAMPLE_RATE
-        return cast(torch.Tensor, derivative_displacement(prediction, sample_rate))
+        return cast(torch.Tensor, derivative_displacement(prediction, self.sample_rate))
 
     def loss_function(
         self,
@@ -299,7 +297,7 @@ class LitModule(lightning_module.LightningModule):
             Dictionary of loss components with keys representing loss types
             and values representing the corresponding loss tensors.
         """
-        sample_rate = SAMPLE_RATE
+        sample_rate = self.sample_rate
 
         if self.target == 'velocity':
             # Model predicts velocity
@@ -532,7 +530,7 @@ class LitModule(lightning_module.LightningModule):
         signals, velocity_target, displacement_target = batch
 
         prediction = self(signals)  # Model prediction (velocity or displacement)
-        sample_rate = SAMPLE_RATE
+        sample_rate = self.sample_rate
 
         # Derive both velocity and displacement for plotting, regardless of target
         if self.target == 'velocity':

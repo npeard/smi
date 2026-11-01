@@ -26,6 +26,7 @@ from smi.core.kinematics import integrate_velocity
 from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
 from smi.synthetic.interferometers import MichelsonInterferometer
 from smi.synthetic.waveform import Waveform
+from tests._sims import SAMPLE_RATE
 
 # Velocity RMS on the real acquisitions is ~0.35 um/ms. Anything above this
 # bound is um/s (which would be ~350) and anything far below it is um/us.
@@ -62,6 +63,7 @@ def _drive_velocity_and_displacement() -> tuple[np.ndarray, np.ndarray, float]:
 def _tiny_lit_module() -> LitModule:
     """A small velocity-target LitModule that runs on CPU."""
     return LitModule(
+        sample_rate=SAMPLE_RATE,
         model_hparams={
             'type': 'TCN',
             'sequence_length': SEQ_LEN,

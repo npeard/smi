@@ -90,7 +90,7 @@ def calibrated(tmp_path_factory):
             cfg = _known(100e3, **OFF_NOMINAL[point])
             path = tmp_path_factory.mktemp(point) / 'known.h5'
             write_frozen_set(cfg, 0, N_SHOTS, path)
-            cache[point] = (cfg, calibrate(path, N_SHOTS, 'signal'))
+            cache[point] = (cfg, calibrate(path, N_SHOTS, 'signal', STEMLAB_125_14))
         return cache[point]
 
     return get
@@ -127,7 +127,7 @@ def _assert_knob(name: str, cfg: SimConfig, result: dict) -> None:
 
 def test_round_trip_recovers_known_knobs(known_set):
     cfg, path = known_set
-    result = calibrate(path, N_SHOTS, 'signal')
+    result = calibrate(path, N_SHOTS, 'signal', STEMLAB_125_14)
     for name in KNOBS:
         _assert_knob(name, cfg, result)
     assert result['adc_bits'] == cfg.adc_bits
@@ -174,8 +174,8 @@ def test_volts_file_calibrates_like_its_signal_units(known_set, tmp_path):
         for key in ('RP1_CH1', 'RP1_CH2', 'RP2_CH1', 'RP2_CH2'):
             data = src[key][:]
             dst[key] = data if key == 'RP1_CH1' else DC_VOLTS * (1 + data)
-    signal = calibrate(path, N_SHOTS, 'signal')['channels']
-    result = calibrate(volts, N_SHOTS, 'volts')['channels']
+    signal = calibrate(path, N_SHOTS, 'signal', STEMLAB_125_14)['channels']
+    result = calibrate(volts, N_SHOTS, 'volts', STEMLAB_125_14)['channels']
     for key, ch in result.items():
         # The mean of a shot is the DC level only up to the fringe's own small
         # DC term, so the scale (hence visibility) matches to a few percent.
@@ -200,6 +200,8 @@ def test_cli_writes_json(known_set, tmp_path):
             '8',
             '--units',
             'signal',
+            '--board',
+            'STEMLAB_125_14',
         ]
     )
     assert json.loads(out.read_text())['n_shots'] == 8

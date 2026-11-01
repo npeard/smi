@@ -8,7 +8,7 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from smi.analysis.lit_module import SAMPLE_RATE, LitModule
+from smi.analysis.lit_module import LitModule
 from smi.analysis.models.base import Model
 from smi.synthetic.forward import SimConfig, normalization_stats, simulate_batch
 
@@ -155,14 +155,6 @@ class SyntheticLitModule(LitModule):
         """
         # _make_model runs inside LitModule.__init__ and needs both.
         self.sim_config = SimConfig(**sim)
-        # LitModule's loss and velocity_from_output assume the rig's rate, not
-        # the sim's; a sim at another rate would train and score against a
-        # wrongly scaled derivative or integral without any error.
-        if self.sim_config.sample_rate != SAMPLE_RATE:
-            raise ValueError(
-                f'sim sample_rate {self.sim_config.sample_rate} Hz differs from '
-                f'the {SAMPLE_RATE} Hz LitModule integrates and differentiates at'
-            )
         self._restoring_checkpoint = restoring_checkpoint
         if len(self.sim_config.wavelengths_um) != model_hparams['in_channels']:
             raise ValueError(
@@ -170,6 +162,7 @@ class SyntheticLitModule(LitModule):
                 f'in_channels={model_hparams["in_channels"]}'
             )
         super().__init__(
+            sample_rate=self.sim_config.sample_rate,
             model_hparams=model_hparams,
             optimizer_hparams=optimizer_hparams,
             scheduler_hparams=scheduler_hparams,
@@ -180,7 +173,10 @@ class SyntheticLitModule(LitModule):
         self.steps_per_epoch = steps_per_epoch
         self.train_crop_length = train_crop_length
         self._held_out_replay = HeldOutReplay()
-        self.save_hyperparameters(ignore=['model', 'restoring_checkpoint'])
+        # sample_rate is derived from sim, so it is not a constructor input here.
+        self.save_hyperparameters(
+            ignore=['model', 'restoring_checkpoint', 'sample_rate']
+        )
         logger.info(f'SyntheticLitModule sim config {self.sim_config.hash()}')
 
     @override

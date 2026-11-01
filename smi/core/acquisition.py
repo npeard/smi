@@ -29,3 +29,6 @@ class AcquisitionConfig:
 STEMLAB_125_14 = AcquisitionConfig(
     sample_rate_dec1_hz=125e6, buffer_size=16384, adc_bits=14, input_full_scale_v=1.0
 )
+
+# Names configuration files (YAML, CLI flags) may use for a board.
+BOARDS = {'STEMLAB_125_14': STEMLAB_125_14}

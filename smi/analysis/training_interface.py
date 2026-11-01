@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, override
 
+import h5py
 import lightning as lightning_module
 import torch
 import yaml
@@ -20,6 +21,7 @@ from lightning.pytorch.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
 from smi.analysis.datamodule import VelocityDataModule
+from smi.analysis.datasets import file_sample_rate
 from smi.analysis.lit_module import LitModule
 from smi.analysis.synthetic_lit_module import SyntheticIndexDataset, SyntheticLitModule
 
@@ -377,7 +379,9 @@ class TrainingInterface:
                 restoring_checkpoint=False,
             )
 
-        return LitModule(**common_kwargs)
+        with h5py.File(self.datamodule.dataset_path, 'r') as f:
+            sample_rate = file_sample_rate(f)
+        return LitModule(**common_kwargs, sample_rate=sample_rate)
 
     def setup_trainer(
         self, *, extra_callbacks: list[Any] | None = None

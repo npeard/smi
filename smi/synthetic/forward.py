@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, fields
 
 import torch
 
-from smi.core.acquisition import STEMLAB_125_14, AcquisitionConfig
+from smi.core.acquisition import BOARDS, STEMLAB_125_14, AcquisitionConfig
 from smi.synthetic.coil_driver import CoilDriver
 from smi.synthetic.waveform import Waveform
 
@@ -228,8 +228,10 @@ class SimConfig:
     adc_full_scale: float
 
     def _coerce(self) -> None:
-        # Checkpoints and frozen sets store the config as asdict() output.
-        if isinstance(self.acquisition, dict):
+        # YAML names a board; checkpoints and frozen sets store asdict() output.
+        if isinstance(self.acquisition, str):
+            object.__setattr__(self, 'acquisition', BOARDS[self.acquisition])
+        elif isinstance(self.acquisition, dict):
             object.__setattr__(
                 self, 'acquisition', AcquisitionConfig(**self.acquisition)
             )
@@ -293,8 +295,15 @@ class SimConfig:
         results stay valid: every one of them was taken on the STEMlab 125-14,
         whose clock and ADC already show up in ``sample_rate``, ``adc_bits``
         and ``adc_full_scale``. A config on a board with another buffer size
-        would hash like its STEMlab twin; add it here when one exists.
+        would hash like its STEMlab twin, so any other board raises until
+        ``acquisition`` is included here (and the recorded hashes regenerated).
         """
+        if self.acquisition != STEMLAB_125_14:
+            raise ValueError(
+                'SimConfig.hash() leaves acquisition out, which is only safe for '
+                f'STEMLAB_125_14; include it in identity_fields and regenerate the '
+                f'recorded hashes before using {self.acquisition}'
+            )
         return {k: v for k, v in asdict(self).items() if k != 'acquisition'}
 
     def hash(self) -> str:
@@ -311,6 +320,12 @@ class SimConfig:
         alpha: float,
     ) -> SimConfig:
         """Blinded nominal rig configuration; see NOMINAL_SWEEPS for ranges."""
+        # The published drift is per shot of the STEMlab's length (_SHOT_S), and
+        # the nominal drift in rad/sqrt(s) is derived from it with that length.
+        # Another board's shot length would make that conversion, and the other
+        # assumed values here, a different rig's; refuse rather than mix them.
+        if acquisition != STEMLAB_125_14:
+            raise ValueError(f'nominal is the STEMlab 125-14 rig, got {acquisition}')
         return cls(
             acquisition=acquisition,
             wavelengths_um=wavelengths_um,

@@ -61,11 +61,7 @@ synthetic:
   # Every SimConfig field, no defaults (smi.synthetic.forward.SimConfig).
   # The experiment runner replaces the whole block per cell.
   sim:
-    acquisition:  # smi.core.acquisition.STEMLAB_125_14
-      sample_rate_dec1_hz: 125000000.0
-      buffer_size: 16384
-      adc_bits: 14
-      input_full_scale_v: 1.0
+    acquisition: STEMLAB_125_14  # smi.core.acquisition.BOARDS
     wavelengths_um: [0.635, 0.6748, 0.515]
     sample_rate: 488281.25  # 125 MHz / decimation 256
     start_freq_hz: 1.0

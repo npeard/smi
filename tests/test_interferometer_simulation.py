@@ -49,7 +49,7 @@ class TestInterferometerSimulation:
     def test_buffer_size(self):
         """Test that all output arrays have the correct buffer size."""
         # All output arrays should have length equal to BUFFER_SIZE
-        buffer_size = self.waveform.buffer_size
+        buffer_size = self.waveform.acquisition.buffer_size
 
         # Check time array
         assert len(self.time) <= buffer_size, (

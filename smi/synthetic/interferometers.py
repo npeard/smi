@@ -302,7 +302,7 @@ class InterferometerArray:
 
         # Calculate how many samples we would see at the acquisition rate
         # The acquisition buffer size is the same as the generation buffer size
-        acq_buffer_size = waveform.buffer_size
+        acq_buffer_size = waveform.acquisition.buffer_size
 
         # Calculate how many samples from the original waveform we'll actually see
         # due to the slower acquisition rate (aliasing effect)
