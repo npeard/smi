@@ -99,7 +99,6 @@ class VelocityDataset(Dataset):
         self.file_path = file_path
         self.num_pd_channels = min(max(1, num_pd_channels), 3)  # Ensure between 1 and 3
         self.cache_size = cache_size
-        self.sample_rate = None  # Will be set in open_hdf5
 
         # Channel keys for photodiode signals
         self.pd_channel_keys = list(PD_KEYS[: self.num_pd_channels])
@@ -120,6 +119,8 @@ class VelocityDataset(Dataset):
                 self.pd_channel_keys = select_pd_keys(f, wavelengths_um)
             self._validate_file_structure(f)
             self.length = self._get_dataset_length(f)
+            # Read once here so workers neither re-read nor re-warn per open.
+            self.sample_rate = read_sample_rate(f.attrs)
 
         self.opened_flag = False
 
@@ -140,14 +141,11 @@ class VelocityDataset(Dataset):
         """Open HDF5 file for reading.
 
         This is done lazily to support multiprocessing in DataLoader.
-        Also sets the sample_rate from file attributes if available.
         """
         if not self.opened_flag:
             self.h5_file = h5py.File(self.file_path, 'r')
             self.voltage_data = self.h5_file[self.voltage_key]
             self.pd_data = [self.h5_file[key] for key in self.pd_channel_keys]
-
-            self.sample_rate = read_sample_rate(self.h5_file.attrs)
 
             self.opened_flag = True
 
