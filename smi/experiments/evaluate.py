@@ -27,7 +27,7 @@ Conventions that matter when reading the numbers:
 import json
 import logging
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -36,6 +36,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
+from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import integrate_velocity
 from smi.core.metrics import (
     best_sign,
@@ -47,6 +48,7 @@ from smi.data.datasets import file_pd_channels, select_pd_keys
 from smi.data.schema import (
     DISPLACEMENT_KEY,
     DRIVE_KEY,
+    LEGACY_SAMPLE_RATE_HZ,
     PD_WAVELENGTHS_UM,
     SAMPLE_RATE_ATTR,
     VELOCITY_KEY,
@@ -92,6 +94,19 @@ class Estimator(Protocol):
         ...
 
 
+def migrate_legacy_hparams(hparams: dict[str, Any]) -> dict[str, Any]:
+    """Fill the hparams that checkpoints from before the restructure lack.
+
+    Every pre-restructure checkpoint came from the STEMlab 125-14 rig at
+    decimation 256, so its synthetic ``sim.acquisition`` is that board and
+    its real-data ``sample_rate`` is ``LEGACY_SAMPLE_RATE_HZ``.
+    """
+    if 'sim' in hparams:
+        sim = {'acquisition': asdict(STEMLAB_125_14), **hparams['sim']}
+        return {**hparams, 'sim': sim}
+    return {'sample_rate': LEGACY_SAMPLE_RATE_HZ, **hparams}
+
+
 def load_lit_module(path: str | Path, *, device: str) -> LitModule:
     """Rebuild a checkpoint's Lightning module with its weights.
 
@@ -107,7 +122,7 @@ def load_lit_module(path: str | Path, *, device: str) -> LitModule:
         The module in eval mode.
     """
     ckpt = torch.load(path, weights_only=False, map_location='cpu')
-    hparams = ckpt['hyper_parameters']
+    hparams = migrate_legacy_hparams(dict(ckpt['hyper_parameters']))
     module = (
         SyntheticLitModule(**hparams, restoring_checkpoint=True)
         if 'sim' in hparams

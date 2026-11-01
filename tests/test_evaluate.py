@@ -9,12 +9,20 @@ import numpy as np
 import pytest
 import torch
 
+from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement, integrate_velocity
 from smi.core.metrics import sign_invariant_rmse
 from smi.data import frozen
 from smi.data.datasets import VelocityDataset, select_pd_keys
 from smi.data.frozen import pd_keys, write_frozen_set
-from smi.experiments.evaluate import CheckpointEstimator, InverseFitEstimator, evaluate
+from smi.data.schema import LEGACY_SAMPLE_RATE_HZ
+from smi.experiments.evaluate import (
+    CheckpointEstimator,
+    InverseFitEstimator,
+    evaluate,
+    load_lit_module,
+    migrate_legacy_hparams,
+)
 from smi.experiments.results_artifact import (
     RunRecord,
     append_results,
@@ -232,6 +240,23 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
     assert len(records) == 2
     assert records[0].estimator.startswith('TCN:')
     assert json.loads(out.read_text())['schema_version'] == 1
+
+
+def test_pre_restructure_checkpoint_loads_on_the_stemlab(tmp_path):
+    module = _tcn_module('velocity')
+    hparams = dict(module.hparams)
+    hparams['sim'] = {k: v for k, v in hparams['sim'].items() if k != 'acquisition'}
+    ckpt = tmp_path / 'old.ckpt'
+    torch.save({'hyper_parameters': hparams, 'state_dict': module.state_dict()}, ckpt)
+    loaded = load_lit_module(ckpt, device='cpu')
+    assert isinstance(loaded, SyntheticLitModule)
+    assert loaded.sim_config.acquisition == STEMLAB_125_14
+
+
+def test_pre_restructure_real_data_hparams_get_the_legacy_rate():
+    old = {'model_hparams': {}, 'training_hparams': {'target': 'velocity'}}
+    assert migrate_legacy_hparams(old)['sample_rate'] == LEGACY_SAMPLE_RATE_HZ
+    assert migrate_legacy_hparams({**old, 'sample_rate': 1.0})['sample_rate'] == 1.0
 
 
 def test_displacement_checkpoint_is_differentiated_before_scoring(tmp_path):
