@@ -5,8 +5,13 @@ import time
 
 import lightning as lightning_module
 
-from smi.core.paths import CONFIGS_DIR
+from smi.acquisition.rig import HOSTS, PRIMARY, SHOT_DELAY_S, SHOT_TIMEOUT_S, connect
+from smi.acquisition.shots import run_shots
+from smi.core.acquisition import STEMLAB_125_14
+from smi.core.paths import CONFIGS_DIR, DATA_DIR
 from smi.learning.training_interface import TrainingConfig, TrainingInterface
+from smi.theory.coil_driver import CoilDriver
+from smi.theory.waveform import Waveform
 
 
 def setup_logging(verbosity: str) -> None:
@@ -74,9 +79,28 @@ def acquire_dataset(
         dataset_name: Filename for the dataset (e.g., "my-data.h5")
         logger: Logger instance for output
     """
-    # The SMI acquisition loop was split out of the Red Pitaya manager when it
-    # became the standalone stemlab library; smi.acquisition rebuilds it on top.
-    raise NotImplementedError('rebuilt in smi.acquisition')
+    if not dataset_name.endswith('.h5'):
+        dataset_name += '.h5'
+    path = DATA_DIR / dataset_name
+    logger.info(f'Acquiring {num_samples} shots into {path}')
+
+    manager = connect(HOSTS)
+    try:
+        for board in range(len(HOSTS)):
+            manager.blink_led(board, led=0, n_blinks=3, period_s=0.5)
+        manager.reset()
+        manager.configure_daisy_chain(PRIMARY)
+        run_shots(
+            manager,
+            Waveform(start_freq=1, end_freq=1000, acquisition=STEMLAB_125_14),
+            CoilDriver(),
+            num_samples,
+            path,
+            SHOT_TIMEOUT_S,
+            SHOT_DELAY_S,
+        )
+    finally:
+        manager.close()
 
 
 def train_model(config_path: str, logger: logging.Logger) -> None:

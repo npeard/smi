@@ -418,28 +418,46 @@ forbidden_modules = ["smi"]
 name = "smi.core is the bottom layer"
 type = "forbidden"
 source_modules = ["smi.core"]
-forbidden_modules = ["smi.theory", "smi.data", "smi.estimators", "smi.experiments", "stemlab"]
+forbidden_modules = ["smi.theory", "smi.data", "smi.estimators", "smi.experiments", "smi.acquisition"]
 
 [[tool.importlinter.contracts]]
 name = "smi.theory depends only on smi.core"
 type = "forbidden"
 source_modules = ["smi.theory"]
-forbidden_modules = ["smi.data", "smi.estimators", "smi.experiments", "stemlab"]
+forbidden_modules = ["smi.data", "smi.estimators", "smi.experiments", "smi.acquisition"]
 
 [[tool.importlinter.contracts]]
 name = "smi.data depends only on smi.core and smi.theory"
 type = "forbidden"
 source_modules = ["smi.data"]
-forbidden_modules = ["smi.estimators", "smi.experiments", "stemlab", "smi.main"]
+forbidden_modules = ["smi.estimators", "smi.experiments", "smi.acquisition", "smi.main"]
 
 [[tool.importlinter.contracts]]
 name = "smi.estimators depends only on smi.core and smi.theory"
 type = "forbidden"
 source_modules = ["smi.estimators"]
-forbidden_modules = ["smi.data", "smi.experiments", "stemlab", "smi.main"]
+forbidden_modules = ["smi.data", "smi.experiments", "smi.acquisition", "smi.main"]
 
 [[tool.importlinter.contracts]]
 name = "smi.learning does not import estimators, experiments or hardware"
 type = "forbidden"
 source_modules = ["smi.learning"]
-forbidden_modules = ["smi.estimators", "smi.experiments", "stemlab", "smi.main"]
+forbidden_modules = ["smi.estimators", "smi.experiments", "smi.acquisition", "smi.main"]
+
+[[tool.importlinter.contracts]]
+name = "only smi.acquisition imports stemlab"
+type = "forbidden"
+source_modules = ["smi.core", "smi.theory", "smi.data", "smi.estimators", "smi.learning", "smi.experiments"]
+forbidden_modules = ["stemlab"]
+
+[[tool.importlinter.contracts]]
+name = "smi.acquisition and smi.experiments do not import each other"
+type = "forbidden"
+source_modules = ["smi.acquisition"]
+forbidden_modules = ["smi.experiments"]
+
+[[tool.importlinter.contracts]]
+name = "smi.experiments does not import smi.acquisition"
+type = "forbidden"
+source_modules = ["smi.experiments"]
+forbidden_modules = ["smi.acquisition"]
