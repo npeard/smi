@@ -156,7 +156,7 @@ class VelocityDataModule(lightning_module.LightningDataModule):
             max_shots=max_shots,
         )
 
-    def setup(self, stage: str | None = None) -> None:  # noqa: ARG002
+    def setup(self, stage: str | None = None) -> None:  # noqa: ARG002 - signature fixed by Lightning's LightningDataModule.setup
         """Create the dataset and the deterministic train/val/test split.
 
         ``stage`` is part of the LightningDataModule API; the same split is built

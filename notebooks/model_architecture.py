@@ -26,9 +26,9 @@ def _(mo):
 
 @app.cell
 def _():
-    config_path = (
-        '/Users/nolanpeard/Documents/Projects/smi/configs/models/tcn-config.yaml'
-    )
+    from smi.core.paths import CONFIGS_DIR
+
+    config_path = CONFIGS_DIR / 'models' / 'tcn-config.yaml'
     return (config_path,)
 
 
