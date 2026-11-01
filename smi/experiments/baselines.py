@@ -89,6 +89,7 @@ import numpy as np
 import torch
 
 from smi.core.metrics import summarize_per_shot
+from smi.core.paths import DATA_DIR, RESULTS_DIR
 from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, SAMPLE_RATE_ATTR
 from smi.estimators.inverse import inverse_fit
 from smi.estimators.phase_fit import (
@@ -108,12 +109,11 @@ logger = logging.getLogger(__name__)
 
 
 # Default location of the acquired datasets and committed artifacts.
-DATA_DIR = Path(__file__).resolve().parents[1] / 'analysis' / 'data'
 DEFAULT_DATASETS: dict[str, str] = {
     'free-space': 'free-space-synchro_10k.h5',
     'mmfiber': 'mmfiber-synchro_10k.h5',
 }
-DEFAULT_RESULTS_PATH = DATA_DIR / 'baseline_results.json'
+DEFAULT_RESULTS_PATH = RESULTS_DIR / 'baseline_results.json'
 
 
 # ---------------------------------------------------------------------------
@@ -489,8 +489,8 @@ def run_baselines(
         device: Torch device for the method-2 decode.
         batch_size: Shots per decode batch.
         output: Destination JSON path. Defaults to
-            ``smi/analysis/data/baseline_results.json``.
-        datasets: Mapping of label to file name under ``smi/analysis/data``.
+            ``results/baseline_results.json``.
+        datasets: Mapping of label to file name under ``data/``.
         grid_points: Displacement grid resolution.
         phase_grid_points: Phase search resolution.
         window_samples: Window length for method 1's windowed refit, used

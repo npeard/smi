@@ -1,20 +1,13 @@
 """End-to-end CLI path for synthetic training, including the test stage."""
 
 import logging
-from pathlib import Path
 
 import yaml
 
+from smi.core.paths import CONFIGS_DIR
 from smi.main import train_model
 
-CONFIG = (
-    Path(__file__).parent.parent
-    / 'smi'
-    / 'analysis'
-    / 'models'
-    / 'configs'
-    / 'synthetic-tcn-config.yaml'
-)
+CONFIG = CONFIGS_DIR / 'models' / 'synthetic-tcn-config.yaml'
 
 
 def test_synthetic_main_runs_test_stage(tmp_path):

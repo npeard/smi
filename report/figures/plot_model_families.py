@@ -43,8 +43,8 @@ from _figcommon import (
     synthetic_records,
 )
 
-from smi.analysis.experiments import cell_key
-from smi.analysis.results_artifact import RunRecord
+from smi.experiments.results_artifact import RunRecord
+from smi.experiments.runner import cell_key
 
 SIM_STYLE = {'michelson': COLORS['muted'], 'smi-a3': COLORS['accent']}
 STALLED = 'C3'

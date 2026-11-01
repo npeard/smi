@@ -15,9 +15,13 @@ import pytest
 import torch
 import yaml
 
-from smi.analysis import experiments
-from smi.analysis.evaluate import load_lit_module
-from smi.analysis.experiments import (
+from smi.core.kinematics import derivative_displacement
+from smi.core.paths import CONFIGS_DIR
+from smi.data.datasets import select_pd_keys
+from smi.experiments import runner as experiments
+from smi.experiments.evaluate import load_lit_module
+from smi.experiments.results_artifact import read_results
+from smi.experiments.runner import (
     RunnerLockedError,
     cell_fingerprint,
     expand_grid,
@@ -26,15 +30,12 @@ from smi.analysis.experiments import (
     runner_lock,
     training_config,
 )
-from smi.analysis.results_artifact import read_results
-from smi.core.kinematics import derivative_displacement
-from smi.data.datasets import select_pd_keys
 from smi.learning import synthetic_lit_module
 from smi.learning.lit_module import LitModule
 from smi.learning.training_interface import SIGNED_RMSE_KEY
 from tests._helpers import script_log
 
-MATCHED = experiments.ANALYSIS_DIR / 'models' / 'configs' / 'matched'
+MATCHED = CONFIGS_DIR / 'models' / 'matched'
 
 
 @pytest.fixture(autouse=True)
@@ -456,7 +457,7 @@ def test_shipped_grids_expand_and_name_existing_configs():
         ('q3_noise_free', 7 * (3 * 14 + 1)),
         ('q1_channels', 14 * (3 * 14 + 1)),
     ):
-        path = experiments.ANALYSIS_DIR / 'experiments' / f'{name}.yaml'
+        path = CONFIGS_DIR / 'experiments' / f'{name}.yaml'
         _, cells = expand_grid(path)
         assert len(cells) == n_cells
         assert all(c.family_config.exists() for c in cells)
@@ -465,8 +466,8 @@ def test_shipped_grids_expand_and_name_existing_configs():
             assert c.sign_invariant == (c.sim.feedback_c == 0.0)
 
 
-DISPLACEMENT = experiments.ANALYSIS_DIR / 'models' / 'configs' / 'displacement'
-EXPERIMENTS = experiments.ANALYSIS_DIR / 'experiments'
+DISPLACEMENT = CONFIGS_DIR / 'models' / 'displacement'
+EXPERIMENTS = CONFIGS_DIR / 'experiments'
 
 
 def test_displacement_grid_retargets_the_s1_cells_and_nothing_else():
@@ -540,7 +541,7 @@ def test_lock_held_by_live_process_survives_an_emptied_lockfile(tmp_path):
     code = (
         'import time\n'
         'from pathlib import Path\n'
-        'from smi.analysis.experiments import runner_lock\n'
+        'from smi.experiments.runner import runner_lock\n'
         f'with runner_lock(Path({str(lock)!r})):\n'
         "    print('held', flush=True)\n"
         '    time.sleep(60)\n'
@@ -567,7 +568,7 @@ def test_concurrent_runner_process_exits_nonzero(tmp_path):
             [
                 sys.executable,
                 '-m',
-                'smi.analysis.experiments',
+                'smi.experiments.runner',
                 str(path),
                 '--out',
                 str(tmp_path / 'results.json'),
@@ -600,7 +601,7 @@ def test_sigterm_kills_children_and_releases_lock(tmp_path):
     code = (
         'import subprocess, sys, time\n'
         'from pathlib import Path\n'
-        'from smi.analysis.experiments import runner_lock\n'
+        'from smi.experiments.runner import runner_lock\n'
         f'with runner_lock(Path({str(lock)!r})):\n'
         '    child = subprocess.Popen(\n'
         "        [sys.executable, '-c', 'import time; time.sleep(60)']\n"

@@ -36,8 +36,8 @@ from _figcommon import (
     synthetic_records,
 )
 
-from smi.analysis.experiments import ORACLE_FAMILY, cell_key
-from smi.analysis.results_artifact import RunRecord
+from smi.experiments.results_artifact import RunRecord
+from smi.experiments.runner import ORACLE_FAMILY, cell_key
 
 # (family, marker, label) for panel (a).
 FAMILY_MARKERS = {'tcn-44k': ('o', 'TCN'), 'tcan-44k': ('s', 'TCAN')}

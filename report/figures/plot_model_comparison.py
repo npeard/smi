@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _figcommon import (
     BASELINE_DATASETS,
     COLORS,
-    DATA_DIR,
+    RESULTS_DIR,
     RESULTS_JSON,
     parse_args,
     save,
@@ -48,9 +48,9 @@ from _figcommon import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from smi.analysis.results_artifact import RunRecord, read_results
+from smi.experiments.results_artifact import RunRecord, read_results
 
-LEARNED_JSON = DATA_DIR / 'learned_results.json'
+LEARNED_JSON = RESULTS_DIR / 'learned_results.json'
 
 METRIC = 'velocity_rmse_um_per_ms'
 

@@ -134,13 +134,16 @@ layout: `smi/` (library), `tests/`, `notebooks/` (marimo apps), `docs/`.
 
 Inside `smi/`:
 
-- `analysis/` - ML pipeline.
-  - `models/` - architectures (`tcn`, `scnn`, `tcan`, `lstm`, `mamba`,
-    `barland_cnn`, `patch_transformer`, `unet_transformer`,
-    `neural_operator`) plus `base.py`, which defines `Model(nn.Module)` (the
-    normalization wrapper) and `FeatureMap`.
-  - `lit_module.py`, `synthetic_lit_module.py`, `training_interface.py`.
-- `core/` - bottom layer: acquisition config, kinematics, metrics.
+- `learning/` - `models/` (architectures: `tcn`, `scnn`, `tcan`, `lstm`,
+  `mamba`, `barland_cnn`, `patch_transformer`, `unet_transformer`,
+  `neural_operator`; `base.py` defines `Model(nn.Module)`, the normalization
+  wrapper, and `FeatureMap`), `lit_module.py`, `synthetic_lit_module.py`,
+  `training_interface.py`.
+- `experiments/` - top layer: the grid `runner`, `evaluate`, `results_artifact`,
+  baseline sweeps and one-off scripts. Nothing below it imports it.
+- `core/` - bottom layer: acquisition config, kinematics, metrics, and `paths`
+  (`CONFIGS_DIR`, `RESULTS_DIR`, `DATA_DIR`, `FROZEN_DIR`, `CHECKPOINTS_DIR`
+  for the repo-root `configs/`, `results/`, `data/`, `checkpoints/`).
 - `theory/` - physics: coil driver, interferometers, waveform, forward model
   (`simulate_batch`) and the Fisher/Bayesian `bounds`; may import only
   `smi.core`.
@@ -154,7 +157,7 @@ Inside `smi/`:
   and the **generated, version-controlled** per-feature mean/std
   (`normalization.py` - do not hand-edit; regenerate with the script).
   Must not
-  import `smi.analysis` or `smi.redpitaya`. Layering is enforced by
+  import `smi.redpitaya`. Layering is enforced by
   `[tool.importlinter]` via `tests/test_import_contracts.py`.
 - `estimators/` - array-in/array-out classical estimators: `phase_fit`
   (method 1 forward-model fits, windowed/envelope/joint-gain variants, phase
@@ -211,7 +214,7 @@ lockfile-reproducible with no manual install.
   - `synthetic.typ` - the synthetic research report: identifiability,
     Fisher information and Bayesian bounds (computed in its figure scripts
     from `smi.theory.bounds`), then the Q3 and Q1 results from
-    `smi/analysis/data/synthetic_results.json`. Build it alone with
+    `results/synthetic_results.json`. Build it alone with
     `pixi run report-synthetic`.
 - `figures/plot_<name>.py` - one script per figure, each taking `--output
   <path>` and writing exactly that path. Shared style lives in

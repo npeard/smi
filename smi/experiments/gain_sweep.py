@@ -16,6 +16,7 @@ from typing import Any
 import h5py
 import numpy as np
 
+from smi.core.paths import DATA_DIR, RESULTS_DIR
 from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, SAMPLE_RATE_ATTR
 from smi.estimators.gain_sweep import (
     LEGACY_K,
@@ -28,11 +29,11 @@ from smi.estimators.gain_sweep import (
     unit_gain_displacement,
 )
 from smi.estimators.phase_fit import DEFAULT_WINDOW_SAMPLES
-from smi.experiments.baselines import DATA_DIR, DEFAULT_DATASETS
+from smi.experiments.baselines import DEFAULT_DATASETS
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_RESULTS_PATH = DATA_DIR / 'gain_sweep_results.json'
+DEFAULT_RESULTS_PATH = RESULTS_DIR / 'gain_sweep_results.json'
 
 # Sweep range and step. The range brackets the live 14.553 generously on both
 # sides and reaches the 2024 calibration's 33.42, so that value is refuted by
@@ -144,13 +145,13 @@ def run_gain_sweep(
         gains: Candidate gains; defaults to the module's grid.
         window_samples: Window length for the windowed measure.
         output: Destination JSON path. Defaults to
-            ``smi/analysis/data/gain_sweep_results.json``.
+            ``results/gain_sweep_results.json``.
         datasets: Mapping of label to file name under ``data_dir``.
         delay_max_shift: Half-width of the delay check in samples.
         include_per_shot: Also fit an optimal gain per shot, bounding what any
             scalar correction could achieve.
         data_dir: Directory the dataset file names are relative to. Defaults
-            to ``smi/analysis/data``.
+            to ``data/``.
 
     Returns:
         The results dictionary that was written to disk.

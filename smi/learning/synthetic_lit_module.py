@@ -248,7 +248,7 @@ class SyntheticLitModule(LitModule):
 
         Validation windows are cropped like training ones, so the monitored
         metric (and the best checkpoint) is on crops; the reported metric is
-        :func:`smi.analysis.evaluate.evaluate` on full frozen shots.
+        :func:`smi.experiments.evaluate.evaluate` on full frozen shots.
 
         Args:
             batch: Tensor of indices from SyntheticIndexDataset (batch size only)

@@ -12,6 +12,7 @@ import pytest
 import torch
 import yaml
 
+from smi.core.paths import CONFIGS_DIR
 from smi.learning.models.barland_cnn import conv_position_field
 from smi.learning.models.base import Model
 from smi.learning.models.factory import MODEL_REGISTRY, count_parameters, create_model
@@ -20,9 +21,7 @@ from smi.learning.training_interface import MIN_PATIENCE_CHECKS, TrainingConfig
 from smi.theory.forward import SimConfig
 from tests.test_receptive_field import measure_worst_phase_field, phase_period
 
-MATCHED = (
-    Path(__file__).parents[1] / 'smi' / 'analysis' / 'models' / 'configs' / 'matched'
-)
+MATCHED = CONFIGS_DIR / 'models' / 'matched'
 BUDGETS = {'19k': 19_329, '44k': 44_000}
 BAND = 0.10
 CONFIGS = sorted(p for k in BUDGETS for p in MATCHED.glob(f'*-{k}.yaml'))

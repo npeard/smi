@@ -1,14 +1,11 @@
 """Tests for VelocityDataModule (real-data path)."""
 
-from pathlib import Path
-
 import pytest
 
+from smi.core.paths import DATA_DIR
 from smi.data.datamodule import VelocityDataModule
 
-DATASET = (
-    Path(__file__).parent.parent / 'smi' / 'analysis' / 'data' / 'circuit-noise-600.h5'
-)
+DATASET = DATA_DIR / 'circuit-noise-600.h5'
 SIGNAL_LENGTH = 16384
 NUM_PD_CHANNELS = 3
 BATCH_SIZE = 4

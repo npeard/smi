@@ -37,7 +37,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import (
     CEILING_GRID,
-    DATA_DIR,
     DISPLACEMENT_METRICS,
     EXPERIMENTS_DIR,
     LEAVE_ONE_OUT,
@@ -60,6 +59,7 @@ from _figcommon import (
     Q2_STEMS,
     Q3_BUDGETS,
     Q3_FEEDBACK_C,
+    RESULTS_DIR,
     S1D_FAMILIES,
     STALL_TOLERANCE,
     SYNTHETIC_WAVELENGTHS_UM,
@@ -81,10 +81,10 @@ from _figcommon import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from smi.analysis.experiments import ORACLE_FAMILY, cell_key, expand_grid
-from smi.analysis.results_artifact import RunRecord
 from smi.core.acquisition import STEMLAB_125_14
 from smi.data.frozen import DEFAULT_ROOT, load_or_create
+from smi.experiments.results_artifact import RunRecord
+from smi.experiments.runner import ORACLE_FAMILY, cell_key, expand_grid
 from smi.learning.models.factory import create_model
 from smi.learning.models.sliding_window import SlidingWindowModel
 from smi.learning.synthetic_lit_module import VAL_SEED
@@ -128,7 +128,7 @@ def nominal_bounds(
 
 
 def real_tcn_rmse() -> float:
-    results = json.loads((DATA_DIR / 'learned_results.json').read_text('utf-8'))
+    results = json.loads((RESULTS_DIR / 'learned_results.json').read_text('utf-8'))
     runs = [
         run['metrics']['velocity_rmse_um_per_ms']['mean']
         for run in results['datasets']['free-space']
@@ -850,7 +850,7 @@ def q1_s2_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
 def q1_binned_values(
     records: dict[str, RunRecord], prior: bounds.StateSpace
 ) -> dict[str, object]:
-    """Values section Q1 quotes from the binned errors (smi.analysis.q1_binned).
+    """Values section Q1 quotes from the binned errors (smi.experiments.q1_binned).
 
     The JSON holds the TCN on 515 nm alone, on 635 + 515 nm and on all three
     channels, noise-free and at the nominal point at 30 dB.

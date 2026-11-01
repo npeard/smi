@@ -26,7 +26,9 @@ def _(mo):
 
 @app.cell
 def _():
-    config_path = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/models/configs/tcn-config.yaml'
+    config_path = (
+        '/Users/nolanpeard/Documents/Projects/smi/configs/models/tcn-config.yaml'
+    )
     return (config_path,)
 
 

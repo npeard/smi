@@ -1,0 +1,51 @@
+# Q3 stage S3l: leave-one-out at the nominal operating point. Each sim is the
+# nominal point (TCN-44k, 3 channels, SMI C = 0.2, alpha = 3) with ONE knob
+# returned to its noise-free value (SimConfig.noise_free). The ladder sweeps
+# knobs alone from the noise-free base, so it cannot say what the nominal error
+# would be with one term removed -- the question a hardware fix asks. Read
+# against the nominal point's three-seed spread (q3_s3_spread.yaml).
+# Run: python -m smi.experiments.runner configs/experiments/q3_s3_leave_one_out.yaml \
+#        --out results/synthetic_results.json
+families:
+  - {name: tcn-44k, config: ../models/matched/tcn-44k.yaml}
+
+channel_subsets:
+  - [0.635, 0.6748, 0.515]
+
+sims:
+  - {name: nominal-no-snr, preset: nominal, feedback_c: 0.2, alpha: 3.0,
+     override: {snr_db: null}}
+  - {name: nominal-no-visibility, preset: nominal, feedback_c: 0.2, alpha: 3.0,
+     override: {visibility_range: [1.0, 1.0]}}
+  - {name: nominal-no-dc, preset: nominal, feedback_c: 0.2, alpha: 3.0,
+     override: {dc_offset_range: [0.0, 0.0]}}
+  - {name: nominal-no-ampdrift, preset: nominal, feedback_c: 0.2, alpha: 3.0,
+     override: {amplitude_drift_rel: 0.0}}
+  - {name: nominal-no-phasedrift, preset: nominal, feedback_c: 0.2, alpha: 3.0,
+     override: {phase_drift_rad_per_sqrt_s: 0.0}}
+  - {name: nominal-no-contrastdrift, preset: nominal, feedback_c: 0.2, alpha: 3.0,
+     override: {contrast_drift_rel: 0.0}}
+  - {name: nominal-no-pdbw, preset: nominal, feedback_c: 0.2, alpha: 3.0,
+     override: {pd_bandwidth_hz: null}}
+  - {name: nominal-no-adc, preset: nominal, feedback_c: 0.2, alpha: 3.0,
+     override: {adc_bits: null}}
+
+seeds: [0]
+oracle: false
+
+loss:
+  sign_invariant: false
+
+synthetic:
+  steps_per_epoch: 200
+  val_steps: 20
+  train_crop_length: 4096
+
+training:
+  accelerator: mps
+  devices: 1
+  precision: 32-true
+  # The family schedule (T_0 = 30) under a 100-epoch cap, not S1's T_0 = 90.
+  max_epochs: 100
+
+test_set: {seed: 1000, n_shots: 64}

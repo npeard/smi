@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from smi.analysis.q1_binned import (
+from smi.experiments.q1_binned import (
     binned_rmse,
     extremum_distance,
     fringe_phase,

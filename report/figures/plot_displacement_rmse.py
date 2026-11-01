@@ -43,7 +43,7 @@ from _figcommon import (
     synthetic_records,
 )
 
-from smi.analysis.results_artifact import RunRecord
+from smi.experiments.results_artifact import RunRecord
 
 SIM_STYLE = {
     'michelson': (COLORS['muted'], 'Michelson, sign-inv.'),

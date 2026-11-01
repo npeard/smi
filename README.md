@@ -14,10 +14,13 @@ This repository implements an optical and computational framework that overcomes
 
 The importable package is `smi/`:
 
-- `smi/analysis/` - ML pipeline: `models/` (architectures + the `Model`
-  normalization wrapper in `base.py`), `features/` (Polars `FeatureRegistry` and
-  version-controlled normalization stats), `datamodule.py`, `datasets.py`,
-  `lit_module.py`, `training_interface.py`.
+- `smi/learning/` - models (architectures + the `Model` normalization wrapper in
+  `base.py`), `lit_module.py`, `training_interface.py`.
+- `smi/data/` - `features/` (Polars `FeatureRegistry` and version-controlled
+  normalization stats), `datamodule.py`, `datasets.py`.
+- `smi/experiments/` - grid runner, evaluation and baseline sweeps.
+- `configs/`, `results/`, `data/`, `checkpoints/` - model and experiment YAML,
+  committed result JSON, raw and frozen data (ignored), checkpoints (ignored).
 - `smi/theory/` - physics simulation (coil driver, interferometers, waveform).
 - `smi/redpitaya/` - Red Pitaya hardware control and acquisition.
 - `report/` - Typst slides and reports, built from matplotlib figures through a
@@ -74,11 +77,11 @@ Run `smi/main.py` through Pixi. It provides two execution modes.
 Train a neural network model using a YAML configuration file:
 
 ```bash
-pixi run python -m smi.main --config smi/analysis/models/configs/tcn-config.yaml
+pixi run python -m smi.main --config configs/models/tcn-config.yaml
 ```
 
 **Arguments:**
-- `--config`: Path to YAML configuration file (configs live in `smi/analysis/models/configs/`)
+- `--config`: Path to YAML configuration file (configs live in `configs/models/`)
 - `--verbosity`: Set logging level (choices: DEBUG, INFO, WARNING, ERROR; default: INFO)
 
 A config may set list-valued hyperparameters to launch a grid search. Set the
@@ -97,7 +100,7 @@ pixi run python -m smi.main --acquire_dataset --num_samples 10000 --dataset_name
 - `--num_samples`: Number of samples to acquire (required with `--acquire_dataset`)
 - `--dataset_name`: Filename for the acquired dataset (required with `--acquire_dataset`)
 
-**Note:** The Red Pitaya connection uses default settings configured in the `RedPitayaManager`. Acquired data is saved to `smi/analysis/data/`.
+**Note:** The Red Pitaya connection uses default settings configured in the `RedPitayaManager`. Acquired data is saved to `data/`.
 
 ### Evaluating a Trained Model
 

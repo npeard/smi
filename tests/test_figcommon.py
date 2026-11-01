@@ -12,8 +12,8 @@ from _figcommon import (
     noise_ladder,
 )
 
-from smi.analysis.experiments import expand_grid
-from smi.analysis.results_artifact import RunRecord
+from smi.experiments.results_artifact import RunRecord
+from smi.experiments.runner import expand_grid
 from tests._helpers import run_record
 
 

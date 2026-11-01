@@ -3,12 +3,12 @@
 //
 // Build:  pixi run report-only  (or, from report/: snakemake build/report.pdf)
 //
-// Every number in this document comes from smi/analysis/data/baseline_results.json
+// Every number in this document comes from results/baseline_results.json
 // (method 1 and method 2, written by smi.experiments.baselines), from
-// smi/analysis/data/gain_sweep_results.json (the gain, delay and fringe-rate
+// results/gain_sweep_results.json (the gain, delay and fringe-rate
 // sweeps, written by smi.experiments.gain_sweep), or from
-// smi/analysis/data/learned_results.json (the trained models, written by
-// smi.analysis.run_baseline_sweep). Nothing here is estimated or
+// results/learned_results.json (the trained models, written by
+// smi.experiments.run_baseline_sweep). Nothing here is estimated or
 // recalled: if a claim needs a number the artifacts do not contain, the claim
 // does not get made. Figures read the artifacts and recompute nothing.
 //
@@ -801,7 +801,7 @@ about every absolute number below.
 == What every configuration scored
 
 Velocity RMSE in um/ms and displacement RMSE in um, each the mean over the
-two seeds, from `smi/analysis/data/learned_results.json`. Every row carries
+two seeds, from `results/learned_results.json`. Every row carries
 its parameter count, its receptive field in samples, and whether it reads
 samples after the timestamp it predicts. The last three rows are the models
 that trained worst and are here for the same reason as the rest: a table that
@@ -1086,7 +1086,7 @@ fit the budget. Those two figures are the measurement, not a quotation: the
 compute side is 19.2 ms per step at batch 16, warmed, with
 `torch.cuda.synchronize()` around the timed region and the median taken over
 ten steps on the same GPU. The loader headroom reported by
-`smi.analysis.benchmark_loading` was measured on a production-size TCN at
+`smi.experiments.benchmark_loading` was measured on a production-size TCN at
 batch 32, where training is GPU bound; it does not transfer to 19-44k
 parameters, which is why the sweep had to be measured on its own.
 

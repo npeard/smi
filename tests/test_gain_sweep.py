@@ -18,6 +18,7 @@ import h5py
 import numpy as np
 import pytest
 
+from smi.core.paths import RESULTS_DIR
 from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
 from smi.estimators.gain_sweep import (
     DelayCurve,
@@ -34,13 +35,7 @@ from smi.experiments.gain_sweep import run_gain_sweep, sweep_dataset
 from smi.theory.calib_params import CalibrationParameters
 from smi.theory.coil_driver import MS_PER_S, CoilDriver
 
-ARTIFACT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / 'smi'
-    / 'analysis'
-    / 'data'
-    / 'gain_sweep_results.json'
-)
+ARTIFACT_PATH = RESULTS_DIR / 'gain_sweep_results.json'
 SAMPLE_RATE = 488281.25
 WAVELENGTHS = tuple(PD_WAVELENGTHS_UM.values())
 CHANNELS = list(PD_WAVELENGTHS_UM)

@@ -19,6 +19,7 @@ from numpy.fft import fft
 # Import our custom classes
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement, integrate_velocity
+from smi.core.paths import DATA_DIR
 from smi.data.schema import SAMPLE_RATE_ATTR, write_shot
 
 try:
@@ -95,7 +96,7 @@ class RedPitayaManager:
             self.data_save_path = Path(data_save_path)
         else:
             # Default to a data directory in the project
-            self.data_save_path = Path(__file__).parent.parent / 'analysis' / 'data'
+            self.data_save_path = DATA_DIR
 
         # Ensure the data directory exists
         self.data_save_path.mkdir(parents=True, exist_ok=True)

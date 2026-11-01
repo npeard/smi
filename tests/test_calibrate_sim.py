@@ -14,9 +14,9 @@ import h5py
 import numpy as np
 import pytest
 
-from smi.analysis.calibrate_sim import calibrate, main
 from smi.core.acquisition import STEMLAB_125_14
 from smi.data.frozen import RIG_WAVELENGTHS_UM, write_frozen_set
+from smi.experiments.calibrate_sim import calibrate, main
 from smi.theory.forward import (
     NOMINAL_ALPHA,
     NOMINAL_DRIVE_GAIN,

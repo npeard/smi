@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+from smi.core.paths import DATA_DIR
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPORT_DIR = REPO_ROOT / 'report'
 FIGURE_DIR = REPORT_DIR / 'figures'
@@ -37,7 +39,6 @@ FIGURE_SCRIPTS = sorted(FIGURE_DIR.glob('plot_*.py'))
 
 # The figure scripts read the acquisition HDF5 files, which are gitignored, so
 # a fresh clone cannot run them.
-DATA_DIR = REPO_ROOT / 'smi' / 'analysis' / 'data'
 REQUIRED_DATA = (
     DATA_DIR / 'free-space-synchro_10k.h5',
     DATA_DIR / 'mmfiber-synchro_10k.h5',

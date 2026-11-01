@@ -38,18 +38,18 @@ import torch
 from matplotlib.typing import RcKeyType
 from scipy import signal
 
-from smi.analysis.experiments import (
-    ANALYSIS_DIR,
+from smi.core.acquisition import STEMLAB_125_14
+from smi.core.paths import CONFIGS_DIR, DATA_DIR, RESULTS_DIR
+from smi.data.frozen import RIG_WAVELENGTHS_UM
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, read_sample_rate
+from smi.experiments.results_artifact import RunRecord, read_results
+from smi.experiments.runner import (
     ORACLE_FAMILY,
     Cell,
     cell_key,
     expand_grid,
     training_config,
 )
-from smi.analysis.results_artifact import RunRecord, read_results
-from smi.core.acquisition import STEMLAB_125_14
-from smi.data.frozen import RIG_WAVELENGTHS_UM
-from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, read_sample_rate
 from smi.theory import bounds
 from smi.theory.forward import (
     NOMINAL_ALPHA,
@@ -60,9 +60,8 @@ from smi.theory.forward import (
 
 # Resolved by the package, not the cwd (pytest runs scripts from the repo
 # root, Snakemake from report/).
-DATA_DIR = ANALYSIS_DIR / 'data'
-EXPERIMENTS_DIR = ANALYSIS_DIR / 'experiments'
-MATCHED_DIR = ANALYSIS_DIR / 'models' / 'configs' / 'matched'
+EXPERIMENTS_DIR = CONFIGS_DIR / 'experiments'
+MATCHED_DIR = CONFIGS_DIR / 'models' / 'matched'
 
 FREE_SPACE_H5 = DATA_DIR / 'free-space-synchro_10k.h5'
 MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
@@ -73,10 +72,10 @@ MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
 # repeating, and reading a fixed artifact is what makes the figures
 # deterministic. (Method 1's fits are ~1 minute on CPU at N = 1000; it is
 # method 2 that makes regeneration expensive.)
-RESULTS_JSON = DATA_DIR / 'baseline_results.json'
+RESULTS_JSON = RESULTS_DIR / 'baseline_results.json'
 
 # Experiment-runner records behind synthetic.typ's learned-model results.
-SYNTHETIC_RESULTS_JSON = DATA_DIR / 'synthetic_results.json'
+SYNTHETIC_RESULTS_JSON = RESULTS_DIR / 'synthetic_results.json'
 
 # The same lasers as the synthetic simulator spells them, for figures that
 # compute from smi.theory.
@@ -316,10 +315,10 @@ def matched_length_cells(
 
 
 # Section Q1's noise-free channel-subset grid, and the per-sample binned
-# errors smi.analysis.q1_binned writes from the Q1 checkpoints, which are
+# errors smi.experiments.q1_binned writes from the Q1 checkpoints, which are
 # gitignored and so cannot be read at build time.
 Q1_S2_GRID = EXPERIMENTS_DIR / 'q1_s2_subsets.yaml'
-Q1_BINNED_JSON = DATA_DIR / 'q1_binned_errors.json'
+Q1_BINNED_JSON = RESULTS_DIR / 'q1_binned_errors.json'
 # The seven subsets of the Q1 grids, singles first, as (wavelengths, label).
 Q1_SUBSETS: tuple[tuple[tuple[float, ...], str], ...] = (
     ((0.635,), '635'),
@@ -448,7 +447,7 @@ LEAVE_ONE_OUT = (
 
 
 # Section Q2's families as (runner family stem, label), causal first. Each ran
-# as ``<stem>-T90`` from configs/matched/<stem>.yaml. Mamba ran as its own
+# as ``<stem>-T90`` from configs/models/matched/<stem>.yaml. Mamba ran as its own
 # stage (q3_s1m_mamba.yaml); it stays optional so a fresh artifact without that
 # stage still builds, with Mamba marked pending.
 Q2_CAUSAL = (
@@ -491,7 +490,7 @@ def q2_record(records: dict[str, RunRecord], stem: str, sim: str) -> RunRecord |
 
 # Displacement RMSE beside each velocity metric: the predicted velocity
 # integrated over the shot, each start offset removed, as LitModule's auxiliary
-# displacement loss compares them. In um. smi.analysis.evaluate does not write
+# displacement loss compares them. In um. smi.experiments.evaluate does not write
 # them yet; the rerun plan's backfill re-scores every checkpoint to add them.
 DISPLACEMENT_METRICS = {
     'velocity_rmse': 'displacement_rmse',

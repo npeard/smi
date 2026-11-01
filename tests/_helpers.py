@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import torch
 
-from smi.analysis.results_artifact import RunRecord
+from smi.experiments.results_artifact import RunRecord
 from smi.learning.lit_module import LitModule
 from smi.learning.training_interface import SIGNED_RMSE_KEY, ZERO_PREDICTOR_RMSE_KEY
 

@@ -370,7 +370,7 @@ class SimConfig:
         calibration: dict,
         wavelengths_um: tuple[float, ...],
     ) -> SimConfig:
-        """Config from ``smi.analysis.calibrate_sim.calibrate`` output.
+        """Config from ``smi.experiments.calibrate_sim.calibrate`` output.
 
         Per-channel estimates are pooled by the median across channels (the
         simulator's knobs are shared by all channels; ``visibility_range``

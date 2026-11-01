@@ -1,0 +1,41 @@
+# Q3 stage S0 pilot: TCN-44k only, all three channels, one seed. It sizes the
+# full Q3/Q1 grids (wall_clock_s and epochs_run per cell) and gives the first
+# accuracy-vs-C curve. Michelson (C = 0) is sign-invariant by necessity; the
+# alpha = 0 control at C = 0.2 keeps the d -> -d symmetry and so should look
+# like Michelson under the signed loss, while alpha = 3 and 5 can show direction.
+# Run: python -m smi.experiments.runner configs/experiments/q3_s0_pilot.yaml \
+#        --out results/synthetic_results.json
+families:
+  - {name: tcn-44k, config: ../models/matched/tcn-44k.yaml}
+
+channel_subsets:
+  - [0.635, 0.6748, 0.515]
+
+sims:
+  - {name: michelson, preset: noise_free, feedback_c: 0.0, alpha: 0.0, sign_invariant: true}
+  - name: smi-a3
+    preset: noise_free
+    feedback_c: 0.2
+    alpha: 3.0
+    sweep: {feedback_c: [0.05, 0.1, 0.2, 0.4, 0.7, 0.9]}
+  - {name: smi-a0, preset: noise_free, feedback_c: 0.2, alpha: 0.0}
+  - {name: smi-a5, preset: noise_free, feedback_c: 0.2, alpha: 5.0}
+
+seeds: [0]
+oracle: false
+
+loss:
+  sign_invariant: false
+
+synthetic:
+  steps_per_epoch: 200
+  val_steps: 20
+  train_crop_length: 4096
+
+training:
+  accelerator: mps
+  devices: 1
+  precision: 32-true
+  max_epochs: 100  # pilot: let plateau stopping, not the cap, end runs
+
+test_set: {seed: 1000, n_shots: 64}

@@ -2,12 +2,12 @@ import argparse
 import logging
 import sys
 import time
-from pathlib import Path
 
 import lightning as lightning_module
 
-from smi.analysis.generate_data import generate_dataset_from_rp
+from smi.core.paths import CONFIGS_DIR, DATA_DIR
 from smi.learning.training_interface import TrainingConfig, TrainingInterface
+from smi.redpitaya.generate_data import generate_dataset_from_rp
 from smi.redpitaya.manager import RedPitayaManager
 
 
@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--config',
         type=str,
-        default='./analysis/models/configs/tcn-config.yaml',
+        default=str(CONFIGS_DIR / 'models' / 'tcn-config.yaml'),
         help='Path to YAML config file for training.',
     )
     parser.add_argument(
@@ -81,7 +81,7 @@ def acquire_dataset(
         dataset_name += '.h5'
 
     # Set data directory using pathlib
-    data_dir = Path(__file__).parent / 'analysis' / 'data'
+    data_dir = DATA_DIR
     data_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info('Acquiring dataset from Red Pitaya using default connection')

@@ -13,6 +13,7 @@ import h5py
 import numpy as np
 import torch
 
+from smi.core.paths import FROZEN_DIR
 from smi.data.schema import (
     DISPLACEMENT_KEY,
     DRIVE_KEY,
@@ -39,7 +40,7 @@ RIG_WAVELENGTHS_UM = (0.635, 0.6748, 0.515)
 # configs spell the 675 nm laser 0.6748 while smi.data.schema records 0.675.
 RIG_WAVELENGTH_TOL_UM = 1e-3
 
-DEFAULT_ROOT = Path(__file__).resolve().parents[1] / 'analysis' / 'data' / 'frozen'
+DEFAULT_ROOT = FROZEN_DIR
 
 
 def frozen_set_path(cfg: SimConfig, seed: int, n_shots: int, root: Path) -> Path:

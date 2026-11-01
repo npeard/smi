@@ -20,6 +20,7 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 from lightning.pytorch.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
+from smi.core.paths import CHECKPOINTS_DIR, REPO_ROOT
 from smi.data.datamodule import VelocityDataModule
 from smi.data.schema import read_sample_rate
 from smi.learning.lit_module import LitModule
@@ -192,9 +193,7 @@ class TrainingConfig:
 class TrainingInterface:
     """Main trainer class for managing model training."""
 
-    CHECKPOINT_DIR = (
-        Path(__file__).parent.parent / 'analysis' / 'models' / 'checkpoints'
-    )
+    CHECKPOINT_DIR = CHECKPOINTS_DIR
 
     def __init__(
         self,
@@ -296,7 +295,7 @@ class TrainingInterface:
             return
 
         # Real data: build a Lightning DataModule over the HDF5 dataset.
-        base_dir = Path(__file__).parent.parent
+        base_dir = REPO_ROOT
 
         def resolve_path(data_dir: str, filename: str | None = None) -> str:
             """Resolve path relative to project root."""
