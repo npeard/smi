@@ -9,12 +9,6 @@ handling, then resume experiments (P4-P6).
 
 ---
 
-## 0. Integrate before restructuring
-
-- [ ] **Merge `synthetic-p0` (P0-P3) into `data-pipeline`, local, no fast forward**
-
----
-
 ## 1. Now: code organization and separation of concerns
 
 `smi/analysis/` holds 20 top-level modules plus `models/`, `features/`,
@@ -200,9 +194,6 @@ Phases:
 
 ## 5. Tooling
 
-- [ ] **Lift the `ty < 0.0.81` pin** once ty or torch resolves the
-  `invalid-mutable-override` false positive on every `nn.Module.forward`
-  (still present at 0.0.95).
 - [ ] **ruff PLR0917** (too many positional arguments, 49 sites) is
   ignored beside PLR0913. Fix it with keyword-only signatures during R3, or
   keep the ignore deliberately.

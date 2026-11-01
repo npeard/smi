@@ -237,11 +237,7 @@ torch = ">=2.15"
 [tool.pixi.feature.dev.pypi-dependencies]
 pre-commit = "*"
 nbstripout = "*"
-# Held below 0.0.81: 0.0.90 through 0.0.95 (checked 2026-10-31) report
-# invalid-mutable-override on every nn.Module.forward override, because torch
-# types `forward` as a mutable Callable attribute. Lift the pin when torch or
-# ty resolves that.
-ty = "<0.0.81"
+ty = "*"
 bandit = "*"
 marimo = "*"
 lmfit = "*"
@@ -400,3 +396,11 @@ report-dry = { cmd = "snakemake --cores all --scheduler greedy -n", cwd = "repor
 report-clean = { cmd = "snakemake --cores 1 clean", cwd = "report" }
 report-only = { cmd = "snakemake --cores all --scheduler greedy build/report.pdf", cwd = "report" }
 report-synthetic = { cmd = "snakemake --cores all --scheduler greedy build/synthetic.pdf", cwd = "report" }
+
+# ty >= 0.0.81 reports invalid-mutable-override on every nn.Module.forward
+# override, because torch types `forward` as a mutable Callable attribute.
+# Scoped to the model package so the rule still guards everything else; drop
+# this override when torch or ty resolves it.
+[[tool.ty.overrides]]
+include = ["smi/analysis/models/**"]
+rules = { invalid-mutable-override = "ignore" }
