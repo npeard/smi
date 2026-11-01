@@ -11,11 +11,7 @@ handling, then resume experiments (P4-P6).
 
 ## 0. Integrate before restructuring
 
-- [ ] **Merge `synthetic-p0` (P0-P3) into `data-pipeline`, then open the
-  `data-pipeline` -> `main` PR** that the spec's merge policy defers to "once
-  P1 lands". Restructuring on top of an unmerged branch would make every moved
-  file a review diff twice. Decide: one PR for the whole synthetic program, or
-  land it in reviewable slices (simulator, harness, models, report).
+- [ ] **Merge `synthetic-p0` (P0-P3) into `data-pipeline`, local, no fast forward**
 
 ---
 
@@ -216,22 +212,3 @@ Phases:
   Python 3.15, where `immutables` has no Windows wheel.
 
 ---
-
-## Done
-
-- **P0-P3 synthetic program** (branch `synthetic-p0`): MPS/float32
-  platform, simulator v2 and harness, identifiability and bounds, Q3 (C curve
-  and noise ladder), Q1 (channel subsets), Q2 (13 families, displacement RMSE
-  and retargeting), and pre-registered predictions. Report:
-  `report/synthetic.typ`.
-- **Signal delay offset between velocity and PD channels**: no correctable
-  delay. All pairs are within 8 samples of zero lag.
-- **`TemporalBlock` conditional downsampling removed**; the residual always
-  routes through a 1x1 conv.
-- **`receptive_field` corrected for every model**, verified by a gradient
-  probe. MLP and Barland now declare their window-averaged span.
-- **Real-data baselines.** MLP 0.1275, LightGBM 0.2483, Ridge 0.3837 um/ms,
-  against the analytic decode's 0.5611 and the TCN's 0.1116 (free space).
-- **SCNN vs TCN vs Barland at matched parameters.** Barland is strongest on
-  both acquisitions: 0.0814 free space and 0.1643 mmfiber (`report/report.typ`
-  section 9).
