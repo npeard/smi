@@ -43,6 +43,7 @@ ARTIFACT_PATH = (
 )
 SAMPLE_RATE = 488281.25
 WAVELENGTHS = tuple(PD_WAVELENGTHS_UM.values())
+CHANNELS = list(PD_WAVELENGTHS_UM)
 
 
 def _band_limited_displacement(
@@ -184,7 +185,12 @@ class TestSweepRecoversAKnownGain:
         signals, unit = _synthetic_sweep_inputs(self.TRUE_GAIN)
 
         sweep = sweep_gain(
-            signals, unit, WAVELENGTHS, gain_grid(8.0, 16.0, 0.25), window_samples=None
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(8.0, 16.0, 0.25),
+            window_samples=None,
+            channel_names=CHANNELS,
         )
 
         for channel in sweep.channels:
@@ -200,7 +206,12 @@ class TestSweepRecoversAKnownGain:
         signals, unit = _synthetic_sweep_inputs(self.TRUE_GAIN)
 
         sweep = sweep_gain(
-            signals, unit, WAVELENGTHS, gain_grid(8.0, 16.0, 0.25), window_samples=None
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(8.0, 16.0, 0.25),
+            window_samples=None,
+            channel_names=CHANNELS,
         )
 
         channel = sweep.channels[0]
@@ -221,6 +232,7 @@ class TestSweepRecoversAKnownGain:
             WAVELENGTHS,
             np.array([self.TRUE_GAIN, 3.0 * self.TRUE_GAIN]),
             window_samples=None,
+            channel_names=CHANNELS,
         )
 
         channel = sweep.channels[0]
@@ -237,7 +249,12 @@ class TestSweepRecoversAKnownGain:
         signals, unit = _synthetic_sweep_inputs(self.TRUE_GAIN, n_samples=4096)
 
         sweep = sweep_gain(
-            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5), window_samples=1024
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(10.0, 14.0, 0.5),
+            window_samples=1024,
+            channel_names=CHANNELS,
         )
 
         channel = sweep.channels[0]
@@ -250,7 +267,12 @@ class TestSweepRecoversAKnownGain:
         signals, unit = _synthetic_sweep_inputs(self.TRUE_GAIN, n_shots=3)
 
         sweep = sweep_gain(
-            signals, unit, WAVELENGTHS, np.array([12.0]), window_samples=None
+            signals,
+            unit,
+            WAVELENGTHS,
+            np.array([12.0]),
+            window_samples=None,
+            channel_names=CHANNELS,
         )
 
         assert sweep.median_r_squared_windowed(sweep.channels[0]) is None
@@ -262,7 +284,12 @@ class TestSweepRecoversAKnownGain:
         signals, unit = _synthetic_sweep_inputs(9.5, n_shots=4)
 
         sweep = sweep_gain(
-            signals, unit, WAVELENGTHS, gain_grid(7.0, 13.0, 0.25), window_samples=None
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(7.0, 13.0, 0.25),
+            window_samples=None,
+            channel_names=CHANNELS,
         )
 
         assert sweep.best_gain(sweep.channels[0]) == pytest.approx(9.5, abs=0.25)
@@ -271,13 +298,17 @@ class TestSweepRecoversAKnownGain:
         signals, unit = _synthetic_sweep_inputs(12.0, n_shots=4)
 
         with pytest.raises(ValueError, match='shots'):
-            sweep_gain(signals, unit[:2], WAVELENGTHS, np.array([12.0]))
+            sweep_gain(
+                signals, unit[:2], WAVELENGTHS, np.array([12.0]), channel_names=CHANNELS
+            )
 
     def test_rejects_a_channel_count_mismatch(self) -> None:
         signals, unit = _synthetic_sweep_inputs(12.0, n_shots=3)
 
         with pytest.raises(ValueError, match='wavelengths'):
-            sweep_gain(signals, unit, WAVELENGTHS[:2], np.array([12.0]))
+            sweep_gain(
+                signals, unit, WAVELENGTHS[:2], np.array([12.0]), channel_names=CHANNELS
+            )
 
 
 class TestBinnedByExcursion:
@@ -287,7 +318,12 @@ class TestBinnedByExcursion:
         signals, unit = _synthetic_sweep_inputs(12.0, n_shots=6, amplitude_um=0.8)
 
         sweep = sweep_gain(
-            signals, unit, WAVELENGTHS, np.array([12.0]), window_samples=None
+            signals,
+            unit,
+            WAVELENGTHS,
+            np.array([12.0]),
+            window_samples=None,
+            channel_names=CHANNELS,
         )
 
         bins = sweep.binned_r_squared(sweep.channels[0])[0]
@@ -309,7 +345,12 @@ class TestBinnedByExcursion:
         signals, unit = _synthetic_sweep_inputs(12.0, n_shots=6, amplitude_um=0.5)
 
         sweep = sweep_gain(
-            signals, unit, WAVELENGTHS, np.array([1.0, 4.0]), window_samples=None
+            signals,
+            unit,
+            WAVELENGTHS,
+            np.array([1.0, 4.0]),
+            window_samples=None,
+            channel_names=CHANNELS,
         )
 
         at_unit, at_four = sweep.binned_r_squared(sweep.channels[0])
@@ -599,9 +640,16 @@ class TestPerShotBestGain:
         unit = np.concatenate([unit_a, unit_b])
         gains = gain_grid(8.0, 16.0, 0.25)
 
-        per_shot = per_shot_best_gain(signals, unit, WAVELENGTHS, gains)
+        per_shot = per_shot_best_gain(
+            signals, unit, WAVELENGTHS, gains, channel_names=CHANNELS
+        )
         global_sweep = sweep_gain(
-            signals, unit, WAVELENGTHS, gains, window_samples=None
+            signals,
+            unit,
+            WAVELENGTHS,
+            gains,
+            window_samples=None,
+            channel_names=CHANNELS,
         )
 
         channel = per_shot.channels[0]
@@ -615,7 +663,11 @@ class TestPerShotBestGain:
         unit = np.concatenate([unit_a, unit_b])
 
         per_shot = per_shot_best_gain(
-            signals, unit, WAVELENGTHS, gain_grid(8.0, 16.0, 0.25)
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(8.0, 16.0, 0.25),
+            channel_names=CHANNELS,
         )
 
         fitted = np.asarray(per_shot.best_gains(per_shot.channels[0]))
@@ -626,11 +678,15 @@ class TestPerShotBestGain:
         signals, unit = _synthetic_sweep_inputs(12.0, n_shots=6, n_samples=2048)
 
         per_shot = per_shot_best_gain(
-            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5)
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(10.0, 14.0, 0.5),
+            channel_names=CHANNELS,
         )
         payload = json.loads(json.dumps(per_shot.to_dict()))
 
-        for channel in per_shot.channels:
+        for channel in PD_WAVELENGTHS_UM:
             entry = payload['channels'][channel]
             assert sum(entry['best_gain_counts'].values()) == 6
             assert sum(int(b['n']) for b in entry['binned_r_squared']) == 6
@@ -945,7 +1001,12 @@ class TestArtifactSizeStaysReviewable:
         signals, unit = _synthetic_sweep_inputs(12.0, n_shots=4, n_samples=1024)
 
         sweep = sweep_gain(
-            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5), window_samples=None
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(10.0, 14.0, 0.5),
+            window_samples=None,
+            channel_names=CHANNELS,
         )
         payload = sweep.to_dict()
 
@@ -981,11 +1042,15 @@ class TestPerShotGainsAreStoredAsAHistogram:
         signals, unit = _synthetic_sweep_inputs(12.0, n_shots=6, n_samples=1024)
 
         per_shot = per_shot_best_gain(
-            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5)
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(10.0, 14.0, 0.5),
+            channel_names=CHANNELS,
         )
         payload = json.loads(json.dumps(per_shot.to_dict()))
 
-        for channel in per_shot.channels:
+        for channel in PD_WAVELENGTHS_UM:
             counts = payload['channels'][channel]['best_gain_counts']
             assert sum(counts.values()) == 6
             # Keys are gains from the grid, as strings for JSON.
@@ -996,7 +1061,11 @@ class TestPerShotGainsAreStoredAsAHistogram:
         signals, unit = _synthetic_sweep_inputs(12.0, n_shots=6, n_samples=1024)
 
         per_shot = per_shot_best_gain(
-            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5)
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(10.0, 14.0, 0.5),
+            channel_names=CHANNELS,
         )
         payload = per_shot.to_dict()
 
@@ -1009,7 +1078,11 @@ class TestPerShotGainsAreStoredAsAHistogram:
         signals, unit = _synthetic_sweep_inputs(12.0, n_shots=4, n_samples=1024)
 
         per_shot = per_shot_best_gain(
-            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5)
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(10.0, 14.0, 0.5),
+            channel_names=CHANNELS,
         )
         payload = per_shot.to_dict()
 
@@ -1025,7 +1098,11 @@ class TestPerShotGainsAreStoredAsAHistogram:
         signals, unit = _synthetic_sweep_inputs(12.0, n_shots=5, n_samples=1024)
 
         per_shot = per_shot_best_gain(
-            signals, unit, WAVELENGTHS, gain_grid(10.0, 14.0, 0.5)
+            signals,
+            unit,
+            WAVELENGTHS,
+            gain_grid(10.0, 14.0, 0.5),
+            channel_names=CHANNELS,
         )
 
         assert len(per_shot.best_gains(per_shot.channels[0])) == 5

@@ -755,7 +755,8 @@ def sweep_gain(
     wavelengths_um: Sequence[float],
     gains: np.ndarray,
     window_samples: int | None = DEFAULT_WINDOW_SAMPLES,
-    channel_names: Sequence[str] | None = None,
+    *,
+    channel_names: Sequence[str],
     dataset: str = 'in-memory',
     file: str = '<in-memory>',
     unit_velocity: np.ndarray | None = None,
@@ -786,9 +787,9 @@ def sweep_gain(
         gains: Candidate gains to score, shape ``(n_gains,)``.
         window_samples: Window length for the windowed measure. ``None``
             computes the global fit only, which roughly halves the runtime.
-        channel_names: Names to key the result by. Defaults to ``ch0``,
-            ``ch1``, ...: the rig's channel keys belong to ``smi.data``, which
-            an estimator does not import.
+        channel_names: Names to key the result by, one per channel. Required:
+            the rig's channel keys belong to ``smi.data``, which an estimator
+            does not import, so the caller supplies them.
         dataset: Label recorded in the result.
         file: File name recorded in the result.
         unit_velocity: Velocity per unit gain (um/ms), same shape as
@@ -814,11 +815,7 @@ def sweep_gain(
 
     _check_sweep_shapes(signals, unit, wavelengths)
 
-    names = (
-        list(channel_names)
-        if channel_names
-        else [f'ch{k}' for k in range(signals.shape[1])]
-    )
+    names = list(channel_names)
     n_shots, _n_channels, n_time = signals.shape
 
     # Excursion is a property of the displacement, so it is measured once per
@@ -1009,7 +1006,8 @@ def per_shot_best_gain(
     unit_displacement: np.ndarray,
     wavelengths_um: Sequence[float],
     gains: np.ndarray,
-    channel_names: Sequence[str] | None = None,
+    *,
+    channel_names: Sequence[str],
     dataset: str = 'in-memory',
 ) -> PerShotGainSweep:
     """Give every shot its own optimal gain and report what that buys.
@@ -1026,9 +1024,9 @@ def per_shot_best_gain(
             ``(n_shots, n_time)``.
         wavelengths_um: Channel wavelengths (microns), length ``n_channels``.
         gains: Candidate gains each shot may choose from.
-        channel_names: Names to key the result by. Defaults to ``ch0``,
-            ``ch1``, ...: the rig's channel keys belong to ``smi.data``, which
-            an estimator does not import.
+        channel_names: Names to key the result by, one per channel. Required:
+            the rig's channel keys belong to ``smi.data``, which an estimator
+            does not import, so the caller supplies them.
         dataset: Label recorded in the result.
 
     Returns:
@@ -1045,11 +1043,7 @@ def per_shot_best_gain(
     gains = np.asarray(gains, dtype=np.float64)
     _check_sweep_shapes(signals, unit, wavelengths)
 
-    names = (
-        list(channel_names)
-        if channel_names
-        else [f'ch{k}' for k in range(signals.shape[1])]
-    )
+    names = list(channel_names)
     n_shots = signals.shape[0]
     unit_ptp = np.ptp(unit - unit.mean(axis=1, keepdims=True), axis=1)
 
