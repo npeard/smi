@@ -50,10 +50,6 @@ loss:
   velocity_loss_weight: 1.0
   displacement_loss_weight: 0.0
   sign_invariant: false
-  vicreg_weight: 0.0   # set > 0 to enable VICReg on siamese encoder outputs
-  vicreg_sim_coeff: 25.0
-  vicreg_std_coeff: 25.0
-  vicreg_cov_coeff: 1.0
 
 data:
   data_dir: "./analysis/data"

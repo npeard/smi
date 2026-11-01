@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import logging
-import sys
 from typing import Any, cast, override
 
 import lightning as lightning_module
@@ -24,7 +23,6 @@ from smi.analysis.features.normalization import NORMALIZATION_STATS
 from smi.analysis.metrics import apply_best_sign, best_sign, velocity_rmse
 from smi.analysis.models.base import Model, SequenceModel
 from smi.analysis.models.factory import create_model
-from smi.analysis.models.vicreg import VicRegLoss
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
 
@@ -43,21 +41,22 @@ class LitModule(lightning_module.LightningModule):
 
     def __init__(
         self,
+        training_hparams: dict,
         model_hparams: dict | None = None,
         optimizer_hparams: dict | None = None,
         scheduler_hparams: dict | None = None,
         loss_hparams: dict | None = None,
-        training_hparams: dict | None = None,
         data_hparams: dict | None = None,
     ):
         """Initialize LitModule with hyperparameter configuration.
 
         Args:
+        training_hparams: Hyperparameters for training configuration; ``target``
+            is required (no default)
         model_hparams: Hyperparameters for the model
         optimizer_hparams: Hyperparameters for the optimizer
         scheduler_hparams: Hyperparameters for the learning rate scheduler
         loss_hparams: Hyperparameters for the loss function
-        training_hparams: Hyperparameters for training configuration (includes target)
         data_hparams: Hyperparameters for data configuration (for logging only)
         """
         super().__init__()
@@ -70,17 +69,10 @@ class LitModule(lightning_module.LightningModule):
 
         # Determine what the model should target (needed before wrapping, since
         # the normalization wrapper scales the output by the target's stats).
-        if training_hparams and 'target' in training_hparams:
-            self.target = training_hparams['target']
-            if self.target not in ['velocity', 'displacement']:
-                raise ValueError(
-                    f"target must be 'velocity' or 'displacement', got '{self.target}'"
-                )
-        else:
-            # Default to velocity for backward compatibility
-            self.target = 'velocity'
-            logger.warning(
-                "No 'target' specified in training config, defaulting to 'velocity'"
+        self.target = training_hparams['target']
+        if self.target not in ['velocity', 'displacement']:
+            raise ValueError(
+                f"target must be 'velocity' or 'displacement', got '{self.target}'"
             )
 
         # Build the inner network and wrap it so input/output normalization is
@@ -88,18 +80,6 @@ class LitModule(lightning_module.LightningModule):
         inner = create_model(model_hparams)
         self._inner_model = inner
         self.model = self._make_model(inner)
-
-        # Torch compilation (requires PyTorch 2+, Python < 3.12, and GPU)
-        torch_major = int(torch.__version__.split('.')[0])
-        if (
-            torch_major >= 2
-            and sys.version_info < (3, 12)
-            and torch.cuda.is_available()
-        ):
-            self.model = torch.compile(self.model)
-            # Note: torch.compile may add prefixes to parameter names, which can cause
-            # issues with state_dict loading. See notebooks/prediction.py for an example
-            # of how to handle this.
 
         # Initialize dynamic loss weights if enabled
         if 'dynamic' not in self.loss_hparams:
@@ -117,18 +97,6 @@ class LitModule(lightning_module.LightningModule):
             )  # log(1.0) = 0.0
 
         torch.set_float32_matmul_precision('high')
-
-        # VICReg: only instantiate when weight > 0 and the inner model supports
-        # encode() (the wrapper delegates encode() to the inner model).
-        self._vicreg_weight = float(loss_hparams.get('vicreg_weight', 0.0))
-        if self._vicreg_weight > 0 and hasattr(self._inner_model, 'encode'):
-            self.vicreg_loss = VicRegLoss(
-                sim_coeff=float(loss_hparams.get('vicreg_sim_coeff', 25.0)),
-                std_coeff=float(loss_hparams.get('vicreg_std_coeff', 25.0)),
-                cov_coeff=float(loss_hparams.get('vicreg_cov_coeff', 1.0)),
-            )
-        else:
-            self.vicreg_loss = None
 
         # Include model size metrics in logged hyperparameters
         total_params = getattr(self._inner_model, 'total_params', None)
@@ -405,31 +373,6 @@ class LitModule(lightning_module.LightningModule):
 
         return loss_dict
 
-    def _compute_vicreg_loss(self, signals: torch.Tensor) -> torch.Tensor | None:
-        """Compute pairwise VICReg loss over siamese encoder outputs.
-
-        Returns None (no-op) when VICReg is disabled or the model has no
-        ``encode`` method, so callers can guard cheaply with ``is not None``.
-
-        Args:
-            signals: [batch, in_channels, seq_len]
-
-        Returns:
-            Scalar VICReg loss, or None.
-        """
-        if self.vicreg_loss is None:
-            return None
-        _, channel_features = self.model.encode(signals)
-        vicreg = torch.tensor(0.0, device=signals.device)
-        n = len(channel_features)
-        for i in range(n):
-            for j in range(i + 1, n):
-                # Pool over time: [batch, embed_dim, seq_len] -> [batch, embed_dim]
-                fi = channel_features[i].mean(dim=-1)
-                fj = channel_features[j].mean(dim=-1)
-                vicreg = vicreg + self.vicreg_loss(fi, fj)
-        return vicreg
-
     @override
     def training_step(
         self, batch: tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
@@ -447,11 +390,6 @@ class LitModule(lightning_module.LightningModule):
         prediction = self(signals)  # Model prediction (velocity or displacement)
 
         loss_dict = self.loss_function(prediction, velocity_target, displacement_target)
-
-        vicreg = self._compute_vicreg_loss(signals)
-        if vicreg is not None:
-            loss_dict['vicreg'] = vicreg
-            loss_dict['total'] = loss_dict['total'] + self._vicreg_weight * vicreg
 
         # Log each loss component with train_ prefix, without prog_bar: a
         # progress-bar value is read back with .item() every batch, a
@@ -476,11 +414,6 @@ class LitModule(lightning_module.LightningModule):
         prediction = self(signals)  # Model prediction (velocity or displacement)
 
         loss_dict = self.loss_function(prediction, velocity_target, displacement_target)
-
-        vicreg = self._compute_vicreg_loss(signals)
-        if vicreg is not None:
-            loss_dict['vicreg'] = vicreg
-            loss_dict['total'] = loss_dict['total'] + self._vicreg_weight * vicreg
 
         # Log each loss component with val_ prefix
         for loss_name, loss_value in loss_dict.items():
@@ -565,11 +498,6 @@ class LitModule(lightning_module.LightningModule):
         prediction = self(signals)  # Model prediction (velocity or displacement)
 
         loss_dict = self.loss_function(prediction, velocity_target, displacement_target)
-
-        vicreg = self._compute_vicreg_loss(signals)
-        if vicreg is not None:
-            loss_dict['vicreg'] = vicreg
-            loss_dict['total'] = loss_dict['total'] + self._vicreg_weight * vicreg
 
         # Log each loss component with test_ prefix
         for loss_name, loss_value in loss_dict.items():

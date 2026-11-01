@@ -4,6 +4,7 @@ Training previously logged only loss values, so no run produced a number
 comparable to the analytic baseline's RMSE without a separate evaluation pass.
 """
 
+import pytest
 import torch
 
 from smi.analysis.lit_module import SAMPLE_RATE, LitModule
@@ -199,3 +200,21 @@ def test_sign_invariant_displacement_target_chooses_the_sign_on_displacement():
     d_hat = prediction - prediction[:, :1]
     assert (best_sign(d_hat, d) == 1).all()
     torch.testing.assert_close(loss['displacement'], torch.mean((d_hat - d) ** 2))
+
+
+def test_lit_module_requires_target():
+    """A missing target must fail loudly, not silently train a velocity model."""
+    with pytest.raises((KeyError, TypeError)):
+        LitModule(
+            model_hparams=dict(MODEL_HPARAMS),
+            optimizer_hparams={'name': 'Adam', 'lr': 1e-3, 'weight_decay': 0.0},
+            scheduler_hparams={},
+            loss_hparams={
+                'dynamic': False,
+                'velocity_loss_weight': 1.0,
+                'displacement_loss_weight': 1.0,
+                'sign_invariant': False,
+            },
+            training_hparams={},
+            data_hparams={},
+        )

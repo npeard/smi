@@ -113,8 +113,7 @@ class TCAN(SequenceModel):
     3. Decoder: a single TCN that takes all attended channel features concatenated
        along the channel dimension and produces a 1-channel sequence output.
 
-    The per-channel encoder outputs are exposed via ``encode()`` so that VICReg
-    regularisation can be applied from LitModule when ``vicreg_weight > 0``.
+    The per-channel encoder outputs are exposed via ``encode()``.
     """
 
     def __init__(self, config: TCANConfig):

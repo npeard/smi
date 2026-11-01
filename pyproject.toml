@@ -251,15 +251,8 @@ pytest-xdist = ">=2.5"
 pytest-benchmark = "*"
 coverage = { version = "*", extras = ["toml"] }
 
-# Hyperparameter / architecture search (smi/analysis/tune_search.py). Included
-# in every test-running env so the search pathway is exercised on CPU in CI as
-# well as on the GPU rig. See docs/hyperparameter-search-pipeline-design.md.
-[tool.pixi.feature.tune.pypi-dependencies]
-ray = { version = ">=2.9", extras = ["tune"] }
-optuna = "*"
-
 # Non-torch reference models (smi/analysis/baselines/). Included in every
-# test-running env, like `tune`, so CI exercises the baselines the TCN is
+# test-running env, so CI exercises the baselines the TCN is
 # measured against.
 #
 # Both link an OpenMP runtime, which is the documented hazard here (see the
@@ -274,11 +267,11 @@ scikit-learn = ">=1.9"
 [tool.pixi.environments]
 # The default env includes the test feature so the `test`/`all` tasks (defined
 # under [tool.pixi.tasks], which run in the default env) have pytest available.
-# `tune` and `simple` are everywhere so the Ray search path and the non-torch
-# baselines are import- and test-able in CI.
-default = { features = ["test", "tune", "simple"], solve-group = "default" }
-dev = { features = ["dev", "test", "tune", "simple"], solve-group = "default" }
-test = { features = ["test", "tune", "simple"], solve-group = "default" }
+# `simple` is everywhere so the non-torch baselines are import- and test-able
+# in CI.
+default = { features = ["test", "simple"], solve-group = "default" }
+dev = { features = ["dev", "test", "simple"], solve-group = "default" }
+test = { features = ["test", "simple"], solve-group = "default" }
 report = { features = ["report"], solve-group = "default" }
 
 [tool.pixi.tasks]

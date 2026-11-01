@@ -154,10 +154,7 @@ class RelativeEarlyStopping(EarlyStopping):
 class TrainingConfig:
     """Configuration class for a single training run.
 
-    Hyperparameter search no longer expands list-valued YAML fields into a
-    Cartesian product here. Instead, :mod:`smi.analysis.tune_search` interprets
-    list-valued fields as a Ray Tune search space and samples a single config
-    per trial, which is then turned into a :class:`TrainingConfig`.
+    List-valued YAML fields are not expanded into a grid here.
     """
 
     model_config: dict[str, Any]
@@ -170,9 +167,7 @@ class TrainingConfig:
     def from_yaml(cls, config_path: str) -> TrainingConfig:
         """Load a single training configuration from a YAML file.
 
-        List-valued fields (if any) are passed through verbatim; this method no
-        longer performs grid expansion. To run a hyperparameter search over
-        list-valued fields, use :func:`smi.analysis.tune_search.run_search`.
+        List-valued fields (if any) are passed through verbatim.
 
         Args:
             config_path: Path to YAML configuration file.

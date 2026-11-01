@@ -88,7 +88,7 @@ def apply_best_sign(
     its integral or derivative, so it must follow the same choice rather than
     pick its own. For a displacement target the differentiated velocity is
     dominated by amplified ripple, so a sign chosen on it would be noise. Both
-    training losses (``LitModule`` and the vmap ensemble) call this, so the
+    training loss (``LitModule``) calls this, so the
     choice lives in one place.
 
     Args:

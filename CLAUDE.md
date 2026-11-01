@@ -170,25 +170,16 @@ Normalization stats are NOT computed in the dataset. Instead:
    inner model.
 
 Models are TorchScript-scriptable (`Model.to_torchscript()`), verified by
-`tests/test_torchscript.py`. `torch.compile` remains the training-speed path;
-TorchScript is for packaging the trained model. HDF5 (gzip-4, chunked per shot)
+`tests/test_torchscript.py`. TorchScript is for packaging the trained model. HDF5 (gzip-4, chunked per shot)
 is the chosen storage format - see `docs/data-storage-evaluation.md`.
 
 ## Hyperparameter / architecture search
 
-Two-level search (design: `docs/hyperparameter-search-pipeline-design.md`):
-
-- **Ray Tune** (`analysis/tune_search.py`, `main.py --search`) replaces the old
-  YAML grid: list-valued YAML fields become `tune.choice` dimensions; trials run
-  via `train_func` (reusing `TrainingInterface`) with an ASHA scheduler and
-  fractional-GPU packing. `TrainingConfig.from_yaml` now returns one config.
-- **vmap-ensemble** (`analysis/ensemble.py`) trains K same-architecture models on
-  one shared on-GPU minibatch via `torch.func` for efficient within-architecture
-  sweeps; both it and `SyntheticLitModule` draw batches from
-  `smi.synthetic.forward.simulate_batch` and bake `normalization_stats`.
-
-Deps live in the `tune` pixi feature (`ray[tune]`, `optuna`), included in all
-test-running envs so the search path is CPU-tested in CI as well as on the GPU rig.
+There is no search machinery in the repo. `main.py` runs one training run from
+one YAML (`TrainingConfig.from_yaml` returns a single config; list-valued
+fields pass through verbatim). Sweeps are driven from outside, e.g. a grid of
+single runs; `SyntheticLitModule` draws its batches from
+`smi.synthetic.forward.simulate_batch` and bakes `normalization_stats`.
 
 ## Reports (`report/`)
 
