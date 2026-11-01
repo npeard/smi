@@ -79,19 +79,30 @@ RESULTS = [
     str(RESULTS_DIR / "q1_binned_errors.json"),
 ]
 
-# The library modules the synthetic figures compute from or read records
-# through, so a change to the bounds, the forward model, a preset or cell key
-# (expand_grid, whose sim hashes the records are checked against), the frozen
-# rig constants or the record loader rebuilds them. Listed for all figures for
-# the same reason as RESULTS.
+# The library modules the figures compute from or read records through, so a
+# change to the bounds, the forward model, a board constant, a preset or cell
+# key (expand_grid, whose sim hashes the records are checked against), the
+# frozen rig constants or the record loader rebuilds them. Listed for all
+# figures for the same reason as RESULTS. Derived from the transitive smi
+# imports of figures/*.py (grimp's find_upstream_modules over each module they
+# import): that closure covers smi.core, .data, .estimators, .learning and
+# .theory nearly whole -- smi.experiments.runner imports the training stack --
+# so those are globbed whole (a module the figures never reach only costs a
+# spurious rebuild), and only the three experiments modules it reaches are named.
 SMI_DIR = REPORT_DIR.parent / "smi"
-ANALYSIS_CODE = [
-    str(SMI_DIR / "theory" / "bounds.py"),
-    str(SMI_DIR / "experiments" / "runner.py"),
-    str(SMI_DIR / "experiments" / "results_artifact.py"),
-    str(SMI_DIR / "theory" / "forward.py"),
-    str(SMI_DIR / "data" / "frozen.py"),
-]
+ANALYSIS_CODE = sorted(
+    [
+        *(
+            str(p)
+            for pkg in ("core", "data", "estimators", "learning", "theory")
+            for p in (SMI_DIR / pkg).rglob("*.py")
+        ),
+        *(
+            str(SMI_DIR / "experiments" / name)
+            for name in ("evaluate.py", "results_artifact.py", "runner.py")
+        ),
+    ]
+)
 
 # The experiment grids the synthetic figures expand to label records (the
 # sweep value of a cell comes from its grid), so a grid edit rebuilds them.
