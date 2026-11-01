@@ -87,11 +87,8 @@ from smi.analysis.baseline_fit import (
     scrambled_theta_control,
     windowed_forward_model_residual,
 )
+from smi.data.schema import DRIVE_KEY
 from smi.theory.coil_driver import CoilDriver
-
-# Drive voltage channel. Named here rather than imported so this script does
-# not depend on which module happens to re-export it.
-DRIVE_KEY = 'RP1_CH1'
 
 # Matches the artifact's method-1 shot count, so the percentiles below are
 # taken over exactly the population the report's medians describe.

@@ -49,11 +49,10 @@ Tasks:
   - A starting proposal, not a decision: `smi/core` (acquisition constants,
     units, kinematics, metrics), `smi/acquisition` (Red Pitaya, until I1
     moves it out), `smi/data` (HDF5 schema, datasets, datamodule, frozen
-    sets, features and normalization), `smi/theory` (simulator),
+    sets, features and normalization), `smi/theory` (simulator and bounds),
     `smi/estimators` (analytic decode, gain sweep, oracle fit, tabular
     baselines), `smi/learning` (models, Lightning modules, training
-    interface), `smi/experiments` (runner, evaluate, results artifact),
-    `smi/theory` (bounds).
+    interface), `smi/experiments` (runner, evaluate, results artifact).
   - Settle also where grids, configs, results and checkpoints live, and
     which modules are scripts rather than library code (`inspect_data`,
     `delay_check`, `benchmark_loading`, `q1_binned`, `calibrate_sim`).

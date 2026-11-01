@@ -133,7 +133,12 @@ dmypy.json
 .pyre/
 
 # training data
+# Matches every data/ directory, which is meant for raw acquisitions and
+# frozen sets. smi/data/ is a Python package, so only its sources are
+# re-included; a future top-level data/ stays ignored unless a rule here
+# says otherwise on purpose.
 **/data/*
+!/smi/data/*.py
 **/checkpoints/*
 **/lightning_logs/*
 
