@@ -191,14 +191,16 @@ class TrainingConfig:
 
 
 def resolve_data_dir(data_dir: str) -> Path:
-    """Resolve a config's ``data_dir`` against the repo root; it must exist.
+    """Resolve a relative ``data_dir`` against the repo root; it must exist.
 
     The matched and displacement configs keep a stale ``./analysis/data``
     because ``data_dir`` is hashed into the run fingerprints that resume
     matches recorded cells by. Creating the directory would silently turn
     that stale value into an empty folder, so a missing one is an error.
     """
-    abs_dir = REPO_ROOT / str(data_dir).lstrip('./')
+    # Path joining keeps an absolute data_dir absolute and keeps '..' parts,
+    # which str.lstrip('./') stripped.
+    abs_dir = (REPO_ROOT / data_dir).resolve()
     if not abs_dir.is_dir():
         msg = f'data_dir {data_dir!r} resolves to {abs_dir}, which does not exist'
         raise FileNotFoundError(msg)
