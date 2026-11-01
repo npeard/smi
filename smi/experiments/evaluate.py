@@ -215,10 +215,13 @@ class InverseFitEstimator:
     def for_dataset(cls, dataset: Path, n_shots: int | None) -> InverseFitEstimator:
         """Size the search grid from the stored displacement of the shots scored."""
         with h5py.File(dataset, 'r') as f:
-            disp = np.asarray(f['displacement'][:n_shots], dtype=np.float64)
+            disp = f['displacement'][:n_shots]
             sample_rate = float(f.attrs[SAMPLE_RATE_ATTR])
-        centered = disp - disp.mean(axis=1, keepdims=True)
-        limit = float(np.abs(centered).max()) * DISPLACEMENT_LIMIT_MARGIN
+        # Largest excursion from each shot's mean, from the per-shot extremes
+        # so the full array is never copied to float64.
+        mean = disp.mean(axis=1, dtype=np.float64)
+        excursion = np.maximum(disp.max(axis=1) - mean, mean - disp.min(axis=1))
+        limit = float(excursion.max()) * DISPLACEMENT_LIMIT_MARGIN
         return cls(sample_rate, limit)
 
     def predict_velocity(
