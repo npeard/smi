@@ -13,7 +13,7 @@ import torch
 from plot_waveforms import calculate_fft
 
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.waveform import Waveform
+from smi.theory.waveform import Waveform
 from tests._dtype_guard import no_float64
 
 logger = logging.getLogger(__name__)

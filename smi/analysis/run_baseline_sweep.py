@@ -55,7 +55,7 @@ from smi.core.metrics import (
     per_shot_rmse,
     summarize_per_shot,
 )
-from smi.synthetic.coil_driver import MS_PER_S
+from smi.theory.coil_driver import MS_PER_S
 
 logger = logging.getLogger(__name__)
 

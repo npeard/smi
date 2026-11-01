@@ -16,14 +16,14 @@ import pytest
 
 from smi.analysis.calibrate_sim import calibrate, main
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.forward import (
+from smi.data.frozen import RIG_WAVELENGTHS_UM, write_frozen_set
+from smi.theory.forward import (
     NOMINAL_ALPHA,
     NOMINAL_DRIVE_GAIN,
     NOMINAL_FEEDBACK_C,
     NOMINAL_SWEEPS,
     SimConfig,
 )
-from smi.synthetic.frozen import RIG_WAVELENGTHS_UM, write_frozen_set
 
 N_SHOTS = 256
 REL_TOL = 0.2

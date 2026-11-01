@@ -31,8 +31,8 @@ from smi.analysis.evaluate import EVAL_CHUNK_SHOTS, N_BINS, CheckpointEstimator
 from smi.analysis.experiments import ANALYSIS_DIR, Cell, cell_key, expand_grid
 from smi.analysis.results_artifact import read_results
 from smi.core.metrics import best_sign, per_shot_rmse
-from smi.synthetic.forward import smi_excess_phase
-from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
+from smi.data.frozen import DEFAULT_ROOT, load_or_create
+from smi.theory.forward import smi_excess_phase
 
 EXPERIMENTS_DIR = ANALYSIS_DIR / 'experiments'
 DEFAULT_OUT = ANALYSIS_DIR / 'data' / 'q1_binned_errors.json'
@@ -181,7 +181,7 @@ def main(argv: list[str] | None = None) -> None:
                 v_edges = np.quantile(np.abs(v), np.linspace(0.0, 1.0, N_BINS + 1))
             # One |v| binning for every cell, valid because the trajectories
             # are drawn first from the shared test seed, before any per-channel
-            # or noise draw (smi.synthetic.forward.simulate_batch).
+            # or noise draw (smi.theory.forward.simulate_batch).
             if not np.array_equal(v, reference_velocity):
                 raise ValueError(f'{cell.key}: test trajectories differ')
             assert v_edges is not None

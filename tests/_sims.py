@@ -7,9 +7,9 @@ available to every test module.
 import pytest
 
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic import frozen
-from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SimConfig
-from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
+from smi.data import frozen
+from smi.data.frozen import RIG_WAVELENGTHS_UM
+from smi.theory.forward import NOMINAL_DRIVE_GAIN, SimConfig
 
 SAMPLE_RATE = 125e6 / 256
 WAVELENGTHS_UM = RIG_WAVELENGTHS_UM

@@ -8,10 +8,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from smi.analysis.baseline_fit import PD_WAVELENGTHS_UM
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.frozen import RIG_WAVELENGTH_TOL_UM, pd_keys
+from smi.data.frozen import RIG_WAVELENGTH_TOL_UM, pd_keys
+from smi.data.schema import PD_WAVELENGTHS_UM
+from smi.theory.coil_driver import CoilDriver
 
 logger = logging.getLogger(__name__)
 

@@ -49,7 +49,7 @@ Tasks:
   - A starting proposal, not a decision: `smi/core` (acquisition constants,
     units, kinematics, metrics), `smi/acquisition` (Red Pitaya, until I1
     moves it out), `smi/data` (HDF5 schema, datasets, datamodule, frozen
-    sets, features and normalization), `smi/synthetic` (simulator),
+    sets, features and normalization), `smi/theory` (simulator),
     `smi/estimators` (analytic decode, gain sweep, oracle fit, tabular
     baselines), `smi/learning` (models, Lightning modules, training
     interface), `smi/experiments` (runner, evaluate, results artifact),

@@ -79,7 +79,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from smi.analysis.datasets import VelocityDataset
 from smi.analysis.models.tcn import TCN, TCNConfig
-from smi.synthetic.coil_driver import CoilDriver
+from smi.theory.coil_driver import CoilDriver
 
 logger = logging.getLogger(__name__)
 

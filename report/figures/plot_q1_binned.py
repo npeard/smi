@@ -34,9 +34,9 @@ from _figcommon import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from smi.analysis import bounds
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
+from smi.theory import bounds
+from smi.theory.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
 
 # Subsets as smi.analysis.q1_binned evaluates them; the pair and the triple
 # take fig-bounds' K = 2 and K = 3 colors.

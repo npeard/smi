@@ -2,7 +2,7 @@
 
 The supervision target (``velocity``) is not recorded: it is derived from the
 coil drive channel ``RP1_CH1`` through
-:class:`~smi.synthetic.coil_driver.CoilDriver`, while the model's inputs are the
+:class:`~smi.theory.coil_driver.CoilDriver`, while the model's inputs are the
 three measured photodiode channels. Those two travel different paths -- one a
 numeric transfer function, the other analog optics and a second Red Pitaya -- so
 a constant time offset between them is possible, and would corrupt every model
@@ -41,7 +41,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from smi.synthetic.coil_driver import CoilDriver
+from smi.theory.coil_driver import CoilDriver
 
 logger = logging.getLogger(__name__)
 

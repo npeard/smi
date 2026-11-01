@@ -28,7 +28,7 @@ from _figcommon import (
     save,
 )
 
-from smi.synthetic.forward import NOMINAL_DRIVE_BAND_HZ
+from smi.theory.forward import NOMINAL_DRIVE_BAND_HZ
 
 # The velocity PSD falls to float round-off above a few kHz; clip there so
 # the fringe-frequency floor sets the scale. The top leaves room for the panel label.

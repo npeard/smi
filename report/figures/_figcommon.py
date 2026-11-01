@@ -38,7 +38,6 @@ import torch
 from matplotlib.typing import RcKeyType
 from scipy import signal
 
-from smi.analysis import bounds
 from smi.analysis.experiments import (
     ANALYSIS_DIR,
     ORACLE_FAMILY,
@@ -49,13 +48,14 @@ from smi.analysis.experiments import (
 )
 from smi.analysis.results_artifact import RunRecord, read_results
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.forward import (
+from smi.data.frozen import RIG_WAVELENGTHS_UM
+from smi.theory import bounds
+from smi.theory.forward import (
     NOMINAL_ALPHA,
     NOMINAL_FEEDBACK_C,
     SimConfig,
     simulate_batch,
 )
-from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
 
 # Resolved by the package, not the cwd (pytest runs scripts from the repo
 # root, Snakemake from report/).
@@ -78,7 +78,7 @@ RESULTS_JSON = DATA_DIR / 'baseline_results.json'
 SYNTHETIC_RESULTS_JSON = DATA_DIR / 'synthetic_results.json'
 
 # The same lasers as the synthetic simulator spells them, for figures that
-# compute from smi.synthetic.
+# compute from smi.theory.
 SYNTHETIC_WAVELENGTHS_UM = RIG_WAVELENGTHS_UM
 
 # The feedback values the Q3 grids sweep at alpha = 3.

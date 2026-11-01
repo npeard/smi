@@ -25,7 +25,7 @@ import scipy.optimize
 import torch
 
 from smi.core.acquisition import AcquisitionConfig
-from smi.synthetic.forward import (
+from smi.theory.forward import (
     SimConfig,
     drive,
     fringe,

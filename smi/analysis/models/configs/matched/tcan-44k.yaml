@@ -60,7 +60,7 @@ synthetic:
   steps_per_epoch: 200
   train_crop_length: 4096  # must exceed the receptive field with margin
   val_steps: 20
-  # Every SimConfig field, no defaults (smi.synthetic.forward.SimConfig).
+  # Every SimConfig field, no defaults (smi.theory.forward.SimConfig).
   # The experiment runner replaces the whole block per cell.
   sim:
     acquisition: STEMLAB_125_14  # smi.core.acquisition.BOARDS

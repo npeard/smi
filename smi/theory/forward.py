@@ -11,8 +11,8 @@ from dataclasses import asdict, dataclass, fields
 import torch
 
 from smi.core.acquisition import BOARDS, STEMLAB_125_14, AcquisitionConfig
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.waveform import Waveform
+from smi.theory.coil_driver import CoilDriver
+from smi.theory.waveform import Waveform
 
 # Scale of the drive voltage relative to the rig's pre-compensated waveform
 # (CoilDriver.sample(normalize_gain=True), driven by RedPitayaManager at

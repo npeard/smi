@@ -60,7 +60,7 @@ synthetic:
   # experiment runner sets that itself from the model, whatever its grid says.
   train_crop_length: null
   val_steps: 20
-  # Every SimConfig field, no defaults (smi.synthetic.forward.SimConfig).
+  # Every SimConfig field, no defaults (smi.theory.forward.SimConfig).
   # The experiment runner replaces the whole block per cell.
   sim:
     acquisition: STEMLAB_125_14  # smi.core.acquisition.BOARDS

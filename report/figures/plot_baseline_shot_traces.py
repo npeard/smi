@@ -87,7 +87,7 @@ from smi.analysis.baseline_fit import (
     scrambled_theta_control,
     windowed_forward_model_residual,
 )
-from smi.synthetic.coil_driver import CoilDriver
+from smi.theory.coil_driver import CoilDriver
 
 # Drive voltage channel. Named here rather than imported so this script does
 # not depend on which module happens to re-export it.

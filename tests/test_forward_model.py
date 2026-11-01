@@ -8,8 +8,8 @@ import torch
 
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic import forward
-from smi.synthetic.forward import (
+from smi.theory import forward
+from smi.theory.forward import (
     NOMINAL_DRIVE_GAIN,
     SMI_NEWTON_ITERATIONS,
     SimConfig,

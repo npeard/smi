@@ -10,7 +10,7 @@ from torch.utils.data import Dataset
 
 from smi.analysis.lit_module import LitModule
 from smi.analysis.models.base import Model
-from smi.synthetic.forward import SimConfig, normalization_stats, simulate_batch
+from smi.theory.forward import SimConfig, normalization_stats, simulate_batch
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ class SyntheticLitModule(LitModule):
     """Lightning Module that simulates its training data on-device each step.
 
     Each training/validation/test step draws a fresh batch from
-    :func:`smi.synthetic.forward.simulate_batch` (drive voltage through the
+    :func:`smi.theory.forward.simulate_batch` (drive voltage through the
     coil, then fringe and detector per the ``SimConfig``) and feeds it to the
     parent class's loss computation. The model's input/output normalization is
     fixed per simulator config and baked into the ``Model`` wrapper, so the

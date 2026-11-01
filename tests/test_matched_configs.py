@@ -17,7 +17,7 @@ from smi.analysis.models.base import Model
 from smi.analysis.models.factory import MODEL_REGISTRY, count_parameters, create_model
 from smi.analysis.models.sliding_window import SlidingWindowModel
 from smi.analysis.training_interface import MIN_PATIENCE_CHECKS, TrainingConfig
-from smi.synthetic.forward import SimConfig
+from smi.theory.forward import SimConfig
 from tests.test_receptive_field import measure_worst_phase_field, phase_period
 
 MATCHED = (

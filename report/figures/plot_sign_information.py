@@ -6,7 +6,7 @@ thin lines are its leading-order form sum_k L C^2 E[V^2] alpha^2 / (4 sigma^2
 (1 + alpha^2)). The value is zero at C = 0 and at alpha = 0, which a log axis
 cannot show.
 
-Computed from smi.analysis.bounds; seeded, so deterministic.
+Computed from smi.theory.bounds; seeded, so deterministic.
 """
 
 from __future__ import annotations
@@ -23,9 +23,9 @@ from _figcommon import COLORS, FIGSIZE_HALF, SYNTHETIC_WAVELENGTHS_UM, parse_arg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from smi.analysis import bounds
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.forward import SimConfig, noise_std
+from smi.theory import bounds
+from smi.theory.forward import SimConfig, noise_std
 
 FEEDBACK_C = (0.02, 0.05, 0.1, 0.2, 0.4, 0.7, 0.9)
 ALPHAS = ((3.0, 'o'), (5.0, 's'))

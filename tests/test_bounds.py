@@ -8,10 +8,10 @@ import pytest
 import sympy as sp
 import torch
 
-from smi.analysis import bounds
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.forward import SimConfig, fringe, noise_std, smi_excess_phase
-from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
+from smi.data.frozen import RIG_WAVELENGTHS_UM
+from smi.theory import bounds
+from smi.theory.forward import SimConfig, fringe, noise_std, smi_excess_phase
 
 
 def _cfg(wavelengths_um, feedback_c, alpha):

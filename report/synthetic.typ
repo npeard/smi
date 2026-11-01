@@ -8,10 +8,10 @@
 // computation in a committed script:
 // - smi/analysis/data/synthetic_results.json, the experiment runner's records,
 //   read by the report/figures/plot_*.py scripts this document includes;
-// - smi.analysis.bounds, evaluated by the figure scripts
+// - smi.theory.bounds, evaluated by the figure scripts
 //   report/figures/plot_{fisher_phase,velocity_bounds,sign_information}.py;
 // - build/synthetic_values.json, written by report/figures/synthetic_values.py
-//   from smi.analysis.bounds, learned_results.json, synthetic_results.json and
+//   from smi.theory.bounds, learned_results.json, synthetic_results.json and
 //   the experiment grids: every value quoted in the prose is read from it
 //   below, so a library or artifact change rebuilds the prose rather than
 //   leaving it stale.

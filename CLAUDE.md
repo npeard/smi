@@ -146,10 +146,16 @@ Inside `smi/`:
     normalization wrapper) and `FeatureMap`.
   - `datamodule.py` - `VelocityDataModule` (LightningDataModule).
   - `datasets.py`, `lit_module.py`, `synthetic_lit_module.py`, `training_interface.py`.
-- `synthetic/` - physics simulation (coil driver, interferometers, waveform);
-  was `acquisition/simulations/`.
+- `core/` - bottom layer: acquisition config, kinematics, metrics.
+- `theory/` - physics: coil driver, interferometers, waveform, forward model
+  (`simulate_batch`) and the Fisher/Bayesian `bounds`; may import only
+  `smi.core`.
+- `data/` - data conventions (`schema`: channel names and wavelengths;
+  `frozen`: seeded synthetic test sets in the real-data HDF5 schema); must not
+  import `smi.analysis` or `smi.redpitaya`. Layering is enforced by
+  `[tool.importlinter]` via `tests/test_import_contracts.py`.
 - `redpitaya/` - hardware control (manager, scpi, config); was
-  `acquisition/redpitaya/`. Imports from `smi.synthetic`; import its manager via
+  `acquisition/redpitaya/`. Imports from `smi.theory`; import its manager via
   `from smi.redpitaya.manager import RedPitayaManager` (not re-exported from the
   package `__init__`, to avoid an init-time import cycle).
 
@@ -178,7 +184,7 @@ There is no search machinery in the repo. `main.py` runs one training run from
 one YAML (`TrainingConfig.from_yaml` returns a single config; list-valued
 fields pass through verbatim). Sweeps are driven from outside, e.g. a grid of
 single runs; `SyntheticLitModule` draws its batches from
-`smi.synthetic.forward.simulate_batch` and bakes `normalization_stats`.
+`smi.theory.forward.simulate_batch` and bakes `normalization_stats`.
 
 ## Reports (`report/`)
 
@@ -194,7 +200,7 @@ lockfile-reproducible with no manual install.
     program is blinded to them).
   - `synthetic.typ` - the synthetic research report: identifiability,
     Fisher information and Bayesian bounds (computed in its figure scripts
-    from `smi.analysis.bounds`), then the Q3 and Q1 results from
+    from `smi.theory.bounds`), then the Q3 and Q1 results from
     `smi/analysis/data/synthetic_results.json`. Build it alone with
     `pixi run report-synthetic`.
 - `figures/plot_<name>.py` - one script per figure, each taking `--output

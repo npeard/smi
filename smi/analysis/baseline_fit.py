@@ -10,7 +10,7 @@ Two distinct measurements live here, and it matters which is which.
 **Method 1 -- forward-model residual** (:func:`forward_model_residual`).
 Question answered: *does the Michelson forward model explain this data at
 all?* We take the displacement implied by the known speaker drive voltage
-(via :class:`~smi.synthetic.coil_driver.CoilDriver`), push it through
+(via :class:`~smi.theory.coil_driver.CoilDriver`), push it through
 ``cos(4*pi/lambda * d(t) + phi)``, and fit only the per-shot phase offset and
 amplitude. Because the model is linear in its ``cos``/``sin`` components once
 the displacement is fixed, this is a closed-form least-squares -- there is no
@@ -60,7 +60,7 @@ That is why the simple thing here is also the rigorous thing.
 Unit conventions follow the rest of the package: wavelength and displacement
 in microns, velocity in microns per millisecond (um/ms), time in seconds,
 photodiode signals in volts. Velocity is um/ms because that is what
-:class:`~smi.synthetic.coil_driver.CoilDriver` emits and what the network is
+:class:`~smi.theory.coil_driver.CoilDriver` emits and what the network is
 trained and scored on; sample rates remain in Hz.
 
 The two methods deliberately run at different shot counts: method 1 is
@@ -92,18 +92,11 @@ import torch
 from scipy.signal import savgol_filter
 
 from smi.core.metrics import summarize_per_shot
-from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
+from smi.theory.coil_driver import MS_PER_S, CoilDriver
 
 logger = logging.getLogger(__name__)
 
-# Photodiode channel -> laser wavelength in microns. RP1_CH1 is the speaker
-# drive voltage and is not a photodiode.
-PD_WAVELENGTHS_UM: dict[str, float] = {
-    'RP1_CH2': 0.635,
-    'RP2_CH1': 0.675,
-    'RP2_CH2': 0.515,
-}
-DRIVE_KEY = 'RP1_CH1'
 
 # Default location of the acquired datasets, relative to this file.
 DATA_DIR = Path(__file__).resolve().parent / 'data'

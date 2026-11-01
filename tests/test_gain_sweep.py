@@ -18,7 +18,6 @@ import h5py
 import numpy as np
 import pytest
 
-from smi.analysis.baseline_fit import DRIVE_KEY, PD_WAVELENGTHS_UM
 from smi.analysis.gain_sweep import (
     DelayCurve,
     GainSweep,
@@ -32,8 +31,9 @@ from smi.analysis.gain_sweep import (
     sweep_gain,
     unit_gain_displacement,
 )
-from smi.synthetic.calib_params import CalibrationParameters
-from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
+from smi.theory.calib_params import CalibrationParameters
+from smi.theory.coil_driver import MS_PER_S, CoilDriver
 
 ARTIFACT_PATH = (
     Path(__file__).resolve().parents[1]

@@ -5,9 +5,9 @@ import numpy as np
 
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement, integrate_velocity
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.interferometers import InterferometerArray, MichelsonInterferometer
-from smi.synthetic.waveform import Waveform
+from smi.theory.coil_driver import CoilDriver
+from smi.theory.interferometers import InterferometerArray, MichelsonInterferometer
+from smi.theory.waveform import Waveform
 
 
 class TestInterferometerSimulation:

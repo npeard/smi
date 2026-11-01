@@ -409,4 +409,16 @@ root_packages = ["smi"]
 name = "smi.core is the bottom layer"
 type = "forbidden"
 source_modules = ["smi.core"]
-forbidden_modules = ["smi.analysis", "smi.synthetic", "smi.redpitaya"]
+forbidden_modules = ["smi.analysis", "smi.theory", "smi.data", "smi.redpitaya"]
+
+[[tool.importlinter.contracts]]
+name = "smi.theory depends only on smi.core"
+type = "forbidden"
+source_modules = ["smi.theory"]
+forbidden_modules = ["smi.analysis", "smi.data", "smi.redpitaya"]
+
+[[tool.importlinter.contracts]]
+name = "smi.data does not reach up into analysis or hardware"
+type = "forbidden"
+source_modules = ["smi.data"]
+forbidden_modules = ["smi.analysis", "smi.redpitaya"]

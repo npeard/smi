@@ -2,7 +2,7 @@
 """Numbers that synthetic.typ quotes in prose and in its sign-evidence table.
 
 The document reads this JSON at compile time, so a change to
-smi.analysis.bounds (or to the results artifacts) rebuilds the quoted values
+smi.theory.bounds (or to the results artifacts) rebuilds the quoted values
 with the figures instead of leaving the prose stale. Learned-model values
 come from the runner's records in synthetic_results.json, through the same
 cell lookup as plot_exit_check.py and plot_feedback_curve.py; the one
@@ -81,21 +81,21 @@ from _figcommon import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from smi.analysis import bounds
 from smi.analysis.experiments import ORACLE_FAMILY, cell_key, expand_grid
 from smi.analysis.models.factory import create_model
 from smi.analysis.models.sliding_window import SlidingWindowModel
 from smi.analysis.results_artifact import RunRecord
 from smi.analysis.synthetic_lit_module import VAL_SEED
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.forward import (
+from smi.data.frozen import DEFAULT_ROOT, load_or_create
+from smi.theory import bounds
+from smi.theory.forward import (
     NOMINAL_ALPHA,
     NOMINAL_PHASE_DRIFT_FRINGES,
     NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S,
     SimConfig,
     rad_per_sqrt_s_to_fringes,
 )
-from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
 # Matches plot_velocity_bounds.py.
 N_STEPS = 2000
@@ -162,7 +162,7 @@ def test_shots(record: RunRecord) -> int:
     """Shot count of the frozen set, from its dataset key ``<hash>_seed<s>_n<n>``.
 
     The record stores the set's seed but not its size; the key is written by
-    smi.synthetic.frozen.frozen_set_path.
+    smi.data.frozen.frozen_set_path.
     """
     return int(record.dataset.rsplit('_n', 1)[1])
 

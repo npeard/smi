@@ -53,7 +53,7 @@ synthetic:
   steps_per_epoch: 1000
   train_crop_length: null  # null trains on the full 16384-sample shot
   val_steps: 200
-  # Every SimConfig field, no defaults (smi.synthetic.forward.SimConfig).
+  # Every SimConfig field, no defaults (smi.theory.forward.SimConfig).
   # Michelson, noise-free: each detector knob at its exact-identity value.
   sim:
     acquisition: STEMLAB_125_14  # smi.core.acquisition.BOARDS

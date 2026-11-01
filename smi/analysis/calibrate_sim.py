@@ -84,22 +84,19 @@ import numpy as np
 import torch
 from scipy.signal import periodogram
 
-from smi.analysis.baseline_fit import (
-    DRIVE_KEY,
-    fit_window_basis,
-    window_fringe_coefficients,
-)
+from smi.analysis.baseline_fit import fit_window_basis, window_fringe_coefficients
 from smi.analysis.datasets import file_pd_channels
 from smi.core.acquisition import BOARDS, AcquisitionConfig
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.forward import (
+from smi.data.schema import DRIVE_KEY
+from smi.theory.coil_driver import CoilDriver
+from smi.theory.forward import (
     NOMINAL_DRIVE_BAND_HZ,
     fringe,
     one_pole_coefficient,
     sample_trajectory,
     smi_excess_phase,
 )
-from smi.synthetic.waveform import Waveform
+from smi.theory.waveform import Waveform
 
 logger = logging.getLogger(__name__)
 

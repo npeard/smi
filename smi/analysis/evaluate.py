@@ -36,7 +36,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from smi.analysis.baseline_fit import PD_WAVELENGTHS_UM, inverse_fit
+from smi.analysis.baseline_fit import inverse_fit
 from smi.analysis.datasets import file_pd_channels, file_sample_rate, select_pd_keys
 from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import RunRecord
@@ -48,8 +48,9 @@ from smi.core.metrics import (
     sign_invariant_rmse,
     summarize_per_shot,
 )
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.forward import MAX_SPEED_UM_PER_MS, SimConfig
+from smi.data.schema import PD_WAVELENGTHS_UM
+from smi.theory.coil_driver import CoilDriver
+from smi.theory.forward import MAX_SPEED_UM_PER_MS, SimConfig
 
 logger = logging.getLogger(__name__)
 

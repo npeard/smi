@@ -23,9 +23,9 @@ from smi.analysis.features.normalization import NORMALIZATION_STATS
 from smi.analysis.lit_module import LitModule
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import integrate_velocity
-from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
-from smi.synthetic.interferometers import MichelsonInterferometer
-from smi.synthetic.waveform import Waveform
+from smi.theory.coil_driver import MS_PER_S, CoilDriver
+from smi.theory.interferometers import MichelsonInterferometer
+from smi.theory.waveform import Waveform
 from tests._sims import SAMPLE_RATE
 
 # Velocity RMS on the real acquisitions is ~0.35 um/ms. Anything above this

@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 import numpy as np
 
-from smi.synthetic.coil_driver import CoilDriver
+from smi.theory.coil_driver import CoilDriver
 
 from .registry import RawShot, register_feature
 

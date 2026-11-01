@@ -13,9 +13,9 @@ from plot_waveforms import calculate_fft
 
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement, integrate_velocity
-from smi.synthetic import coil_driver as coil_driver_module
-from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
-from smi.synthetic.waveform import Waveform
+from smi.theory import coil_driver as coil_driver_module
+from smi.theory.coil_driver import MS_PER_S, CoilDriver
+from smi.theory.waveform import Waveform
 
 
 def test_spectra_consistency():

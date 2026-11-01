@@ -6,7 +6,7 @@ alpha = 3): the causal posterior CRB after it has converged, and the offline
 smoothing bound at mid-record. Channel subsets add lasers in the order
 635, 674.8, 515 nm.
 
-Computed from smi.analysis.bounds, deterministic: the motion prior is fit to
+Computed from smi.theory.bounds, deterministic: the motion prior is fit to
 a fixed-seed trajectory sample inside ``bounds.motion_prior``.
 """
 
@@ -24,9 +24,9 @@ from _figcommon import COLORS, FIGSIZE_HALF, SYNTHETIC_WAVELENGTHS_UM, parse_arg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from smi.analysis import bounds
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.forward import NOMINAL_ALPHA, SimConfig
+from smi.theory import bounds
+from smi.theory.forward import NOMINAL_ALPHA, SimConfig
 
 FEEDBACK_C = np.linspace(0.0, 0.9, 19)
 # The causal bound converges within about 100 samples from the prior, and the

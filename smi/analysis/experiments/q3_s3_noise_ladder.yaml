@@ -1,6 +1,6 @@
 # Q3 stage S3: the noise ladder. TCN-44k, all three channels, SMI C = 0.2,
 # alpha = 3. Each detector/drift knob is swept ALONE from the noise-free base
-# over its NOMINAL_SWEEPS range (smi/synthetic/forward.py), then every knob at
+# over its NOMINAL_SWEEPS range (smi/theory/forward.py), then every knob at
 # its nominal value together (the nominal operating point). Which single knob
 # moves RMSE most, at its nominal value, is the case for or against new
 # electronics. shot_noise is omitted alone: it needs an SNR and so is only

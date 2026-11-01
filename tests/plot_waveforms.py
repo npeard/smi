@@ -16,8 +16,8 @@ from numpy.fft import fft, fftfreq
 from scipy import stats
 
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.waveform import Waveform
+from smi.theory.coil_driver import CoilDriver
+from smi.theory.waveform import Waveform
 
 logger = logging.getLogger(__name__)
 

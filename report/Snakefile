@@ -86,11 +86,11 @@ RESULTS = [
 # the same reason as RESULTS.
 SMI_DIR = REPORT_DIR.parent / "smi"
 ANALYSIS_CODE = [
-    str(SMI_DIR / "analysis" / "bounds.py"),
+    str(SMI_DIR / "theory" / "bounds.py"),
     str(SMI_DIR / "analysis" / "experiments.py"),
     str(SMI_DIR / "analysis" / "results_artifact.py"),
-    str(SMI_DIR / "synthetic" / "forward.py"),
-    str(SMI_DIR / "synthetic" / "frozen.py"),
+    str(SMI_DIR / "theory" / "forward.py"),
+    str(SMI_DIR / "data" / "frozen.py"),
 ]
 
 # The experiment grids the synthetic figures expand to label records (the

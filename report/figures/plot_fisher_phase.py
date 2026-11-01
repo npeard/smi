@@ -6,7 +6,7 @@ multiplies by (V 4 pi / (lambda sigma))^2; its zeros are the fringe extrema,
 where a channel is blind. Dashed lines are the phase averages
 (``bounds.phase_factor``), which is what the averaged bounds use.
 
-Computed from smi.analysis.bounds, deterministic with no randomness.
+Computed from smi.theory.bounds, deterministic with no randomness.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from _figcommon import COLORS, FIGSIZE_HALF, parse_args, save
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from smi.analysis import bounds
+from smi.theory import bounds
 
 ALPHA = 3.0
 CURVES = ((0.0, COLORS['muted']), (0.2, COLORS['accent']), (0.7, COLORS['highlight']))

@@ -18,7 +18,7 @@ The importable package is `smi/`:
   normalization wrapper in `base.py`), `features/` (Polars `FeatureRegistry` and
   version-controlled normalization stats), `datamodule.py`, `datasets.py`,
   `lit_module.py`, `training_interface.py`.
-- `smi/synthetic/` - physics simulation (coil driver, interferometers, waveform).
+- `smi/theory/` - physics simulation (coil driver, interferometers, waveform).
 - `smi/redpitaya/` - Red Pitaya hardware control and acquisition.
 - `report/` - Typst slides and reports, built from matplotlib figures through a
   Snakemake DAG (`pixi run report`). See the `report/` section in `CLAUDE.md`.

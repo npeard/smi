@@ -29,8 +29,8 @@ from smi.analysis.baseline_fit import (
     window_fringe_coefficients,
     windowed_forward_model_residual,
 )
-from smi.synthetic.coil_driver import MS_PER_S
-from smi.synthetic.interferometers import MichelsonInterferometer
+from smi.theory.coil_driver import MS_PER_S
+from smi.theory.interferometers import MichelsonInterferometer
 
 SAMPLE_RATE = 488281.25
 

@@ -84,8 +84,8 @@ from smi.analysis.training_interface import (
     convergence_monitor,
 )
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.forward import NOMINAL_SWEEPS, SIMULATOR_VERSION, SimConfig
-from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
+from smi.data.frozen import DEFAULT_ROOT, load_or_create
+from smi.theory.forward import NOMINAL_SWEEPS, SIMULATOR_VERSION, SimConfig
 
 logger = logging.getLogger(__name__)
 

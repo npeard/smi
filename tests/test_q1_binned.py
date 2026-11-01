@@ -12,7 +12,7 @@ from smi.analysis.q1_binned import (
     fringe_phase,
     nearest_extremum_distances,
 )
-from smi.synthetic.forward import fringe
+from smi.theory.forward import fringe
 
 
 @pytest.mark.parametrize(

@@ -7,15 +7,15 @@ import numpy as np
 import pytest
 import torch
 
-import smi.synthetic.coil_driver as coil_module
+import smi.theory.coil_driver as coil_module
 from smi.core.acquisition import STEMLAB_125_14
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.forward import (
+from smi.theory.coil_driver import CoilDriver
+from smi.theory.forward import (
     MAX_SPEED_UM_PER_MS,
     NOMINAL_DRIVE_GAIN,
     sample_trajectory,
 )
-from smi.synthetic.waveform import Waveform
+from smi.theory.waveform import Waveform
 from tests._dtype_guard import no_float64
 
 SAMPLE_RATE = STEMLAB_125_14.sample_rate_dec1_hz / 256

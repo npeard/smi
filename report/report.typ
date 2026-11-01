@@ -621,7 +621,7 @@ scalar `k` that lands in two different places on two acquisitions is absorbing
 something other than a pure gain error. The gain step is 0.25, which is 1.7%
 of the live value, so the disagreement is wider than the sweep's resolution.
 
-For that reason the calibration constant in `smi/synthetic/calib_params.py`
+For that reason the calibration constant in `smi/theory/calib_params.py`
 has deliberately *not* been re-tuned here. Changing it would shift every
 training target, and a constant the two acquisitions disagree about by up to
 6.5% is not settled enough to shift them on.

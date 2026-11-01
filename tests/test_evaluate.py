@@ -21,9 +21,9 @@ from smi.analysis.results_artifact import (
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.core.kinematics import derivative_displacement, integrate_velocity
 from smi.core.metrics import sign_invariant_rmse
-from smi.synthetic import frozen
-from smi.synthetic.forward import SIMULATOR_VERSION
-from smi.synthetic.frozen import pd_keys, write_frozen_set
+from smi.data import frozen
+from smi.data.frozen import pd_keys, write_frozen_set
+from smi.theory.forward import SIMULATOR_VERSION
 from tests._sims import SAMPLE_RATE, SMALL_CHUNK_SHOTS, michelson_sim
 from tests._sims import WAVELENGTHS_UM as RIG
 

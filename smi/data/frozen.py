@@ -13,8 +13,8 @@ import h5py
 import numpy as np
 import torch
 
-from smi.analysis.baseline_fit import DRIVE_KEY, PD_WAVELENGTHS_UM
-from smi.synthetic.forward import SIMULATOR_VERSION, SimConfig, simulate_batch
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
+from smi.theory.forward import SIMULATOR_VERSION, SimConfig, simulate_batch
 
 # Shots per simulate_batch call. Part of the file identity: random draws are
 # made per batch (all trajectories, then all phases, ...), so the stream a shot
@@ -27,7 +27,7 @@ CHUNK_SHOTS = 256
 # The rig's three lasers as the simulator configs spell them, in channel order.
 RIG_WAVELENGTHS_UM = (0.635, 0.6748, 0.515)
 # A config's rig wavelengths are matched to this tolerance: the simulator
-# configs spell the 675 nm laser 0.6748 while baseline_fit records 0.675.
+# configs spell the 675 nm laser 0.6748 while smi.data.schema records 0.675.
 RIG_WAVELENGTH_TOL_UM = 1e-3
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[1] / 'analysis' / 'data' / 'frozen'

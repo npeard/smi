@@ -3,7 +3,7 @@
 
 The displacement targets this project trains on are not measured -- they are
 derived from the speaker drive voltage through
-:class:`~smi.synthetic.coil_driver.CoilDriver`, whose amplitude transfer
+:class:`~smi.theory.coil_driver.CoilDriver`, whose amplitude transfer
 function carries a single scalar gain ``k`` (microns per volt at DC, scaled by
 a resonance). If ``k`` is wrong, every displacement and velocity target is
 wrong by that factor, so the question deserves a measurement rather than an
@@ -134,14 +134,13 @@ from smi.analysis.baseline_fit import (
     DATA_DIR,
     DEFAULT_DATASETS,
     DEFAULT_WINDOW_SAMPLES,
-    DRIVE_KEY,
-    PD_WAVELENGTHS_UM,
     binned_by_amplitude,
     forward_model_residual,
     windowed_forward_model_residual,
 )
-from smi.synthetic.calib_params import CalibrationParameters
-from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
+from smi.theory.calib_params import CalibrationParameters
+from smi.theory.coil_driver import MS_PER_S, CoilDriver
 
 logger = logging.getLogger(__name__)
 

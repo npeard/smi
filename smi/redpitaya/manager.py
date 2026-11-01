@@ -22,16 +22,16 @@ from smi.core.kinematics import derivative_displacement, integrate_velocity
 
 try:
     # Try relative imports first (when used as a package)
-    from ..synthetic.coil_driver import CoilDriver
-    from ..synthetic.interferometers import MichelsonInterferometer
-    from ..synthetic.waveform import Waveform
+    from ..theory.coil_driver import CoilDriver
+    from ..theory.interferometers import MichelsonInterferometer
+    from ..theory.waveform import Waveform
     from .scpi import SCPI
 except ImportError:
     # Fall back to absolute imports (when run as a script)
     from smi.redpitaya.scpi import SCPI
-    from smi.synthetic.coil_driver import CoilDriver
-    from smi.synthetic.interferometers import MichelsonInterferometer
-    from smi.synthetic.waveform import Waveform
+    from smi.theory.coil_driver import CoilDriver
+    from smi.theory.interferometers import MichelsonInterferometer
+    from smi.theory.waveform import Waveform
 
 logger = logging.getLogger(__name__)
 
