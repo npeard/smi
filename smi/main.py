@@ -5,10 +5,8 @@ import time
 
 import lightning as lightning_module
 
-from smi.core.paths import CONFIGS_DIR, DATA_DIR
+from smi.core.paths import CONFIGS_DIR
 from smi.learning.training_interface import TrainingConfig, TrainingInterface
-from smi.redpitaya.generate_data import generate_dataset_from_rp
-from smi.redpitaya.manager import RedPitayaManager
 
 
 def setup_logging(verbosity: str) -> None:
@@ -76,44 +74,9 @@ def acquire_dataset(
         dataset_name: Filename for the dataset (e.g., "my-data.h5")
         logger: Logger instance for output
     """
-    # Ensure dataset_name has .h5 extension
-    if not dataset_name.endswith('.h5'):
-        dataset_name += '.h5'
-
-    # Set data directory using pathlib
-    data_dir = DATA_DIR
-    data_dir.mkdir(parents=True, exist_ok=True)
-
-    logger.info('Acquiring dataset from Red Pitaya using default connection')
-    logger.info(f'Number of samples: {num_samples}')
-    logger.info(f'Dataset filename: {dataset_name}')
-
-    # Create Red Pitaya Manager with default connection settings
-    rp_manager = RedPitayaManager(
-        ['rp-f0c04a.local', 'rp-f0c026.local'],
-        blink_on_connect=True,
-        data_save_path=str(data_dir),
-    )
-
-    try:
-        # Configure the Red Pitaya for acquisition
-        logger.info('Configuring Red Pitaya for data acquisition...')
-        rp_manager.reset_all()
-
-        # Configure daisy chain for synchronized triggering
-        rp_manager.configure_daisy_chain()
-
-        # Create dataset
-        generate_dataset_from_rp(
-            rp_manager=rp_manager,
-            output_dir=str(data_dir),
-            num_samples=num_samples,
-            dataset_filename=dataset_name,
-        )
-        logger.info('Dataset acquisition complete!')
-    finally:
-        # Ensure we close the connection to the Red Pitaya
-        rp_manager.close_all()
+    # The SMI acquisition loop was split out of the Red Pitaya manager when it
+    # became the standalone stemlab library; smi.acquisition rebuilds it on top.
+    raise NotImplementedError('rebuilt in smi.acquisition')
 
 
 def train_model(config_path: str, logger: logging.Logger) -> None:

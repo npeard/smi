@@ -55,6 +55,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/08/31/4571c20652a4002ed9e500046386f3731a77e23d95a608ae8a87f1fbb2da/import_linter-2.15-py3-none-any.whl
@@ -165,6 +166,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hbeba79b_4.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://files.pythonhosted.org/packages/04/5a/513484208742f65af2648c519f0b7ab034616e183c4403538024c136a1ab/contourpy-1.4.0-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/08/31/4571c20652a4002ed9e500046386f3731a77e23d95a608ae8a87f1fbb2da/import_linter-2.15-py3-none-any.whl
@@ -257,6 +259,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/08/31/4571c20652a4002ed9e500046386f3731a77e23d95a608ae8a87f1fbb2da/import_linter-2.15-py3-none-any.whl
@@ -360,6 +363,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
@@ -513,6 +517,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hbeba79b_4.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/04/37/b751de2b59b0197a1d92a5dd491de88e8a5e928c2e6562581974f1e85263/rpds_py-2026.9.1-cp314-cp314-macosx_11_0_arm64.whl
@@ -648,6 +653,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
@@ -795,6 +801,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
@@ -930,6 +937,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/typst-0.15.1-hc2d82ec_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/04/37/b751de2b59b0197a1d92a5dd491de88e8a5e928c2e6562581974f1e85263/rpds_py-2026.9.1-cp314-cp314-macosx_11_0_arm64.whl
@@ -1046,6 +1054,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl
@@ -1174,6 +1183,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/08/31/4571c20652a4002ed9e500046386f3731a77e23d95a608ae8a87f1fbb2da/import_linter-2.15-py3-none-any.whl
@@ -1284,6 +1294,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hbeba79b_4.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://files.pythonhosted.org/packages/04/5a/513484208742f65af2648c519f0b7ab034616e183c4403538024c136a1ab/contourpy-1.4.0-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/08/31/4571c20652a4002ed9e500046386f3731a77e23d95a608ae8a87f1fbb2da/import_linter-2.15-py3-none-any.whl
@@ -1376,6 +1387,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
       - pypi: ./
+      - pypi: ./packages/redpitaya
       - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
       - pypi: https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/08/31/4571c20652a4002ed9e500046386f3731a77e23d95a608ae8a87f1fbb2da/import_linter-2.15-py3-none-any.whl
@@ -2517,6 +2529,12 @@ packages:
   - lmfit ; extra == 'dev'
   - uncertainties ; extra == 'dev'
   - schemdraw ; extra == 'dev'
+  requires_python: '>=3.14'
+- pypi: ./packages/redpitaya
+  name: stemlab
+  requires_dist:
+  - numpy>=2
+  - matplotlib
   requires_python: '>=3.14'
 - pypi: git+https://github.com/npeard/agent-config?tag=v0.1.1#4e5f2a260e4ed22e2eb896ae84a16ea98697302f
   name: agent-config

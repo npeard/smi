@@ -157,7 +157,7 @@ Inside `smi/`:
   and the **generated, version-controlled** per-feature mean/std
   (`normalization.py` - do not hand-edit; regenerate with the script).
   Must not
-  import `smi.redpitaya`. Layering is enforced by
+  import `stemlab`. Layering is enforced by
   `[tool.importlinter]` via `tests/test_import_contracts.py`.
 - `estimators/` - array-in/array-out classical estimators: `phase_fit`
   (method 1 forward-model fits, windowed/envelope/joint-gain variants, phase
@@ -167,10 +167,13 @@ Inside `smi/`:
 - `experiments/` - dataset-level runs that read HDF5, call estimators and
   write the committed artifacts (`baselines`, `gain_sweep`); may import
   anything in `smi`.
-- `redpitaya/` - hardware control (manager, scpi, config); was
-  `acquisition/redpitaya/`. Imports from `smi.theory`; import its manager via
-  `from smi.redpitaya.manager import RedPitayaManager` (not re-exported from the
-  package `__init__`, to avoid an init-time import cycle).
+
+Outside `smi/`, `packages/redpitaya/` is the standalone `stemlab` library
+(SCPI transport, board/daisy-chain manager, arbitrary-waveform generation,
+raw acquisition, a generic live view). It is its own distribution, installed
+editable via `[tool.pixi.pypi-dependencies]`, and must never import `smi`
+(import-linter contract); its README states the API and
+`stemlab.testing.FakeTransport` stands in for hardware in tests.
 
 ## Normalization & model wrapping
 

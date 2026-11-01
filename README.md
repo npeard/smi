@@ -22,7 +22,8 @@ The importable package is `smi/`:
 - `configs/`, `results/`, `data/`, `checkpoints/` - model and experiment YAML,
   committed result JSON, raw and frozen data (ignored), checkpoints (ignored).
 - `smi/theory/` - physics simulation (coil driver, interferometers, waveform).
-- `smi/redpitaya/` - Red Pitaya hardware control and acquisition.
+- `packages/redpitaya/` - `stemlab`, the standalone Red Pitaya AWG and
+  acquisition library (its own package; see its README).
 - `report/` - Typst slides and reports, built from matplotlib figures through a
   Snakemake DAG (`pixi run report`). See the `report/` section in `CLAUDE.md`.
 - `tests/`, `notebooks/` (marimo apps), `docs/`.

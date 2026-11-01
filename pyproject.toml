@@ -35,7 +35,7 @@ requires = ["flit_core>=3.9.0,<4"]
 build-backend = "flit_core.buildapi"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "packages/redpitaya/tests"]
 # The figure scripts import _figcommon as a sibling module.
 pythonpath = ["report/figures"]
 python_files = "test_*.py"
@@ -140,6 +140,7 @@ allow-dict-calls-with-keyword-arguments = true
 "docs/**.py" = ["INP001", "ARG001", "ANN"]
 "conftest.py" = ["ANN"]
 "tests/**.py" = ["ANN", "INP001"]
+"packages/redpitaya/tests/**.py" = ["ANN", "INP001"]
 # Runs each figure script in a subprocess, which is the point: the tests check
 # the CLI contract the Snakefile invokes, not an importable function. The
 # argv is sys.executable plus paths globbed from the repo, so there is no
@@ -164,8 +165,7 @@ allow-dict-calls-with-keyword-arguments = true
 # (E402).
 "report/figures/*.py" = ["INP001", "E402"]
 "tests/plot_waveforms.py" = ["PLR0915", "E501"]
-"smi/redpitaya/manager.py" = ["C901", "PLR0912", "PLR0915"]
-"smi/redpitaya/scpi.py" = ["C901", "PLR0912", "PLR0915", "E501"]
+"packages/redpitaya/src/stemlab/scpi.py" = ["C901", "PLR0912", "PLR0915", "E501"]
 "smi/experiments/inspect_data.py" = ["PLR0915"]
 
 [tool.ruff.lint.pydocstyle]
@@ -210,6 +210,9 @@ scripts = ["scripts/link-torch-libomp.sh"]
 
 [tool.pixi.pypi-dependencies]
 smi = { path = ".", editable = true }
+# The Red Pitaya library: its own distribution so it can move to its own repo
+# with a git mv plus this line.
+stemlab = { path = "packages/redpitaya", editable = true }
 # The generic gates (check-ascii, preflight), pinned to the same tag as the
 # pre-commit hook. Bump both together.
 agent-config = { git = "https://github.com/npeard/agent-config", tag = "v0.1.1" }
@@ -326,7 +329,7 @@ python-version = "3.14"
 # or directly by the pre-commit hook (`.pixi/envs/dev/bin/ty`, env not active).
 python = ".pixi/envs/dev"
 # The figure scripts and their tests import _figcommon as a sibling module.
-extra-paths = ["report/figures"]
+extra-paths = ["report/figures", "packages/redpitaya/src"]
 
 [tool.ty.src]
 # notebooks/ are exploratory marimo apps (like .ipynb, already excluded) with
@@ -403,34 +406,40 @@ rules = { invalid-mutable-override = "ignore" }
 
 # Package layering; tests/test_import_contracts.py runs this in the suite.
 [tool.importlinter]
-root_packages = ["smi"]
+root_packages = ["smi", "stemlab"]
+
+[[tool.importlinter.contracts]]
+name = "stemlab is standalone: it imports nothing from smi"
+type = "forbidden"
+source_modules = ["stemlab"]
+forbidden_modules = ["smi"]
 
 [[tool.importlinter.contracts]]
 name = "smi.core is the bottom layer"
 type = "forbidden"
 source_modules = ["smi.core"]
-forbidden_modules = ["smi.theory", "smi.data", "smi.estimators", "smi.experiments", "smi.redpitaya"]
+forbidden_modules = ["smi.theory", "smi.data", "smi.estimators", "smi.experiments", "stemlab"]
 
 [[tool.importlinter.contracts]]
 name = "smi.theory depends only on smi.core"
 type = "forbidden"
 source_modules = ["smi.theory"]
-forbidden_modules = ["smi.data", "smi.estimators", "smi.experiments", "smi.redpitaya"]
+forbidden_modules = ["smi.data", "smi.estimators", "smi.experiments", "stemlab"]
 
 [[tool.importlinter.contracts]]
 name = "smi.data depends only on smi.core and smi.theory"
 type = "forbidden"
 source_modules = ["smi.data"]
-forbidden_modules = ["smi.estimators", "smi.experiments", "smi.redpitaya", "smi.main"]
+forbidden_modules = ["smi.estimators", "smi.experiments", "stemlab", "smi.main"]
 
 [[tool.importlinter.contracts]]
 name = "smi.estimators depends only on smi.core and smi.theory"
 type = "forbidden"
 source_modules = ["smi.estimators"]
-forbidden_modules = ["smi.data", "smi.experiments", "smi.redpitaya", "smi.main"]
+forbidden_modules = ["smi.data", "smi.experiments", "stemlab", "smi.main"]
 
 [[tool.importlinter.contracts]]
 name = "smi.learning does not import estimators, experiments or hardware"
 type = "forbidden"
 source_modules = ["smi.learning"]
-forbidden_modules = ["smi.estimators", "smi.experiments", "smi.redpitaya", "smi.main"]
+forbidden_modules = ["smi.estimators", "smi.experiments", "stemlab", "smi.main"]

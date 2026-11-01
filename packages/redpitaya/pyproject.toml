@@ -1,0 +1,21 @@
+[project]
+name = "stemlab"
+version = "0.1.0"
+description = "Arbitrary waveform generation and acquisition on Red Pitaya STEMlab 125-14 boards over SCPI"
+authors = [
+    {name = "Nolan Peard", email = "nolan.peard@gmail.com"},
+]
+readme = "README.md"
+requires-python = ">=3.14"
+license = {text = "MIT"}
+dependencies = [
+    "numpy>=2",
+    "matplotlib",
+]
+
+[build-system]
+requires = ["flit_core>=3.9.0,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
