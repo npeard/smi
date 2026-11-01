@@ -130,56 +130,73 @@ not, the index pin in `[tool.pixi.pypi-dependencies]` is the thing to check.
 ## Package layout
 
 The importable package is `smi/` (distribution name `smi`). Top-level repo
-layout: `smi/` (library), `tests/`, `notebooks/` (marimo apps), `docs/`.
+layout: `smi/` (library), `scripts/` (CLIs), `configs/`, `results/`, `data/`,
+`checkpoints/`, `packages/redpitaya/`, `report/`, `tests/`, `notebooks/`
+(marimo apps), `docs/`.
 
-Inside `smi/`:
+Inside `smi/`, lowest layer first. Layering is enforced by
+`[tool.importlinter]` via `tests/test_import_contracts.py`.
 
-- `learning/` - `models/` (architectures: `tcn`, `scnn`, `tcan`, `lstm`,
-  `mamba`, `barland_cnn`, `patch_transformer`, `unet_transformer`,
-  `neural_operator`; `base.py` defines `Model(nn.Module)`, the normalization
-  wrapper, and `FeatureMap`), `lit_module.py`, `synthetic_lit_module.py`,
-  `training_interface.py`.
-- `experiments/` - top layer: the grid `runner`, `evaluate`, `results_artifact`,
-  baseline sweeps and one-off scripts. Nothing below it imports it.
-- `core/` - bottom layer: acquisition config, kinematics, metrics, and `paths`
-  (`CONFIGS_DIR`, `RESULTS_DIR`, `DATA_DIR`, `FROZEN_DIR`, `CHECKPOINTS_DIR`
-  for the repo-root `configs/`, `results/`, `data/`, `checkpoints/`).
+- `core/` - bottom layer, imports nothing else in `smi`: acquisition config,
+  kinematics, metrics, and `paths` (`REPO_ROOT`, `CONFIGS_DIR`, `RESULTS_DIR`,
+  `DATA_DIR`, `FROZEN_DIR`, `CHECKPOINTS_DIR`; every artifact path comes from
+  here).
 - `theory/` - physics: coil driver, interferometers, waveform, forward model
   (`simulate_batch`) and the Fisher/Bayesian `bounds`; may import only
   `smi.core`.
 - `data/` - data conventions (`schema`: HDF5 keys, attrs, `write_shot` /
   `read_shots`, the one legacy sample-rate fallback; `frozen`: seeded synthetic
   test sets in the real-data HDF5 schema), `datasets.py`, `datamodule.py`
-  (`VelocityDataModule`), and
-  `features/` - Polars-based `FeatureRegistry` (`registry.py`), feature
-  definitions (`features.py`; `register_feature` decorator auto-registers on
-  the module-level `default_registry`), the stats script (`compute_norm_stats.py`),
-  and the **generated, version-controlled** per-feature mean/std
-  (`normalization.py` - do not hand-edit; regenerate with the script).
-  Must not
-  import `stemlab`. Layering is enforced by
-  `[tool.importlinter]` via `tests/test_import_contracts.py`.
+  (`VelocityDataModule`), and `features/` - Polars-based `FeatureRegistry`
+  (`registry.py`), feature definitions (`features.py`; `register_feature`
+  auto-registers on the module-level `default_registry`), and the **generated,
+  version-controlled** per-feature mean/std (`normalization.py` - do not
+  hand-edit; regenerate with `scripts/compute_norm_stats.py`). May import only
+  `smi.core` and `smi.theory`.
 - `estimators/` - array-in/array-out classical estimators: `phase_fit`
   (method 1 forward-model fits, windowed/envelope/joint-gain variants, phase
   drift), `inverse` (method 2 Viterbi decode), `gain_sweep` (gain, delay and
   fringe-rate curves), `tabular` (LightGBM/Ridge). May import only `smi.core`
   and `smi.theory`; never sees a file or a `FeatureRegistry`.
-- `experiments/` - dataset-level runs that read HDF5, call estimators and
-  write the committed artifacts (`baselines`, `gain_sweep`); may import
-  anything in `smi`.
+- `learning/` - `models/` (architectures: `tcn`, `scnn`, `tcan`, `lstm`,
+  `mamba`, `barland_cnn`, `patch_transformer`, `unet_transformer`,
+  `neural_operator`; `base.py` defines `Model(nn.Module)`, the normalization
+  wrapper, and `FeatureMap`), `lit_module.py`, `synthetic_lit_module.py`,
+  `training_interface.py`. Does not import estimators, experiments or
+  acquisition.
+- `experiments/` - dataset-level runs: the grid `runner`, `evaluate`,
+  `results_artifact`, `baselines`, `gain_sweep`, `q1_binned`, `calibrate_sim`,
+  `delay_check`. Imports anything in `smi` except `smi.acquisition`.
+- `acquisition/` - SMI's side of the rig (`rig`: hosts and shot constants;
+  `shots`: the shot loop and HDF5 writing). The only `smi` package that imports
+  `stemlab`; it and `experiments` do not import each other.
 
-Outside `smi/`, `packages/redpitaya/` is the standalone `stemlab` library
-(SCPI transport, board/daisy-chain manager, arbitrary-waveform generation,
-raw acquisition, a generic live view). It is its own distribution, installed
-editable via `[tool.pixi.pypi-dependencies]`, and must never import `smi`
-(import-linter contract); its README states the API and
-`stemlab.testing.FakeTransport` stands in for hardware in tests.
+Outside `smi/`:
+
+- `packages/redpitaya/` is the standalone `stemlab` library (SCPI transport,
+  board/daisy-chain manager, arbitrary-waveform generation, raw acquisition, a
+  generic live view). It is its own distribution, installed editable via
+  `[tool.pixi.pypi-dependencies]`, and must never import `smi` (import-linter
+  contract); its README states the API and `stemlab.testing.FakeTransport`
+  stands in for hardware in tests.
+- `scripts/` - CLIs, run as `pixi run python scripts/<name>.py` (every one
+  takes `--help`). Thin wrappers over a library `main` (`run_baselines`,
+  `gain_sweep`, `run_experiments`, `q1_binned`, `calibrate_sim`,
+  `delay_check`), plus self-contained drivers (`train`, `acquire`,
+  `compute_norm_stats`, `inspect_data`, `benchmark_loading`,
+  `run_baseline_sweep`). `train.py` must not import `smi.acquisition`.
+  `scripts/` is not a package; tests load a script by path.
+- `configs/models/`, `configs/experiments/` - model and grid YAML. The
+  `data_dir` in `configs/models/{matched,displacement}/` is stale on purpose
+  (it is hashed into run fingerprints); pass `dataset_path=` instead.
+- `results/` - committed result JSON. `data/` - raw HDF5 (ignored) and
+  `data/frozen/`. `checkpoints/` - gitignored.
 
 ## Normalization & model wrapping
 
 Normalization stats are NOT computed in the dataset. Instead:
 
-1. `compute_norm_stats.py` points at an HDF5 dataset, evaluates the
+1. `scripts/compute_norm_stats.py` points at an HDF5 dataset, evaluates the
    `FeatureRegistry` (inputs = photodiode channels; targets = velocity,
    displacement), and writes per-feature mean/std to `features/normalization.py`.
 2. `Model(nn.Module)` wraps an inner architecture and bakes those stats into
@@ -196,7 +213,7 @@ HDF5 (gzip-4, chunked per shot) is the chosen storage format - see `docs/data-st
 
 ## Hyperparameter / architecture search
 
-There is no search machinery in the repo. `main.py` runs one training run from
+There is no search machinery in the repo. `scripts/train.py` runs one training run from
 one YAML (`TrainingConfig.from_yaml` returns a single config; list-valued
 fields pass through verbatim). Sweeps are driven from outside, e.g. a grid of
 single runs; `SyntheticLitModule` draws its batches from
@@ -247,9 +264,9 @@ These override defaults; follow them unless explicitly told otherwise.
 - **Always run `pixi run format`** after code changes. It is the verification
   entry point -- do not call `ruff check` separately as its own step.
 - **Run the full suite (`pixi run -e dev python -m pytest`) when you touch
-  `learning/models/`, `data/features/`, or `synthetic/`** -- the
+  `learning/models/`, `data/features/`, or `theory/`** -- the
   normalization stats, the TorchScript scriptability check and the model
-  forward tests are all coupled through those. It takes about 95 seconds.
+  forward tests are all coupled through those. It takes about 220 seconds on osx-arm64.
 - **Otherwise** run the single most relevant test file. Scope tests to the
   code you changed rather than surfacing unrelated pre-existing failures.
 - **GPU claims need GPU evidence.** `torch.cuda.synchronize()` around any

@@ -9,84 +9,50 @@ handling, then resume experiments (P4-P6).
 
 ---
 
-## 1. Now: code organization and separation of concerns
+## 1. Done: code organization and separation of concerns (branch `restructure`)
 
-`smi/analysis/` holds 20 top-level modules plus `models/`, `features/`,
-`baselines/`, data artifacts and experiment grids, and it mixes the data
-layer, analytic estimators, learned models, the experiment harness, one-off
-scripts and acquisition. The import graph shows layering violations, not
-just a flat directory:
+`smi.analysis` is gone. The package is layered `core` < `theory` < `data` /
+`estimators` < `learning` < `experiments`, with `acquisition` beside
+`experiments`; `tests/test_import_contracts.py` enforces the direction.
 
-- **The simulator depends on analysis.** `synthetic/frozen.py` imports
-  `analysis.baseline_fit`.
-- **The simulator and analysis depend on hardware config.**
-  `synthetic/forward.py`, `synthetic/waveform.py`, `learning/lit_module.py`,
-  `datasets.py`, `ensemble.py` and `calibrate_sim.py` import
-  `redpitaya.redpitaya_config` for sample-rate and buffer constants.
-  `waveform.py` <-> `RedPitayaConfig` is the cycle the spec's I1 calls out.
-- **Kinematics live in the coil driver.** `integrate_velocity` and
-  `derivative_displacement` are imported from `synthetic.coil_driver` by
-  `metrics`, `lit_module`, `evaluate`, `ensemble`, `datasets`, `baseline_fit`,
-  `gain_sweep`, `delay_check` and `benchmark_loading`.
-- **Metrics depend on models.** `analysis/metrics.py` imports
-  `models.factory`.
-- **The data layer depends on an estimator.** `analysis/datasets.py`
-  imports `baseline_fit`.
-- **Acquisition lives in analysis.** `analysis/generate_data.py` drives
-  `redpitaya.manager`.
-- **Two modules do many jobs.** `baseline_fit.py` (1876 lines) and
-  `gain_sweep.py` (1376) each combine an estimator, a sweep and a CLI.
-- **Artifacts live inside the package.** These include
-  `smi/analysis/data/*.json`, `smi/analysis/experiments/*.yaml`,
-  `smi/analysis/models/checkpoints/` and `smi/analysis/models/configs/`.
+- [x] **R0. Design spec.** Target packages and import direction fixed, enforced
+  by `[tool.importlinter]` contracts (including "only `smi.acquisition` imports
+  `stemlab`", written over all of `smi` so a new module cannot slip through).
+- [x] **R1. Shared core.** `smi.core` holds acquisition config, kinematics and
+  metrics; the simulator receives acquisition config instead of importing the
+  hardware config.
+- [x] **R2. Data layer.** `smi.data` with one HDF5 `schema` module; datasets no
+  longer import the analytic decode.
+- [x] **R3. Split `analysis/`.** `estimators`, `learning`, `experiments` and
+  `theory`; `baseline_fit` and `gain_sweep` split into estimator, sweep and CLI.
+- [x] **R4. Scripts and artifacts out of the package.** CLIs in `scripts/`;
+  `configs/`, `results/`, `data/frozen/`, `checkpoints/` at the repo root,
+  resolved through `smi.core.paths`; Snakefile and figure scripts follow.
+- [x] **R5. Dead paths decided.** Ray Tune, the vmap ensemble, VICReg and the
+  `torch.compile` branch deleted; `LitModule` now requires `target`;
+  `run_training.bat` is gone.
+- **Constraint held: behavior-preserving.** Suite green, grid fingerprints
+  unchanged, `synthetic_values.json` byte-identical.
 
-Tasks:
+Carried-over cleanup:
 
-- [ ] **R0. Design spec** (`superpowers:brainstorming`; architectural). Fix
-  the target packages and the allowed import direction between them, and
-  enforce that direction with a test (e.g. `import-linter` contracts) so it
-  cannot erode again.
-  - A starting proposal, not a decision: `smi/core` (acquisition constants,
-    units, kinematics, metrics), `smi/acquisition` (Red Pitaya, until I1
-    moves it out), `smi/data` (HDF5 schema, datasets, datamodule, frozen
-    sets, features and normalization), `smi/theory` (simulator and bounds),
-    `smi/estimators` (analytic decode, gain sweep, oracle fit, tabular
-    baselines), `smi/learning` (models, Lightning modules, training
-    interface), `smi/experiments` (runner, evaluate, results artifact).
-  - Settle also where grids, configs, results and checkpoints live, and
-    which modules are scripts rather than library code (`inspect_data`,
-    `delay_check`, `benchmark_loading`, `q1_binned`, `calibrate_sim`).
-- [ ] **R1. Shared core first.** Move acquisition constants out of
-  `RedPitayaConfig` into a config the simulator receives rather than imports,
-  and kinematics out of `CoilDriver`. Break `synthetic -> analysis` and
-  `metrics -> models`.
-- [ ] **R2. Data layer.** Datasets, datamodule, frozen sets, features and
-  normalization go behind one HDF5 schema module. Decouple datasets from the
-  analytic decode.
-- [ ] **R3. Split `analysis/`** into estimators, learning, experiments and
-  theory, per R0. Break `baseline_fit.py` and `gain_sweep.py` into estimator,
-  sweep and CLI.
-- [ ] **R4. Scripts and artifacts out of the package.** Move CLIs to an
-  entry-point or `scripts/` layer, and data, grids and checkpoints to
-  top-level data directories. Update the report's Snakefile inputs.
-- [ ] **R5. Decide dead or unused paths, then delete or keep deliberately:**
-  - Ray Tune and the vmap ensemble (`tune_search.py`, `ensemble.py`,
-    `main.py --search`; about 1k lines, used by no reported result);
-  - the `torch.compile` branch, which never executes (gated on
-    `sys.version_info < (3, 12)` while `requires-python >= 3.12`);
-  - `LitModule`'s silent fallback to `target='velocity'` when the key is
-    missing (a hidden default);
-  - `run_training.bat`.
-- **Constraint for R1-R5: behavior-preserving.** The full suite stays
-  green, `tests/golden/grid_fingerprints.json` stays unchanged (resume must
-  still match every recorded cell), and `report/build/synthetic_values.json`
-  stays byte-identical. Each phase is reviewed before the next.
+- [ ] `notebooks/causal_inductive_bias_test.ipynb` imports a nonexistent
+  `models.utcn` (it predates the restructure); fix or delete.
+- [ ] `configs/models/{matched,displacement}/` keep a stale `data_dir`
+  (`./analysis/data`) because it is hashed into run fingerprints; callers pass
+  `dataset_path` explicitly. Retire it together with a fingerprint-golden
+  regeneration.
+- [ ] The `scripts/` wrappers over library `main`s (`run_baselines`,
+  `gain_sweep`, ...) leave argument parsing in the library because tests call
+  those `main`s; move it if that coupling stops being useful.
 
 ---
 
 ## 2. Next: acquisition and data handling (spec I1)
 
-- [ ] **Red Pitaya AWG and acquisition API as its own repo.** It sends an
+- [ ] **Red Pitaya AWG and acquisition API as its own repo.** The seam is
+  built: `packages/redpitaya` (`stemlab`) is standalone and SMI's side is
+  `smi.acquisition`; what remains is moving it to its own repo. It sends an
   arbitrary sample array on a channel at a sample rate with a trigger
   configuration, acquires N samples on channels, daisy-chains boards, and
   returns arrays plus metadata. It knows nothing about SMI waveforms ("one
@@ -154,7 +120,7 @@ Phases:
   -> trajectory posterior, settled by coverage, CRPS and posterior-mean RMSE
   against a deep ensemble.
 - [ ] **P6: unblinding.**
-  - Calibrate the simulator on real data (`smi/analysis/calibrate_sim.py`).
+  - Calibrate the simulator on real data (`scripts/calibrate_sim.py`).
   - Score the pre-registered predictions (commits d2b5fbc, c4707de) against
     the real acquisitions.
   - Resolve the CoilDriver drive-scale quirk (the code gives ~350x the
