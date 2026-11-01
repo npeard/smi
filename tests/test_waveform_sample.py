@@ -12,7 +12,7 @@ import pytest
 import torch
 from plot_waveforms import calculate_fft
 
-from smi.core.acquisition import STEMLAB_125_14
+from smi.core.acquisition import NOMINAL_ACQ_DECIMATION, STEMLAB_125_14
 from smi.theory.waveform import Waveform
 from tests._dtype_guard import no_float64
 
@@ -41,7 +41,7 @@ def test_waveform_sample_spectrum_consistency():
             start_freq=test_start_freq,
             end_freq=test_end_freq,
             gen_dec=8192,
-            acq_dec=256,
+            acq_dec=NOMINAL_ACQ_DECIMATION,
         )
 
         # Generate a random waveform
@@ -74,7 +74,7 @@ def test_waveform_sample_reproducibility():
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
     )
 
     # Generate two consecutive waveforms
@@ -97,7 +97,7 @@ def test_waveform_frequency_range():
         start_freq=start_freq,
         end_freq=end_freq,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
     )
 
     # Generate a waveform
@@ -136,7 +136,7 @@ def test_waveform_output_range():
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
     )
 
     # Generate multiple waveforms and check their ranges
@@ -155,7 +155,7 @@ def test_waveform_length_consistency():
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
     )
 
     # Generate multiple waveforms and check their lengths
@@ -174,7 +174,7 @@ def test_waveform_reconstruction():
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
     )
 
     # Generate a waveform
@@ -220,7 +220,7 @@ def test_waveform_statistics():
         start_freq=start_freq,
         end_freq=end_freq,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
         seed=20250910,
     )
 
@@ -358,7 +358,7 @@ def test_waveform_ifft_real_valued():
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
     )
 
     # Test with multiple samples
@@ -400,7 +400,7 @@ def test_waveform_spectrum_hermitian():
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
     )
 
     # Test with multiple samples

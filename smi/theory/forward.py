@@ -6,11 +6,18 @@ import json
 import logging
 import math
 import statistics
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields
+from typing import Any
 
 import torch
 
-from smi.core.acquisition import BOARDS, STEMLAB_125_14, AcquisitionConfig
+from smi.core.acquisition import (
+    NOMINAL_ACQ_DECIMATION,
+    STEMLAB_125_14,
+    AcquisitionConfig,
+    parse_acquisition,
+)
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.waveform import Waveform
 
@@ -93,8 +100,6 @@ logger = logging.getLogger(__name__)
 # nominal is a stated guess and whose sweep (NOMINAL_SWEEPS) is deliberately
 # wide.
 
-# RedPitayaManager acquires at acq_dec = 256 (manager.py settings).
-NOMINAL_ACQ_DECIMATION = 256
 # RedPitayaManager's default drive band, start_freq / end_freq (manager.py).
 NOMINAL_DRIVE_BAND_HZ = (1.0, 1000.0)
 # Weak-feedback strength: plan nominal, inside the weak regime C < 1.
@@ -228,13 +233,6 @@ class SimConfig:
     adc_full_scale: float
 
     def _coerce(self) -> None:
-        # YAML names a board; checkpoints and frozen sets store asdict() output.
-        if isinstance(self.acquisition, str):
-            object.__setattr__(self, 'acquisition', BOARDS[self.acquisition])
-        elif isinstance(self.acquisition, dict):
-            object.__setattr__(
-                self, 'acquisition', AcquisitionConfig(**self.acquisition)
-            )
         # YAML gives lists and ints; the frozen config's hash must not depend on
         # the spelling (json writes 1 vs 1.0), so coerce to tuples of floats.
         for name in ('wavelengths_um', 'visibility_range', 'dc_offset_range'):
@@ -310,6 +308,15 @@ class SimConfig:
         """Stable sha1 of ``identity_fields`` (keys frozen test sets)."""
         blob = json.dumps(self.identity_fields(), sort_keys=True)
         return hashlib.sha1(blob.encode(), usedforsecurity=False).hexdigest()
+
+    @classmethod
+    def from_dict(cls, fields: Mapping[str, Any]) -> SimConfig:
+        """Build from YAML, checkpoint or frozen-set JSON, where ``acquisition``
+        is a board name or ``asdict()`` output; the constructor takes only an
+        ``AcquisitionConfig``.
+        """
+        acquisition = parse_acquisition(fields['acquisition'])
+        return cls(**{**fields, 'acquisition': acquisition})
 
     @classmethod
     def nominal(

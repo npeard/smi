@@ -386,7 +386,7 @@ def test_simconfig_requires_acquisition():
 
 def test_simconfig_accepts_a_board_name_and_hash_guards_other_boards():
     sim = dataclasses.asdict(michelson_sim())
-    named = SimConfig(**{**sim, 'acquisition': 'STEMLAB_125_14'})
+    named = SimConfig.from_dict({**sim, 'acquisition': 'STEMLAB_125_14'})
     assert named == michelson_sim()
     other = dataclasses.replace(
         michelson_sim(),

@@ -137,7 +137,7 @@ def test_config_loads_and_follows_training_rules(path):
     assert synthetic['use_synthetic_training'] is True
     assert synthetic['train_crop_length'] == _expected_crop(config.model_config)
     # SimConfig has no defaults, so constructing it proves the block is complete.
-    sim = SimConfig(**synthetic['sim'])
+    sim = SimConfig.from_dict(synthetic['sim'])
     assert len(sim.wavelengths_um) == config.model_config['in_channels']
     assert create_model(config.model_config) is not None
 

@@ -2,6 +2,7 @@
 take as a required argument.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 
@@ -32,3 +33,22 @@ STEMLAB_125_14 = AcquisitionConfig(
 
 # Names configuration files (YAML, CLI flags) may use for a board.
 BOARDS = {'STEMLAB_125_14': STEMLAB_125_14}
+
+# RedPitayaManager acquires at acq_dec = 256 (manager.py settings), and every
+# file written before the sample_rate attribute existed was acquired so.
+NOMINAL_ACQ_DECIMATION = 256
+
+
+def parse_acquisition(
+    value: str | Mapping[str, float] | AcquisitionConfig,
+) -> AcquisitionConfig:
+    """Board from its config spelling: a BOARDS name, a field dict, or itself.
+
+    YAML names a board; checkpoints and frozen sets store ``asdict()`` output.
+    Called where those enter the program, so downstream types stay strict.
+    """
+    if isinstance(value, AcquisitionConfig):
+        return value
+    if isinstance(value, str):
+        return BOARDS[value]
+    return AcquisitionConfig(**value)

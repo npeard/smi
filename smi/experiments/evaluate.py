@@ -418,7 +418,7 @@ def evaluate(
 
         attrs = dict(f.attrs)
         sim_hash = (
-            SimConfig(**json.loads(attrs['sim_config'])).hash()
+            SimConfig.from_dict(json.loads(attrs['sim_config'])).hash()
             if 'sim_config' in attrs
             else None
         )

@@ -15,7 +15,7 @@ from matplotlib.figure import Figure
 from numpy.fft import fft, fftfreq
 from scipy import stats
 
-from smi.core.acquisition import STEMLAB_125_14
+from smi.core.acquisition import NOMINAL_ACQ_DECIMATION, STEMLAB_125_14
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.waveform import Waveform
 
@@ -390,7 +390,7 @@ if __name__ == '__main__':
         start_freq=1,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
     )
 
     # Create a coil driver with default calibration parameters

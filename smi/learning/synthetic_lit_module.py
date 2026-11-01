@@ -154,7 +154,7 @@ class SyntheticLitModule(LitModule):
             module never actually restored fail loudly). Not saved.
         """
         # _make_model runs inside LitModule.__init__ and needs both.
-        self.sim_config = SimConfig(**sim)
+        self.sim_config = SimConfig.from_dict(sim)
         self._restoring_checkpoint = restoring_checkpoint
         if len(self.sim_config.wavelengths_um) != model_hparams['in_channels']:
             raise ValueError(

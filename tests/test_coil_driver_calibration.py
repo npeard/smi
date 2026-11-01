@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from plot_waveforms import calculate_fft
 
-from smi.core.acquisition import STEMLAB_125_14
+from smi.core.acquisition import NOMINAL_ACQ_DECIMATION, STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement, integrate_velocity
 from smi.theory import coil_driver as coil_driver_module
 from smi.theory.coil_driver import MS_PER_S, CoilDriver
@@ -28,7 +28,7 @@ def test_spectra_consistency():
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
         seed=0,
     )
 
@@ -73,7 +73,7 @@ def test_reconstructed_waveforms():
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
         seed=0,
     )
 
@@ -175,7 +175,7 @@ def test_displacement_velocity_relationship():
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
         seed=0,
     )
 
@@ -222,7 +222,7 @@ def test_integrated_velocity_and_derivative_displacement():
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
         seed=0,
     )
 
@@ -301,7 +301,7 @@ def test_coil_driver_sample_spectrum_hermitian(monkeypatch):
         start_freq=10,
         end_freq=1000,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
         seed=0,
     )
 
@@ -368,7 +368,7 @@ def test_gain_normalization():
         start_freq=1,
         end_freq=100,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
         seed=0,
     )
 

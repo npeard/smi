@@ -8,7 +8,7 @@ from stemlab.testing import FakeTransport
 from smi.acquisition import shots
 from smi.acquisition.rig import PRIMARY, acquisition_config
 from smi.acquisition.shots import live_view, run_shots
-from smi.core.acquisition import STEMLAB_125_14
+from smi.core.acquisition import NOMINAL_ACQ_DECIMATION, STEMLAB_125_14
 from smi.data.schema import CHANNEL_KEYS, SAMPLE_RATE_ATTR, read_shots
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.waveform import Waveform
@@ -48,7 +48,10 @@ def test_run_shots_writes_every_shot(tmp_path, waveform):
     for values in arrays.values():
         assert values.shape == (3, STEMLAB_125_14.buffer_size)
     np.testing.assert_allclose(arrays['RP1_CH1'][0], BUFFER, atol=1e-6)
-    assert attrs[SAMPLE_RATE_ATTR] == STEMLAB_125_14.sample_rate_dec1_hz / 256
+    assert (
+        attrs[SAMPLE_RATE_ATTR]
+        == STEMLAB_125_14.sample_rate_dec1_hz / NOMINAL_ACQ_DECIMATION
+    )
     assert 'creation_time' in attrs
     # The drive loads on board 0 only, and the rig is reset (output off) at the end.
     assert any(c.startswith('SOUR1:') for c in manager.devices[0].sent)

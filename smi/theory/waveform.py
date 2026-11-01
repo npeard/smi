@@ -9,7 +9,7 @@ import torch
 from numpy.fft import fft, fftfreq, ifft
 from numpy.random import default_rng
 
-from smi.core.acquisition import AcquisitionConfig
+from smi.core.acquisition import NOMINAL_ACQ_DECIMATION, AcquisitionConfig
 
 
 class Waveform:
@@ -28,7 +28,7 @@ class Waveform:
         end_freq: float,
         acquisition: AcquisitionConfig,
         gen_dec: int = 8192,
-        acq_dec: int = 256,
+        acq_dec: int = NOMINAL_ACQ_DECIMATION,
         allowed_freqs: list[float] | None = None,
         seed: int | None = None,
     ):
@@ -39,7 +39,7 @@ class Waveform:
             end_freq: The upper bound of the valid frequency range (Hz)
             acquisition: Board whose buffer size and base sample rate set the grid
             gen_dec: Decimation for generation (default: 8192)
-            acq_dec: Decimation for acquisition (default: 256)
+            acq_dec: Decimation for acquisition (default: NOMINAL_ACQ_DECIMATION)
             allowed_freqs: List of allowed frequencies to use (Hz), if None, all
             frequencies in range are allowed
         """

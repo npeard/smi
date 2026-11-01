@@ -109,7 +109,7 @@ def test_schema_attrs_and_layout(tmp_path):
         assert f.attrs['seed'] == 11
         assert f.attrs['simulator_version'] == SIMULATOR_VERSION
         np.testing.assert_array_equal(f.attrs['pd_wavelengths_um'], WAVELENGTHS_UM)
-        assert SimConfig(**json.loads(f.attrs['sim_config'])) == cfg
+        assert SimConfig.from_dict(json.loads(f.attrs['sim_config'])) == cfg
         length = f['RP1_CH1'].shape[1]
         for key in ('RP1_CH1', 'RP1_CH2', 'RP2_CH1', 'RP2_CH2', 'velocity'):
             ds = f[key]

@@ -13,7 +13,7 @@ from typing import Any
 import h5py
 import numpy as np
 
-from smi.core.acquisition import STEMLAB_125_14
+from smi.core.acquisition import NOMINAL_ACQ_DECIMATION, STEMLAB_125_14
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,9 @@ NUM_SAMPLES_ATTR = 'num_samples'
 # Files written before the ``sample_rate`` attribute existed were all acquired
 # on the STEMlab 125-14 at decimation 256. This is the one place that fallback
 # is spelled; files that carry the attribute never reach it.
-LEGACY_SAMPLE_RATE_HZ: float = STEMLAB_125_14.sample_rate_dec1_hz / 256
+LEGACY_SAMPLE_RATE_HZ: float = (
+    STEMLAB_125_14.sample_rate_dec1_hz / NOMINAL_ACQ_DECIMATION
+)
 
 
 def read_sample_rate(attrs: Mapping[str, Any]) -> float:

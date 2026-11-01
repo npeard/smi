@@ -2,10 +2,14 @@ import numpy as np
 import pytest
 import torch
 
-from smi.core.acquisition import STEMLAB_125_14, AcquisitionConfig
+from smi.core.acquisition import (
+    NOMINAL_ACQ_DECIMATION,
+    STEMLAB_125_14,
+    AcquisitionConfig,
+)
 from smi.core.kinematics import derivative_displacement, integrate_velocity
 
-SAMPLE_RATE = 125e6 / 256
+SAMPLE_RATE = STEMLAB_125_14.sample_rate_dec1_hz / NOMINAL_ACQ_DECIMATION
 
 
 def _sine_velocity() -> np.ndarray:
