@@ -8,9 +8,17 @@ Usage::
 import argparse
 import logging
 
-from smi.acquisition.rig import HOSTS, PRIMARY, SHOT_DELAY_S, SHOT_TIMEOUT_S, connect
+from stemlab import STEMLAB_125_14_SPEC
+
+from smi.acquisition.rig import (
+    HOSTS,
+    PRIMARY,
+    SHOT_DELAY_S,
+    SHOT_TIMEOUT_S,
+    acquisition_config,
+    connect,
+)
 from smi.acquisition.shots import run_shots
-from smi.core.acquisition import STEMLAB_125_14
 from smi.core.paths import DATA_DIR
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.waveform import Waveform
@@ -53,6 +61,8 @@ def main() -> None:
     logger.info(f'Acquiring {args.num_samples} shots into {path}')
 
     manager = connect(HOSTS)
+    # The drive timing comes from the board stemlab drives, not a copy of it.
+    acquisition = acquisition_config(STEMLAB_125_14_SPEC)
     try:
         for board in range(len(HOSTS)):
             manager.blink_led(board, led=0, n_blinks=3, period_s=0.5)
@@ -60,7 +70,7 @@ def main() -> None:
         manager.configure_daisy_chain(PRIMARY)
         run_shots(
             manager,
-            Waveform(start_freq=1, end_freq=1000, acquisition=STEMLAB_125_14),
+            Waveform(start_freq=1, end_freq=1000, acquisition=acquisition),
             CoilDriver(),
             args.num_samples,
             path,
