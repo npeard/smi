@@ -67,7 +67,7 @@ MATCHED_DIR = ANALYSIS_DIR / 'models' / 'configs' / 'matched'
 FREE_SPACE_H5 = DATA_DIR / 'free-space-synchro_10k.h5'
 MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
 
-# Baseline results, written by smi.analysis.baseline_fit and committed. Figures
+# Baseline results, written by smi.experiments.baselines and committed. Figures
 # read this rather than recomputing: method 2's Viterbi decode is ~20 minutes
 # per acquisition on a GPU, which is not work a document build should be
 # repeating, and reading a fixed artifact is what makes the figures

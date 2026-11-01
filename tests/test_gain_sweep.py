@@ -18,7 +18,8 @@ import h5py
 import numpy as np
 import pytest
 
-from smi.analysis.gain_sweep import (
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
+from smi.estimators.gain_sweep import (
     DelayCurve,
     GainSweep,
     delay_sweep,
@@ -26,12 +27,10 @@ from smi.analysis.gain_sweep import (
     gain_grid,
     peak_fringe_rate_hz,
     per_shot_best_gain,
-    run_gain_sweep,
-    sweep_dataset,
     sweep_gain,
     unit_gain_displacement,
 )
-from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
+from smi.experiments.gain_sweep import run_gain_sweep, sweep_dataset
 from smi.theory.calib_params import CalibrationParameters
 from smi.theory.coil_driver import MS_PER_S, CoilDriver
 
@@ -631,7 +630,7 @@ class TestPerShotBestGain:
         )
         payload = json.loads(json.dumps(per_shot.to_dict()))
 
-        for channel in PD_WAVELENGTHS_UM:
+        for channel in per_shot.channels:
             entry = payload['channels'][channel]
             assert sum(entry['best_gain_counts'].values()) == 6
             assert sum(int(b['n']) for b in entry['binned_r_squared']) == 6
@@ -829,7 +828,7 @@ class TestInteriorPeakSurvivesAPlateau:
         """
         assert ARTIFACT_PATH.exists(), (
             f'{ARTIFACT_PATH} is missing -- it is version-controlled evidence, '
-            f'regenerate with `python -m smi.analysis.gain_sweep`'
+            f'regenerate with `python -m smi.experiments.gain_sweep`'
         )
         payload = json.loads(ARTIFACT_PATH.read_text(encoding='utf-8'))
         seen = 0
@@ -986,7 +985,7 @@ class TestPerShotGainsAreStoredAsAHistogram:
         )
         payload = json.loads(json.dumps(per_shot.to_dict()))
 
-        for channel in PD_WAVELENGTHS_UM:
+        for channel in per_shot.channels:
             counts = payload['channels'][channel]['best_gain_counts']
             assert sum(counts.values()) == 6
             # Keys are gains from the grid, as strings for JSON.

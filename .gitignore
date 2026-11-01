@@ -147,12 +147,12 @@ dmypy.json
 # ...but the baseline results are a few KB of computed numbers, not data. A
 # report figure has to read them, and recomputing takes ~25 minutes on a GPU,
 # so they are version-controlled deliberately. Regenerate with
-# `python -m smi.analysis.baseline_fit`.
+# `python -m smi.experiments.baselines`.
 !smi/analysis/data/baseline_results.json
 
 # Same reasoning for the gain sweep: it is the committed evidence for the
 # coil-driver gain finding, which previously lived only in a session
-# transcript. Regenerate with `python -m smi.analysis.gain_sweep` (~25 min on
+# transcript. Regenerate with `python -m smi.experiments.gain_sweep` (~25 min on
 # CPU at N=1000). Kept separate from baseline_results.json so a gain question
 # never triggers that file's ~40 min method-2 GPU decode.
 !smi/analysis/data/gain_sweep_results.json

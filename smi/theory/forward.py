@@ -28,7 +28,7 @@ from smi.theory.waveform import Waveform
 # sample_trajectory), not a purely physical analog gain.
 NOMINAL_DRIVE_GAIN = 0.002454
 
-# Evaluator limit for baseline_fit.inverse_fit(max_speed_um_per_ms=...):
+# Evaluator limit for smi.estimators.inverse.inverse_fit(max_speed_um_per_ms=...):
 # measured 99.9th percentile |v| at drive_gain = 4 x NOMINAL_DRIVE_GAIN (the
 # top of the sweep) over the same 256 shots, times a margin of 1.5, rounded up.
 # Measured 10.87 um/ms, x1.5 = 16.30, rounded up.

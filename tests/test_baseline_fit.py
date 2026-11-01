@@ -13,22 +13,21 @@ import numpy as np
 import pytest
 import torch
 
-from smi.analysis.baseline_fit import (
-    DRIVE_KEY,
-    PD_WAVELENGTHS_UM,
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
+from smi.estimators.inverse import inverse_fit
+from smi.estimators.phase_fit import (
     envelope_forward_model_residual,
-    evaluate_dataset,
     fit_phase_amplitude,
     fit_window_basis,
     forward_model_residual,
     fringe_basis,
     fringe_matched_window,
-    inverse_fit,
     joint_gain_fit,
     measure_phase_drift,
     window_fringe_coefficients,
     windowed_forward_model_residual,
 )
+from smi.experiments.baselines import evaluate_dataset
 from smi.theory.coil_driver import MS_PER_S
 from smi.theory.interferometers import MichelsonInterferometer
 

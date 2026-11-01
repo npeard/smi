@@ -4,9 +4,9 @@
 // Build:  pixi run report-only  (or, from report/: snakemake build/report.pdf)
 //
 // Every number in this document comes from smi/analysis/data/baseline_results.json
-// (method 1 and method 2, written by smi.analysis.baseline_fit), from
+// (method 1 and method 2, written by smi.experiments.baselines), from
 // smi/analysis/data/gain_sweep_results.json (the gain, delay and fringe-rate
-// sweeps, written by smi.analysis.gain_sweep), or from
+// sweeps, written by smi.experiments.gain_sweep), or from
 // smi/analysis/data/learned_results.json (the trained models, written by
 // smi.analysis.run_baseline_sweep). Nothing here is estimated or
 // recalled: if a claim needs a number the artifacts do not contain, the claim
@@ -339,7 +339,7 @@ upper clip the opposite failure appears -- four windows in a record leave the
 within-shot phase drift the windowing exists to absorb largely unabsorbed, and
 both curves fall toward zero together. The clip brackets the range where the
 gap is worth reading. These window-sweep numbers are recorded in
-`smi/analysis/baseline_fit.py` beside the clip constants they justify, rather
+`smi/estimators/phase_fit.py` beside the clip constants they justify, rather
 than in the results artifacts.
 
 === Per-channel caveats
@@ -558,7 +558,7 @@ amplitude and phase are held fixed.
 The fringe phase and the fringe contrast both wander within a shot, and those
 are the two quantities the global fit holds constant. Within-shot drift of 1
 to 2.7 fringes has been measured on this data and is recorded in
-`smi/analysis/baseline_fit.py`; that magnitude lives there rather than in the
+`smi/estimators/phase_fit.py`; that magnitude lives there rather than in the
 results artifacts, so this document cites it and does not tabulate it. For
 scale, at the median true velocity RMS of 0.373 and 0.377 um/ms a
 1024-sample window sweeps 2.3 to 3.1 fringes depending on wavelength, and the

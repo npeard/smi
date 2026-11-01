@@ -50,7 +50,7 @@ from _figcommon import (
     save,
 )
 
-# Bin keys as written by baseline_fit, mapped to an axis label. Kept explicit
+# Bin keys as written by binned_by_amplitude, mapped to an axis label. Kept explicit
 # rather than taken from the artifact so the axis reads in microns and the
 # script fails loudly if the binning ever changes underneath it.
 BIN_LABELS: dict[str, str] = {

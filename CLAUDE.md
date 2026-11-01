@@ -156,6 +156,14 @@ Inside `smi/`:
   Must not
   import `smi.analysis` or `smi.redpitaya`. Layering is enforced by
   `[tool.importlinter]` via `tests/test_import_contracts.py`.
+- `estimators/` - array-in/array-out classical estimators: `phase_fit`
+  (method 1 forward-model fits, windowed/envelope/joint-gain variants, phase
+  drift), `inverse` (method 2 Viterbi decode), `gain_sweep` (gain, delay and
+  fringe-rate curves), `tabular` (LightGBM/Ridge). May import only `smi.core`
+  and `smi.theory`; never sees a file or a `FeatureRegistry`.
+- `experiments/` - dataset-level runs that read HDF5, call estimators and
+  write the committed artifacts (`baselines`, `gain_sweep`); may import
+  anything in `smi`.
 - `redpitaya/` - hardware control (manager, scpi, config); was
   `acquisition/redpitaya/`. Imports from `smi.theory`; import its manager via
   `from smi.redpitaya.manager import RedPitayaManager` (not re-exported from the

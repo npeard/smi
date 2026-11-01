@@ -36,7 +36,6 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from smi.analysis.baseline_fit import inverse_fit
 from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import RunRecord
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
@@ -56,6 +55,7 @@ from smi.data.schema import (
     VELOCITY_KEY,
     read_sample_rate,
 )
+from smi.estimators.inverse import inverse_fit
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.forward import MAX_SPEED_UM_PER_MS, SimConfig
 
@@ -69,7 +69,7 @@ N_BINS = 10
 # than float32 rounding, tighter than the 0.6748 vs 0.675 laser spelling.
 WAVELENGTH_TOL_UM = 1e-3
 # Margin on the true excursion for the inverse_fit search grid; the recipe
-# baseline_fit's own evaluation uses.
+# smi.experiments.baselines' own evaluation uses.
 DISPLACEMENT_LIMIT_MARGIN = 1.15
 PRECISION = '32-true'
 
@@ -171,7 +171,7 @@ class CheckpointEstimator:
 
 
 class InverseFitEstimator:
-    """``baseline_fit.inverse_fit`` as an offline oracle decoder.
+    """``inverse.inverse_fit`` as an offline oracle decoder.
 
     It is told the true excursion (``displacement_limit_um``) and a speed bound
     (:data:`MAX_SPEED_UM_PER_MS`), which a deployed estimator would not know;

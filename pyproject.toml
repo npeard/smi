@@ -253,7 +253,7 @@ pytest-benchmark = "*"
 import-linter = "*"
 coverage = { version = "*", extras = ["toml"] }
 
-# Non-torch reference models (smi/analysis/baselines/). Included in every
+# Non-torch reference models (smi/estimators/tabular.py). Included in every
 # test-running env, so CI exercises the baselines the TCN is
 # measured against.
 #
@@ -409,16 +409,22 @@ root_packages = ["smi"]
 name = "smi.core is the bottom layer"
 type = "forbidden"
 source_modules = ["smi.core"]
-forbidden_modules = ["smi.analysis", "smi.theory", "smi.data", "smi.redpitaya"]
+forbidden_modules = ["smi.analysis", "smi.theory", "smi.data", "smi.estimators", "smi.experiments", "smi.redpitaya"]
 
 [[tool.importlinter.contracts]]
 name = "smi.theory depends only on smi.core"
 type = "forbidden"
 source_modules = ["smi.theory"]
-forbidden_modules = ["smi.analysis", "smi.data", "smi.redpitaya"]
+forbidden_modules = ["smi.analysis", "smi.data", "smi.estimators", "smi.experiments", "smi.redpitaya"]
 
 [[tool.importlinter.contracts]]
 name = "smi.data depends only on smi.core and smi.theory"
 type = "forbidden"
 source_modules = ["smi.data"]
-forbidden_modules = ["smi.analysis", "smi.redpitaya", "smi.main"]
+forbidden_modules = ["smi.analysis", "smi.estimators", "smi.experiments", "smi.redpitaya", "smi.main"]
+
+[[tool.importlinter.contracts]]
+name = "smi.estimators depends only on smi.core and smi.theory"
+type = "forbidden"
+source_modules = ["smi.estimators"]
+forbidden_modules = ["smi.analysis", "smi.data", "smi.experiments", "smi.redpitaya", "smi.main"]

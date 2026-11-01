@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from smi.analysis.baselines.tabular import (
+from smi.estimators.tabular import (
     LIGHTGBM_AVAILABLE,
     fit_lightgbm,
     fit_ridge,
@@ -84,7 +84,7 @@ def test_torch_and_the_tabular_stack_coexist():
     """
     import torch  # noqa: PLC0415 -- import order is the thing under test
 
-    from smi.analysis.baselines import tabular  # noqa: F401, PLC0415
+    from smi.estimators import tabular  # noqa: F401, PLC0415
 
     rng = np.random.default_rng(0)
     corr = np.corrcoef(rng.standard_normal(4096), rng.standard_normal(4096))[0, 1]

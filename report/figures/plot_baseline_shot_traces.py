@@ -79,7 +79,8 @@ from _figcommon import (
     time_axis,
 )
 
-from smi.analysis.baseline_fit import (
+from smi.data.schema import DRIVE_KEY, SAMPLE_RATE_ATTR
+from smi.estimators.phase_fit import (
     DEFAULT_FRINGES_PER_WINDOW,
     fit_phase_amplitude,
     fringe_matched_window,
@@ -87,7 +88,6 @@ from smi.analysis.baseline_fit import (
     scrambled_theta_control,
     windowed_forward_model_residual,
 )
-from smi.data.schema import DRIVE_KEY, SAMPLE_RATE_ATTR
 from smi.theory.coil_driver import CoilDriver
 
 # Matches the artifact's method-1 shot count, so the percentiles below are

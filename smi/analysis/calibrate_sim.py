@@ -27,7 +27,7 @@ Knob by knob (None in the output means "no estimate", never zero):
   fringe's random-walk phase skirt predicted from the fitted phase drift and
   fringe power (it is comparable to the noise there at the nominal drift).
 * ``phase_drift_rad_per_sqrt_s``: increments of the windowed fringe phase
-  (``baseline_fit.window_fringe_coefficients``, the fit inside
+  (``phase_fit.window_fringe_coefficients``, the fit inside
   ``measure_phase_drift``) between adjacent windows: 2/3 D Delta for a random
   walk averaged over windows of length Delta, read through
   E[cos dphi] = exp(-var / 2) so wrapping does not bias it. Increments rather
@@ -84,10 +84,10 @@ import numpy as np
 import torch
 from scipy.signal import periodogram
 
-from smi.analysis.baseline_fit import fit_window_basis, window_fringe_coefficients
 from smi.core.acquisition import BOARDS, AcquisitionConfig
 from smi.data.datasets import file_pd_channels
 from smi.data.schema import DRIVE_KEY, SAMPLE_RATE_ATTR
+from smi.estimators.phase_fit import fit_window_basis, window_fringe_coefficients
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.forward import (
     NOMINAL_DRIVE_BAND_HZ,
