@@ -8,7 +8,7 @@
 // results/gain_sweep_results.json (the gain, delay and fringe-rate
 // sweeps, written by smi.experiments.gain_sweep), or from
 // results/learned_results.json (the trained models, written by
-// smi.experiments.run_baseline_sweep). Nothing here is estimated or
+// scripts/run_baseline_sweep.py). Nothing here is estimated or
 // recalled: if a claim needs a number the artifacts do not contain, the claim
 // does not get made. Figures read the artifacts and recompute nothing.
 //
@@ -1086,7 +1086,7 @@ fit the budget. Those two figures are the measurement, not a quotation: the
 compute side is 19.2 ms per step at batch 16, warmed, with
 `torch.cuda.synchronize()` around the timed region and the median taken over
 ten steps on the same GPU. The loader headroom reported by
-`smi.experiments.benchmark_loading` was measured on a production-size TCN at
+`scripts/benchmark_loading.py` was measured on a production-size TCN at
 batch 32, where training is GPU bound; it does not transfer to 19-44k
 parameters, which is why the sweep had to be measured on its own.
 

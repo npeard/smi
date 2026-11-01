@@ -159,14 +159,15 @@ allow-dict-calls-with-keyword-arguments = true
 # rationale rather than repeated per file -- a new script of this shape
 # belongs in this block, not in a fresh entry with its own justification.
 "report/scripts/*.py" = ["INP001", "T201"]
-"smi/experiments/benchmark_loading.py" = ["T201"]
+"scripts/*.py" = ["INP001"]
+"scripts/benchmark_loading.py" = ["T201"]
 # report/figures/*.py are the same shape, and additionally import their shared
 # helpers through a sys.path insert, which must precede the import it enables
 # (E402).
 "report/figures/*.py" = ["INP001", "E402"]
 "tests/plot_waveforms.py" = ["PLR0915", "E501"]
 "packages/redpitaya/src/stemlab/scpi.py" = ["C901", "PLR0912", "PLR0915", "E501"]
-"smi/experiments/inspect_data.py" = ["PLR0915"]
+"scripts/inspect_data.py" = ["PLR0915"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -293,7 +294,7 @@ spell = "python -m codespell_lib ."
 # hook repo).
 preflight = "preflight"
 # Resumable synthetic-program grid runner: `pixi run experiments <grid.yaml>`.
-experiments = "python -m smi.experiments.runner"
+experiments = "python scripts/run_experiments.py"
 
 [tool.pixi.feature.dev.tasks]
 # pre-commit is a dev-feature dependency, so the task must run in dev.
@@ -317,10 +318,10 @@ all = { depends-on = ["format", "lint", "ascii", "typecheck", "test"] }
 # and the rest of the project is unaffected.
 friction = "python ../Projects/agent-config/scripts/friction.py"
 toolgaps = "python ../Projects/agent-config/scripts/toolgaps.py"
-# Data-loading throughput measurement (smi/experiments/benchmark_loading.py).
+# Data-loading throughput measurement (scripts/benchmark_loading.py).
 # Deliberately not part of `all`: it needs a CUDA GPU and takes minutes, and
 # its answer only changes when the model or the loader path changes.
-benchmark-loading = "python -m smi.experiments.benchmark_loading"
+benchmark-loading = "python scripts/benchmark_loading.py"
 
 [tool.ty.environment]
 python-version = "3.14"
@@ -418,37 +419,40 @@ forbidden_modules = ["smi"]
 name = "smi.core is the bottom layer"
 type = "forbidden"
 source_modules = ["smi.core"]
-forbidden_modules = ["smi.theory", "smi.data", "smi.estimators", "smi.experiments", "smi.acquisition"]
+forbidden_modules = ["smi.theory", "smi.data", "smi.estimators", "smi.learning", "smi.experiments", "smi.acquisition"]
 
 [[tool.importlinter.contracts]]
 name = "smi.theory depends only on smi.core"
 type = "forbidden"
 source_modules = ["smi.theory"]
-forbidden_modules = ["smi.data", "smi.estimators", "smi.experiments", "smi.acquisition"]
+forbidden_modules = ["smi.data", "smi.estimators", "smi.learning", "smi.experiments", "smi.acquisition"]
 
 [[tool.importlinter.contracts]]
 name = "smi.data depends only on smi.core and smi.theory"
 type = "forbidden"
 source_modules = ["smi.data"]
-forbidden_modules = ["smi.estimators", "smi.experiments", "smi.acquisition", "smi.main"]
+forbidden_modules = ["smi.estimators", "smi.learning", "smi.experiments", "smi.acquisition"]
 
 [[tool.importlinter.contracts]]
 name = "smi.estimators depends only on smi.core and smi.theory"
 type = "forbidden"
 source_modules = ["smi.estimators"]
-forbidden_modules = ["smi.data", "smi.experiments", "smi.acquisition", "smi.main"]
+forbidden_modules = ["smi.data", "smi.learning", "smi.experiments", "smi.acquisition"]
 
 [[tool.importlinter.contracts]]
 name = "smi.learning does not import estimators, experiments or hardware"
 type = "forbidden"
 source_modules = ["smi.learning"]
-forbidden_modules = ["smi.estimators", "smi.experiments", "smi.acquisition", "smi.main"]
+forbidden_modules = ["smi.estimators", "smi.experiments", "smi.acquisition"]
 
 [[tool.importlinter.contracts]]
 name = "only smi.acquisition imports stemlab"
 type = "forbidden"
-source_modules = ["smi.core", "smi.theory", "smi.data", "smi.estimators", "smi.learning", "smi.experiments"]
+source_modules = ["smi"]
 forbidden_modules = ["stemlab"]
+# Everything under smi except smi.acquisition, including any module added
+# later: an allow-list of named packages would silently miss one.
+ignore_imports = ["smi.acquisition.** -> stemlab", "smi.acquisition.** -> stemlab.**"]
 
 [[tool.importlinter.contracts]]
 name = "smi.acquisition and smi.experiments do not import each other"

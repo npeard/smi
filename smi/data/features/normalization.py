@@ -10,7 +10,7 @@ the run time, so identical inputs regenerate byte-identical output):
 
 Regenerate with::
 
-    pixi run python -m smi.data.features.compute_norm_stats <dataset.h5>
+    pixi run python scripts/compute_norm_stats.py <dataset.h5>
 """
 
 NORMALIZATION_STATS: dict[str, dict[str, float]] = {

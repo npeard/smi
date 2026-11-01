@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import argparse
 import logging
 from pathlib import Path
 
@@ -261,12 +262,27 @@ def analyze_dataset(dataset_path: str | Path):
     plot_histograms(dataset_path)
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description='Inspect an HDF5 dataset.')
+    parser.add_argument(
+        'dataset',
+        nargs='?',
+        type=Path,
+        default=DATA_DIR / 'free-space-synchro_10k.h5',
+        help='HDF5 dataset to inspect.',
+    )
+    parser.add_argument('--max-samples', type=int, default=10)
+    parser.add_argument(
+        '--analyze',
+        action='store_true',
+        help='Print dataset statistics and plot histograms instead of samples.',
+    )
+    args = parser.parse_args()
+    if args.analyze:
+        analyze_dataset(args.dataset)
+    else:
+        visualize_dataset(args.dataset, max_samples=args.max_samples)
+
+
 if __name__ == '__main__':
-    # Example usage
-    dataset_path = DATA_DIR / 'free-space-synchro_10k.h5'
-
-    # Visualize samples from the dataset
-    visualize_dataset(dataset_path, max_samples=10)
-
-    # Analyze dataset statistics and plot histograms
-    # analyze_dataset(dataset_path)
+    main()

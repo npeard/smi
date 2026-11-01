@@ -58,7 +58,7 @@ conclusion should rest on a ``w0`` number.
 
 Run with::
 
-    pixi run -e dev python -m smi.experiments.benchmark_loading --shots 2000
+    pixi run -e dev python scripts/benchmark_loading.py --shots 2000
 """
 
 from __future__ import annotations

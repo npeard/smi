@@ -224,7 +224,7 @@ class GPUResidentDataset(Dataset):
     HDF5 read, no FFT and no host-to-device copy happens during training.
 
     **This is not a speedup on the current workload.** It was benchmarked
-    (``smi.experiments.benchmark_loading``) against the DataLoader path on an RTX
+    (``scripts/benchmark_loading.py``) against the DataLoader path on an RTX
     3090 Ti with the production-size TCN and came out 1.7% faster over the full
     10k-shot file -- because training is GPU bound, not loader bound. Use it
     when you want to remove worker processes from the picture (debugging,

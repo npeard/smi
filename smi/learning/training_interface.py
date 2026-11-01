@@ -216,6 +216,7 @@ class TrainingInterface:
         experiment_name: str | None = None,
         *,
         extra_callbacks: list[Any] | None = None,
+        dataset_path: str | None = None,
     ):
         """Initialize the training interface.
 
@@ -224,6 +225,8 @@ class TrainingInterface:
             experiment_name: Name for logging and checkpointing
             extra_callbacks: Additional Lightning callbacks to attach to the
                 trainer (e.g. Ray Tune's report callback). Defaults to none.
+            dataset_path: HDF5 file to load, overriding the config's
+                ``data_dir``/``dataset_file`` (see :func:`resolve_data_dir`).
         """
         self.config = config
         self.checkpoint_dir = str(self.CHECKPOINT_DIR)
@@ -236,7 +239,7 @@ class TrainingInterface:
             Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
             # Setup data
-            self.setup_data()
+            self.setup_data(dataset_path=dataset_path)
 
             # Create Lightning module
             self.lightning_module = self.create_lightning_module()

@@ -46,7 +46,7 @@ class VelocityDataModule(lightning_module.LightningDataModule):
     Whether preloading is a speedup depends on model scale. At production
     size (a TCN at batch 32), training is GPU bound and preloading came out
     only 1.7% ahead of an 8-worker DataLoader on an RTX 3090 Ti over the full
-    10k-shot file -- see ``smi.experiments.benchmark_loading``. At the
+    10k-shot file -- see ``scripts/benchmark_loading.py``. At the
     19k-44k-parameter scale used by the learned-baseline sweep, the DataLoader
     path costs about 42 s/epoch against about 9.6 s/epoch of actual compute
     (19.2 ms/step at batch 16, warmed, ``torch.cuda.synchronize()`` around the

@@ -9,7 +9,7 @@ features while the rest of the codebase works in raw physical units.
 
 Usage::
 
-    pixi run python -m smi.data.features.compute_norm_stats \
+    pixi run python scripts/compute_norm_stats.py \
         data/circuit-noise-600.h5
 """
 
@@ -20,12 +20,13 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from smi.core.paths import REPO_ROOT
+from smi.data.features.registry import default_registry
 from smi.data.schema import CHANNEL_KEYS, DRIVE_KEY, read_sample_rate
-
-from .registry import default_registry
 
 logger = logging.getLogger(__name__)
 
+NORMALIZATION_PATH = REPO_ROOT / 'smi' / 'data' / 'features' / 'normalization.py'
 EPSILON = 1e-8
 ALL_CHANNELS = CHANNEL_KEYS
 
@@ -112,7 +113,7 @@ def write_normalization_module(stats: dict[str, dict], out_path: Path) -> None:
         '',
         'Regenerate with::',
         '',
-        '    pixi run python -m smi.data.features.compute_norm_stats <dataset.h5>',
+        '    pixi run python scripts/compute_norm_stats.py <dataset.h5>',
         '"""',
         '',
         'NORMALIZATION_STATS: dict[str, dict[str, float]] = {',
@@ -135,7 +136,7 @@ def main() -> None:
     parser.add_argument('dataset', help='Path to the HDF5 dataset')
     parser.add_argument(
         '--out',
-        default=str(Path(__file__).parent / 'normalization.py'),
+        default=str(NORMALIZATION_PATH),
         help='Output path for the generated normalization module',
     )
     args = parser.parse_args()

@@ -353,7 +353,11 @@ def run_torch_config(
         # separately and constantly with SPLIT_SEED.
         torch.manual_seed(seed)
         interface = TrainingInterface(
-            config=config, experiment_name=f'{name}_{dataset}_s{seed}'
+            config=config,
+            experiment_name=f'{name}_{dataset}_s{seed}',
+            # The configs' data_dir is stale (it is hashed into run
+            # fingerprints), so name the file instead of resolving it.
+            dataset_path=str(DATA_DIR / DATASETS[dataset]),
         )
         if settings.preload:
             # The DataLoader path re-reads HDF5 and recomputes the velocity
