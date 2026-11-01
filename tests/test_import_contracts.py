@@ -3,6 +3,7 @@
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from importlinter.cli import lint_imports
 
@@ -19,17 +20,23 @@ def test_paths_exist():
         assert path.is_dir(), path
 
 
+def _only_python_sources(directory: str, names: list[str]) -> list[str]:
+    # import-linter reads only .py files; skip caches and any bulky artifacts.
+    return [
+        n
+        for n in names
+        if n == '__pycache__'
+        or not (n.endswith('.py') or (Path(directory) / n).is_dir())
+    ]
+
+
 def test_stemlab_contract_catches_a_new_smi_module(tmp_path):
     """A module added anywhere outside smi.acquisition must not reach stemlab.
 
     Linted on a copy so the live tree is never written to. ``python -c`` puts
     its cwd, the copy, first on sys.path, ahead of the installed smi.
     """
-    shutil.copytree(
-        REPO_ROOT / 'smi',
-        tmp_path / 'smi',
-        ignore=shutil.ignore_patterns('__pycache__'),
-    )
+    shutil.copytree(REPO_ROOT / 'smi', tmp_path / 'smi', ignore=_only_python_sources)
     (tmp_path / 'smi' / 'core' / '_stemlab_violation.py').write_text('import stemlab\n')
     shutil.copy(REPO_ROOT / 'pyproject.toml', tmp_path)
     code = (
