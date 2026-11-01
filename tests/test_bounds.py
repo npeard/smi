@@ -104,12 +104,12 @@ def test_k_channel_fi_adds():
 @pytest.mark.parametrize('n_channels', [2, 3, 5])
 def test_spaced_offsets_remove_michelson_blind_spots(n_channels):
     """Equal-wavelength offsets j pi / K sum sin^2 to K / 2 at every phase."""
-    sigma, lam = 0.02, 0.635
-    peak = (4 * math.pi / lam / sigma) ** 2
+    amp, vis, sigma, lam = 1.0, 0.8, 0.02, 0.635
+    peak = (amp * vis * 4 * math.pi / lam / sigma) ** 2
     theta = torch.tensor([0.0, 0.4, 2.3], dtype=torch.float64)
     total = sum(
         bounds.fisher_single(
-            theta + j * math.pi / n_channels, 1.0, 1.0, sigma, lam, 0.0, 0.0
+            theta + j * math.pi / n_channels, amp, vis, sigma, lam, 0.0, 0.0
         )
         for j in range(n_channels)
     )

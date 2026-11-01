@@ -244,13 +244,16 @@ $sin phi_F = 0$, at the fringe extrema, where a small motion leaves the signal
 unchanged (@fig-fisher). The channel noises are independent, so $K$ channels
 together carry $sum_k J_k$. Because $J_k$ scales as $lambda_k^(-2)$, the
 515 nm channel carries $(0.635 \/ 0.515)^2 = 1.52$ times the information of
-the 635 nm channel at equal visibility and noise. Additivity alone does not remove the blind
-spots. Michelson channels at one wavelength with offsets spaced by
-$pi \/ K$ would, because for $K >= 2$ their $sin^2 theta$ terms sum to $K \/ 2$
-at every phase. Incommensurate wavelengths share no fringe period, so by
-Kronecker's theorem enough travel brings all channels arbitrarily close to
-their extrema at once. Wavelength diversity therefore raises the information
-through the $lambda_k^(-2)$ factor without guaranteeing it in the worst case.
+the 635 nm channel at equal visibility and noise.
+
+Additivity alone does not remove the blind spots. Equal-wavelength channels
+with offsets spaced by $pi \/ K$ would remove them, since for $K >= 2$ their
+$sin^2 theta$ terms sum to $K \/ 2$ at every phase, but the rig's channels
+differ in wavelength and their offsets are not controlled. Different
+wavelengths usually put the extrema of different channels at different
+displacements, yet nothing prevents all channels from nearing their extrema
+together, so wavelength diversity raises the average information through the
+$lambda_k^(-2)$ factor without guaranteeing it in the worst case.
 
 The bounds below need the information averaged over a uniform fringe phase.
 That average has a closed form,
