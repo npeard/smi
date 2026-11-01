@@ -49,6 +49,7 @@ from smi.analysis.experiments import (
 from smi.analysis.results_artifact import RunRecord, read_results
 from smi.core.acquisition import STEMLAB_125_14
 from smi.data.frozen import RIG_WAVELENGTHS_UM
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, read_sample_rate
 from smi.theory import bounds
 from smi.theory.forward import (
     NOMINAL_ALPHA,
@@ -422,12 +423,8 @@ def mismatch_spectra(noise_free: bool) -> MismatchSpectra:
 
 # Photodiode channels, in the order the dataset feeds them to the model, with
 # the laser wavelength each one detects (microns).
-PD_CHANNELS: tuple[tuple[str, float], ...] = (
-    ('RP1_CH2', 0.635),
-    ('RP2_CH1', 0.675),
-    ('RP2_CH2', 0.515),
-)
-VOLTAGE_CHANNEL = 'RP1_CH1'
+PD_CHANNELS: tuple[tuple[str, float], ...] = tuple(PD_WAVELENGTHS_UM.items())
+VOLTAGE_CHANNEL = DRIVE_KEY
 
 # The two acquisitions, as (key in baseline_results.json, axis label). Shared
 # so that adding a third cannot leave one figure silently showing two.
@@ -435,9 +432,6 @@ BASELINE_DATASETS: tuple[tuple[str, str], ...] = (
     ('free-space', 'free space'),
     ('mmfiber', 'mm fiber'),
 )
-
-# Fallback sample rate; every real file carries `sample_rate` in its attrs.
-DEFAULT_SAMPLE_RATE = 488281.25
 
 # The leave-one-out grid's knobs, as (SimConfig field, sim-name stem); each
 # cell is named nominal-no-<stem> (q3_s3_leave_one_out.yaml).
@@ -706,7 +700,7 @@ def read_shot(
     """
     with h5py.File(h5_path, 'r') as f:
         trace = np.asarray(f[channel][index, :], dtype=np.float64)
-        sample_rate = float(f.attrs.get('sample_rate', DEFAULT_SAMPLE_RATE))
+        sample_rate = read_sample_rate(f.attrs)
     if decimate > 1:
         trace = trace[::decimate]
         sample_rate /= decimate

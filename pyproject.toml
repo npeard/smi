@@ -418,7 +418,7 @@ source_modules = ["smi.theory"]
 forbidden_modules = ["smi.analysis", "smi.data", "smi.redpitaya"]
 
 [[tool.importlinter.contracts]]
-name = "smi.data does not reach up into analysis or hardware"
+name = "smi.data depends only on smi.core and smi.theory"
 type = "forbidden"
 source_modules = ["smi.data"]
-forbidden_modules = ["smi.analysis", "smi.redpitaya"]
+forbidden_modules = ["smi.analysis", "smi.redpitaya", "smi.main"]

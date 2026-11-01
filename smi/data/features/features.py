@@ -1,7 +1,7 @@
 """Built-in feature definitions.
 
 Importing this module registers every feature on the
-:data:`~smi.analysis.features.registry.default_registry`.
+:data:`~smi.data.features.registry.default_registry`.
 
 Inputs are the photodiode channels (identity on the raw array). Targets are the
 velocity and displacement waveforms derived from the speaker drive voltage

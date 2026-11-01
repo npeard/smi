@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from smi.analysis.datamodule import VelocityDataModule
+from smi.data.datamodule import VelocityDataModule
 
 DATASET = (
     Path(__file__).parent.parent / 'smi' / 'analysis' / 'data' / 'circuit-noise-600.h5'

@@ -12,7 +12,7 @@ import lightning as lightning_module
 import torch
 from torch.utils.data import DataLoader, random_split
 
-from smi.analysis.datasets import GPUResidentDataset, VelocityDataset
+from smi.data.datasets import GPUResidentDataset, VelocityDataset
 
 logger = logging.getLogger(__name__)
 

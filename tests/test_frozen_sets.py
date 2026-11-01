@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 import torch
 
-from smi.analysis.datasets import VelocityDataset
 from smi.core.acquisition import STEMLAB_125_14
 from smi.data import frozen
+from smi.data.datasets import VelocityDataset
 from smi.data.frozen import frozen_set_path, load_or_create, pd_keys, write_frozen_set
 from smi.theory.forward import NOMINAL_DRIVE_GAIN, SIMULATOR_VERSION, SimConfig
 from tests._sims import SAMPLE_RATE, WAVELENGTHS_UM

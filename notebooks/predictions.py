@@ -20,9 +20,9 @@ def _():
 def _():
     from torch.utils.data import DataLoader
 
-    from smi.analysis.datasets import VelocityDataset, get_data_loaders
     from smi.analysis.evaluate import load_lit_module
     from smi.core.acquisition import STEMLAB_125_14
+    from smi.data.datasets import VelocityDataset, get_data_loaders
     from smi.data.frozen import DEFAULT_ROOT, load_or_create
     from smi.theory.forward import SimConfig
 

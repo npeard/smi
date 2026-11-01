@@ -37,7 +37,6 @@ import torch
 from torch import Tensor
 
 from smi.analysis.baseline_fit import inverse_fit
-from smi.analysis.datasets import file_pd_channels, file_sample_rate, select_pd_keys
 from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import RunRecord
 from smi.analysis.synthetic_lit_module import SyntheticLitModule
@@ -48,7 +47,14 @@ from smi.core.metrics import (
     sign_invariant_rmse,
     summarize_per_shot,
 )
-from smi.data.schema import PD_WAVELENGTHS_UM
+from smi.data.datasets import file_pd_channels, select_pd_keys
+from smi.data.schema import (
+    DISPLACEMENT_KEY,
+    DRIVE_KEY,
+    PD_WAVELENGTHS_UM,
+    VELOCITY_KEY,
+    read_sample_rate,
+)
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.forward import MAX_SPEED_UM_PER_MS, SimConfig
 
@@ -242,18 +248,20 @@ def _iter_chunks(
     fringe-distance bins from such files are approximate.
     """
     driver = CoilDriver()
-    sample_rate = None if 'velocity' in f else file_sample_rate(f)
+    sample_rate = None if VELOCITY_KEY in f else read_sample_rate(f.attrs)
     channels = list(file_pd_channels(f))
     for start in range(0, n_shots, EVAL_CHUNK_SHOTS):
         sl = slice(start, min(start + EVAL_CHUNK_SHOTS, n_shots))
-        if 'velocity' in f:
-            velocity = torch.from_numpy(np.asarray(f['velocity'][sl], dtype=np.float32))
+        if VELOCITY_KEY in f:
+            velocity = torch.from_numpy(
+                np.asarray(f[VELOCITY_KEY][sl], dtype=np.float32)
+            )
             if not full:
                 yield None, velocity, None, None
                 continue
-            displacement = np.asarray(f['displacement'][sl], dtype=np.float64)
+            displacement = np.asarray(f[DISPLACEMENT_KEY][sl], dtype=np.float64)
         else:
-            volts = torch.from_numpy(np.asarray(f['RP1_CH1'][sl], dtype=np.float32))
+            volts = torch.from_numpy(np.asarray(f[DRIVE_KEY][sl], dtype=np.float32))
             assert sample_rate is not None
             velocity, disp_t = driver.get_velocity_and_displacement_torch(
                 volts, sample_rate
@@ -307,11 +315,11 @@ def evaluate(
     wavelengths_um = tuple(wavelengths_um)
     with h5py.File(dataset, 'r') as f:
         keys = select_pd_keys(f, wavelengths_um)
-        n = len(f['RP1_CH1'] if 'RP1_CH1' in f else f['velocity'])
+        n = len(f[DRIVE_KEY] if DRIVE_KEY in f else f[VELOCITY_KEY])
         n = n if n_shots is None else min(n_shots, n)
         shortest = int(np.argmin(wavelengths_um))
         fringe = (keys[shortest], wavelengths_um[shortest])
-        sample_rate = file_sample_rate(f)
+        sample_rate = read_sample_rate(f.attrs)
 
         # Pass 1: quantile edges of the true |v| need the whole evaluated set.
         speeds = np.concatenate(

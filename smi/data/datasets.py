@@ -8,9 +8,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from smi.core.acquisition import STEMLAB_125_14
 from smi.data.frozen import RIG_WAVELENGTH_TOL_UM, pd_keys
-from smi.data.schema import PD_WAVELENGTHS_UM
+from smi.data.schema import DRIVE_KEY, PD_KEYS, PD_WAVELENGTHS_UM, read_sample_rate
 from smi.theory.coil_driver import CoilDriver
 
 logger = logging.getLogger(__name__)
@@ -27,19 +26,6 @@ def file_pd_channels(f: h5py.File) -> dict[str, float]:
         return dict(PD_WAVELENGTHS_UM)
     wavelengths = tuple(float(w) for w in f.attrs['pd_wavelengths_um'])
     return dict(zip(pd_keys(wavelengths), wavelengths, strict=True))
-
-
-def file_sample_rate(f: h5py.File) -> float:
-    """Sample rate (Hz) of an open file.
-
-    Acquisitions predating the ``sample_rate`` attr were all taken at the Red
-    Pitaya's decimation 256, so that is the fallback.
-    """
-    if 'sample_rate' in f.attrs:
-        return float(f.attrs['sample_rate'])
-    rate = STEMLAB_125_14.sample_rate_dec1_hz / 256
-    logger.warning('Using default sample rate of %.2f Hz', rate)
-    return rate
 
 
 def select_pd_keys(f: h5py.File, wavelengths_um: tuple[float, ...]) -> list[str]:
@@ -78,7 +64,7 @@ class VelocityDataset(Dataset):
     The dataset returns RAW photodiode signals. Input/output normalization is no
     longer done here: it is baked into the model via the Model wrapper
     (analysis/models/base.py), using version-controlled per-feature statistics
-    (analysis/features/normalization.py). The rest of the pipeline works in raw
+    (data/features/normalization.py). The rest of the pipeline works in raw
     physical units.
 
     The dataset returns:
@@ -110,10 +96,10 @@ class VelocityDataset(Dataset):
         self.sample_rate = None  # Will be set in open_hdf5
 
         # Channel keys for photodiode signals
-        self.pd_channel_keys = ['RP1_CH2', 'RP2_CH1', 'RP2_CH2'][: self.num_pd_channels]
+        self.pd_channel_keys = list(PD_KEYS[: self.num_pd_channels])
 
         # Channel key for speaker drive voltage
-        self.voltage_key = 'RP1_CH1'
+        self.voltage_key = DRIVE_KEY
 
         # Initialize cache
         self._cache = {}
@@ -155,7 +141,7 @@ class VelocityDataset(Dataset):
             self.voltage_data = self.h5_file[self.voltage_key]
             self.pd_data = [self.h5_file[key] for key in self.pd_channel_keys]
 
-            self.sample_rate = file_sample_rate(self.h5_file)
+            self.sample_rate = read_sample_rate(self.h5_file.attrs)
 
             self.opened_flag = True
 
@@ -267,7 +253,7 @@ class GPUResidentDataset(Dataset):
         self.file_path = Path(file_path)
         self.device = torch.device(device)
         self.num_pd_channels = min(max(1, num_pd_channels), 3)
-        channel_keys = ['RP1_CH2', 'RP2_CH1', 'RP2_CH2'][: self.num_pd_channels]
+        channel_keys = list(PD_KEYS[: self.num_pd_channels])
 
         coil_driver = CoilDriver()
         with h5py.File(self.file_path, 'r') as f:
@@ -278,7 +264,7 @@ class GPUResidentDataset(Dataset):
                     raise ValueError(f"Channel key '{key}' not found in file")
             total = len(f['RP1_CH1'])
             n = total if max_shots is None else min(max_shots, total)
-            self.sample_rate = file_sample_rate(f)
+            self.sample_rate = read_sample_rate(f.attrs)
             signals = np.stack(
                 [np.asarray(f[key][:n], dtype=np.float32) for key in channel_keys],
                 axis=1,

@@ -135,23 +135,25 @@ layout: `smi/` (library), `tests/`, `notebooks/` (marimo apps), `docs/`.
 Inside `smi/`:
 
 - `analysis/` - ML pipeline.
-  - `features/` - Polars-based `FeatureRegistry` (`registry.py`), feature
-    definitions (`features.py`; `register_feature` decorator auto-registers on
-    the module-level `default_registry`), the stats script (`compute_norm_stats.py`),
-    and the **generated, version-controlled** per-feature mean/std
-    (`normalization.py` - do not hand-edit; regenerate with the script).
   - `models/` - architectures (`tcn`, `scnn`, `tcan`, `lstm`, `mamba`,
     `barland_cnn`, `patch_transformer`, `unet_transformer`,
     `neural_operator`) plus `base.py`, which defines `Model(nn.Module)` (the
     normalization wrapper) and `FeatureMap`.
-  - `datamodule.py` - `VelocityDataModule` (LightningDataModule).
-  - `datasets.py`, `lit_module.py`, `synthetic_lit_module.py`, `training_interface.py`.
+  - `lit_module.py`, `synthetic_lit_module.py`, `training_interface.py`.
 - `core/` - bottom layer: acquisition config, kinematics, metrics.
 - `theory/` - physics: coil driver, interferometers, waveform, forward model
   (`simulate_batch`) and the Fisher/Bayesian `bounds`; may import only
   `smi.core`.
-- `data/` - data conventions (`schema`: channel names and wavelengths;
-  `frozen`: seeded synthetic test sets in the real-data HDF5 schema); must not
+- `data/` - data conventions (`schema`: HDF5 keys, attrs, `write_shot` /
+  `read_shots`, the one legacy sample-rate fallback; `frozen`: seeded synthetic
+  test sets in the real-data HDF5 schema), `datasets.py`, `datamodule.py`
+  (`VelocityDataModule`), and
+  `features/` - Polars-based `FeatureRegistry` (`registry.py`), feature
+  definitions (`features.py`; `register_feature` decorator auto-registers on
+  the module-level `default_registry`), the stats script (`compute_norm_stats.py`),
+  and the **generated, version-controlled** per-feature mean/std
+  (`normalization.py` - do not hand-edit; regenerate with the script).
+  Must not
   import `smi.analysis` or `smi.redpitaya`. Layering is enforced by
   `[tool.importlinter]` via `tests/test_import_contracts.py`.
 - `redpitaya/` - hardware control (manager, scpi, config); was
@@ -231,7 +233,7 @@ These override defaults; follow them unless explicitly told otherwise.
 - **Always run `pixi run format`** after code changes. It is the verification
   entry point -- do not call `ruff check` separately as its own step.
 - **Run the full suite (`pixi run -e dev python -m pytest`) when you touch
-  `analysis/models/`, `analysis/features/`, or `synthetic/`** -- the
+  `analysis/models/`, `data/features/`, or `synthetic/`** -- the
   normalization stats, the TorchScript scriptability check and the model
   forward tests are all coupled through those. It takes about 95 seconds.
 - **Otherwise** run the single most relevant test file. Scope tests to the

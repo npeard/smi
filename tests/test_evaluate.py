@@ -10,7 +10,6 @@ import pytest
 import torch
 
 from smi.analysis import synthetic_lit_module
-from smi.analysis.datasets import VelocityDataset, select_pd_keys
 from smi.analysis.evaluate import CheckpointEstimator, InverseFitEstimator, evaluate
 from smi.analysis.results_artifact import (
     RunRecord,
@@ -22,6 +21,7 @@ from smi.analysis.synthetic_lit_module import SyntheticLitModule
 from smi.core.kinematics import derivative_displacement, integrate_velocity
 from smi.core.metrics import sign_invariant_rmse
 from smi.data import frozen
+from smi.data.datasets import VelocityDataset, select_pd_keys
 from smi.data.frozen import pd_keys, write_frozen_set
 from smi.theory.forward import SIMULATOR_VERSION
 from tests._sims import SAMPLE_RATE, SMALL_CHUNK_SHOTS, michelson_sim

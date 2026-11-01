@@ -77,8 +77,9 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-from smi.analysis.datasets import VelocityDataset
 from smi.analysis.models.tcn import TCN, TCNConfig
+from smi.data.datasets import VelocityDataset
+from smi.data.schema import DRIVE_KEY, PD_KEYS, read_sample_rate
 from smi.theory.coil_driver import CoilDriver
 
 logger = logging.getLogger(__name__)
@@ -86,9 +87,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_DATA_FILE = (
     Path(__file__).resolve().parent / 'data' / 'free-space-synchro_10k.h5'
 )
-PD_CHANNEL_KEYS = ('RP1_CH2', 'RP2_CH1', 'RP2_CH2')
-VOLTAGE_KEY = 'RP1_CH1'
-DEFAULT_SAMPLE_RATE = 488281.25
 
 CONFIG_NAMES = (
     'dataloader-dup-w0',
@@ -308,12 +306,11 @@ def _load_raw_channels(
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """Read the photodiode channels and drive voltage for the first ``shots``."""
     with h5py.File(file_path, 'r') as f:
-        sample_rate = float(f.attrs.get('sample_rate', DEFAULT_SAMPLE_RATE))
+        sample_rate = read_sample_rate(f.attrs)
         signals = np.stack(
-            [np.asarray(f[key][:shots], dtype=np.float32) for key in PD_CHANNEL_KEYS],
-            axis=1,
+            [np.asarray(f[key][:shots], dtype=np.float32) for key in PD_KEYS], axis=1
         )
-        voltage = np.asarray(f[VOLTAGE_KEY][:shots], dtype=np.float32)
+        voltage = np.asarray(f[DRIVE_KEY][:shots], dtype=np.float32)
     return signals, voltage, sample_rate
 
 
@@ -664,8 +661,8 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     with h5py.File(args.data_file, 'r') as f:
-        sequence_length = int(f[VOLTAGE_KEY].shape[1])
-        available = int(f[VOLTAGE_KEY].shape[0])
+        sequence_length = int(f[DRIVE_KEY].shape[1])
+        available = int(f[DRIVE_KEY].shape[0])
     shots = min(args.shots, available)
 
     print(f'device        : {device_name} ({args.device})')

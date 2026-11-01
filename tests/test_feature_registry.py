@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from smi.analysis.features import default_registry
-from smi.analysis.features.features import PD_FEATURE_TO_CHANNEL
+from smi.data.features import default_registry
+from smi.data.features.features import PD_FEATURE_TO_CHANNEL
 from smi.theory.coil_driver import CoilDriver
 
 SIGNAL_LENGTH = 4096

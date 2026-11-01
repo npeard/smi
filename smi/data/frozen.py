@@ -1,7 +1,7 @@
 """Seeded frozen synthetic test sets, written in the real-data HDF5 schema.
 
 One file per ``(SimConfig, seed, n_shots)``, so every estimator is scored on
-the same shots and ``smi.analysis.datasets`` reads it like an acquisition.
+the same shots and ``smi.data.datasets`` reads it like an acquisition.
 """
 
 import json
@@ -13,7 +13,15 @@ import h5py
 import numpy as np
 import torch
 
-from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM
+from smi.data.schema import (
+    DISPLACEMENT_KEY,
+    DRIVE_KEY,
+    NUM_SAMPLES_ATTR,
+    OPTICAL_PHASE_KEY,
+    PD_WAVELENGTHS_UM,
+    SAMPLE_RATE_ATTR,
+    VELOCITY_KEY,
+)
 from smi.theory.forward import SIMULATOR_VERSION, SimConfig, simulate_batch
 
 # Shots per simulate_batch call. Part of the file identity: random draws are
@@ -70,22 +78,22 @@ def write_frozen_set(cfg: SimConfig, seed: int, n_shots: int, path: Path) -> Pat
     cpu = torch.device('cpu')
 
     with h5py.File(tmp, 'w') as f:
-        f.attrs['sample_rate'] = cfg.sample_rate
+        f.attrs[SAMPLE_RATE_ATTR] = cfg.sample_rate
         f.attrs['pd_wavelengths_um'] = np.asarray(cfg.wavelengths_um)
         f.attrs['sim_config'] = json.dumps(asdict(cfg), sort_keys=True)
         f.attrs['seed'] = seed
         f.attrs['chunk_shots'] = CHUNK_SHOTS
         f.attrs['simulator_version'] = SIMULATOR_VERSION
-        f.attrs['num_samples'] = n_shots
+        f.attrs[NUM_SAMPLES_ATTR] = n_shots
         datasets: dict[str, h5py.Dataset] = {}
         for start in range(0, n_shots, CHUNK_SHOTS):
             batch = simulate_batch(cfg, CHUNK_SHOTS, cpu, generator)
             stop = min(start + CHUNK_SHOTS, n_shots)
             arrays = {
                 DRIVE_KEY: batch.voltage,
-                'velocity': batch.velocity,
-                'displacement': batch.displacement,
-                'optical_phase': batch.optical_phase,
+                VELOCITY_KEY: batch.velocity,
+                DISPLACEMENT_KEY: batch.displacement,
+                OPTICAL_PHASE_KEY: batch.optical_phase,
             }
             arrays.update({k: batch.signals[:, i] for i, k in enumerate(keys)})
             for name, value in arrays.items():

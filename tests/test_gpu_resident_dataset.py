@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 import torch
 
-from smi.analysis.datamodule import VelocityDataModule, _same_device
-from smi.analysis.datasets import GPUResidentDataset, VelocityDataset
+from smi.data.datamodule import VelocityDataModule, _same_device
+from smi.data.datasets import GPUResidentDataset, VelocityDataset
 
 DATASET = (
     Path(__file__).parent.parent

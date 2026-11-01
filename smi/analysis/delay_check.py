@@ -41,13 +41,10 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from smi.data.schema import DRIVE_KEY, LEGACY_SAMPLE_RATE_HZ, PD_KEYS, read_sample_rate
 from smi.theory.coil_driver import CoilDriver
 
 logger = logging.getLogger(__name__)
-
-# Nominal acquisition sample rate (Hz): 125 MS/s at decimation 256. Used only
-# as a fallback; the real rate is read from the file's attrs.
-DEFAULT_SAMPLE_RATE_HZ = 488281.25
 
 # A normalized cross-correlation below this is not a peak worth trusting. The
 # envelopes compared here are strongly shaped by the drive waveform, so a
@@ -55,8 +52,8 @@ DEFAULT_SAMPLE_RATE_HZ = 488281.25
 MIN_PEAK_CORRELATION = 0.3
 
 # Photodiode channels, in the order VelocityDataset feeds them to the model.
-PD_CHANNELS: tuple[str, ...] = ('RP1_CH2', 'RP2_CH1', 'RP2_CH2')
-DRIVE_CHANNEL = 'RP1_CH1'
+PD_CHANNELS = PD_KEYS
+DRIVE_CHANNEL = DRIVE_KEY
 
 DATA_DIR = Path(__file__).resolve().parent / 'data'
 DATASETS: dict[str, str] = {
@@ -143,7 +140,7 @@ def estimate_lag(
     target: np.ndarray,
     signal: np.ndarray,
     max_lag: int,
-    sample_rate_hz: float = DEFAULT_SAMPLE_RATE_HZ,
+    sample_rate_hz: float = LEGACY_SAMPLE_RATE_HZ,
 ) -> LagResult:
     """Estimate the lag of ``signal`` relative to ``target``.
 
@@ -231,7 +228,7 @@ def measure_dataset(
     """
     coil = CoilDriver()
     with h5py.File(h5_path, 'r') as handle:
-        sample_rate = float(handle.attrs.get('sample_rate', DEFAULT_SAMPLE_RATE_HZ))
+        sample_rate = read_sample_rate(handle.attrs)
         n_shots = min(n_shots, int(handle[DRIVE_CHANNEL].shape[0]))
         drive = np.asarray(handle[DRIVE_CHANNEL][:n_shots], dtype=np.float64)
         pd_raw = {

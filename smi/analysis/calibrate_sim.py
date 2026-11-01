@@ -85,8 +85,8 @@ import torch
 from scipy.signal import periodogram
 
 from smi.analysis.baseline_fit import fit_window_basis, window_fringe_coefficients
-from smi.analysis.datasets import file_pd_channels
 from smi.core.acquisition import BOARDS, AcquisitionConfig
+from smi.data.datasets import file_pd_channels
 from smi.data.schema import DRIVE_KEY
 from smi.theory.coil_driver import CoilDriver
 from smi.theory.forward import (

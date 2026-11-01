@@ -3,7 +3,7 @@
 The :class:`FeatureRegistry` is the single source of truth for how raw Red
 Pitaya channel data becomes model inputs and supervision targets. Features are
 registered by decorating a compute function with :func:`register_feature`;
-importing :mod:`smi.analysis.features.features` populates the
+importing :mod:`smi.data.features.features` populates the
 module-level :data:`default_registry`.
 
 Normalization statistics for every registered feature are computed offline by

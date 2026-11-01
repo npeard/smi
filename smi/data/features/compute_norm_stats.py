@@ -1,7 +1,7 @@
 """Compute per-feature normalization statistics from a dataset.
 
 Points at an HDF5 dataset, evaluates every registered feature
-(:data:`~smi.analysis.features.registry.default_registry`) for
+(:data:`~smi.data.features.registry.default_registry`) for
 each shot, and writes per-feature mean/std to ``normalization.py`` for version
 control. Models bake these stats into ``register_buffer`` s (see
 ``analysis/models/base.py``) so internal layers see zero-mean/unit-variance
@@ -9,7 +9,7 @@ features while the rest of the codebase works in raw physical units.
 
 Usage::
 
-    pixi run python -m smi.analysis.features.compute_norm_stats \
+    pixi run python -m smi.data.features.compute_norm_stats \
         smi/analysis/data/circuit-noise-600.h5
 """
 
@@ -20,25 +20,14 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from smi.core.acquisition import STEMLAB_125_14
+from smi.data.schema import CHANNEL_KEYS, DRIVE_KEY, read_sample_rate, read_shots
 
 from .registry import default_registry
 
 logger = logging.getLogger(__name__)
 
 EPSILON = 1e-8
-VOLTAGE_KEY = 'RP1_CH1'
-PD_CHANNEL_KEYS = ('RP1_CH2', 'RP2_CH1', 'RP2_CH2')
-ALL_CHANNELS = (VOLTAGE_KEY, *PD_CHANNEL_KEYS)
-
-
-def _resolve_sample_rate(f: h5py.File) -> float:
-    """Read the sample rate from file attrs, falling back to the dec-256 rate."""
-    if 'sample_rate' in f.attrs:
-        return float(f.attrs['sample_rate'])
-    default = STEMLAB_125_14.sample_rate_dec1_hz / 256
-    logger.warning('No sample_rate attr; using default %.2f Hz', default)
-    return default
+ALL_CHANNELS = CHANNEL_KEYS
 
 
 def compute_stats(dataset_path: str | Path, chunk_size: int = 500) -> dict[str, dict]:
@@ -67,12 +56,12 @@ def compute_stats(dataset_path: str | Path, chunk_size: int = 500) -> dict[str, 
         for ch in ALL_CHANNELS:
             if ch not in f:
                 raise ValueError(f"Channel '{ch}' not found in {dataset_path}")
-        sample_rate = _resolve_sample_rate(f)
-        n_shots = len(f[VOLTAGE_KEY])
+        sample_rate = read_sample_rate(f.attrs)
+        n_shots = len(f[DRIVE_KEY])
 
         for start in range(0, n_shots, chunk_size):
             end = min(start + chunk_size, n_shots)
-            chunk = {ch: np.asarray(f[ch][start:end]) for ch in ALL_CHANNELS}
+            chunk, _ = read_shots(dataset_path, ALL_CHANNELS, start, end)
             for i in range(end - start):
                 raw = {ch: chunk[ch][i] for ch in ALL_CHANNELS}
                 raw['sample_rate'] = sample_rate
@@ -123,7 +112,7 @@ def write_normalization_module(stats: dict[str, dict], out_path: Path) -> None:
         '',
         'Regenerate with::',
         '',
-        '    pixi run python -m smi.analysis.features.compute_norm_stats <dataset.h5>',
+        '    pixi run python -m smi.data.features.compute_norm_stats <dataset.h5>',
         '"""',
         '',
         'NORMALIZATION_STATS: dict[str, dict[str, float]] = {',

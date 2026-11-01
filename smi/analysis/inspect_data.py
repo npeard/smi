@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torch.utils.data import DataLoader
 
-from smi.analysis.datasets import VelocityDataset
-from smi.core.acquisition import STEMLAB_125_14
+from smi.data.datasets import VelocityDataset
+from smi.data.schema import read_sample_rate
 
 logger = logging.getLogger(__name__)
 
@@ -31,15 +31,9 @@ def visualize_dataset(
         batch_size: Batch size for the DataLoader
     """
     # Get sample rate from HDF5 file attributes if available
-    sample_rate = None
     with h5py.File(dataset_path, 'r') as f:
-        if 'sample_rate' in f.attrs:
-            sample_rate = float(f.attrs['sample_rate'])
-            logger.info(f'Using sample rate from HDF5 file: {sample_rate:.2f} Hz')
-        else:
-            # Default sample rate for Red Pitaya with decimation of 256
-            sample_rate = STEMLAB_125_14.sample_rate_dec1_hz / 256
-            logger.warning(f'Using default sample rate of {sample_rate:.2f} Hz')
+        sample_rate = read_sample_rate(f.attrs)
+        logger.info(f'Sample rate: {sample_rate:.2f} Hz')
 
         # Print dataset information
         logger.info(f'Dataset: {Path(dataset_path).name}')
@@ -134,12 +128,7 @@ def plot_histograms(dataset_path: str | Path):
     """
     # Get sample rate from HDF5 file attributes if available
     with h5py.File(dataset_path, 'r') as f:
-        if 'sample_rate' in f.attrs:
-            sample_rate = float(f.attrs['sample_rate'])
-        else:
-            # Default sample rate for Red Pitaya with decimation of 256
-            sample_rate = STEMLAB_125_14.sample_rate_dec1_hz / 256
-
+        sample_rate = read_sample_rate(f.attrs)
         logger.info(f'Using sample rate: {sample_rate:.2f} Hz')
         # Create figure with subplots (2 rows, 4 columns)
         _fig, axes = plt.subplots(2, 4, figsize=(16, 8))

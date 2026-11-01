@@ -16,7 +16,6 @@ import torch
 import yaml
 
 from smi.analysis import experiments, synthetic_lit_module
-from smi.analysis.datasets import select_pd_keys
 from smi.analysis.evaluate import load_lit_module
 from smi.analysis.experiments import (
     RunnerLockedError,
@@ -31,6 +30,7 @@ from smi.analysis.lit_module import LitModule
 from smi.analysis.results_artifact import read_results
 from smi.analysis.training_interface import SIGNED_RMSE_KEY
 from smi.core.kinematics import derivative_displacement
+from smi.data.datasets import select_pd_keys
 from tests._helpers import script_log
 
 MATCHED = experiments.ANALYSIS_DIR / 'models' / 'configs' / 'matched'

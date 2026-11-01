@@ -19,6 +19,7 @@ from numpy.fft import fft
 # Import our custom classes
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement, integrate_velocity
+from smi.data.schema import write_shot
 
 try:
     # Try relative imports first (when used as a package)
@@ -689,82 +690,33 @@ class RedPitayaManager:
         # Check if file exists to determine if we're creating or appending
         file_exists = file_path.exists()
 
-        # Open file in appropriate mode
-        mode = 'a' if file_exists else 'w'
-        with h5py.File(file_path, mode) as f:
-            # Store acquisition parameters as attributes (always update these)
-            f.attrs['sample_rate'] = self.SAMPLE_RATE_DEC1 / self.settings['acq_dec']
-            f.attrs['decimation'] = self.settings['acq_dec']
-            f.attrs['buffer_size'] = self.BUFFER_SIZE
+        attrs: dict[str, object] = {
+            'sample_rate': self.SAMPLE_RATE_DEC1 / self.settings['acq_dec'],
+            'decimation': self.settings['acq_dec'],
+            'buffer_size': self.BUFFER_SIZE,
+        }
+        # Only set creation_time when creating a new file
+        if not file_exists:
+            attrs['creation_time'] = datetime.now().isoformat()
+        # Store any other relevant settings
+        attrs.update(
+            {
+                key: value
+                for key, value in self.settings.items()
+                if isinstance(value, int | float | str | bool)
+            }
+        )
 
-            # Only set creation_time when creating a new file
-            if not file_exists:
-                f.attrs['creation_time'] = datetime.now().isoformat()
+        # The raw input signals are the Red Pitaya channels
+        shot = {key: data[key] for key in data if key.startswith('RP') and '_CH' in key}
 
-            # Store any other relevant settings
-            for key, value in self.settings.items():
-                if isinstance(value, int | float | str | bool):
-                    f.attrs[key] = value
+        with h5py.File(file_path, 'a' if file_exists else 'w') as f:
+            write_shot(f, shot, attrs)
 
-            # Find Red Pitaya channel keys (the raw input signals)
-            channel_keys = [
-                key for key in data if key.startswith('RP') and '_CH' in key
-            ]
-
-            if not channel_keys:
-                logger.warning('No Red Pitaya channel data found in acquisition')
-                return str(file_path)
-
-            # Get current dataset size if file exists
-            if file_exists:
-                # Get the first channel dataset to determine current size
-                first_key = channel_keys[0]
-                if first_key in f:
-                    current_size = f[first_key].shape[0]
-                else:
-                    # Channel doesn't exist in file yet
-                    current_size = 0
-                    # Create datasets for each channel
-                    for key in channel_keys:
-                        channel_shape = data[key].shape
-                        f.create_dataset(
-                            key,
-                            shape=(0, *channel_shape),
-                            maxshape=(None, *channel_shape),
-                            dtype='float32',
-                            chunks=(1, *channel_shape),
-                            compression='gzip',
-                            compression_opts=4,
-                        )
-            else:
-                # New file, start from 0
-                current_size = 0
-                # Create datasets for each channel
-                for key in channel_keys:
-                    channel_shape = data[key].shape
-                    f.create_dataset(
-                        key,
-                        shape=(0, *channel_shape),
-                        maxshape=(None, *channel_shape),
-                        dtype='float32',
-                        chunks=(1, *channel_shape),
-                        compression='gzip',
-                        compression_opts=4,
-                    )
-
-            # Resize datasets to accommodate new data
-            for key in channel_keys:
-                if key in data and key in f:
-                    dataset = f[key]
-                    new_size = current_size + 1  # Adding one sample
-                    dataset.resize(new_size, axis=0)
-                    # Add new data at the end
-                    dataset[current_size] = data[key]
-
-            # Update the number of samples attribute
-            f.attrs['num_samples'] = current_size + 1
-
-        logger.info(f'Data saved to {file_path}')
+        if not shot:
+            logger.warning('No Red Pitaya channel data found in acquisition')
+        else:
+            logger.info(f'Data saved to {file_path}')
         return str(file_path)
 
     def setup_plot(self):
