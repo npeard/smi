@@ -1,7 +1,7 @@
 # Hyperparameter / Architecture Search Pipeline (Ray Tune + vmap)
 
 Design for a two-level model search pipeline that replaces the current YAML
-Cartesian-product grid search. Status: design (not yet implemented).
+Cartesian-product grid search. Status: implemented (see section 11).
 
 ## 1. Context and goals
 
@@ -25,9 +25,9 @@ Two concrete workflows must be served:
    surviving architectures.
 
 Constraints:
-- **Single 24 GB GPU**, on a separate CUDA rig. This dev machine is an Intel Mac
-  locked to torch 2.2 with no CUDA, so every path must be CPU-runnable (tiny
-  sizes) for tests; GPU is exercised only on the rig.
+- **Single 24 GB GPU**, on a separate CUDA rig; the dev machine is an Apple
+  Silicon Mac (osx-arm64, MPS, 32 GB unified memory). Every path must also be
+  CPU-runnable (tiny sizes) for tests; CUDA is exercised only on the rig.
 - Reuse the existing pieces: `LitModule` (loss, optimizer, scheduler), the
   `Model` normalization wrapper + `create_model` factory, `VelocityDataModule`,
   `SyntheticLitModule` on-GPU generation, and the `WandbLogger` / `ModelCheckpoint`
@@ -66,6 +66,42 @@ vmap-ensemble over the within-architecture axis inside that trial.
   context, one data generation, one set of kernel launches), so prefer it over
   many fractional-GPU trials on that axis.
 - Exposed knobs: `gpu_fraction`, `max_concurrent_trials`, ensemble size `K`.
+
+### MPS (Apple M6, 32 GB unified memory)
+
+Measured with the model section of `matched/tcn-matched.yaml` (TCN, 44,049
+parameters), batch size overridden to 32, `32-true`, sequence length 16384,
+20 steps per epoch, 8 members, synthetic data generated on-device per step.
+Per run: 2 warm-up epochs, then the median of 3 timed epochs
+(`torch.mps.synchronize()` around each). Each mode was run 3 times; the table
+gives the median of the 3 run values and their min-max. Memory is the peak of
+`torch.mps.driver_allocated_memory()` sampled every step (per process).
+`PYTORCH_ENABLE_MPS_FALLBACK` was unset.
+
+| Mode | Per member-epoch, median (min-max) | Peak memory |
+|---|---|---|
+| Sequential, fresh batch per member (what sequential training does) | 3.08 s (3.077-3.080) | 2494 MiB |
+| Sequential, one batch shared by all members (vmap-equivalent data work) | 3.05 s (3.046-3.051) | 2494 MiB |
+| vmap ensemble, K=8, shared batch | 5.18 s (5.170-5.189) | 21013 MiB |
+| Ray, 2 concurrent trials (`mps`: 1/2), fresh batch per member | 2.80 s (2.787-2.805) | 2494 MiB per process |
+
+Ray was run at k=2 only for the 3 repeats; k=4 was a single run, not in
+`results.log`, at 2.80 s per member-epoch (trial epoch / 4), no faster than k=2.
+
+- vmap over conv1d runs on MPS with no unsupported op and no CPU fallback, but
+  it is 1.7x slower per member than sequential (either variant, so the gap is
+  not data generation) and needs 8x the memory (21013 vs 2494 MiB).
+- Ray with a custom `mps` resource (`ray.init(resources={'mps': 1})`,
+  `resources_per_trial={'cpu': 1, 'mps': 1/k}`) works: each worker initializes
+  its own MPS context without error. Its epoch time is a reproducible 9%
+  below sequential (runs do not overlap), but whole-search wall time for 8
+  members was 122-125 s against about 126 s sequential (single run, not in `results.log`), because
+  worker start-up eats the gain; k=4 adds nothing over k=2 since one process
+  already saturates the GPU.
+- **Decision: run sequentially on MPS.** The only option faster per
+  member-epoch is Ray at 9%, which does not shorten a real search and costs
+  per-process memory and Ray complexity. The vmap ensemble and fractional
+  resource Ray trials stay for the CUDA rig, where they are designed for.
 
 ## 4. Components and integration points
 

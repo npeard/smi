@@ -2,14 +2,20 @@
 
 import contextlib
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 import lightning as lightning_module
 import torch
 import yaml
-from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
+from lightning.pytorch.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
+from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 from lightning.pytorch.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
@@ -18,6 +24,130 @@ from smi.analysis.lit_module import LitModule
 from smi.analysis.synthetic_lit_module import SyntheticIndexDataset, SyntheticLitModule
 
 logger = logging.getLogger(__name__)
+
+SIGNED_RMSE_KEY = 'val/velocity_rmse_um_per_ms'
+SIGN_INVARIANT_RMSE_KEY = 'val/velocity_rmse_sign_invariant_um_per_ms'
+# RMSE of prediction == 0 on the validation stream, logged by LitModule. It is
+# the value of both monitors above for a zero output (zero == -zero), so a best
+# monitor that never beats it marks a run stalled at the zero-output plateau.
+ZERO_PREDICTOR_RMSE_KEY = 'val/velocity_rmse_zero_predictor_um_per_ms'
+# The same three for a displacement target, logged only for one: start offsets
+# removed, so the zero predictor is RMS(d - d[:, :1]).
+DISPLACEMENT_RMSE_KEY = 'val/displacement_rmse_um'
+DISPLACEMENT_SIGN_INVARIANT_RMSE_KEY = 'val/displacement_rmse_sign_invariant_um'
+DISPLACEMENT_ZERO_PREDICTOR_RMSE_KEY = 'val/displacement_rmse_zero_predictor_um'
+# Each monitor's zero-predictor value, which TrainingInterface.converged
+# compares the best monitored value against.
+ZERO_PREDICTOR_KEYS = {
+    SIGNED_RMSE_KEY: ZERO_PREDICTOR_RMSE_KEY,
+    SIGN_INVARIANT_RMSE_KEY: ZERO_PREDICTOR_RMSE_KEY,
+    DISPLACEMENT_RMSE_KEY: DISPLACEMENT_ZERO_PREDICTOR_RMSE_KEY,
+    DISPLACEMENT_SIGN_INVARIANT_RMSE_KEY: DISPLACEMENT_ZERO_PREDICTOR_RMSE_KEY,
+}
+
+# Floor on ceil(patience_epochs / check_val_every_n_epoch), the number of
+# validation checks patience spans: fewer and a noisy mid-schedule dip can pass
+# for a plateau.
+MIN_PATIENCE_CHECKS = 5
+
+
+def convergence_monitor(loss_config: dict[str, Any], target: str) -> str:
+    """Validation metric a run must plateau on, decided by the loss and target.
+
+    A sign-invariant (Michelson) run never drives the signed RMSE down, so
+    monitoring it would never converge. A displacement-target run is monitored
+    on displacement: with no velocity loss its differentiated velocity carries
+    amplified high-frequency ripple, which can hold the velocity RMSE at the
+    zero predictor's while the displacement fits well.
+
+    Args:
+        loss_config: The ``loss`` section; ``sign_invariant`` is required.
+        target: ``training.target``, ``'velocity'`` or ``'displacement'``.
+
+    Returns:
+        The validation metric key to monitor.
+
+    Raises:
+        ValueError: If ``target`` is neither.
+    """
+    invariant = loss_config['sign_invariant']
+    if target == 'velocity':
+        return SIGN_INVARIANT_RMSE_KEY if invariant else SIGNED_RMSE_KEY
+    if target == 'displacement':
+        return (
+            DISPLACEMENT_SIGN_INVARIANT_RMSE_KEY if invariant else DISPLACEMENT_RMSE_KEY
+        )
+    raise ValueError(f"target must be 'velocity' or 'displacement', got {target!r}")
+
+
+class RelativeEarlyStopping(EarlyStopping):
+    """Early stopping whose improvement threshold is relative to the best value.
+
+    Lightning's ``min_delta`` is absolute, which makes one patience setting
+    mean different things at different RMSE scales (noise-free ceilings are an
+    order of magnitude below noisy runs). Here a value improves only when it
+    beats the best by more than ``min_rel_delta * best``. Minimizing only,
+    since the monitored quantity is an RMSE.
+    """
+
+    def __init__(
+        self,
+        monitor: str,
+        min_rel_delta: float,
+        patience: int,
+        min_epochs: int,
+        **kwargs: Any,
+    ):
+        super().__init__(monitor=monitor, patience=patience, mode='min', **kwargs)
+        self.min_rel_delta = min_rel_delta
+        self.min_epochs = min_epochs
+
+    # The grace period: before min_epochs every check still runs, so the best
+    # and the patience count are exactly those of a run without a grace, but a
+    # stop it signals is withdrawn. A run that would not have stopped inside
+    # the grace therefore trains and stops exactly as before; one that would
+    # have stops at the first check past the grace unless it has escaped by
+    # then. Trainer(min_epochs) cannot do this: Lightning latches a stop
+    # signalled inside it, so a run that escaped would still end at min_epochs.
+    @override
+    def on_validation_end(self, trainer: lightning_module.Trainer, pl_module: Any):
+        stopped_before = trainer.should_stop
+        super().on_validation_end(trainer, pl_module)
+        self._withdraw_stop_inside_grace(trainer, stopped_before)
+
+    @override
+    def on_train_epoch_end(self, trainer: lightning_module.Trainer, pl_module: Any):
+        stopped_before = trainer.should_stop
+        super().on_train_epoch_end(trainer, pl_module)
+        self._withdraw_stop_inside_grace(trainer, stopped_before)
+
+    def _withdraw_stop_inside_grace(
+        self, trainer: lightning_module.Trainer, stopped_before: bool
+    ) -> None:
+        # Only this callback's own new patience signal: a stop already set by
+        # someone else before this check is left alone, and a non-finite stop
+        # stands, since a NaN run is not "still converging" and must end with
+        # converged=False as it did before the grace existed.
+        if (
+            trainer.current_epoch < self.min_epochs
+            and not stopped_before
+            and self.stopping_reason == EarlyStoppingReason.PATIENCE_EXHAUSTED
+        ):
+            trainer.should_stop = False
+            self.stopping_reason = EarlyStoppingReason.NOT_STOPPED
+            self.stopped_epoch = 0
+
+    # Overrides a private Lightning hook (no public one exists for a relative
+    # delta); written against lightning 2.6.x (pixi.lock: 2.6.6), and
+    # pyproject.toml sets no upper bound, so re-check it on an upgrade.
+    def _evaluate_stopping_criteria(
+        self, current: torch.Tensor
+    ) -> tuple[bool, str | None]:
+        # Lightning stores min_delta pre-negated for 'min' mode and compares
+        # monitor_op(current - min_delta, best); the first check has best=inf.
+        best = float(self.best_score)
+        self.min_delta = -self.min_rel_delta * best if math.isfinite(best) else 0.0
+        return super()._evaluate_stopping_criteria(current)
 
 
 @dataclass
@@ -37,7 +167,7 @@ class TrainingConfig:
     synthetic_config: dict[str, Any] | None = None
 
     @classmethod
-    def from_yaml(cls, config_path: str) -> 'TrainingConfig':
+    def from_yaml(cls, config_path: str) -> TrainingConfig:
         """Load a single training configuration from a YAML file.
 
         List-valued fields (if any) are passed through verbatim; this method no
@@ -73,7 +203,6 @@ class TrainingInterface:
         experiment_name: str | None = None,
         *,
         extra_callbacks: list[Any] | None = None,
-        check_val_every_n_epoch: int = 5,
     ):
         """Initialize the training interface.
 
@@ -82,9 +211,6 @@ class TrainingInterface:
             experiment_name: Name for logging and checkpointing
             extra_callbacks: Additional Lightning callbacks to attach to the
                 trainer (e.g. Ray Tune's report callback). Defaults to none.
-            check_val_every_n_epoch: How often (in epochs) to run validation.
-                Defaults to 5 to preserve historical single-run behavior; the
-                Tune driver lowers this so metrics are reported each epoch.
         """
         self.config = config
         self.checkpoint_dir = str(self.CHECKPOINT_DIR)
@@ -103,10 +229,7 @@ class TrainingInterface:
             self.lightning_module = self.create_lightning_module()
 
             # Setup training
-            self.trainer = self.setup_trainer(
-                extra_callbacks=extra_callbacks,
-                check_val_every_n_epoch=check_val_every_n_epoch,
-            )
+            self.trainer = self.setup_trainer(extra_callbacks=extra_callbacks)
 
         # Check what version of PyTorch is installed
         logger.info(f'PyTorch version: {torch.__version__}')
@@ -212,9 +335,8 @@ class TrainingInterface:
         """
         # Derive in_channels from data, not model config
         if self._is_synthetic():
-            syn = self.config.synthetic_config
-            wavelengths = syn['wavelengths_nm']
-            self.config.model_config['in_channels'] = len(wavelengths)
+            sim = self.config.synthetic_config['sim']
+            self.config.model_config['in_channels'] = len(sim['wavelengths_um'])
         else:
             self.config.model_config['in_channels'] = self.config.data_config.get(
                 'num_pd_channels', 3
@@ -254,29 +376,31 @@ class TrainingInterface:
             syn = self.config.synthetic_config
             return SyntheticLitModule(
                 **common_kwargs,
-                wavelengths_nm=syn['wavelengths_nm'],
-                start_freq=syn.get('start_freq', 1.0),
-                end_freq=syn.get('end_freq', 1000.0),
                 steps_per_epoch=syn['steps_per_epoch'],
-                max_displacement_um=syn.get('max_displacement_um', 5.0),
+                sim=syn['sim'],
+                train_crop_length=syn['train_crop_length'],
+                restoring_checkpoint=False,
             )
 
         return LitModule(**common_kwargs)
 
     def setup_trainer(
-        self,
-        *,
-        extra_callbacks: list[Any] | None = None,
-        check_val_every_n_epoch: int = 5,
+        self, *, extra_callbacks: list[Any] | None = None
     ) -> lightning_module.Trainer:
         """Setup Lightning trainer with callbacks and loggers.
 
         Args:
             extra_callbacks: Additional callbacks appended after the default
                 logging callbacks (e.g. Ray Tune's report callback).
-            check_val_every_n_epoch: How often (in epochs) to run validation.
         """
-        callbacks = []
+        # Required, no default: with patience it fixes how many checks a plateau
+        # needs, so it changes what "converged" means.
+        check_val_every_n_epoch = self.config.training_config['check_val_every_n_epoch']
+        callbacks = [self._convergence_callback(check_val_every_n_epoch)]
+        # Best-by-monitor on every path, logging or not: a converged run sits up
+        # to ``patience`` epochs past its best, so final weights would bias the
+        # reported ceiling. Same metric as the convergence monitor by design.
+        checkpoint_prefix = ''
         # Add WandB logger if configured
         if self.config.training_config['use_logging']:
             loggers = [
@@ -287,18 +411,17 @@ class TrainingInterface:
                 )
             ]
             callbacks.append(LearningRateMonitor())
-            callbacks.append(
-                ModelCheckpoint(
-                    dirpath=Path(self.checkpoint_dir) / self.experiment_name,
-                    filename=str(loggers[0].experiment.id)
-                    + '_{epoch}-{val_total_unweighted_loss:.4f}',
-                    monitor=None,  #'val/total_unweighted_loss',
-                    mode='min',
-                    save_top_k=1,
-                )
-            )
+            checkpoint_prefix = f'{loggers[0].experiment.id}_'
         else:
             loggers = []
+        self.checkpoint_callback = ModelCheckpoint(
+            dirpath=Path(self.checkpoint_dir) / self.experiment_name,
+            filename=checkpoint_prefix + '{epoch}',
+            monitor=self.convergence_callback.monitor,
+            mode='min',
+            save_top_k=1,
+        )
+        callbacks.append(self.checkpoint_callback)
 
         # Append any caller-supplied callbacks (e.g. Ray Tune's reporter).
         if extra_callbacks:
@@ -307,6 +430,8 @@ class TrainingInterface:
         # Get accelerator and device settings from config
         accelerator = self.config.training_config['accelerator']
         devices = self.config.training_config['devices']
+        # Required, no default: precision changes results, so it must be stated.
+        precision = self.config.training_config['precision']
 
         # Convert devices to proper type if it's a string
         if isinstance(devices, str):
@@ -320,10 +445,120 @@ class TrainingInterface:
             check_val_every_n_epoch=check_val_every_n_epoch,
             accelerator=accelerator,
             devices=devices,
+            precision=precision,
         )
 
-    def train(self):
-        """Train the model."""
+    def _convergence_callback(
+        self, check_val_every_n_epoch: int
+    ) -> RelativeEarlyStopping:
+        """Build the plateau-stopping callback from ``training.convergence``.
+
+        ``training.max_epochs`` stays the single epoch cap; the convergence
+        block only says when to stop sooner.
+
+        Args:
+            check_val_every_n_epoch: Validation cadence, to convert the
+                epoch-denominated patience into validation checks.
+
+        Raises:
+            ValueError: If the configured monitor does not match the loss, or
+                patience spans fewer than MIN_PATIENCE_CHECKS validation checks.
+        """
+        convergence = self.config.training_config['convergence']
+        monitor = convergence['monitor']
+        target = self.config.training_config['target']
+        expected = convergence_monitor(self.config.loss_config, target)
+        if monitor != expected:
+            raise ValueError(
+                f'training.convergence.monitor is {monitor!r} but '
+                f'loss.sign_invariant={self.config.loss_config["sign_invariant"]} '
+                f'with target {target!r} requires {expected!r}'
+            )
+        # Required, no default: S1 runs sat at the zero-output plateau for up
+        # to ~15 epochs before escaping, so the grace changes what gets published.
+        min_epochs = convergence['min_epochs']
+        # bool is an int subclass; reject it so `min_epochs: true` is an error.
+        if type(min_epochs) is not int or min_epochs < 0:
+            raise ValueError(
+                f'training.convergence.min_epochs must be an int >= 0, got '
+                f'{min_epochs!r}'
+            )
+        checks = math.ceil(convergence['patience_epochs'] / check_val_every_n_epoch)
+        if checks < MIN_PATIENCE_CHECKS:
+            raise ValueError(
+                f'patience_epochs={convergence["patience_epochs"]} with '
+                f'check_val_every_n_epoch={check_val_every_n_epoch} is {checks} '
+                f'validation checks; a plateau needs patience to span at least '
+                f'{MIN_PATIENCE_CHECKS} validation checks'
+            )
+        self.convergence_callback = RelativeEarlyStopping(
+            monitor=monitor,
+            min_rel_delta=float(convergence['min_rel_delta']),
+            patience=checks,
+            min_epochs=min_epochs,
+        )
+        return self.convergence_callback
+
+    @property
+    def converged(self) -> bool:
+        """Whether the last :meth:`train` stopped on a plateau below the zero predictor.
+
+        False for a run that hit ``training.max_epochs``, whose monitored
+        metric went non-finite, or whose best never beat
+        :attr:`zero_predictor_monitor` by ``min_rel_delta`` (a stall at the
+        zero-output plateau, which also looks like a plateau). Pass it to
+        ``evaluate(..., converged=...)``.
+        """
+        callback = self.convergence_callback
+        if callback.stopping_reason != EarlyStoppingReason.PATIENCE_EXHAUSTED:
+            return False
+        # Written as "beats", so a NaN on either side is not converged.
+        return self.best_monitor < (1 - callback.min_rel_delta) * (
+            self.zero_predictor_monitor
+        )
+
+    @property
+    def best_model_path(self) -> str:
+        """Checkpoint with the lowest monitored value (empty if none was finite)."""
+        return self.checkpoint_callback.best_model_path
+
+    @property
+    def best_monitor(self) -> float:
+        """Lowest monitored validation value seen (NaN if none was finite)."""
+        score = self.checkpoint_callback.best_model_score
+        return math.nan if score is None else float(score)
+
+    @property
+    def final_monitor(self) -> float:
+        """Monitored validation value at the last validation check."""
+        return float(self.trainer.callback_metrics[self.convergence_callback.monitor])
+
+    @property
+    def zero_predictor_monitor(self) -> float:
+        """The monitored metric for prediction == 0 on the validation stream.
+
+        Read from the last validation check; the validation data are the same
+        at every check (fixed real split, or the reseeded synthetic stream).
+        """
+        key = ZERO_PREDICTOR_KEYS[self.convergence_callback.monitor]
+        return float(self.trainer.callback_metrics[key])
+
+    @property
+    def epochs_run(self) -> int:
+        """Epochs the last :meth:`train` completed."""
+        return self.trainer.current_epoch
+
+    def train(self) -> bool:
+        """Train the model.
+
+        Returns:
+            :attr:`converged` for this run.
+        """
+        # A second fit must not report the first run's stop reason.
+        self.convergence_callback.stopping_reason = EarlyStoppingReason.NOT_STOPPED
+        self.convergence_callback.wait_count = 0
+        self.convergence_callback.best_score = torch.tensor(math.inf)
+        self.convergence_callback.stopped_epoch = 0
         # Real data uses the DataModule; synthetic uses index dataloaders.
         if getattr(self, 'datamodule', None) is not None:
             self.trainer.fit(self.lightning_module, datamodule=self.datamodule)
@@ -333,13 +568,18 @@ class TrainingInterface:
                 train_dataloaders=self.train_loader,
                 val_dataloaders=self.val_loader,
             )
+        return self.converged
 
     def test(self):
         """Test the model using best checkpoint."""
-        checkpoint_callback = any(
-            isinstance(cb, ModelCheckpoint) for cb in self.trainer.callbacks
+        # Lightning always installs a default ModelCheckpoint, so its presence
+        # does not mean a best checkpoint exists (it has none without a monitor
+        # or when logging is off); test the in-memory weights in that case.
+        has_best = any(
+            isinstance(cb, ModelCheckpoint) and cb.best_model_path
+            for cb in self.trainer.callbacks
         )
-        ckpt_path = 'best' if checkpoint_callback else None
+        ckpt_path = 'best' if has_best else None
 
         if getattr(self, 'datamodule', None) is not None:
             self.trainer.test(

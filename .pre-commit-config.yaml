@@ -55,7 +55,7 @@ repos:
         pass_filenames: false
 
 -   repo: https://github.com/npeard/agent-config
-    rev: v0.1.0
+    rev: v0.1.1
     hooks:
     -   id: check-ascii
 

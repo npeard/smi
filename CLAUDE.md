@@ -42,7 +42,8 @@ always invoke Python and tools through `pixi run` (or from inside `pixi shell`)
 - `pixi run precommit` - Run all pre-commit hooks
 - `pixi run -e test pytest` - Run pytest in the minimal `test` environment (CI-equivalent)
 - `pixi run report` - Build the Typst documents (see `report/` below)
-- `pixi run report-dry` / `report-clean` / `report-baseline`
+- `pixi run report-dry` / `report-clean` / `report-only` (report.typ) /
+  `report-synthetic` (synthetic.typ)
 - `pixi run benchmark-loading` - Data-loading throughput benchmark (GPU; not in `all`)
 
 Workflow-spine tasks (see the master CLAUDE.md's numbered spine):
@@ -89,11 +90,14 @@ committed for reproducibility.
 
 ### Environment constraints (three live ones, all easy to break)
 
-**Platforms are `win-64` and `linux-64`.** macOS was dropped deliberately.
-The old `numpy<2` / `torch<2.3` pins existed only to keep an Intel Mac
-working and are gone; the stack is now `torch>=2.14` / `numpy>=2`.
+**Platforms are `win-64`, `linux-64` and `osx-arm64`.** macOS Apple silicon
+is back for MPS work (torch from the default PyPI wheel, libomp linked from torch for
+conda-forge for lightgbm); Intel Mac is unsupported. In `pyproject.toml` the
+osx-arm64 entry is named `macos-14-arm64` so it can declare macOS 14, which
+the torch>=2.14 wheels require; its target tables use that name. The stack is
+`torch>=2.14` / `numpy>=2`.
 
-**One OpenMP runtime, so the numeric stack comes from PyPI.** `numpy`,
+**Keep OpenMP runtimes from colliding; the numeric stack comes from PyPI.** `numpy`,
 `numba`, `matplotlib` and `h5py` resolve from PyPI (via
 `[project.dependencies]`), *not* conda. Conda-forge numpy links
 `libomp.dll` while the PyPI CUDA torch wheel bundles Intel's
@@ -105,9 +109,19 @@ silently produce incorrect results, which is disqualifying here. Only
 `typst` and `polars` come from conda; typst is a self-contained Rust
 binary with no BLAS linkage.
 
+On macOS torch and scikit-learn each bundle a libomp and coexist, but
+lightgbm's wheel needs one on the rpath: a second, conda `llvm-openmp` copy
+deadlocks or segfaults threaded fits (OMP Error #179), so
+`scripts/link-torch-libomp.sh` (pixi activation) links torch's own libomp
+into the env instead. `tests/test_platform.py` guards this by running
+threaded torch, lightgbm and scikit-learn work in one subprocess, in either
+import order.
+
 **Torch comes from the `cu130` PyPI index** because the default win-64
 wheel is CPU-only, and because cu124 publishes no cp312/win-64 wheel past
-torch 2.6.0 -- reaching 2.14 means CUDA 13.0. CUDA 13 drops Maxwell/Pascal/
+torch 2.6.0 -- reaching 2.14 means CUDA 13.0. The index carries cp314 win/linux wheels only
+through torch 2.14.1 (2.15.0 is on cu132), so those platforms resolve 2.14.1
+while macOS resolves 2.15.0. CUDA 13 drops Maxwell/Pascal/
 Volta but keeps sm_75, so both cards here (RTX 3090 Ti sm_86, Quadro RTX 4000
 sm_75) still run. Expect `torch.cuda.is_available()` to be true; if it is
 not, the index pin in `[tool.pixi.pypi-dependencies]` is the thing to check.
@@ -128,7 +142,8 @@ Inside `smi/`:
     and the **generated, version-controlled** per-feature mean/std
     (`normalization.py` - do not hand-edit; regenerate with the script).
   - `models/` - architectures (`tcn`, `scnn`, `tcan`, `lstm`, `mamba`,
-    `barland_cnn`) plus `base.py`, which defines `Model(nn.Module)` (the
+    `barland_cnn`, `patch_transformer`, `unet_transformer`,
+    `neural_operator`) plus `base.py`, which defines `Model(nn.Module)` (the
     normalization wrapper) and `FeatureMap`.
   - `datamodule.py` - `VelocityDataModule` (LightningDataModule).
   - `datasets.py`, `lit_module.py`, `synthetic_lit_module.py`, `training_interface.py`.
@@ -169,7 +184,8 @@ Two-level search (design: `docs/hyperparameter-search-pipeline-design.md`):
   fractional-GPU packing. `TrainingConfig.from_yaml` now returns one config.
 - **vmap-ensemble** (`analysis/ensemble.py`) trains K same-architecture models on
   one shared on-GPU minibatch via `torch.func` for efficient within-architecture
-  sweeps; `generate_synthetic_batch` (in `synthetic_lit_module.py`) is shared.
+  sweeps; both it and `SyntheticLitModule` draw batches from
+  `smi.synthetic.forward.simulate_batch` and bake `normalization_stats`.
 
 Deps live in the `tune` pixi feature (`ray[tune]`, `optuna`), included in all
 test-running envs so the search path is CPU-tested in CI as well as on the GPU rig.
@@ -181,8 +197,16 @@ spirit of the `dispersion-engineering` paper repo but with Typst in place of
 LaTeX. Typst is a conda package, so unlike a TeX engine the whole toolchain is
 lockfile-reproducible with no manual install.
 
-- `baseline.typ` - the standalone non-deep-learning baseline report. The only
-  document this repo builds; there is no slide deck.
+- Two documents, no slide deck:
+  - `report.typ` - the baseline report: the Michelson analytic baseline and
+    the learned models on the real acquisitions. Its figures read the real
+    HDF5 files, so it builds only where they are present (and the synthetic
+    program is blinded to them).
+  - `synthetic.typ` - the synthetic research report: identifiability,
+    Fisher information and Bayesian bounds (computed in its figure scripts
+    from `smi.analysis.bounds`), then the Q3 and Q1 results from
+    `smi/analysis/data/synthetic_results.json`. Build it alone with
+    `pixi run report-synthetic`.
 - `figures/plot_<name>.py` - one script per figure, each taking `--output
   <path>` and writing exactly that path. Shared style lives in
   `figures/_figcommon.py`; scripts import it rather than setting `rcParams`.
@@ -227,7 +251,7 @@ These override defaults; follow them unless explicitly told otherwise.
 ## Code Quality
 
 - Ruff formatting and linting with Google-style docstrings
-- Type hints required (Python 3.12+)
+- Type hints required (Python 3.14)
 - Pre-commit hooks: ruff, ty, check-ascii, codespell, nbstripout, standard checks
 - Spell checking with codespell
 

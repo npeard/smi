@@ -69,7 +69,8 @@ def _label(record: RunRecord) -> str:
         if record.total_params >= 1000
         else str(record.total_params)
     )
-    return f'{record.model_type} {params} (field {record.receptive_field})'
+    field = 'unbounded' if record.receptive_field is None else record.receptive_field
+    return f'{record.model_type} {params} (field {field})'
 
 
 @dataclass

@@ -9,9 +9,11 @@ import logging
 
 import numpy as np
 import pytest
+import torch
 from plot_waveforms import calculate_fft
 
 from smi.synthetic.waveform import Waveform
+from tests._dtype_guard import no_float64
 
 logger = logging.getLogger(__name__)
 
@@ -381,6 +383,32 @@ def test_waveform_spectrum_hermitian():
                         f'Hermitian. S(-f)={spectrum[neg_idx]}, '
                         f'S(f)*={np.conj(spectrum[j])}'
                     )
+
+
+def test_generate_batch_torch_seeded():
+    """A seeded CPU generator makes generate_batch_torch reproducible."""
+    waveform = Waveform(10, 1000)
+    batches = [
+        waveform.generate_batch_torch(
+            2, 'cpu', generator=torch.Generator().manual_seed(0)
+        )
+        for _ in range(2)
+    ]
+    assert batches[0].dtype == torch.float32
+    assert torch.equal(batches[0], batches[1])
+
+
+def test_generate_batch_torch_rejects_mismatched_generator_device():
+    """A CPU generator cannot drive another device; fail with a clear error."""
+    generator = torch.Generator().manual_seed(0)
+    with pytest.raises(ValueError, match='generator'):
+        Waveform(10, 1000).generate_batch_torch(1, 'meta', generator=generator)
+
+
+def test_generate_batch_torch_is_float32_without_float64_intermediates():
+    with no_float64():
+        out = Waveform(10, 1000).generate_batch_torch(2, 'cpu')
+    assert out.dtype == torch.float32
 
 
 if __name__ == '__main__':

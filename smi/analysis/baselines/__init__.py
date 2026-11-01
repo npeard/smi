@@ -7,6 +7,7 @@ distort that contract to accommodate two objects that never train on a GPU.
 """
 
 from .tabular import (
+    CAUSAL,
     SupportsPredict,
     fit_lightgbm,
     fit_ridge,
@@ -15,6 +16,7 @@ from .tabular import (
 )
 
 __all__ = [
+    'CAUSAL',
     'SupportsPredict',
     'fit_lightgbm',
     'fit_ridge',

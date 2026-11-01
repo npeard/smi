@@ -18,21 +18,26 @@ def _():
 
 @app.cell
 def _():
-    from smi.analysis.datasets import get_data_loaders
-    from smi.analysis.generate_data import generate_synthetic_test_data
-    from smi.analysis.lit_module import LitModule
-    from smi.analysis.synthetic_lit_module import DEFAULT_WAVELENGTHS_NM
+    from torch.utils.data import DataLoader
+
+    from smi.analysis.datasets import VelocityDataset, get_data_loaders
+    from smi.analysis.evaluate import load_lit_module
     from smi.redpitaya.redpitaya_config import RedPitayaConfig
+    from smi.synthetic.forward import SimConfig
+    from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
     ACQ_SAMPLE_RATE = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
     CHANNEL_NAMES = ['PD1 (635 nm)', 'PD2 (675 nm)', 'PD3 (515 nm)']
     return (
         ACQ_SAMPLE_RATE,
         CHANNEL_NAMES,
-        DEFAULT_WAVELENGTHS_NM,
-        LitModule,
-        generate_synthetic_test_data,
+        DEFAULT_ROOT,
+        DataLoader,
+        SimConfig,
+        VelocityDataset,
         get_data_loaders,
+        load_lit_module,
+        load_or_create,
     )
 
 
@@ -69,47 +74,42 @@ def _(best_fiber_model, mmfiber_datapath, mo):
 
 
 @app.cell
-def _(LitModule, checkpoint_path, mo, torch):
+def _(checkpoint_path, load_lit_module, mo):
     mo.stop(not checkpoint_path.value, mo.md('Enter a checkpoint path above.'))
-    _map_location = 'cpu' if not torch.cuda.is_available() else None
-    # Manual loading to strip torch.compile _orig_mod. key prefixes
-    _ckpt = torch.load(
-        checkpoint_path.value, weights_only=False, map_location=_map_location
-    )
-    ckpt_hparams = _ckpt.get('hyper_parameters', {})
-    _state_dict = {
-        k.replace('._orig_mod.', '.'): v for k, v in _ckpt['state_dict'].items()
-    }
-    model = LitModule(**ckpt_hparams)
-    model.load_state_dict(_state_dict)
+    # The evaluator's loader rebuilds the checkpoint's own wrapped model, so the
+    # normalization baked into its buffers is used, never re-derived.
+    model = load_lit_module(checkpoint_path.value, device='cpu')
+    ckpt_hparams = dict(model.hparams)
     in_channels = model.hparams['model_hparams']['in_channels']
     return ckpt_hparams, in_channels, model
 
 
 @app.cell
 def _(
-    DEFAULT_WAVELENGTHS_NM,
+    DEFAULT_ROOT,
+    DataLoader,
+    SimConfig,
+    VelocityDataset,
     batch_size,
     ckpt_hparams,
     dataset_path,
-    generate_synthetic_test_data,
     get_data_loaders,
-    in_channels,
+    load_or_create,
 ):
     if dataset_path.value == 'synthetic':
-        _wavelengths_nm = ckpt_hparams.get(
-            'wavelengths_nm', DEFAULT_WAVELENGTHS_NM[:in_channels]
-        )
-        _start_freq = ckpt_hparams.get('start_freq', 1.0)
-        _end_freq = ckpt_hparams.get('end_freq', 1000.0)
-        _max_displacement_um = ckpt_hparams.get('max_displacement_um', 5.0)
-        test_loader = generate_synthetic_test_data(
-            num_samples=batch_size.value * 4,
-            wavelengths_nm=_wavelengths_nm,
+        if 'sim' not in ckpt_hparams:
+            raise ValueError(
+                'checkpoint has no sim hyperparameter (it predates the '
+                'SimConfig forward model); retrain it'
+            )
+        # The checkpoint's own simulator config: its baked normalization
+        # matches this data, unlike the real-data stats.
+        _cfg = SimConfig(**ckpt_hparams['sim'])
+        _path = load_or_create(_cfg, 0, batch_size.value * 4, DEFAULT_ROOT)
+        test_loader = DataLoader(
+            VelocityDataset(_path, num_pd_channels=len(_cfg.wavelengths_um)),
             batch_size=batch_size.value,
-            start_freq=_start_freq,
-            end_freq=_end_freq,
-            max_displacement_um=_max_displacement_um,
+            shuffle=False,
         )
     else:
         _, _, test_loader = get_data_loaders(

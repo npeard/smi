@@ -1,0 +1,52 @@
+# Q3/Q2 stage S1: every family at the 44k budget, all three channels, noise-free,
+# at two feedback settings: Michelson (sign-invariant; the "is the estimator
+# the limit" test) and weak-feedback SMI at C = 0.2 (alpha = 3); the C curve
+# itself is the TCN's (q3_s0c_ceiling.yaml).
+# Causal families form the primary column, offline families the secondary.
+# Run: python -m smi.analysis.experiments smi/analysis/experiments/q3_s1_families.yaml \
+#        --out smi/analysis/data/synthetic_results.json
+families:
+  - {name: tcn-44k-T90, config: ../models/configs/matched/tcn-44k.yaml}
+  - {name: scnn-44k-T90, config: ../models/configs/matched/scnn-44k.yaml}
+  - {name: barland-44k-T90, config: ../models/configs/matched/barland-44k.yaml}
+  - {name: tcan-44k-T90, config: ../models/configs/matched/tcan-44k.yaml}
+  - {name: lstm-44k-T90, config: ../models/configs/matched/lstm-44k.yaml}
+  - {name: lstm-bidir-44k-T90, config: ../models/configs/matched/lstm-bidir-44k.yaml}
+  # mamba-44k runs as its own stage, q3_s1m_mamba.yaml (deferred for its scan).
+  - {name: mlp-44k-T90, config: ../models/configs/matched/mlp-44k.yaml}
+  - {name: patchtransformer-causal-44k-T90, config: ../models/configs/matched/patchtransformer-causal-44k.yaml}
+  - {name: patchtransformer-offline-44k-T90, config: ../models/configs/matched/patchtransformer-offline-44k.yaml}
+  - {name: unettransformer-causal-44k-T90, config: ../models/configs/matched/unettransformer-causal-44k.yaml}
+  - {name: unettransformer-offline-44k-T90, config: ../models/configs/matched/unettransformer-offline-44k.yaml}
+  - {name: neuraloperator-causal-44k-T90, config: ../models/configs/matched/neuraloperator-causal-44k.yaml}
+  - {name: neuraloperator-offline-44k-T90, config: ../models/configs/matched/neuraloperator-offline-44k.yaml}
+
+channel_subsets:
+  - [0.635, 0.6748, 0.515]
+
+sims:
+  - {name: michelson, preset: noise_free, feedback_c: 0.0, alpha: 0.0, sign_invariant: true}
+  - name: smi-a3
+    preset: noise_free
+    feedback_c: 0.2
+    alpha: 3.0
+
+seeds: [0]
+oracle: true
+
+loss:
+  sign_invariant: false
+
+synthetic:
+  steps_per_epoch: 200
+  val_steps: 20
+  train_crop_length: 4096
+
+training:
+  accelerator: mps
+  devices: 1
+  precision: 32-true
+  max_epochs: 150
+  T_0: 90  # S0b: the 30-epoch plateau is schedule-limited
+
+test_set: {seed: 1000, n_shots: 64}

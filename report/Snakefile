@@ -35,6 +35,20 @@ DOCUMENT_FIGURES = {
         "freespace_vs_fiber",
         "model_comparison",
     ],
+    "synthetic": [
+        "exit_check",
+        "sign_information",
+        "feedback_curve",
+        "noise_ladder",
+        "fisher_phase",
+        "velocity_bounds",
+        "spectral_mismatch",
+        "q1_binned",
+        "leave_one_out",
+        "q1_subsets",
+        "model_families",
+        "displacement_rmse",
+    ],
 }
 
 # The figure registry: stem <name> maps to figures/plot_<name>.py ->
@@ -49,7 +63,7 @@ DOCUMENTS = sorted(DOCUMENT_FIGURES)
 
 THEME = "lib/theme.typ"
 
-# The results artifacts every baseline figure reads. Declared as figure inputs
+# The results artifacts the figures read. Declared as figure inputs
 # so regenerating them rebuilds the figures that quote them: without this the
 # DAG only watches the scripts, and a regenerated artifact leaves stale figure
 # PDFs beside a document whose tables have moved. Listed for all figures
@@ -60,7 +74,47 @@ RESULTS = [
     str(DATA_DIR / "baseline_results.json"),
     str(DATA_DIR / "gain_sweep_results.json"),
     str(DATA_DIR / "learned_results.json"),
+    str(DATA_DIR / "synthetic_results.json"),
+    # Per-sample binned errors of section Q1, from smi.analysis.q1_binned.
+    str(DATA_DIR / "q1_binned_errors.json"),
 ]
+
+# The library modules the synthetic figures compute from or read records
+# through, so a change to the bounds, the forward model, a preset or cell key
+# (expand_grid, whose sim hashes the records are checked against), the frozen
+# rig constants or the record loader rebuilds them. Listed for all figures for
+# the same reason as RESULTS.
+SMI_DIR = REPORT_DIR.parent / "smi"
+ANALYSIS_CODE = [
+    str(SMI_DIR / "analysis" / "bounds.py"),
+    str(SMI_DIR / "analysis" / "experiments.py"),
+    str(SMI_DIR / "analysis" / "results_artifact.py"),
+    str(SMI_DIR / "synthetic" / "forward.py"),
+    str(SMI_DIR / "synthetic" / "frozen.py"),
+]
+
+# The experiment grids the synthetic figures expand to label records (the
+# sweep value of a cell comes from its grid), so a grid edit rebuilds them.
+EXPERIMENTS_DIR = SMI_DIR / "analysis" / "experiments"
+GRIDS = [
+    str(EXPERIMENTS_DIR / name)
+    for name in (
+        "q3_s0c_ceiling.yaml",
+        "q3_s3_noise_ladder.yaml",
+        "q3_s3_spread.yaml",
+        "q3_s3_leave_one_out.yaml",
+        "q3_s3_matched_length.yaml",
+        "q1_s2_subsets.yaml",
+        "q3_s1d_displacement.yaml",
+    )
+]
+
+# The emitter instantiates the matched model configs to probe the input span of
+# the sliding-window families (section Q2), so a model or config edit reruns it.
+MODEL_DIR = SMI_DIR / "analysis" / "models"
+MODELS = sorted(
+    str(p) for p in [*MODEL_DIR.glob("*.py"), *(MODEL_DIR / "configs" / "matched").glob("*-44k.yaml")]
+)
 
 # Without this, the unconstrained {document} wildcard in `rule document` also
 # matches "figures/<name>", so Snakemake evaluates a figure PDF as a candidate
@@ -69,6 +123,12 @@ RESULTS = [
 wildcard_constraints:
     document="|".join(DOCUMENTS),
     name="|".join(FIGURES),
+
+
+# Numbers a document quotes in its prose, computed by a script and read by the
+# document at compile time, so the prose cannot drift from the library that
+# produces the figures.
+DOCUMENT_VALUES = {"synthetic": [f"{BUILD}/synthetic_values.json"]}
 
 
 def figure_pdfs(document):
@@ -86,8 +146,25 @@ rule figure:
         script="figures/plot_{name}.py",
         common="figures/_figcommon.py",
         results=RESULTS,
+        code=ANALYSIS_CODE,
+        grids=GRIDS,
     output:
         f"{FIGDIR}/{{name}}.pdf",
+    shell:
+        "python {input.script} --output {output}"
+
+
+rule synthetic_values:
+    """Compute the values synthetic.typ quotes in its text and table."""
+    input:
+        script="figures/synthetic_values.py",
+        common="figures/_figcommon.py",
+        results=RESULTS,
+        code=ANALYSIS_CODE,
+        grids=GRIDS,
+        models=MODELS,
+    output:
+        f"{BUILD}/synthetic_values.json",
     shell:
         "python {input.script} --output {output}"
 
@@ -97,7 +174,9 @@ rule document:
     input:
         source="{document}.typ",
         theme=THEME,
+        bib="refs.bib",
         figures=lambda wildcards: figure_pdfs(wildcards.document),
+        values=lambda wildcards: DOCUMENT_VALUES.get(wildcards.document, []),
     output:
         f"{BUILD}/{{document}}.pdf",
     shell:

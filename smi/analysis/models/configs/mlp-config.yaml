@@ -12,6 +12,12 @@ model:
 
 training:
   max_epochs: 200
+  check_val_every_n_epoch: 1  # validate every epoch; patience_epochs counts these
+  convergence:  # stop on a plateau; max_epochs above stays the cap
+    monitor: "val/velocity_rmse_um_per_ms"  # must follow loss.sign_invariant
+    patience_epochs: 10
+    min_rel_delta: 0.01  # improvement below 1% of the best counts as none
+    min_epochs: 30  # no stop sooner: S1 zero-output stalls lasted ~15 epochs, then escaped
   warmup_epochs: 0
   T_0: 200
   T_mult: 1
@@ -22,6 +28,7 @@ training:
   learning_rate: 1e-3
   eta_min: 1e-6
   accelerator: "gpu"
+  precision: "32-true"
   devices: 1
   use_logging: false
   wandb_project: "smi"
@@ -32,6 +39,7 @@ loss:
   dynamic: false
   velocity_loss_weight: 1.0
   displacement_loss_weight: 0.0
+  sign_invariant: false
 
 data:
   data_dir: "./analysis/data"

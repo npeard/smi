@@ -3,13 +3,25 @@
 
 import pytest
 import torch
+from torch.nn import functional
 
 from smi.analysis.models.barland_cnn import BarlandCNN, BarlandCNNConfig
 from smi.analysis.models.lstm import LSTM, LSTMConfig
 from smi.analysis.models.mamba import Mamba, MambaConfig
+from smi.analysis.models.neural_operator import (
+    CausalSpectralConv1d,
+    NeuralOperator,
+    NeuralOperatorConfig,
+)
+from smi.analysis.models.patch_transformer import (
+    PatchTransformer,
+    PatchTransformerConfig,
+)
 from smi.analysis.models.scnn import SCNN, SCNNConfig
 from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
+from smi.analysis.models.unet_transformer import UNetTransformer, UNetTransformerConfig
+from tests._devices import devices
 
 SEQUENCE_LENGTH = 256
 IN_CHANNELS = 3
@@ -25,6 +37,7 @@ def barland_model():
         dropout=0.1,
         use_weight_norm=False,
         window_stride=128,
+        channels=[16, 32, 64, 64],
     )
     return BarlandCNN(config).eval()
 
@@ -280,3 +293,148 @@ class TestSCNNForward:
             out = scnn_model(x)
         assert out.shape == (BATCH_SIZE, 1, SEQUENCE_LENGTH)
         assert torch.isfinite(out).all()
+
+
+def _patch_transformer(causal: bool) -> PatchTransformer:
+    config = PatchTransformerConfig(
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        patch_len=8,
+        stride=5,
+        d_model=16,
+        n_heads=2,
+        n_layers=2,
+        ffn_dim=32,
+        attention_span=2,
+        dropout=0.0,
+        causal=causal,
+    )
+    return PatchTransformer(config).eval()
+
+
+@pytest.mark.parametrize('causal', [True, False], ids=['causal', 'offline'])
+class TestPatchTransformerForward:
+    # 253 is not a multiple of the stride: the last token is partial, and the
+    # upsampled output must still be cropped back to the input length.
+    @pytest.mark.parametrize('length', [SEQUENCE_LENGTH, 253])
+    def test_output_shape(self, causal, length):
+        x = torch.randn(BATCH_SIZE, IN_CHANNELS, length)
+        with torch.no_grad():
+            out = _patch_transformer(causal)(x)
+        assert out.shape == (BATCH_SIZE, 1, length)
+
+    def test_output_is_finite(self, causal):
+        x = torch.randn(BATCH_SIZE, IN_CHANNELS, SEQUENCE_LENGTH)
+        with torch.no_grad():
+            out = _patch_transformer(causal)(x)
+        assert torch.isfinite(out).all()
+
+    def test_input_shorter_than_one_patch(self, causal):
+        x = torch.randn(BATCH_SIZE, IN_CHANNELS, 3)
+        with torch.no_grad():
+            out = _patch_transformer(causal)(x)
+        assert out.shape == (BATCH_SIZE, 1, 3)
+        assert torch.isfinite(out).all()
+
+
+def _unet_transformer(causal: bool) -> UNetTransformer:
+    config = UNetTransformerConfig(
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        channels=[8, 8, 16],
+        kernel_size=4,
+        pool=2,
+        n_heads=2,
+        n_layers=1,
+        ffn_dim=32,
+        attention_span=2,
+        dropout=0.0,
+        causal=causal,
+    )
+    return UNetTransformer(config).eval()
+
+
+@pytest.mark.parametrize('causal', [True, False], ids=['causal', 'offline'])
+class TestUNetTransformerForward:
+    # The total pooling factor is 4: 253 and 254 leave a partial coarse token
+    # at each level, and 1 and 3 are shorter than one bottleneck token.
+    @pytest.mark.parametrize('length', [SEQUENCE_LENGTH, 253, 254, 3, 1])
+    def test_output_shape(self, causal, length):
+        x = torch.randn(BATCH_SIZE, IN_CHANNELS, length)
+        with torch.no_grad():
+            out = _unet_transformer(causal)(x)
+        assert out.shape == (BATCH_SIZE, 1, length)
+        assert torch.isfinite(out).all()
+
+    def test_rejects_heads_that_do_not_divide_the_bottleneck(self, causal):
+        with pytest.raises(ValueError, match='not divisible by n_heads'):
+            UNetTransformerConfig(
+                sequence_length=SEQUENCE_LENGTH,
+                in_channels=IN_CHANNELS,
+                channels=[8, 8, 15],
+                kernel_size=4,
+                pool=2,
+                n_heads=2,
+                n_layers=1,
+                ffn_dim=32,
+                attention_span=2,
+                dropout=0.0,
+                causal=causal,
+            )
+
+
+def _neural_operator_config(causal: bool) -> NeuralOperatorConfig:
+    return NeuralOperatorConfig(
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        width=8,
+        n_layers=2,
+        modes=4,
+        kernel_len=9 if causal else None,
+    )
+
+
+@pytest.mark.parametrize('causal', [True, False], ids=['causal', 'offline'])
+class TestNeuralOperatorForward:
+    # Odd, even, shorter than the kernel, and shorter than the retained modes.
+    @pytest.mark.parametrize('length', [SEQUENCE_LENGTH, 253, 5, 1])
+    def test_output_shape(self, causal, length):
+        x = torch.randn(BATCH_SIZE, IN_CHANNELS, length)
+        with torch.no_grad():
+            out = NeuralOperator(_neural_operator_config(causal)).eval()(x)
+        assert out.shape == (BATCH_SIZE, 1, length)
+        assert torch.isfinite(out).all()
+
+
+def test_neural_operator_rejects_modes_the_kernel_cannot_hold():
+    """Modes past the kernel grid's (K + 1) // 2 would be dead parameters."""
+    with pytest.raises(ValueError, match='modes 6 exceeds'):
+        NeuralOperatorConfig(
+            sequence_length=SEQUENCE_LENGTH,
+            in_channels=IN_CHANNELS,
+            width=8,
+            n_layers=2,
+            modes=6,
+            kernel_len=9,
+        )
+
+
+@pytest.mark.parametrize('device', devices())
+@pytest.mark.parametrize(('length', 'kernel_len'), [(100, 22), (7, 22), (64, 1)])
+def test_causal_operator_matches_direct_conv(device, length, kernel_len):
+    """The zero-padded FFT product is the linear, left-padded convolution.
+
+    Too little padding would wrap the kernel's tail onto the first samples;
+    conv1d with K - 1 zeros on the left is the causal convolution by
+    definition. conv1d correlates, so the lag axis is flipped.
+    """
+    torch.manual_seed(0)
+    width, modes = 5, (kernel_len + 1) // 2
+    layer = CausalSpectralConv1d(width, modes, kernel_len).to(device)
+    x = torch.randn(2, width, length, device=device)
+    kernel = layer.kernel()  # [in, out, lag]
+    direct = functional.conv1d(
+        functional.pad(x, (kernel_len - 1, 0)), kernel.transpose(0, 1).flip(-1)
+    )
+    with torch.no_grad():
+        torch.testing.assert_close(layer(x), direct, rtol=1e-4, atol=1e-5)

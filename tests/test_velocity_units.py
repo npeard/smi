@@ -70,6 +70,7 @@ def _tiny_lit_module() -> LitModule:
             'dynamic': False,
             'velocity_loss_weight': 1.0,
             'displacement_loss_weight': 1.0,
+            'sign_invariant': False,
         },
         training_hparams={'target': 'velocity'},
     )

@@ -126,8 +126,9 @@ def train_func(config: dict[str, dict[str, Any]]) -> None:
 
     - a :class:`TuneReportCheckpointCallback` reporting :data:`SEARCH_METRIC`,
       injected via ``TrainingInterface(extra_callbacks=...)``;
-    - ``check_val_every_n_epoch=1`` so the metric is reported every epoch (the
-      single-run default of 5 would never report on a short ASHA budget).
+    - the tune YAMLs set ``training.check_val_every_n_epoch: 1`` so the metric
+      is reported every epoch (a coarser cadence would never report on a short
+      ASHA budget).
 
     The same code path runs on CPU (tests) and GPU (rig) -- the accelerator and
     device count come straight from ``config['training']``.
@@ -162,7 +163,6 @@ def train_func(config: dict[str, dict[str, Any]]) -> None:
         config=training_config,
         experiment_name=experiment_name,
         extra_callbacks=[report_callback],
-        check_val_every_n_epoch=1,
     )
     interface.train()
 
@@ -217,20 +217,14 @@ def _train_ensemble(config: dict[str, dict[str, Any]]) -> None:
         ),
         dropouts=ensemble.get('dropouts'),
         per_member_lr=ensemble.get('per_member_lr'),
+        sign_invariant=bool(loss['sign_invariant']),
     )
     batch_size = int(training['batch_size'])
 
     if synthetic is not None and synthetic.get('use_synthetic_training', False):
-        wavelengths_nm = synthetic['wavelengths_nm']
-        model_hparams['in_channels'] = len(wavelengths_nm)
+        model_hparams['in_channels'] = len(synthetic['sim']['wavelengths_um'])
         module: EnsembleModule = SyntheticEnsembleModule(
-            model_hparams,
-            seeds,
-            wavelengths_nm=wavelengths_nm,
-            start_freq=synthetic.get('start_freq', 1.0),
-            end_freq=synthetic.get('end_freq', 1000.0),
-            max_displacement_um=synthetic.get('max_displacement_um', 5.0),
-            **common,
+            model_hparams, seeds, sim=synthetic['sim'], **common
         )
         steps = int(synthetic.get('steps_per_epoch', 100))
         val_steps = int(synthetic.get('val_steps', max(1, steps // 5)))
@@ -245,7 +239,8 @@ def _train_ensemble(config: dict[str, dict[str, Any]]) -> None:
     else:
         data = config['data']
         model_hparams['in_channels'] = int(data.get('num_pd_channels', 3))
-        module = EnsembleModule(model_hparams, seeds, **common)
+        # Real data keeps the identity wrapper the ensemble has always used.
+        module = EnsembleModule(model_hparams, seeds, norm_stats=None, **common)
         datamodule = VelocityDataModule(
             dataset_path=_resolve_dataset_path(data),
             split_ratios=tuple(data.get('split_ratios', [80, 10, 10])),
@@ -261,8 +256,11 @@ def _train_ensemble(config: dict[str, dict[str, Any]]) -> None:
         max_epochs=int(training['max_epochs']),
         accelerator=training.get('accelerator', 'cpu'),
         devices=training.get('devices', 1),
+        precision=training['precision'],
         callbacks=[report_callback],
-        check_val_every_n_epoch=1,
+        # Read from the YAML like train_func; no convergence callback here, ASHA
+        # governs when an ensemble trial stops.
+        check_val_every_n_epoch=int(training['check_val_every_n_epoch']),
         logger=False,
         enable_checkpointing=False,
     )
@@ -414,7 +412,11 @@ def export_best_model(best_result: Any, output_path: str) -> str:
         ]
         if not ckpt_files:
             raise ValueError(f'No Lightning checkpoint found under {ckpt_dir}')
-        lit = module_cls.load_from_checkpoint(str(ckpt_files[0]), map_location='cpu')
+        # The synthetic module's baked stats come from the state dict.
+        restore = {'restoring_checkpoint': True} if is_synthetic else {}
+        lit = module_cls.load_from_checkpoint(
+            str(ckpt_files[0]), map_location='cpu', **restore
+        )
 
     # torch.compile (GPU runs) wraps the model; unwrap to the raw Model.
     model = getattr(lit.model, '_orig_mod', lit.model)

@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from plot_waveforms import calculate_fft
 
+from smi.synthetic import coil_driver as coil_driver_module
 from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
 from smi.synthetic.waveform import Waveform
 
@@ -20,7 +21,7 @@ def test_spectra_consistency():
     are consistent with those calculated using calculate_fft.
     """
     # Create a waveform generator with test parameters
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256, seed=0)
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()
@@ -58,7 +59,7 @@ def test_reconstructed_waveforms():
     match those retrieved from CoilDriver.
     """
     # Create a waveform generator with test parameters
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256, seed=0)
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()
@@ -153,7 +154,7 @@ def test_manual_transfer_function_computation():
 def test_displacement_velocity_relationship():
     """Test that the velocity is the time derivative of displacement."""
     # Create a waveform generator with test parameters
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256, seed=0)
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()
@@ -193,7 +194,7 @@ def test_integrated_velocity_and_derivative_displacement():
     frequency-domain approaches for calculating velocity and displacement.
     """
     # Create a waveform generator with test parameters
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256, seed=0)
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()
@@ -250,7 +251,7 @@ def test_integrated_velocity_and_derivative_displacement():
     ), 'Derivative of displacement does not match velocity from transfer function'
 
 
-def test_coil_driver_sample_spectrum_hermitian():
+def test_coil_driver_sample_spectrum_hermitian(monkeypatch):
     """Test that the spectrum returned by CoilDriver.sample() with equalize_gain=True is
     Hermitian.
 
@@ -263,8 +264,11 @@ def test_coil_driver_sample_spectrum_hermitian():
     2. Generates multiple waveform samples with equalize_gain=True
     3. For each sample, verifies that the spectrum satisfies the Hermitian property
     """
+    # CoilDriver.sample scales by a module-level U(0, 1) draw; seeded so a tiny
+    # draw cannot push np.isclose's absolute tolerance past the spectrum.
+    monkeypatch.setattr(coil_driver_module, '_rng', np.random.default_rng(0))
     # Create a waveform generator
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256, seed=0)
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()
@@ -324,7 +328,7 @@ def test_gain_normalization():
     normalized standard voltage spectrum shape
     """
     # Create a waveform generator
-    waveform = Waveform(start_freq=1, end_freq=100, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(start_freq=1, end_freq=100, gen_dec=8192, acq_dec=256, seed=0)
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()

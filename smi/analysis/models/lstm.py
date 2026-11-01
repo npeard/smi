@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor, nn
 
+from .base import SequenceModel
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +41,7 @@ class LSTMConfig:
             raise ValueError(f'dropout must be in [0, 1), got {self.dropout}')
 
 
-class LSTM(nn.Module):
+class LSTM(SequenceModel):
     """Stacked LSTM for temporal sequence-to-sequence prediction.
 
     Takes multi-channel input of shape [batch, in_channels, seq_len] and produces
@@ -88,6 +90,18 @@ class LSTM(nn.Module):
 
         # [batch, 1, seq_len]
         return out.permute(0, 2, 1)
+
+    @property
+    @torch.jit.unused
+    def causal(self) -> bool:
+        """A bidirectional LSTM reads the whole shot."""
+        return not self.config.bidirectional
+
+    @property
+    @torch.jit.unused
+    def receptive_field(self) -> int | None:
+        """Recurrent state has no finite lookback."""
+        return None
 
     @property
     @torch.jit.unused

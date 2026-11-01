@@ -10,11 +10,7 @@ from torch import nn, optim
 
 # Conditional import for Muon optimizer
 try:
-    from muon import (  # ty: ignore[unresolved-import]  # optional dependency
-        Muon,
-        MuonWithAuxAdam,
-        SingleDeviceMuonWithAuxAdam,
-    )
+    from muon import Muon, MuonWithAuxAdam, SingleDeviceMuonWithAuxAdam  # ty: ignore[unresolved-import]  # optional dependency
 
     MUON_AVAILABLE = True
 except ImportError:
@@ -25,14 +21,18 @@ except ImportError:
 
 from smi.analysis.features import default_registry
 from smi.analysis.features.normalization import NORMALIZATION_STATS
-from smi.analysis.metrics import velocity_rmse
-from smi.analysis.models.base import Model
+from smi.analysis.metrics import apply_best_sign, best_sign, velocity_rmse
+from smi.analysis.models.base import Model, SequenceModel
 from smi.analysis.models.factory import create_model
 from smi.analysis.models.vicreg import VicRegLoss
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
 
 logger = logging.getLogger(__name__)
+
+#: Rate (Hz) the loss and ``velocity_from_output`` integrate and differentiate
+#: at: the rig's 125 MHz ADC decimated by 256, which every acquisition uses.
+SAMPLE_RATE = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
 
 
 class LitModule(lightning_module.LightningModule):
@@ -105,6 +105,8 @@ class LitModule(lightning_module.LightningModule):
         if 'dynamic' not in self.loss_hparams:
             raise KeyError("'dynamic' key must be specified in loss_hparams config")
         self.dynamic_weighting = self.loss_hparams['dynamic']
+        # Required, no default: whether the loss forgives a per-shot global sign.
+        self.sign_invariant = bool(self.loss_hparams['sign_invariant'])
 
         if self.dynamic_weighting:
             # Initialize learnable weight parameters for homoscedastic uncertainty
@@ -130,7 +132,7 @@ class LitModule(lightning_module.LightningModule):
 
         # Include model size metrics in logged hyperparameters
         total_params = getattr(self._inner_model, 'total_params', None)
-        receptive_field = getattr(self._inner_model, 'receptive_field', None)
+        receptive_field = inner.receptive_field
         if total_params is not None:
             model_hparams = {**(model_hparams or {}), 'total_params': int(total_params)}
         if receptive_field is not None:
@@ -140,6 +142,11 @@ class LitModule(lightning_module.LightningModule):
             }
         self.model_hparams = model_hparams
         self.save_hyperparameters(ignore=['model'])
+
+    @property
+    def inner_model(self) -> SequenceModel:
+        """The bare architecture inside the normalizing wrapper."""
+        return self._inner_model
 
     def _make_model(self, inner: nn.Module) -> Model:
         """Wrap the inner network with baked input/output normalization.
@@ -280,13 +287,14 @@ class LitModule(lightning_module.LightningModule):
 
         return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler}}
 
-    def _velocity_prediction(self, prediction: torch.Tensor) -> torch.Tensor:
+    def velocity_from_output(self, prediction: torch.Tensor) -> torch.Tensor:
         """Recover predicted velocity (um/ms) from the model's output.
 
         When the model targets displacement the velocity is differentiated
         back out, using the same conversion ``loss_function`` and
         ``predict_step`` use, so the logged RMSE describes exactly the
-        quantity those report.
+        quantity those report. Public because ``evaluate`` scores a
+        checkpoint's output through it.
 
         Args:
             prediction: Model output, velocity or displacement per
@@ -297,7 +305,7 @@ class LitModule(lightning_module.LightningModule):
         """
         if self.target == 'velocity':
             return prediction
-        sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+        sample_rate = SAMPLE_RATE
         return cast(
             torch.Tensor, CoilDriver.derivative_displacement(prediction, sample_rate)
         )
@@ -325,7 +333,7 @@ class LitModule(lightning_module.LightningModule):
             Dictionary of loss components with keys representing loss types
             and values representing the corresponding loss tensors.
         """
-        sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+        sample_rate = SAMPLE_RATE
 
         if self.target == 'velocity':
             # Model predicts velocity
@@ -333,20 +341,30 @@ class LitModule(lightning_module.LightningModule):
             # Auxiliary loss: displacement (physics-informed, derived from velocity)
             displacement_hat = CoilDriver.integrate_velocity(velocity_hat, sample_rate)
             # Shift displacements to start at 0 for fair comparison
-            displacement_hat -= displacement_hat[:, 0:1]
-            displacement_target -= displacement_target[:, 0:1]
+            displacement_hat = displacement_hat - displacement_hat[:, :1]
+            displacement_target = displacement_target - displacement_target[:, :1]
         elif self.target == 'displacement':
             # Model predicts displacement
             displacement_hat = prediction
             # Shift displacements to start at 0 for fair comparison
-            displacement_hat -= displacement_hat[:, 0:1]
-            displacement_target -= displacement_target[:, 0:1]
+            displacement_hat = displacement_hat - displacement_hat[:, :1]
+            displacement_target = displacement_target - displacement_target[:, :1]
             # Auxiliary loss: velocity (physics-informed, derived from displacement)
             velocity_hat = CoilDriver.derivative_displacement(
                 displacement_hat, sample_rate
             )
         else:
             raise ValueError(f'Unknown target: {self.target}')
+
+        if self.sign_invariant:
+            trained = (
+                (velocity_hat, velocity_target)
+                if self.target == 'velocity'
+                else (displacement_hat, displacement_target)
+            )
+            velocity_hat, displacement_hat = apply_best_sign(
+                velocity_hat, displacement_hat, *trained
+            )
 
         # No unit conversion here. Velocity is um/ms and displacement is um as
         # stored, converted once at the CoilDriver boundary, so the logged
@@ -435,14 +453,11 @@ class LitModule(lightning_module.LightningModule):
             loss_dict['vicreg'] = vicreg
             loss_dict['total'] = loss_dict['total'] + self._vicreg_weight * vicreg
 
-        # Log each loss component with train_ prefix
+        # Log each loss component with train_ prefix, without prog_bar: a
+        # progress-bar value is read back with .item() every batch, a
+        # host-device sync on every step.
         for loss_name, loss_value in loss_dict.items():
-            self.log(
-                f'train/{loss_name}_loss',
-                loss_value,
-                prog_bar=(loss_name == 'total'),  # Only show total loss in progress bar
-                on_epoch=True,
-            )
+            self.log(f'train/{loss_name}_loss', loss_value, on_epoch=True)
 
         # Return the total loss for backpropagation
         return loss_dict['total']
@@ -478,12 +493,62 @@ class LitModule(lightning_module.LightningModule):
             )
 
         # RMSE in stored units, so a run is directly comparable to the
-        # analytic baseline without a separate evaluation pass.
+        # analytic baseline without a separate evaluation pass. With
+        # loss.sign_invariant=True, val/velocity_loss is sign-invariant but this
+        # signed RMSE deliberately is not: its collapse near std(v) is the
+        # visible symptom of a Michelson model that cannot see direction.
+        velocity_hat = self.velocity_from_output(prediction)
         self.log(
             'val/velocity_rmse_um_per_ms',
-            velocity_rmse(self._velocity_prediction(prediction), velocity_target),
+            velocity_rmse(velocity_hat, velocity_target),
             sync_dist=torch.distributed.is_available()
             and torch.distributed.is_initialized(),
+        )
+        # Logged beside the signed RMSE so a sign collapse is visible in the
+        # curves: signed stays near std(v) while this one keeps falling.
+        self.log(
+            'val/velocity_rmse_sign_invariant_um_per_ms',
+            velocity_rmse(
+                best_sign(velocity_hat, velocity_target) * velocity_hat, velocity_target
+            ),
+            sync_dist=torch.distributed.is_available()
+            and torch.distributed.is_initialized(),
+        )
+        # The value of both RMSEs above for a zero output, reduced over the
+        # epoch the same way, so a run stalled at the zero-output plateau can be
+        # told from a converged one (TrainingInterface.converged).
+        self.log(
+            'val/velocity_rmse_zero_predictor_um_per_ms',
+            velocity_rmse(torch.zeros_like(velocity_hat), velocity_target),
+            sync_dist=torch.distributed.is_available()
+            and torch.distributed.is_initialized(),
+        )
+        if self.target == 'displacement':
+            self._log_displacement_rmse(prediction, displacement_target)
+
+    def _log_displacement_rmse(
+        self, displacement_hat: torch.Tensor, displacement_target: torch.Tensor
+    ) -> None:
+        """Log a displacement target's own monitor keys, start offsets removed.
+
+        A displacement-target run is monitored on these, not on its velocity
+        (see ``training_interface.convergence_monitor``). Same three variants
+        and reduction as the velocity keys; ``velocity_rmse`` is a plain RMSE,
+        here in um.
+        """
+        d_hat = displacement_hat - displacement_hat[:, :1]
+        d = displacement_target - displacement_target[:, :1]
+        sync = torch.distributed.is_available() and torch.distributed.is_initialized()
+        self.log('val/displacement_rmse_um', velocity_rmse(d_hat, d), sync_dist=sync)
+        self.log(
+            'val/displacement_rmse_sign_invariant_um',
+            velocity_rmse(best_sign(d_hat, d) * d_hat, d),
+            sync_dist=sync,
+        )
+        self.log(
+            'val/displacement_rmse_zero_predictor_um',
+            velocity_rmse(torch.zeros_like(d), d),
+            sync_dist=sync,
         )
 
     @override
@@ -517,7 +582,7 @@ class LitModule(lightning_module.LightningModule):
 
         self.log(
             'test/velocity_rmse_um_per_ms',
-            velocity_rmse(self._velocity_prediction(prediction), velocity_target),
+            velocity_rmse(self.velocity_from_output(prediction), velocity_target),
             sync_dist=torch.distributed.is_available()
             and torch.distributed.is_initialized(),
         )
@@ -543,7 +608,7 @@ class LitModule(lightning_module.LightningModule):
         signals, velocity_target, displacement_target = batch
 
         prediction = self(signals)  # Model prediction (velocity or displacement)
-        sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+        sample_rate = SAMPLE_RATE
 
         # Derive both velocity and displacement for plotting, regardless of target
         if self.target == 'velocity':
@@ -562,8 +627,8 @@ class LitModule(lightning_module.LightningModule):
             )
 
         # Shift all displacements to start at zero for easy comparison
-        displacement_hat -= displacement_hat[:, 0:1]
-        displacement_target -= displacement_target[:, 0:1]
+        displacement_hat = displacement_hat - displacement_hat[:, :1]
+        displacement_target = displacement_target - displacement_target[:, :1]
 
         return (
             velocity_hat,

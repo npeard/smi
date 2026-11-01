@@ -1,0 +1,50 @@
+# Q3: noise-free accuracy ceiling vs feedback strength C, on all three
+# channels. Michelson (C = 0) cannot show direction, so it trains and is
+# scored with the sign-invariant loss; every C > 0 sim with alpha != 0 can.
+# Run: python -m smi.analysis.experiments smi/analysis/experiments/q3_noise_free.yaml
+# Every existing family at the 44k budget (Task 19); later families extend this.
+families:
+  - {name: tcn-44k, config: ../models/configs/matched/tcn-44k.yaml}
+  - {name: scnn-44k, config: ../models/configs/matched/scnn-44k.yaml}
+  - {name: barland-44k, config: ../models/configs/matched/barland-44k.yaml}
+  - {name: tcan-44k, config: ../models/configs/matched/tcan-44k.yaml}
+  - {name: lstm-44k, config: ../models/configs/matched/lstm-44k.yaml}
+  - {name: lstm-bidir-44k, config: ../models/configs/matched/lstm-bidir-44k.yaml}
+  - {name: mamba-44k, config: ../models/configs/matched/mamba-44k.yaml}
+  - {name: mlp-44k, config: ../models/configs/matched/mlp-44k.yaml}
+  - {name: patchtransformer-causal-44k, config: ../models/configs/matched/patchtransformer-causal-44k.yaml}
+  - {name: patchtransformer-offline-44k, config: ../models/configs/matched/patchtransformer-offline-44k.yaml}
+  - {name: unettransformer-causal-44k, config: ../models/configs/matched/unettransformer-causal-44k.yaml}
+  - {name: unettransformer-offline-44k, config: ../models/configs/matched/unettransformer-offline-44k.yaml}
+  - {name: neuraloperator-causal-44k, config: ../models/configs/matched/neuraloperator-causal-44k.yaml}
+  - {name: neuraloperator-offline-44k, config: ../models/configs/matched/neuraloperator-offline-44k.yaml}
+
+channel_subsets:
+  - [0.635, 0.6748, 0.515]
+
+sims:
+  - {name: michelson, preset: noise_free, feedback_c: 0.0, alpha: 0.0, sign_invariant: true}
+  - name: smi
+    preset: noise_free
+    feedback_c: 0.2
+    alpha: 3.0
+    sweep: {feedback_c: [0.05, 0.1, 0.2, 0.4, 0.7, 0.9]}
+
+seeds: [0, 1, 2]
+oracle: true
+
+loss:
+  sign_invariant: false  # default for sims that do not set their own
+
+# Each family's own schedule (30 epochs, T_0 = 30), not S1's T_0 = 90.
+synthetic:
+  steps_per_epoch: 200
+  val_steps: 20
+  train_crop_length: 4096
+
+training:
+  accelerator: mps
+  devices: 1
+  precision: 32-true
+
+test_set: {seed: 1000, n_shots: 64}

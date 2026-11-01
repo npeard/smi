@@ -37,12 +37,18 @@ import torch
 from torch import Tensor, nn
 from torch.func import functional_call, stack_module_state
 
+from smi.analysis.metrics import apply_best_sign
 from smi.analysis.models.base import Model
 from smi.analysis.models.factory import create_model
-from smi.analysis.synthetic_lit_module import SyntheticLitModule
+from smi.analysis.synthetic_lit_module import (
+    NORM_STATS_SEED,
+    NORM_STATS_SHOTS,
+    VAL_SEED,
+    HeldOutReplay,
+)
 from smi.redpitaya.redpitaya_config import RedPitayaConfig
 from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.waveform import Waveform
+from smi.synthetic.forward import SimConfig, normalization_stats, simulate_batch
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +60,7 @@ def physics_loss(
     target: str,
     velocity_loss_weight: float,
     displacement_loss_weight: float,
+    sign_invariant: bool,
 ) -> dict[str, Tensor]:
     """Physics-informed velocity/displacement loss for a single member.
 
@@ -71,6 +78,8 @@ def physics_loss(
         target: Either ``'velocity'`` or ``'displacement'``.
         velocity_loss_weight: Weight on the velocity MSE term.
         displacement_loss_weight: Weight on the displacement MSE term.
+        sign_invariant: Score each shot under its better global sign (see
+            :func:`smi.analysis.metrics.apply_best_sign`).
 
     Returns:
         Dict with keys ``'velocity'``, ``'displacement'``, ``'total_unweighted'``
@@ -90,6 +99,16 @@ def physics_loss(
         velocity_hat = CoilDriver.derivative_displacement(displacement_hat, sample_rate)
     else:
         raise ValueError(f'Unknown target: {target}')
+
+    if sign_invariant:
+        trained = (
+            (velocity_hat, velocity_target)
+            if target == 'velocity'
+            else (displacement_hat, displacement_target)
+        )
+        velocity_hat, displacement_hat = apply_best_sign(
+            velocity_hat, displacement_hat, *trained
+        )
 
     # No unit conversion here: velocity is already um/ms as stored (converted
     # once at the CoilDriver boundary), matching LitModule.loss_function.
@@ -134,8 +153,9 @@ def _desanitize(name: str) -> str:
 def build_member(
     model_hparams: dict[str, Any],
     seed: int,
+    *,
+    norm_stats: dict[str, Tensor] | None,
     dropout: float | None = None,
-    in_channels: int | None = None,
 ) -> Model:
     """Build one ``Model``-wrapped member with a deterministic seed.
 
@@ -143,21 +163,24 @@ def build_member(
         model_hparams: Hyperparameters passed to :func:`create_model`. The
             architecture must be identical across all members of an ensemble.
         seed: Seed used to make this member's initialization distinct.
+        norm_stats: ``Model`` keyword arguments (e.g. from
+            :func:`smi.synthetic.forward.normalization_stats`), or None for an
+            identity wrapper.
         dropout: If given, overrides the dropout probability of every dropout
             layer in the inner network (lets dropout vary per member).
-        in_channels: Number of input channels for the identity normalization
-            wrapper; defaults to ``model_hparams['in_channels']``.
-
-    Returns:
-        A ``Model``-wrapped network with identity (synthetic-scale)
-        normalization, matching the synthetic training path.
     """
-    torch.manual_seed(seed)
-    inner = create_model(model_hparams)
+    # The member seed must fix only this init: torch.manual_seed reseeds every
+    # device and would pin the shared training stream to the last member's
+    # seed, whatever seed the grid cell set. Members are built on the CPU, so
+    # a forked, CPU-only seed suffices.
+    with torch.random.fork_rng(devices=[]):
+        torch.default_generator.manual_seed(seed)
+        inner = create_model(model_hparams)
     if dropout is not None:
         _set_dropout(inner, dropout)
-    channels = in_channels if in_channels is not None else model_hparams['in_channels']
-    return Model.identity(inner, channels)
+    if norm_stats is None:
+        return Model.identity(inner, model_hparams['in_channels'])
+    return Model(inner, **norm_stats)
 
 
 class EnsembleModule(lightning_module.LightningModule):
@@ -188,6 +211,8 @@ class EnsembleModule(lightning_module.LightningModule):
         per_member_lr: Optional per-member learning rate list (length ``K``).
             When provided, manual optimization with a per-member-scaled Adam
             update is used instead of the shared-lr optimizer.
+        sign_invariant: Score each shot under its better global sign (required,
+            the same flag as ``loss.sign_invariant`` for ``LitModule``).
     """
 
     def __init__(
@@ -200,8 +225,13 @@ class EnsembleModule(lightning_module.LightningModule):
         displacement_loss_weights: list[float] | float = 1.0,
         dropouts: list[float] | float | None = None,
         per_member_lr: list[float] | None = None,
+        *,
+        norm_stats: dict[str, Tensor] | None,
+        sign_invariant: bool,
     ) -> None:
         super().__init__()
+        self.norm_stats = norm_stats
+        self.sign_invariant = sign_invariant
         self.model_hparams = model_hparams
         self.seeds = list(seeds)
         self.num_members = len(self.seeds)
@@ -232,7 +262,12 @@ class EnsembleModule(lightning_module.LightningModule):
 
         # Build K distinct members of the same architecture.
         members = [
-            build_member(model_hparams, seed=self.seeds[i], dropout=member_dropouts[i])
+            build_member(
+                model_hparams,
+                seed=self.seeds[i],
+                norm_stats=norm_stats,
+                dropout=member_dropouts[i],
+            )
             for i in range(self.num_members)
         ]
 
@@ -352,6 +387,7 @@ class EnsembleModule(lightning_module.LightningModule):
                 target=self.target,
                 velocity_loss_weight=float(self.velocity_weight_vec[i]),
                 displacement_loss_weight=float(self.displacement_weight_vec[i]),
+                sign_invariant=self.sign_invariant,
             )
             loss_dicts.append(loss_dict)
             totals.append(loss_dict['total'])
@@ -490,7 +526,9 @@ class EnsembleModule(lightning_module.LightningModule):
         if not 0 <= member_idx < self.num_members:
             raise IndexError(f'member_idx {member_idx} out of range')
 
-        member = build_member(self.model_hparams, seed=self.seeds[member_idx])
+        member = build_member(
+            self.model_hparams, seed=self.seeds[member_idx], norm_stats=self.norm_stats
+        )
         state = member.state_dict()
         # Overwrite with the trained slice for this member.
         for key, tensor in self._stacked_params.items():
@@ -503,25 +541,23 @@ class EnsembleModule(lightning_module.LightningModule):
 
 
 class SyntheticEnsembleModule(EnsembleModule):
-    """``EnsembleModule`` that generates one shared synthetic batch on-device.
+    """``EnsembleModule`` that simulates one shared synthetic batch on-device.
 
     This is the inner level of the search pipeline's synthetic-data workflow: it
     mirrors :class:`smi.analysis.synthetic_lit_module.SyntheticLitModule` (same
-    on-device Rayleigh-spectrum generation via :meth:`generate_synthetic_batch`)
-    but feeds the SINGLE generated batch to all ``K`` members each step (the
-    ``in_dims=(0, 0, None)`` broadcast in the parent), so the cheap on-GPU data is
-    generated once and shared. The dataloader only supplies an iteration count
-    (use :class:`SyntheticIndexDataset`); the batch content is generated here.
+    :func:`smi.synthetic.forward.simulate_batch` and the same baked
+    normalization) but feeds the SINGLE simulated batch to all ``K`` members
+    each step (the ``in_dims=(0, 0, None)`` broadcast in the parent). The
+    dataloader only supplies an iteration count (use
+    :class:`SyntheticIndexDataset`); the batch content is generated here.
 
     Args:
         model_hparams: Shared architecture hyperparameters; ``in_channels`` must
-            equal ``len(wavelengths_nm)``.
+            equal the number of wavelengths in ``sim``.
         seeds: Per-member seeds (length defines ``K``).
-        wavelengths_nm: Interferometer wavelengths in nanometers (one per channel).
-        start_freq: Lower bound of the displacement spectrum (Hz).
-        end_freq: Upper bound of the displacement spectrum (Hz).
-        max_displacement_um: Peak displacement amplitude in microns.
-        **ensemble_kwargs: Forwarded to :class:`EnsembleModule` (``target``, ``lr``,
+        sim: Every ``SimConfig`` field by name (the YAML ``synthetic.sim`` block).
+        target: Must be ``'velocity'``; stated, not defaulted.
+        **ensemble_kwargs: Forwarded to :class:`EnsembleModule` (``lr``,
             ``velocity_loss_weights``, ``displacement_loss_weights``, ``dropouts``,
             ``per_member_lr``).
     """
@@ -531,50 +567,61 @@ class SyntheticEnsembleModule(EnsembleModule):
         model_hparams: dict[str, Any],
         seeds: list[int],
         *,
-        wavelengths_nm: list[float],
-        start_freq: float = 1.0,
-        end_freq: float = 1000.0,
-        max_displacement_um: float = 5.0,
+        sim: dict[str, Any],
+        target: str,
         **ensemble_kwargs: Any,
     ) -> None:
-        if len(wavelengths_nm) != model_hparams['in_channels']:
+        if target != 'velocity':
             raise ValueError(
-                f'len(wavelengths_nm)={len(wavelengths_nm)} must equal '
+                f'synthetic normalization scales the velocity target, not {target!r}'
+            )
+        sim_config = SimConfig(**sim)
+        if len(sim_config.wavelengths_um) != model_hparams['in_channels']:
+            raise ValueError(
+                f'{len(sim_config.wavelengths_um)} wavelengths but '
                 f'in_channels={model_hparams["in_channels"]}'
             )
-        super().__init__(model_hparams, seeds, **ensemble_kwargs)
-        self.max_displacement_um = max_displacement_um
-        self.acq_sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
-        self.waveform = Waveform(start_freq=start_freq, end_freq=end_freq)
-        self.register_buffer(
-            'wavelengths_um',
-            torch.tensor(
-                [w / 1000.0 for w in wavelengths_nm], dtype=torch.float32
-            ).view(1, -1, 1),
+        super().__init__(
+            model_hparams,
+            seeds,
+            norm_stats=normalization_stats(
+                sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED, target
+            ),
+            target=target,
+            **ensemble_kwargs,
         )
+        self.sim_config = sim_config
+        self._held_out_replay = HeldOutReplay()
 
-    def _shared_batch(self, batch: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-        """Generate one synthetic batch (shared across all members) on-device."""
-        return SyntheticLitModule.generate_synthetic_batch(
-            len(batch),
-            self.device,
-            self.waveform,
-            self.wavelengths_um,
-            self.max_displacement_um,
-            self.acq_sample_rate,
-        )
+    def _shared_batch(
+        self, batch: Tensor, generator: torch.Generator | None
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Simulate one synthetic batch (shared across all members) on-device.
+
+        A seeded (validation) batch is simulated once and replayed after.
+        """
+
+        def simulate() -> tuple[Tensor, Tensor, Tensor]:
+            out = simulate_batch(self.sim_config, len(batch), self.device, generator)
+            return out.signals, out.velocity, out.displacement
+
+        if generator is None:
+            return simulate()
+        return self._held_out_replay(generator, (len(batch), self.device), simulate)
 
     @override
     def training_step(self, batch: Tensor, batch_idx: int) -> Tensor:
         """Generate a shared synthetic batch, then run the ensemble training step."""
-        return super().training_step(self._shared_batch(batch), batch_idx)
+        return super().training_step(self._shared_batch(batch, None), batch_idx)
 
     @override
     def validation_step(self, batch: Tensor, batch_idx: int) -> None:
         """Generate a shared synthetic batch, then run the ensemble validation step."""
-        super().validation_step(self._shared_batch(batch), batch_idx)
+        super().validation_step(
+            self._shared_batch(batch, self._val_generator), batch_idx
+        )
 
     @override
     def on_validation_epoch_start(self) -> None:
-        """Fix the seed so validation batches are reproducible across epochs."""
-        torch.manual_seed(42)
+        """Restart the validation stream, leaving the training RNG untouched."""
+        self._val_generator = torch.Generator(self.device).manual_seed(VAL_SEED)

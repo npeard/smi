@@ -38,6 +38,7 @@ import numpy as np
 import torch
 from torch.utils.data import Subset
 
+from smi.analysis.baselines import CAUSAL as TABULAR_CAUSAL
 from smi.analysis.baselines import (
     SupportsPredict,
     fit_lightgbm,
@@ -46,7 +47,11 @@ from smi.analysis.baselines import (
     windowize,
 )
 from smi.analysis.datamodule import VelocityDataModule
-from smi.analysis.metrics import displacement_from_velocity, summarize_per_shot
+from smi.analysis.metrics import (
+    displacement_from_velocity,
+    per_shot_rmse,
+    summarize_per_shot,
+)
 from smi.analysis.models.factory import create_model
 from smi.analysis.results_artifact import RunRecord, write_results
 from smi.analysis.training_interface import TrainingConfig, TrainingInterface
@@ -82,14 +87,6 @@ TORCH_CONFIGS: tuple[str, ...] = (
     'tcn-varying',
     'tcn-repeated',
 )
-
-#: Models that see samples after the timestamp they predict.
-#:
-#: This is not "SCNN only". ``windowize`` labels each window at its centre and
-#: the windowed torch models average one prediction across the whole span, so
-#: Barland, MLP, LightGBM and Ridge all use lookahead that the TCN is denied.
-#: Any table comparing them to the analytic baseline has to say so.
-NONCAUSAL_MODELS = frozenset({'SCNN', 'Barland', 'MLP', 'LightGBM', 'Ridge'})
 
 #: Window for the tabular baselines, matched to the Barland receptive field.
 TABULAR_WINDOW = 91
@@ -138,7 +135,6 @@ class SweepSettings:
         device: Explicit torch device, e.g. ``'cuda:0'``. This box has two
             unequal GPUs, so which one a run lands on changes its timing.
         eval_shots: Cap on test shots evaluated per torch run.
-        check_val_every_n_epoch: Validation cadence.
         torch_configs: Config stems to sweep, so a partial rerun can name a
             subset without the module's default tuple being mutated.
         preload: Hold the whole dataset on the GPU instead of streaming it
@@ -150,7 +146,6 @@ class SweepSettings:
     datasets: tuple[str, ...]
     device: str
     eval_shots: int
-    check_val_every_n_epoch: int
     torch_configs: tuple[str, ...] = TORCH_CONFIGS
     preload: bool = True
 
@@ -235,13 +230,13 @@ def evaluate_per_shot(
     Returns:
         Metric name -> the six summary keys of ``summarize_per_shot``.
     """
-    velocity_err = torch.sqrt(torch.mean((predictions - targets) ** 2, dim=1))
+    velocity_err = per_shot_rmse(predictions, targets)
 
     pred_disp = displacement_from_velocity(predictions, dt_ms)
     true_disp = displacement_from_velocity(targets, dt_ms)
     # Both integrals start at zero by construction, so no offset removal is
     # needed before differencing them.
-    disp_err = torch.sqrt(torch.mean((pred_disp - true_disp) ** 2, dim=1))
+    disp_err = per_shot_rmse(pred_disp, true_disp)
 
     return {
         'velocity_rmse_um_per_ms': summarize_per_shot(
@@ -332,7 +327,8 @@ def run_torch_config(
 
     probe = create_model(model_hparams)
     total_params = sum(p.numel() for p in probe.parameters() if p.requires_grad)
-    receptive_field = int(probe.receptive_field)
+    receptive_field = probe.receptive_field
+    causal = probe.causal
     del probe
 
     record_config = dict(model_hparams)
@@ -357,9 +353,7 @@ def run_torch_config(
         # separately and constantly with SPLIT_SEED.
         torch.manual_seed(seed)
         interface = TrainingInterface(
-            config=config,
-            experiment_name=f'{name}_{dataset}_s{seed}',
-            check_val_every_n_epoch=settings.check_val_every_n_epoch,
+            config=config, experiment_name=f'{name}_{dataset}_s{seed}'
         )
         if settings.preload:
             # The DataLoader path re-reads HDF5 and recomputes the velocity
@@ -401,7 +395,7 @@ def run_torch_config(
         config=record_config,
         total_params=total_params,
         receptive_field=receptive_field,
-        sees_future=model_type in NONCAUSAL_MODELS,
+        causal=causal,
         seed=seed,
         device=device_name(settings.device),
         dataset=dataset,
@@ -574,7 +568,7 @@ def run_tabular(
         config=record_config,
         total_params=total_params,
         receptive_field=TABULAR_WINDOW,
-        sees_future=kind in NONCAUSAL_MODELS,
+        causal=TABULAR_CAUSAL,
         seed=seed,
         device='cpu',
         dataset=dataset,
@@ -647,7 +641,6 @@ def main() -> None:
     )
     parser.add_argument('--device', default='cuda:0', help='Explicit torch device.')
     parser.add_argument('--eval-shots', type=int, default=200)
-    parser.add_argument('--check-val-every-n-epoch', type=int, default=2)
     parser.add_argument('--output', type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument('--configs', nargs='+', default=None, help='Subset to run.')
     parser.add_argument(
@@ -665,7 +658,6 @@ def main() -> None:
         datasets=tuple(args.datasets),
         device=args.device,
         eval_shots=20 if args.smoke else args.eval_shots,
-        check_val_every_n_epoch=1 if args.smoke else args.check_val_every_n_epoch,
         torch_configs=tuple(args.configs) if args.configs else TORCH_CONFIGS,
         preload=not args.no_preload,
     )

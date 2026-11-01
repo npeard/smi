@@ -11,6 +11,8 @@ import pytest
 import torch
 
 from smi.synthetic.coil_driver import CoilDriver
+from tests._devices import devices
+from tests._dtype_guard import no_float64
 
 SAMPLE_RATE = 488281.25
 SIGNAL_LENGTH = 4096
@@ -122,3 +124,38 @@ def test_shared_spectrum_matches_separate_calls():
 
     np.testing.assert_array_equal(velocity, expected_v)
     np.testing.assert_array_equal(displacement, expected_d)
+
+
+@pytest.mark.parametrize('device', devices())
+def test_torch_physics_is_float32_on_device(device):
+    """MPS has no float64, so the physics must never promote."""
+    driver = CoilDriver()
+    tensor = torch.from_numpy(_make_batch().astype(np.float32)).to(device)
+
+    with no_float64():
+        velocity, displacement = driver.get_velocity_and_displacement_torch(
+            tensor, SAMPLE_RATE, 5000.0
+        )
+        spectrum, freq = driver.get_displacement_spectrum_torch(tensor, SAMPLE_RATE)
+        driver.get_transfer_function_torch(freq, 5000.0)
+
+    assert torch.get_default_dtype() == torch.float32
+    assert velocity.dtype == displacement.dtype == torch.float32
+    assert spectrum.dtype == torch.complex64
+    assert freq.dtype == torch.float32
+    assert velocity.device.type == tensor.device.type
+
+
+def test_integer_voltage_matches_its_float32_cast():
+    """Integer inputs (e.g. DAC codes) are promoted, not used as freq dtype."""
+    driver = CoilDriver()
+    codes = torch.from_numpy(np.round(100 * _make_batch()).astype(np.int32))
+    velocity, displacement = driver.get_velocity_and_displacement_torch(
+        codes, SAMPLE_RATE
+    )
+    expected_v, expected_d = driver.get_velocity_and_displacement_torch(
+        codes.float(), SAMPLE_RATE
+    )
+    assert velocity.dtype == displacement.dtype == torch.float32
+    torch.testing.assert_close(velocity, expected_v)
+    torch.testing.assert_close(displacement, expected_d)

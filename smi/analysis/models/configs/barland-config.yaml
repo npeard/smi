@@ -7,9 +7,16 @@ model:
   use_weight_norm: true
   # BarlandCNN specific parameters
   window_stride: 256
+  channels: [16, 32, 64, 64]
 
 training:
   max_epochs: 200
+  check_val_every_n_epoch: 1  # validate every epoch; patience_epochs counts these
+  convergence:  # stop on a plateau; max_epochs above stays the cap
+    monitor: "val/velocity_rmse_um_per_ms"  # must follow loss.sign_invariant
+    patience_epochs: 10
+    min_rel_delta: 0.01  # improvement below 1% of the best counts as none
+    min_epochs: 30  # no stop sooner: S1 zero-output stalls lasted ~15 epochs, then escaped
   warmup_epochs: 0
   T_0: 200  # Initial restart period (epochs for first cosine cycle)
   T_mult: 1  # Factor to increase T_i after each restart (1 = constant period, 2 = doubling)
@@ -20,6 +27,7 @@ training:
   learning_rate: 1e-3
   eta_min: 1e-6
   accelerator: "gpu"
+  precision: "32-true"
   devices: 1
   use_logging: true
   wandb_project: "smi"
@@ -30,6 +38,7 @@ loss:
   dynamic: false # enable dynamic loss weighting, overrides weights below
   velocity_loss_weight: 1.0
   displacement_loss_weight: 0.0
+  sign_invariant: false
 
 data:
   data_dir: "./analysis/data"

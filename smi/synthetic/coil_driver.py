@@ -51,6 +51,54 @@ class CoilDriver:
             self.params = CalibrationParameters()
         else:
             self.params = calibration_params
+        # Device tensors of the torch paths, keyed by every argument they are
+        # built from: simulation rebuilds them per batch otherwise, from a
+        # numpy round trip for the precompensation. Valid because ``params``
+        # is never reassigned after construction; callers must not mutate them.
+        self._torch_cache: dict[tuple, tuple[torch.Tensor, torch.Tensor]] = {}
+
+    def normalized_velocity_transfer(
+        self, freq: np.ndarray, min_freq: float
+    ) -> np.ndarray:
+        """Velocity transfer function used to pre-compensate drive spectra.
+
+        Shared by :meth:`sample` and :meth:`precompensate_torch` so the two
+        cannot diverge. It depends only on the frequency grid, so the torch
+        path evaluates it here in float64 and casts the result.
+
+        Args:
+            freq: Frequency grid (Hz), as from ``fftfreq``.
+            min_freq: Lowest valid waveform frequency (Hz); the bin where
+                ``freq == min_freq`` is the normalization reference.
+
+        Raises:
+            ValueError: If no bin of ``freq`` equals ``min_freq``.
+
+        Returns:
+            Complex transfer * j*2*pi*f, divided by 10 times its magnitude at
+            the reference bin.
+        """
+        # Compensation for the velocity transform (because velocity is the
+        # quantity we care about, we'd like for its spectrum to be the same
+        # shape as the original waveform (flat)
+        velocity_transfer = self.get_transfer_function(freq) * 1j * 2 * np.pi * freq
+        # We apply a scaling factor here so that we don't have to apply large
+        # amounts of gain to the original spectrum. This is OK because
+        # ultimately we just want the shape of the velocity spectrum to match
+        # the original waveform (flat) and we don't care so much about the
+        # overall scaling as long as it is within the hardware constraints and
+        # allows us to scan over multiple fringes
+        reference = freq == min_freq
+        if not reference.any():
+            raise ValueError(
+                f'min_freq {min_freq} Hz is not on the frequency grid (spacing '
+                f'{freq[1] - freq[0]} Hz); choose allowed_freqs / decimations '
+                'whose frequencies are grid bins'
+            )
+        scaling_factor = np.abs(velocity_transfer[reference])
+        # The extra factor of 10 here is manually selected and seems to produce
+        # voltages in a compatible range
+        return velocity_transfer / (scaling_factor * 10)
 
     def sample(
         self,
@@ -106,22 +154,9 @@ class CoilDriver:
         n = len(t)
         freq = fftfreq(n, d=1 / sample_rate)
 
-        # Get the complex transfer function
-        transfer_function = self.get_transfer_function(freq)
-
-        # Compute compensation for velocity transform (because velocity is the quantity
-        # we care about, we'd like for its spectrum to be the same shape as the original
-        # waveform (flat)
-        velocity_transfer = transfer_function * 1j * 2 * np.pi * freq
-        # We apply a scaling factor here so that we don't have to apply large amounts of
-        # gain to the original spectrum. This is OK because ultimately we just want the
-        # shape of the velocity spectrum to match the original waveform (flat) and we
-        # don't care so much about the overall scaling as long as it is within the
-        # hardware constraints and allows us to scan over multiple fringes
-        scaling_factor = np.abs(velocity_transfer[freq == waveform.valid_freqs[0]])
-        # The extra factor of 10 here is manually selected and seems to produce voltages
-        # in a compatible range
-        velocity_transfer /= scaling_factor * 10
+        velocity_transfer = self.normalized_velocity_transfer(
+            freq, waveform.valid_freqs[0]
+        )
 
         # Pre-compensate the spectrum by dividing by the complex transfer function
         nonzero_mask = velocity_transfer != 0
@@ -392,15 +427,22 @@ class CoilDriver:
             Tuple of (complex displacement spectrum with the same shape as the
             input, 1-D frequency tensor in Hz).
         """
+        if not voltage_waveform.is_floating_point():
+            # fftfreq has no integer dtype; float32 keeps the MPS path usable.
+            voltage_waveform = voltage_waveform.to(torch.float32)
         n = voltage_waveform.shape[-1]
-        # Do the physics in float64/complex128 so the result matches the numpy
-        # path to float32 tolerance even for float32 inputs.
-        work = voltage_waveform.to(torch.float64)
-        spectrum = torch.fft.fft(work, dim=-1, norm='ortho')
-        freq = torch.fft.fftfreq(
-            n, d=1.0 / sample_rate, device=voltage_waveform.device, dtype=torch.float64
-        )
-        transfer = self.get_transfer_function_torch(freq, max_freq)
+        # Stay in the input dtype (float32/complex64): MPS has no float64, and
+        # promoting here would make the on-device path unusable there.
+        spectrum = torch.fft.fft(voltage_waveform, dim=-1, norm='ortho')
+        device, dtype = voltage_waveform.device, voltage_waveform.dtype
+        key = ('transfer', n, sample_rate, max_freq, device, dtype)
+        if key not in self._torch_cache:
+            freq = torch.fft.fftfreq(n, d=1.0 / sample_rate, device=device, dtype=dtype)
+            self._torch_cache[key] = (
+                freq,
+                self.get_transfer_function_torch(freq, max_freq),
+            )
+        freq, transfer = self._torch_cache[key]
 
         return spectrum * transfer / 2, freq
 
@@ -441,6 +483,49 @@ class CoilDriver:
             else torch.float32
         )
         return velocity.to(out_dtype), displacement.to(out_dtype)
+
+    def precompensate_torch(
+        self, spectrum_voltage: torch.Tensor, sample_rate: float, min_freq: float
+    ) -> torch.Tensor:
+        """Batched float32 torch port of the ``normalize_gain=True`` branch of
+        :meth:`sample`, without its random U(0, 1) power scaling.
+
+        Divides the waveform's spectrum by :meth:`normalized_velocity_transfer`, so the
+        resulting drive voltage produces a velocity spectrum shaped like the
+        input. Bins where the velocity transfer is zero (DC)
+        are set to 1, exactly as in the numpy branch.
+
+        Args:
+            spectrum_voltage: Real ``(batch, time)`` waveform whose FFT is the
+                spectrum to pre-compensate (``Waveform.generate_batch_torch``
+                output).
+            sample_rate: Rate of the waveform's own time base (Hz); on the
+                rig this is the generator rate, as ``sample`` reads it from ``t``.
+            min_freq: Lowest valid waveform frequency (Hz), the normalization
+                reference (``waveform.valid_freqs[0]`` in :meth:`sample`).
+
+        Returns:
+            Pre-compensated drive voltage, same shape/dtype, circularly shifted
+            with ``fftshift`` as :meth:`sample` does.
+        """
+        n, device = spectrum_voltage.shape[-1], spectrum_voltage.device
+        key = ('precompensate', n, sample_rate, min_freq, device)
+        if key not in self._torch_cache:
+            freq = np.fft.fftfreq(n, d=1.0 / sample_rate)
+            velocity_transfer = torch.from_numpy(
+                self.normalized_velocity_transfer(freq, min_freq).astype(np.complex64)
+            ).to(device)
+            # Integer indices, not a bool mask: bool-mask indexing a device
+            # tensor syncs with the host on every call.
+            nonzero = (velocity_transfer != 0).nonzero(as_tuple=True)[0]
+            self._torch_cache[key] = (velocity_transfer[nonzero], nonzero)
+        transfer_at_nonzero, nonzero = self._torch_cache[key]
+
+        spectrum = torch.fft.fft(spectrum_voltage, dim=-1, norm='ortho')
+        out = torch.ones_like(spectrum)
+        out[:, nonzero] = spectrum[:, nonzero] / transfer_at_nonzero
+        voltage = torch.fft.ifft(out, dim=-1, norm='ortho').real
+        return torch.fft.fftshift(voltage, dim=-1)
 
     @staticmethod
     def integrate_velocity(

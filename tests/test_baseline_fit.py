@@ -19,11 +19,14 @@ from smi.analysis.baseline_fit import (
     envelope_forward_model_residual,
     evaluate_dataset,
     fit_phase_amplitude,
+    fit_window_basis,
     forward_model_residual,
+    fringe_basis,
     fringe_matched_window,
     inverse_fit,
     joint_gain_fit,
     measure_phase_drift,
+    window_fringe_coefficients,
     windowed_forward_model_residual,
 )
 from smi.synthetic.coil_driver import MS_PER_S
@@ -571,6 +574,40 @@ class TestInverseFit:
             )
 
 
+def test_window_fringe_coefficients_match_per_window_lstsq():
+    """The batched Gram solve equals an independent lstsq on each window."""
+    rng = np.random.default_rng(3)
+    window, n_win = 64, 5
+    theta = np.cumsum(rng.uniform(0.0, 0.6, window * n_win))
+    signal = rng.normal(size=theta.size)
+    got = window_fringe_coefficients(signal, theta, window)
+    for i in range(n_win):
+        sl = slice(i * window, (i + 1) * window)
+        design = np.stack(
+            [np.cos(theta[sl]), np.sin(theta[sl]), np.ones(window)], axis=1
+        )
+        want, *_ = np.linalg.lstsq(design, signal[sl], rcond=None)
+        np.testing.assert_allclose(got[i], want, atol=1e-10)
+
+
+def test_fit_window_basis_recovers_a_five_column_basis():
+    """The shared solver takes any basis: here fundamental, 2nd harmonic, DC."""
+    window, n_win = 128, 3
+    theta = np.linspace(0.0, 40.0, window * n_win)
+
+    def harmonics(th):
+        return np.stack(
+            [np.cos(th), np.sin(th), np.cos(2 * th), np.sin(2 * th), np.ones_like(th)],
+            axis=2,
+        )
+
+    true = np.array([0.7, -0.2, 0.15, 0.05, 0.3])
+    signal = (harmonics(theta.reshape(n_win, -1)) @ true).ravel()
+    got = fit_window_basis(signal, theta, window, harmonics)
+    np.testing.assert_allclose(got, np.tile(true, (n_win, 1)), atol=1e-9)
+    assert fit_window_basis(signal, theta, window, fringe_basis).shape == (n_win, 3)
+
+
 @pytest.mark.parametrize('injected_fringes', [0.0, 1.5, 3.0])
 def test_measure_phase_drift_recovers_an_injected_drift(injected_fringes):
     """A known phase ramp is recovered in fringes.
@@ -815,3 +852,16 @@ class TestEnvelopeFit:
 
         with pytest.raises(ValueError, match='degree must be'):
             envelope_forward_model_residual(signal, displacement, 0.635, degree=-1)
+
+
+@pytest.mark.parametrize('shape', [(257,), (5, 64)])
+@pytest.mark.parametrize('dtype', [np.float64, np.float32])
+def test_fringe_basis_is_the_inline_design_bit_for_bit(shape, dtype):
+    """The four fits that once stacked [cos, sin, 1] inline must not move."""
+    theta = np.random.default_rng(0).normal(scale=20.0, size=shape).astype(dtype)
+    inline = np.stack(
+        [np.cos(theta), np.sin(theta), np.ones_like(theta)], axis=len(shape)
+    )
+    out = fringe_basis(theta)
+    assert out.dtype == inline.dtype
+    np.testing.assert_array_equal(out, inline)

@@ -6,24 +6,24 @@ authors = [
     {name = "Nolan Peard", email = "nolan.peard@gmail.com"},
 ]
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = {text = "MIT"}
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "numpy>=2.0",
+    "numpy>=2.5",
     "matplotlib",
-    "numba",
-    "torch>=2.5",
-    "lightning",
-    "h5py",
+    "numba>=0.68",
+    "torch>=2.14",
+    "lightning>=2.6",
+    "h5py>=3.16",
     "tqdm",
     "pyyaml",
-    "scipy",
+    "scipy>=1.18",
 ]
 
 [project.urls]
@@ -36,6 +36,8 @@ build-backend = "flit_core.buildapi"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The figure scripts import _figcommon as a sibling module.
+pythonpath = ["report/figures"]
 python_files = "test_*.py"
 addopts = "--verbose"
 filterwarnings = [
@@ -111,7 +113,9 @@ ignore = [
     # Exception handling (reasonable for research code)
     "TRY003",
     # Complexity (reasonable limits for scientific code)
-    "PLR0913", "PLR2004",
+    # PLR0917 (new in ruff 0.17) is the positional twin of PLR0913: same call
+    # shape, same reason; keyword-only rewrites would touch every call site.
+    "PLR0913", "PLR0917", "PLR2004",
     # Private access (sometimes needed for scientific libraries)
     "SLF001",
     # Security (may need adjustment based on your needs)
@@ -141,6 +145,10 @@ allow-dict-calls-with-keyword-arguments = true
 # argv is sys.executable plus paths globbed from the repo, so there is no
 # untrusted input. Scoped to this file rather than widened to tests/**.
 "tests/test_report_build.py" = ["S603"]
+# Same shape: the subprocess argv is sys.executable plus a literal probe.
+"tests/test_platform.py" = ["S603"]
+# Same shape: argv is sys.executable plus this repo's runner module and tmp paths.
+"tests/test_experiments.py" = ["S603"]
 # Marimo notebooks define imports inside reactive cells (PLC0415 is expected).
 "notebooks/**.py" = ["T201", "ANN", "INP001", "E501", "B018", "PLR0915", "PTH123", "F841", "PLC0415"]
 "*.ipynb" = ["ALL"]
@@ -168,11 +176,17 @@ skip = ".git,*.ipynb"
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
-platforms = ["win-64", "linux-64"]
+# The Apple-silicon entry (osx-arm64) declares macOS 14: torch>=2.14 wheels are tagged
+# macosx_14_0, and pixi assumes 13.0 by default and finds no matching wheel.
+platforms = [
+    "win-64",
+    "linux-64",
+    { name = "macos-14-arm64", platform = "osx-arm64", macos = "14.0" },
+]
 
 [tool.pixi.dependencies]
-python = ">=3.12,<3.13"
-polars = ">=1.0"
+python = ">=3.14,<3.15"
+polars = ">=2.1"
 # numpy and numba deliberately come from PyPI (via [project.dependencies]),
 # NOT conda. Conda-forge numpy links libomp.dll while the PyPI CUDA torch
 # wheel bundles Intel's libiomp5md.dll; loading both in one process makes
@@ -183,32 +197,50 @@ polars = ">=1.0"
 # ruff/codespell live in the default env so the `format`/`lint`/`spell` tasks
 # (defined under [tool.pixi.tasks], which runs in the default env) use the
 # pinned, lockfile-backed tools instead of whatever happens to be on PATH.
-ruff = ">=0.15,<0.16"
+ruff = ">=0.17,<0.18"
 codespell = "*"
+
+# The PyPI lightgbm macOS wheel does not bundle libomp and looks for
+# @rpath/libomp.dylib (Homebrew's copy, absent here). A second runtime next to
+# torch's deadlocks threaded lightgbm fits, so the activation script links
+# torch's own libomp into the env instead of installing conda's llvm-openmp.
+# tests/test_platform.py runs torch, lightgbm and scikit-learn threads together.
+[tool.pixi.target.macos-14-arm64.activation]
+scripts = ["scripts/link-torch-libomp.sh"]
 
 [tool.pixi.pypi-dependencies]
 smi = { path = ".", editable = true }
 # The generic gates (check-ascii, preflight), pinned to the same tag as the
 # pre-commit hook. Bump both together.
-agent-config = { git = "https://github.com/npeard/agent-config", tag = "v0.1.0" }
+agent-config = { git = "https://github.com/npeard/agent-config", tag = "v0.1.1" }
 
 # Torch arrives via the editable `smi` install, and PyPI's default win-64 torch
 # wheel is CPU-only -- which cannot answer the GPU-residency question this
-# project needs measured. Pin the CUDA 13.0 index explicitly on both supported
+# project needs measured. Pin the CUDA 13.0 index explicitly on the two CUDA
 # platforms so `torch.cuda.is_available()` is true out of the box.
 #
 # cu130 and not an older channel because the cu124 index stops publishing at
 # torch 2.6.0 for cp312/win-64; 2.14 exists only from cu130 onward. CUDA 13
 # drops Maxwell/Pascal/Volta but keeps sm_75, so both GPUs on this box (RTX
 # 3090 Ti sm_86, Quadro RTX 4000 sm_75) remain supported.
+[tool.pixi.target.win-64.pypi-dependencies]
 torch = { version = ">=2.14", index = "https://download.pytorch.org/whl/cu130" }
+
+[tool.pixi.target.linux-64.pypi-dependencies]
+torch = { version = ">=2.14", index = "https://download.pytorch.org/whl/cu130" }
+
+# osx-arm64 is for MPS work on the Apple machine. The default PyPI wheel
+# ships MPS, so no index override; the CUDA index has no macOS wheels.
+[tool.pixi.target.macos-14-arm64.pypi-dependencies]
+torch = ">=2.15"
 
 [tool.pixi.feature.dev.pypi-dependencies]
 pre-commit = "*"
 nbstripout = "*"
-# Held below 0.0.81: 0.0.90 reports invalid-mutable-override on every
-# nn.Module.forward override, because torch types `forward` as a mutable
-# Callable attribute. Lift the pin when torch or ty resolves that.
+# Held below 0.0.81: 0.0.90 through 0.0.95 (checked 2026-10-31) report
+# invalid-mutable-override on every nn.Module.forward override, because torch
+# types `forward` as a mutable Callable attribute. Lift the pin when torch or
+# ty resolves that.
 ty = "<0.0.81"
 bandit = "*"
 marimo = "*"
@@ -240,8 +272,8 @@ optuna = "*"
 # the process; verified by importing them alongside torch and running
 # np.corrcoef, the site where a second runtime previously aborted the suite.
 [tool.pixi.feature.simple.pypi-dependencies]
-lightgbm = ">=4.0"
-scikit-learn = ">=1.4"
+lightgbm = ">=4.7"
+scikit-learn = ">=1.9"
 
 [tool.pixi.environments]
 # The default env includes the test feature so the `test`/`all` tasks (defined
@@ -267,6 +299,8 @@ precommit = "pre-commit run --all-files"
 # --check-updates weekly rather than per session (a network round trip per
 # hook repo).
 preflight = "preflight"
+# Resumable synthetic-program grid runner: `pixi run experiments <grid.yaml>`.
+experiments = "python -m smi.analysis.experiments"
 
 [tool.pixi.feature.dev.tasks]
 typecheck = "ty check"
@@ -294,11 +328,13 @@ toolgaps = "python ../Projects/agent-config/scripts/toolgaps.py"
 benchmark-loading = "python -m smi.analysis.benchmark_loading"
 
 [tool.ty.environment]
-python-version = "3.12"
+python-version = "3.14"
 # Resolve third-party imports against the dev pixi environment explicitly, so
 # `ty` is deterministic whether invoked via `pixi run typecheck` (env activated)
 # or directly by the pre-commit hook (`.pixi/envs/dev/bin/ty`, env not active).
 python = ".pixi/envs/dev"
+# The figure scripts and their tests import _figcommon as a sibling module.
+extra-paths = ["report/figures"]
 
 [tool.ty.src]
 # notebooks/ are exploratory marimo apps (like .ipynb, already excluded) with
@@ -353,8 +389,14 @@ h5py = "*"
 # neither typst nor snakemake. `cwd` points them at report/ so the Snakefile's
 # relative paths resolve the same whether you invoke a task from the repo root
 # or run snakemake by hand from inside report/.
+#
+# `--scheduler greedy`: the default ILP scheduler shells out to the CBC binary
+# bundled with pulp, which is x86-64 only on macOS and fails with "Bad CPU
+# type" on osx-arm64 without Rosetta. A handful of figure jobs gains nothing
+# from ILP scheduling.
 [tool.pixi.feature.report.tasks]
-report = { cmd = "snakemake --cores all", cwd = "report" }
-report-dry = { cmd = "snakemake --cores all -n", cwd = "report" }
+report = { cmd = "snakemake --cores all --scheduler greedy", cwd = "report" }
+report-dry = { cmd = "snakemake --cores all --scheduler greedy -n", cwd = "report" }
 report-clean = { cmd = "snakemake --cores 1 clean", cwd = "report" }
-report-only = { cmd = "snakemake --cores all build/report.pdf", cwd = "report" }
+report-only = { cmd = "snakemake --cores all --scheduler greedy build/report.pdf", cwd = "report" }
+report-synthetic = { cmd = "snakemake --cores all --scheduler greedy build/synthetic.pdf", cwd = "report" }

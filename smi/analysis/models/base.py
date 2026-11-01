@@ -22,6 +22,41 @@ import torch
 from torch import Tensor, nn
 
 
+class SequenceModel(nn.Module):
+    """Base of every registered architecture: it reports its own time structure.
+
+    A results record's ``causal`` and ``receptive_field`` are read off the built
+    model, so they cannot drift from the code that defines them.
+
+    Attributes:
+        probe_rel_tol: Relative gradient (or response) floor below which a
+            causality or receptive-field probe counts an input as untouched.
+            Exact zero for a model computed in the time domain; only FFT
+            convolution, which spreads float32 round-off over every sample,
+            needs one.
+    """
+
+    probe_rel_tol: float = 0.0
+
+    @property
+    @torch.jit.unused
+    def causal(self) -> bool:
+        """Whether the output at t uses only inputs at or before t."""
+        raise NotImplementedError
+
+    @property
+    @torch.jit.unused
+    def receptive_field(self) -> int | None:
+        """Receptive field in input samples; None when unbounded."""
+        raise NotImplementedError
+
+    @property
+    @torch.jit.unused
+    def requires_full_length(self) -> bool:
+        """Whether the model must train on whole shots, never on crops."""
+        return False
+
+
 class FeatureMap(nn.Module):
     """Input feature transform baked into the model (currently identity).
 
@@ -69,8 +104,8 @@ class Model(nn.Module):
         inner: nn.Module,
         input_mean: np.ndarray | Tensor,
         input_std: np.ndarray | Tensor,
-        output_mean: float,
-        output_std: float,
+        output_mean: float | Tensor,
+        output_std: float | Tensor,
     ) -> None:
         super().__init__()
         self.feature_map = FeatureMap()
@@ -94,7 +129,7 @@ class Model(nn.Module):
         input_feature_names: list[str],
         target_name: str,
         stats: dict[str, dict[str, float]],
-    ) -> 'Model':
+    ) -> Model:
         """Build a ``Model`` from a normalization-stats mapping.
 
         Args:
@@ -116,7 +151,7 @@ class Model(nn.Module):
         )
 
     @classmethod
-    def identity(cls, inner: nn.Module, in_channels: int) -> 'Model':
+    def identity(cls, inner: nn.Module, in_channels: int) -> Model:
         """Build a ``Model`` whose normalization is a no-op (mean 0, std 1).
 
         Used when input/output statistics do not apply (e.g. on-device synthetic

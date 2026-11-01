@@ -23,6 +23,10 @@ except ImportError:  # pragma: no cover -- exercised only in a stripped env
     # holds the ridge baseline and the shared windowing.
     LIGHTGBM_AVAILABLE = False
 
+#: Whether the tabular baselines are causal: no, since :func:`windowize` labels
+#: each window at its centre, so the prediction uses the half window after it.
+CAUSAL = False
+
 
 class SupportsPredict(Protocol):
     """Anything with a scikit-learn-style ``predict``.
@@ -80,7 +84,7 @@ def windowize(
 
 def fit_lightgbm(
     x_train: np.ndarray, y_train: np.ndarray, params: dict[str, Any]
-) -> 'lgb.Booster':
+) -> lgb.Booster:
     """Fit a gradient-boosted regression tree ensemble.
 
     Args:

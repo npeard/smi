@@ -1,21 +1,93 @@
 #!/usr/bin/env python
 
 import logging
-from typing import cast, override
+from collections.abc import Callable
+from typing import Any, override
 
 import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from smi.analysis.lit_module import LitModule
+from smi.analysis.lit_module import SAMPLE_RATE, LitModule
 from smi.analysis.models.base import Model
-from smi.redpitaya.redpitaya_config import RedPitayaConfig
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.waveform import Waveform
+from smi.synthetic.forward import SimConfig, normalization_stats, simulate_batch
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_WAVELENGTHS_NM = [635, 674.8, 515, 780, 450]
+# Seeded CPU sample behind the baked normalization, fixed so a checkpoint
+# rebuilds the same buffers. Measured seed-to-seed spread over 5 seeds: input
+# std < 1%, velocity std 4.6% (the per-shot U(0, 1) drive power is heavy-tailed),
+# which is ample for a fixed affine scale; 0.13 s (Michelson) to 0.5 s (C = 0.9).
+NORM_STATS_SHOTS = 256
+NORM_STATS_SEED = 0
+# Validation and test draw from their own generators, reseeded each epoch, so
+# the held-out batches repeat across epochs while the training stream (the
+# global RNG, seeded per grid cell) is never touched. Reseeding the global RNG
+# here instead replayed the same training batches every epoch and for every
+# seed, because Lightning runs the validation hook before epoch 0 and after each.
+VAL_SEED = 42
+TEST_SEED = 4242
+
+
+class HeldOutReplay:
+    """Simulate a held-out batch once, then replay it on later epochs.
+
+    A held-out batch is a pure function of its generator's state and the
+    request, so it is keyed by both and the generator is left in the state the
+    simulation would have left it: replay is indistinguishable from
+    re-simulating, whatever mix of cached and new batches an epoch asks for
+    (Lightning's sanity check runs only the first few). The training stream
+    (generator None) is never cached. Memory: every distinct batch stays on
+    the device, val_steps * B * (C + 2) * L * 4 bytes for validation (52 MB at
+    20 steps of 32 three-channel 4096-sample shots).
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[tuple, tuple[Any, torch.Tensor]] = {}
+
+    def __call__(
+        self, generator: torch.Generator, request: tuple, simulate: Callable[[], Any]
+    ) -> Any:
+        """``simulate()``'s result for ``generator``'s current state and ``request``."""
+        key = (generator.get_state().numpy().tobytes(), *request)
+        if key not in self._cache:
+            self._cache[key] = (simulate(), generator.get_state())
+        out, state_after = self._cache[key]
+        generator.set_state(state_after)
+        return out
+
+
+def random_crop(
+    length: int | None, *tensors: torch.Tensor, generator: torch.Generator | None
+) -> tuple[torch.Tensor, ...]:
+    """One random contiguous window per shot, shared by every tensor.
+
+    Signals ``[B, C, L]`` and targets ``[B, L]`` are cropped at the same
+    positions, so they stay aligned.
+
+    Args:
+        length: Window length; ``None`` returns the tensors unchanged.
+        *tensors: ``[B, ..., L]`` tensors sharing ``B`` and ``L``.
+        generator: Generator on the tensors' device, or None for the global RNG.
+
+    Returns:
+        The cropped tensors, in order.
+    """
+    full = tensors[0].shape[-1]
+    if length is None:
+        return tensors
+    if not 0 < length <= full:
+        raise ValueError(f'train_crop_length {length} must lie in (0, {full}]')
+    device = tensors[0].device
+    start = torch.randint(
+        0, full - length + 1, (tensors[0].shape[0],), device=device, generator=generator
+    )
+    index = start[:, None] + torch.arange(length, device=device)
+    cropped = []
+    for t in tensors:
+        idx = index.view(t.shape[0], *([1] * (t.dim() - 2)), length)
+        cropped.append(t.gather(-1, idx.expand(*t.shape[:-1], length)))
+    return tuple(cropped)
 
 
 class SyntheticIndexDataset(Dataset):
@@ -36,17 +108,14 @@ class SyntheticIndexDataset(Dataset):
 
 
 class SyntheticLitModule(LitModule):
-    """Lightning Module that generates synthetic interferometer data on-the-fly on GPU.
+    """Lightning Module that simulates its training data on-device each step.
 
-    Extends LitModule with on-device synthetic data generation. Each training/validation
-    step generates a fresh batch of random displacement waveforms, passes them through
-    simulated Michelson interferometers, and feeds the result to the parent class's
-    loss computation.
-
-    The displacement waveforms are generated using the same Rayleigh amplitude + random
-    phase approach as the real experiment's Waveform class, but in PyTorch for GPU
-    acceleration. The coil driver transfer function is skipped --
-    displacement is generated directly.
+    Each training/validation/test step draws a fresh batch from
+    :func:`smi.synthetic.forward.simulate_batch` (drive voltage through the
+    coil, then fringe and detector per the ``SimConfig``) and feeds it to the
+    parent class's loss computation. The model's input/output normalization is
+    fixed per simulator config and baked into the ``Model`` wrapper, so the
+    data reaching a causal network carries no whole-shot statistics.
     """
 
     def __init__(
@@ -57,11 +126,11 @@ class SyntheticLitModule(LitModule):
         loss_hparams: dict | None = None,
         training_hparams: dict | None = None,
         data_hparams: dict | None = None,
-        wavelengths_nm: list[float] | None = None,
-        start_freq: float = 1.0,
-        end_freq: float = 1000.0,
         steps_per_epoch: int = 1000,
-        max_displacement_um: float = 5.0,
+        *,
+        sim: dict[str, Any],
+        train_crop_length: int | None,
+        restoring_checkpoint: bool,
     ):
         """Initialize SyntheticLitModule with hyperparameter configuration.
 
@@ -72,12 +141,34 @@ class SyntheticLitModule(LitModule):
         loss_hparams: Hyperparameters for the loss function
         training_hparams: Hyperparameters for training configuration
         data_hparams: Hyperparameters for data configuration
-        wavelengths_nm: List of interferometer wavelengths in nanometers
-        start_freq: Lower bound of displacement spectrum frequency range (Hz)
-        end_freq: Upper bound of displacement spectrum frequency range (Hz)
         steps_per_epoch: Number of training batches per epoch
-        max_displacement_um: Peak displacement amplitude in microns
+        sim: Every ``SimConfig`` field by name (the YAML ``synthetic.sim``
+            block); kept as a plain dict so it is saved with the checkpoint
+        train_crop_length: Length of the random window each training and
+            validation shot is cut to after simulating the full shot (the
+            trajectory spectrum needs the full length); ``None`` keeps the
+            full shot. Evaluation never crops.
+        restoring_checkpoint: True when a checkpoint's state dict will be
+            loaded next: the baked stats then come from it, so NaN
+            placeholders stand in for the 256-shot simulation (and make a
+            module never actually restored fail loudly). Not saved.
         """
+        # _make_model runs inside LitModule.__init__ and needs both.
+        self.sim_config = SimConfig(**sim)
+        # LitModule's loss and velocity_from_output assume the rig's rate, not
+        # the sim's; a sim at another rate would train and score against a
+        # wrongly scaled derivative or integral without any error.
+        if self.sim_config.sample_rate != SAMPLE_RATE:
+            raise ValueError(
+                f'sim sample_rate {self.sim_config.sample_rate} Hz differs from '
+                f'the {SAMPLE_RATE} Hz LitModule integrates and differentiates at'
+            )
+        self._restoring_checkpoint = restoring_checkpoint
+        if len(self.sim_config.wavelengths_um) != model_hparams['in_channels']:
+            raise ValueError(
+                f'{len(self.sim_config.wavelengths_um)} wavelengths but '
+                f'in_channels={model_hparams["in_channels"]}'
+            )
         super().__init__(
             model_hparams=model_hparams,
             optimizer_hparams=optimizer_hparams,
@@ -86,146 +177,59 @@ class SyntheticLitModule(LitModule):
             training_hparams=training_hparams,
             data_hparams=data_hparams,
         )
-
-        if wavelengths_nm is None:
-            raise ValueError('wavelengths_nm must be provided for synthetic training')
-
-        assert len(wavelengths_nm) == model_hparams['in_channels'], (
-            f'Number of wavelengths ({len(wavelengths_nm)}) must match '
-            f'in_channels ({model_hparams["in_channels"]})'
-        )
-
         self.steps_per_epoch = steps_per_epoch
-        self.max_displacement_um = max_displacement_um
-        self.acq_sample_rate = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
-
-        # Store wavelengths in microns as a buffer for device transfer
-        # Shape [1, C, 1] for broadcasting with [B, 1, L] displacement
-        wavelengths_um = [w / 1000.0 for w in wavelengths_nm]
-        self.register_buffer(
-            'wavelengths_um',
-            torch.tensor(wavelengths_um, dtype=torch.float32).view(1, -1, 1),
-        )
-
-        # Create waveform generator (reuses existing frequency grid logic)
-        self.waveform = Waveform(start_freq=start_freq, end_freq=end_freq)
-
-        # Save synthetic-specific hyperparameters
-        self.save_hyperparameters(ignore=['model'])
-
-        logger.info(
-            f'SyntheticLitModule initialized with {len(wavelengths_nm)} '
-            f'interferometers: {wavelengths_nm} nm'
-        )
+        self.train_crop_length = train_crop_length
+        self._held_out_replay = HeldOutReplay()
+        self.save_hyperparameters(ignore=['model', 'restoring_checkpoint'])
+        logger.info(f'SyntheticLitModule sim config {self.sim_config.hash()}')
 
     @override
     def _make_model(self, inner: nn.Module) -> Model:
-        """Wrap with identity normalization.
-
-        Synthetic signals are already per-sample z-scored on-device (see
-        ``_generate_synthetic_batch``) and the velocity/displacement targets use
-        the synthetic scale, so the real-data feature statistics do not apply.
-        An identity wrapper preserves the historical no-normalization behavior
-        while keeping the wrapped-model interface uniform.
-        """
-        return Model.identity(inner, self.model_hparams['in_channels'])
-
-    @staticmethod
-    def generate_synthetic_batch(
-        batch_size: int,
-        device: torch.device,
-        waveform: Waveform,
-        wavelengths_um: torch.Tensor,
-        max_displacement_um: float,
-        acq_sample_rate: float,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Generate one batch of synthetic interferometer data on the given device.
-
-        This is the reusable core of synthetic data generation, factored out so
-        that both ``SyntheticLitModule`` and the vmap ensemble
-        (``smi.analysis.ensemble``) can produce one batch and -- in the
-        ensemble's case -- share it across all members. The numerics are
-        identical to the historical in-module implementation.
-
-        Args:
-            batch_size: Number of samples to generate.
-            device: Target device for tensor creation.
-            waveform: Waveform generator providing ``generate_batch_torch``.
-            wavelengths_um: Interferometer wavelengths in microns, shape
-                ``[1, C, 1]`` for broadcasting with ``[B, 1, L]`` displacement.
-            max_displacement_um: Peak displacement amplitude in microns.
-            acq_sample_rate: Acquisition sample rate (Hz) used to derive velocity.
-
-        Returns:
-            Tuple of ``(signals, velocity, displacement)`` where:
-            - signals: ``[batch_size, num_channels, seq_len]`` interferometer signals
-            - velocity: ``[batch_size, seq_len]`` velocity in um/ms
-            - displacement: ``[batch_size, seq_len]`` mirror displacement in microns
-        """
-        # 1. Generate random displacement waveforms [B, L]
-        displacement = waveform.generate_batch_torch(batch_size, device)
-
-        # Apply random amplitude scaling per sample
-        scale = torch.rand(batch_size, 1, device=device) * max_displacement_um
-        displacement = displacement * scale
-
-        # Normalize each waveform to have unit max amplitude before scaling
-        max_abs = displacement.abs().amax(dim=-1, keepdim=True).clamp(min=1e-10)
-        displacement = displacement / max_abs * scale
-
-        # 2. Random interferometer phases per sample per channel [B, C, 1]
-        num_channels = wavelengths_um.shape[1]
-        random_phases = (
-            torch.rand(batch_size, num_channels, 1, device=device) * 2.0 * torch.pi
-        )
-
-        # 3. Compute interferometer signals: cos(2*pi/lambda * 2 * displacement + phase)
-        # displacement: [B, L] -> [B, 1, L] for broadcasting
-        signals = torch.cos(
-            2.0 * torch.pi / wavelengths_um * 2.0 * displacement.unsqueeze(1)
-            + random_phases
-        )
-
-        # 4. Per-sample per-channel z-score normalization
-        signals_mean = signals.mean(dim=-1, keepdim=True)
-        signals_std = signals.std(dim=-1, keepdim=True).clamp(min=1e-8)
-        signals = (signals - signals_mean) / signals_std
-
-        # 5. Compute velocity from displacement
-        # CoilDriver returns ndarray | Tensor; the tensor input path always
-        # yields a Tensor here.
-        velocity = cast(
-            torch.Tensor,
-            CoilDriver.derivative_displacement(displacement, acq_sample_rate),
-        )
-
-        return signals, velocity, displacement
+        """Wrap with the simulator config's fixed normalization stats."""
+        if self._restoring_checkpoint:
+            # Two tensors: Model keeps them as buffers without copying, and a
+            # shared storage would let loading one overwrite the other.
+            n_ch = len(self.sim_config.wavelengths_um)
+            stats = {
+                'input_mean': torch.full((n_ch,), torch.nan),
+                'input_std': torch.full((n_ch,), torch.nan),
+                'output_mean': torch.nan,
+                'output_std': torch.nan,
+            }
+        else:
+            stats = normalization_stats(
+                self.sim_config, NORM_STATS_SHOTS, NORM_STATS_SEED, self.target
+            )
+        return Model(inner, **stats)
 
     def _generate_synthetic_batch(
-        self, batch_size: int, device: torch.device
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Generate a batch of synthetic interferometer data on the given device.
-
-        Thin instance wrapper around :meth:`generate_synthetic_batch` that
-        supplies this module's waveform generator and synthetic parameters.
+        self,
+        batch_size: int,
+        generator: torch.Generator | None,
+        crop_length: int | None,
+    ) -> tuple[torch.Tensor, ...]:
+        """Simulate ``(signals, velocity, displacement)`` on this module's device.
 
         Args:
-            batch_size: Number of samples to generate
-            device: Target device for tensor creation
-
-        Returns:
-            Tuple of (signals, velocity, displacement) where:
-            - signals: [batch_size, num_channels, seq_len] interferometer signals
-            - velocity: [batch_size, seq_len] velocity in um/ms
-            - displacement: [batch_size, seq_len] mirror displacement in microns
+            batch_size: Shots to simulate.
+            generator: Generator on ``self.device``, or None for the global RNG.
+            crop_length: Window length per shot; None keeps the full shot.
         """
-        return self.generate_synthetic_batch(
-            batch_size,
-            device,
-            self.waveform,
-            self.wavelengths_um,
-            self.max_displacement_um,
-            self.acq_sample_rate,
+
+        def simulate() -> tuple[torch.Tensor, ...]:
+            batch = simulate_batch(self.sim_config, batch_size, self.device, generator)
+            return random_crop(
+                crop_length,
+                batch.signals,
+                batch.velocity,
+                batch.displacement,
+                generator=generator,
+            )
+
+        if generator is None:
+            return simulate()
+        return self._held_out_replay(
+            generator, (batch_size, crop_length, self.device), simulate
         )
 
     @override
@@ -237,20 +241,44 @@ class SyntheticLitModule(LitModule):
             batch_idx: Index of current batch
         """
         batch_size = len(batch)
-        synthetic_batch = self._generate_synthetic_batch(batch_size, self.device)
+        synthetic_batch = self._generate_synthetic_batch(
+            batch_size, None, self.train_crop_length
+        )
         return super().training_step(synthetic_batch, batch_idx)
 
     @override
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         """Generate synthetic data on-device and delegate to parent validation_step.
 
+        Validation windows are cropped like training ones, so the monitored
+        metric (and the best checkpoint) is on crops; the reported metric is
+        :func:`smi.analysis.evaluate.evaluate` on full frozen shots.
+
         Args:
             batch: Tensor of indices from SyntheticIndexDataset (batch size only)
             batch_idx: Index of current batch
         """
         batch_size = len(batch)
-        synthetic_batch = self._generate_synthetic_batch(batch_size, self.device)
+        synthetic_batch = self._generate_synthetic_batch(
+            batch_size, self._held_out_generator, self.train_crop_length
+        )
         super().validation_step(synthetic_batch, batch_idx)
+
+    @override
+    def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+        """Generate full synthetic shots on-device and delegate to test_step.
+
+        Evaluation never crops, so test shots keep their full length.
+
+        Args:
+            batch: Tensor of indices from SyntheticIndexDataset (batch size only)
+            batch_idx: Index of current batch
+        """
+        batch_size = len(batch)
+        synthetic_batch = self._generate_synthetic_batch(
+            batch_size, self._held_out_generator, None
+        )
+        super().test_step(synthetic_batch, batch_idx)
 
     @override
     def predict_step(
@@ -258,10 +286,17 @@ class SyntheticLitModule(LitModule):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Generate synthetic data on-device and delegate to parent predict_step."""
         batch_size = len(batch)
-        synthetic_batch = self._generate_synthetic_batch(batch_size, self.device)
+        synthetic_batch = self._generate_synthetic_batch(
+            batch_size, None, self.train_crop_length
+        )
         return super().predict_step(synthetic_batch, batch_idx)
 
     @override
     def on_validation_epoch_start(self) -> None:
-        """Set a fixed random seed for reproducible validation data."""
-        torch.manual_seed(42)
+        """Restart the validation stream, so every epoch sees the same batches."""
+        self._held_out_generator = torch.Generator(self.device).manual_seed(VAL_SEED)
+
+    @override
+    def on_test_epoch_start(self) -> None:
+        """Seed distinct from validation, so test data is never val data."""
+        self._held_out_generator = torch.Generator(self.device).manual_seed(TEST_SEED)

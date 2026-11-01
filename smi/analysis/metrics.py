@@ -35,6 +35,75 @@ def velocity_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return torch.sqrt(torch.mean((pred - target) ** 2))
 
 
+def per_shot_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """RMSE over the last (time) axis: ``[batch, length]`` -> ``[batch]``."""
+    return torch.sqrt(torch.mean((pred - target) ** 2, dim=-1))
+
+
+def sign_invariant_rmse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Per-shot RMSE after the best global sign: min over s in {+1, -1}.
+
+    A Michelson interferometer cannot tell the direction of motion, so a
+    prediction is correct up to one sign per shot. The sign is chosen per shot,
+    not per sample, so a decoder that flips sign mid-shot is still penalized.
+
+    Args:
+        pred: Predicted velocity, ``[batch, length]``.
+        target: Ground-truth velocity, same shape.
+
+    Returns:
+        ``[batch]`` RMSE in the units of the inputs.
+    """
+    # Shares best_sign with the training loss so validation and evaluation can
+    # never disagree on which sign a shot gets.
+    return per_shot_rmse(best_sign(pred, target) * pred, target)
+
+
+def best_sign(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Per-shot global sign s in {+1, -1} minimizing ``||s * pred - target||``.
+
+    Args:
+        pred: Predicted velocity, ``[batch, length]``.
+        target: Ground-truth velocity, same shape.
+
+    Returns:
+        ``[batch, 1]`` signs, detached: the choice carries no gradient, the
+        chosen branch does.
+    """
+    # sign(pred . target); ties go to +1.
+    dot = (pred * target).sum(dim=-1, keepdim=True).detach()
+    return torch.where(dot >= 0, 1.0, -1.0).to(pred.dtype)
+
+
+def apply_best_sign(
+    velocity_hat: torch.Tensor,
+    displacement_hat: torch.Tensor,
+    trained_hat: torch.Tensor,
+    trained_target: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Flip each shot's velocity and displacement prediction by one shared sign.
+
+    The sign is chosen on the quantity the model is trained on (velocity or
+    displacement, passed as ``trained_hat``/``trained_target``); the other is
+    its integral or derivative, so it must follow the same choice rather than
+    pick its own. For a displacement target the differentiated velocity is
+    dominated by amplified ripple, so a sign chosen on it would be noise. Both
+    training losses (``LitModule`` and the vmap ensemble) call this, so the
+    choice lives in one place.
+
+    Args:
+        velocity_hat: Predicted velocity, ``[batch, length]``.
+        displacement_hat: Predicted displacement, same shape.
+        trained_hat: Whichever of the two the model outputs.
+        trained_target: Its ground truth, same shape.
+
+    Returns:
+        ``(sign * velocity_hat, sign * displacement_hat)``.
+    """
+    sign = best_sign(trained_hat, trained_target)
+    return sign * velocity_hat, sign * displacement_hat
+
+
 def displacement_from_velocity(velocity: torch.Tensor, dt_ms: float) -> torch.Tensor:
     """Integrate a velocity waveform to displacement in um.
 

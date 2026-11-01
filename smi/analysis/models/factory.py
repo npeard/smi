@@ -3,22 +3,24 @@
 import logging
 from typing import Any
 
-from torch import nn
-
 from .barland_cnn import BarlandCNN, BarlandCNNConfig
+from .base import SequenceModel
 from .lstm import LSTM, LSTMConfig
 from .mamba import Mamba, MambaConfig
 from .mlp import MLP, MLPConfig
+from .neural_operator import NeuralOperator, NeuralOperatorConfig
+from .patch_transformer import PatchTransformer, PatchTransformerConfig
 from .scnn import SCNN, SCNNConfig
 from .tcan import TCAN, TCANConfig
 from .tcn import TCN, TCNConfig
+from .unet_transformer import UNetTransformer, UNetTransformerConfig
 
 logger = logging.getLogger(__name__)
 
 # Every architecture is built the same way -- config dataclass from the
 # remaining hparams, then the module -- so the dispatch is a table rather than
 # an if/elif chain that grows a branch per model.
-MODEL_REGISTRY: dict[str, tuple[type, type[nn.Module]]] = {
+MODEL_REGISTRY: dict[str, tuple[type, type[SequenceModel]]] = {
     'Barland': (BarlandCNNConfig, BarlandCNN),
     'TCN': (TCNConfig, TCN),
     'SCNN': (SCNNConfig, SCNN),
@@ -26,10 +28,13 @@ MODEL_REGISTRY: dict[str, tuple[type, type[nn.Module]]] = {
     'LSTM': (LSTMConfig, LSTM),
     'MLP': (MLPConfig, MLP),
     'Mamba': (MambaConfig, Mamba),
+    'PatchTransformer': (PatchTransformerConfig, PatchTransformer),
+    'UNetTransformer': (UNetTransformerConfig, UNetTransformer),
+    'NeuralOperator': (NeuralOperatorConfig, NeuralOperator),
 }
 
 
-def create_model(model_hparams: dict[str, Any]) -> nn.Module:
+def create_model(model_hparams: dict[str, Any]) -> SequenceModel:
     """Create model instance based on configuration.
 
     Args:

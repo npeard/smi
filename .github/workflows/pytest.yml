@@ -82,7 +82,7 @@ jobs:
         environments: dev
         cache: true
 
-    # Torch arrives from the cu124 index and this is a CPU-only runner, so ty
+    # Torch arrives from the cu130 index and this is a CPU-only runner, so ty
     # type-checks a tree where the CUDA wheels are present but no device is.
     # That is fine: ty reads annotations and never executes, and `pixi run
     # typecheck` reports "All checks passed!" on this tree, so the gate starts

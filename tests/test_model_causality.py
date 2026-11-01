@@ -13,18 +13,23 @@ lookahead (i.e. it has causal violations).
 import pytest
 import torch
 
+from smi.analysis.models.base import Model
+from smi.analysis.models.factory import MODEL_REGISTRY, create_model
 from smi.analysis.models.lstm import LSTM, LSTMConfig
 from smi.analysis.models.mamba import Mamba, MambaConfig
 from smi.analysis.models.scnn import SCNN, SCNNConfig
 from smi.analysis.models.tcan import TCAN, TCANConfig
 from smi.analysis.models.tcn import TCN, TCNConfig
+from tests.test_receptive_field import phase_period
 
 SEQUENCE_LENGTH = 256
 IN_CHANNELS = 3
 BLOCK_SIZE = 32
 # Positions where the step block is placed; chosen to give good coverage
-# without making the test suite slow.
-STEP_POSITIONS = list(range(BLOCK_SIZE, SEQUENCE_LENGTH - BLOCK_SIZE, 32))
+# without making the test suite slow. A step of 31 walks the in-stride phase
+# of every strided model below (test_step_positions_cover_every_phase): a
+# leak at one phase only is invisible to a probe that always lands on another.
+STEP_POSITIONS = list(range(BLOCK_SIZE, SEQUENCE_LENGTH - BLOCK_SIZE, 31))
 # A response before the step is a violation only if it exceeds this fraction
 # of the maximum post-step response magnitude.
 VIOLATION_THRESHOLD = 0.0
@@ -353,3 +358,225 @@ class TestTCANCausality:
                 f'{pre_step_diff:.4e} exceeds threshold '
                 f'{VIOLATION_THRESHOLD * post_step_max:.4e}'
             )
+
+
+# Smallest viable hparams per registry type, by the same probe the classes
+# above use: each model's ``causal`` must agree with what it actually does.
+REGISTRY_HPARAMS: dict[str, dict] = {
+    'Barland': dict(
+        type='Barland',
+        window_size=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        activation='LeakyReLU',
+        dropout=0.0,
+        use_weight_norm=False,
+        window_stride=SEQUENCE_LENGTH // 2,
+        channels=[16, 32, 64, 64],
+    ),
+    'TCN': dict(
+        type='TCN',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        activation='GELU',
+        use_layer_norm=True,
+        use_weight_norm=False,
+        kernel_size=3,
+        temporal_channels=[8, 8],
+        dilation_base=2,
+        dropout=0.0,
+    ),
+    'SCNN': dict(
+        type='SCNN',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        activation='GELU',
+        use_layer_norm=True,
+        use_weight_norm=False,
+        kernel_size=3,
+        temporal_channels=[8, 8],
+        dilation_base=2,
+        dropout=0.0,
+    ),
+    'TCAN': dict(
+        type='TCAN',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        activation='GELU',
+        use_layer_norm=True,
+        use_weight_norm=False,
+        siamese_kernel_size=3,
+        siamese_channels=[8, 8],
+        siamese_dilation_base=2,
+        atten_heads=4,
+        decoder_kernel_size=3,
+        decoder_channels=[8, 8],
+        decoder_dilation_base=2,
+        dropout=0.0,
+    ),
+    'LSTM': dict(
+        type='LSTM',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        hidden_size=8,
+        num_layers=1,
+        dropout=0.0,
+        bidirectional=False,
+    ),
+    'MLP': dict(
+        type='MLP',
+        window_size=SEQUENCE_LENGTH // 2,
+        in_channels=IN_CHANNELS,
+        hidden_sizes=[16],
+        activation='GELU',
+        dropout=0.0,
+        window_stride=SEQUENCE_LENGTH // 4,
+    ),
+    'PatchTransformer': dict(
+        type='PatchTransformer',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        patch_len=8,
+        stride=5,
+        d_model=16,
+        n_heads=2,
+        n_layers=2,
+        ffn_dim=32,
+        attention_span=2,
+        dropout=0.0,
+        causal=True,
+    ),
+    'UNetTransformer': dict(
+        type='UNetTransformer',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        channels=[8, 8, 16],
+        kernel_size=4,
+        pool=2,
+        n_heads=2,
+        n_layers=1,
+        ffn_dim=32,
+        attention_span=2,
+        dropout=0.0,
+        causal=True,
+    ),
+    'NeuralOperator': dict(
+        type='NeuralOperator',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        width=8,
+        n_layers=2,
+        modes=4,
+        kernel_len=9,
+    ),
+    'Mamba': dict(
+        type='Mamba',
+        sequence_length=SEQUENCE_LENGTH,
+        in_channels=IN_CHANNELS,
+        d_model=16,
+        d_state=8,
+        d_conv=4,
+        expand=2,
+        num_layers=1,
+        use_layer_norm=True,
+    ),
+}
+LSTM_BIDIRECTIONAL = {**REGISTRY_HPARAMS['LSTM'], 'bidirectional': True}
+PATCH_OFFLINE = {**REGISTRY_HPARAMS['PatchTransformer'], 'causal': False}
+UNET_OFFLINE = {**REGISTRY_HPARAMS['UNetTransformer'], 'causal': False}
+NEURAL_OPERATOR_OFFLINE = {**REGISTRY_HPARAMS['NeuralOperator'], 'kernel_len': None}
+
+
+def test_registry_hparams_cover_every_model_type():
+    assert set(REGISTRY_HPARAMS) == set(MODEL_REGISTRY)
+
+
+@pytest.mark.parametrize(
+    'hparams',
+    [
+        *REGISTRY_HPARAMS.values(),
+        LSTM_BIDIRECTIONAL,
+        PATCH_OFFLINE,
+        UNET_OFFLINE,
+        NEURAL_OPERATOR_OFFLINE,
+    ],
+    ids=[
+        *REGISTRY_HPARAMS,
+        'LSTM-bidirectional',
+        'PatchTransformer-offline',
+        'UNetTransformer-offline',
+        'NeuralOperator-offline',
+    ],
+)
+def test_causal_agrees_with_the_empirical_probe(hparams):
+    torch.manual_seed(0)  # the NeuralOperator floor is relative to the init
+    model = create_model(hparams).eval()
+    baseline, outputs = _get_step_outputs(
+        model, STEP_POSITIONS, SEQUENCE_LENGTH, IN_CHANNELS, BLOCK_SIZE
+    )
+    rate, _, _ = _causal_violation_rate(
+        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, model.probe_rel_tol
+    )
+    assert model.causal == (rate == 0.0)
+
+
+@pytest.mark.parametrize('hparams', REGISTRY_HPARAMS.values(), ids=REGISTRY_HPARAMS)
+def test_every_registry_model_reports_its_time_structure(hparams):
+    model = create_model(hparams)
+    assert isinstance(model.causal, bool)
+    field = model.receptive_field
+    assert field is None or (isinstance(field, int) and field >= 1)
+
+
+STRIDED = [
+    REGISTRY_HPARAMS['PatchTransformer'],
+    PATCH_OFFLINE,
+    REGISTRY_HPARAMS['UNetTransformer'],
+    UNET_OFFLINE,
+]
+STRIDED_IDS = [
+    'PatchTransformer-causal',
+    'PatchTransformer-offline',
+    'UNetTransformer-causal',
+    'UNetTransformer-offline',
+]
+
+
+@pytest.mark.parametrize('hparams', STRIDED, ids=STRIDED_IDS)
+def test_step_positions_cover_every_phase(hparams):
+    period = phase_period(hparams)
+    assert period > 1
+    assert {s % period for s in STEP_POSITIONS} == set(range(period))
+
+
+@pytest.mark.parametrize(
+    'hparams',
+    [*STRIDED, REGISTRY_HPARAMS['NeuralOperator'], NEURAL_OPERATOR_OFFLINE],
+    ids=[*STRIDED_IDS, 'NeuralOperator-causal', 'NeuralOperator-offline'],
+)
+def test_wrapped_two_way_model_leaks_only_when_offline(hparams):
+    """The probe runs on the full ``Model``, not the inner network.
+
+    Tokenisation or pooling, positional bias, skip connections, the
+    per-sample upsampling and the FFT padding are each a place a future
+    sample could enter; only the wrapped model shows them all. Non-trivial
+    normalization stats make sure the baked buffers are included.
+    """
+    torch.manual_seed(0)  # the NeuralOperator floor is relative to the init
+    inner = create_model(hparams)
+    model = Model(
+        inner,
+        input_mean=torch.tensor([0.1, -0.2, 0.3]),
+        input_std=torch.tensor([1.5, 0.5, 2.0]),
+        output_mean=0.4,
+        output_std=3.0,
+    ).eval()
+    baseline, outputs = _get_step_outputs(
+        model, STEP_POSITIONS, SEQUENCE_LENGTH, IN_CHANNELS, BLOCK_SIZE
+    )
+    rate, n_violations, _ = _causal_violation_rate(
+        baseline, outputs, STEP_POSITIONS, BLOCK_SIZE, inner.probe_rel_tol
+    )
+    if inner.causal:
+        assert n_violations == 0
+    else:
+        assert rate > 0.0

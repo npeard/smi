@@ -22,24 +22,49 @@ model:
 
 training:
   max_epochs: 1
+  check_val_every_n_epoch: 1  # validate every epoch; patience_epochs counts these
+  convergence:  # stop on a plateau; max_epochs above stays the cap
+    monitor: "val/velocity_rmse_um_per_ms"  # must follow loss.sign_invariant
+    patience_epochs: 10
+    min_rel_delta: 0.01  # improvement below 1% of the best counts as none
+    min_epochs: 30  # no stop sooner: S1 zero-output stalls lasted ~15 epochs, then escaped
   batch_size: 4
   learning_rate: 1e-3
   accelerator: "cpu"
+  precision: "32-true"
   devices: 1
   target: "velocity"
 
 loss:
   velocity_loss_weight: 1.0
   displacement_loss_weight: 0.1
+  sign_invariant: false
 
 synthetic:
   use_synthetic_training: true
-  wavelengths_nm: [[635, 674.8, 515]]
-  start_freq: 1
-  end_freq: 1000
   steps_per_epoch: 2
+  train_crop_length: null  # null trains on the full 16384-sample shot
   val_steps: 2
-  max_displacement_um: 5.0
+  # Every SimConfig field, no defaults (smi.synthetic.forward.SimConfig).
+  # Michelson, noise-free: each detector knob at its exact-identity value.
+  sim:
+    wavelengths_um: [0.635, 0.6748, 0.515]
+    sample_rate: 488281.25  # 125 MHz / decimation 256
+    start_freq_hz: 1.0
+    end_freq_hz: 1000.0
+    drive_gain: 0.002454  # NOMINAL_DRIVE_GAIN
+    feedback_c: 0.0
+    alpha: 0.0
+    snr_db: null
+    shot_noise: false
+    visibility_range: [1.0, 1.0]
+    dc_offset_range: [0.0, 0.0]
+    amplitude_drift_rel: 0.0
+    phase_drift_rad_per_sqrt_s: 0.0
+    contrast_drift_rel: 0.0
+    pd_bandwidth_hz: null
+    adc_bits: null
+    adc_full_scale: 1.0
 
 ensemble:
   size: 3
