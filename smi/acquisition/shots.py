@@ -123,15 +123,16 @@ def run_shots(
                 acquisition = manager.acquire(timeout_s)
             except TimeoutError:
                 timeouts += 1
-                logger.exception(f'Shot {i + 1} timed out; skipped')
+                logger.warning(f'Shot {i + 1} timed out; skipped')
                 if timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
                     raise RuntimeError(
                         f'{timeouts} consecutive shots timed out; check the rig'
                     ) from None
-                continue
-            timeouts = 0
-            _write(path, acquisition, waveform)
-            written += 1
+            else:
+                timeouts = 0
+                _write(path, acquisition, waveform)
+                written += 1
+            # The rig needs the settle time after a skipped shot as well.
             if i < n_shots - 1:
                 time.sleep(delay_s)
     finally:

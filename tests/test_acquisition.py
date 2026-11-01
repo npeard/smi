@@ -83,10 +83,14 @@ def test_timeout_shot_is_skipped_then_run_continues(tmp_path, waveform, monkeypa
             raise TimeoutError('no trigger')
         return real(timeout_s)
 
+    sleeps = []
     monkeypatch.setattr(manager, 'acquire', flaky)
-    path = run_shots(manager, waveform, CoilDriver(), 3, tmp_path / 'd.h5', 1.0, 0.0)
+    monkeypatch.setattr('smi.acquisition.shots.time.sleep', sleeps.append)
+    path = run_shots(manager, waveform, CoilDriver(), 3, tmp_path / 'd.h5', 1.0, 7.5)
     arrays, _ = read_shots(path)
     assert arrays['RP1_CH1'].shape[0] == 2
+    # A pause follows every shot but the last, the skipped one included.
+    assert [s for s in sleeps if s == 7.5] == [7.5, 7.5]
 
 
 def test_live_view_runs_forever_view_on_a_driven_rig(waveform, monkeypatch):
