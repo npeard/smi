@@ -43,7 +43,7 @@ always invoke Python and tools through `pixi run` (or from inside `pixi shell`)
   `report-synthetic` (synthetic.typ)
 - `pixi run benchmark-loading` - Data-loading throughput benchmark (GPU; not in `all`)
 
-Workflow-spine tasks (see the master CLAUDE.md's numbered spine):
+Workflow-spine tasks (see the master guidance's numbered spine):
 
 - `pixi run preflight` - Step 0: is this project fit to start work in?
   `--with-tests` when starting fresh work; `--check-updates` weekly, not per
@@ -132,7 +132,7 @@ Inside `smi/`, lowest layer first. Layering is enforced by
 - `core/` - bottom layer, imports nothing else in `smi`: acquisition config,
   kinematics, metrics, and `paths` (`REPO_ROOT`, `RESULTS_DIR`,
   `DATA_DIR`, `FROZEN_DIR`, `RUNS_DIR`, `GRID_RUNS_DIR`, `TRAIN_RUNS_DIR`; every artifact path comes from
-  here).
+  here), and `cli` (shared `add_verbosity` / `setup_logging` for scripts).
 - `theory/` - physics: coil driver, interferometers, waveform, forward model
   (`simulate_batch`) and the Fisher/Bayesian `bounds`; may import only
   `smi.core`.
@@ -150,9 +150,8 @@ Inside `smi/`, lowest layer first. Layering is enforced by
   drift), `inverse` (method 2 Viterbi decode), `gain_sweep` (gain, delay and
   fringe-rate curves), `tabular` (LightGBM/Ridge). May import only `smi.core`
   and `smi.theory`; never sees a file or a `FeatureRegistry`.
-- `learning/` - `models/` (architectures: `tcn`, `scnn`, `tcan`, `lstm`,
-  `mamba`, `barland_cnn`, `patch_transformer`, `unet_transformer`,
-  `neural_operator`; `base.py` defines `Model(nn.Module)`, the normalization
+- `learning/` - `models/` (one module per architecture, built by
+  `factory.py`; `base.py` defines `Model(nn.Module)`, the normalization
   wrapper, and `FeatureMap`), `lit_module.py`, `synthetic_lit_module.py`,
   `training_interface.py`. Does not import estimators, experiments or
   acquisition.
@@ -223,7 +222,7 @@ spirit of the `dispersion-engineering` paper repo but with Typst in place of
 LaTeX. Typst is a conda package, so unlike a TeX engine the whole toolchain is
 lockfile-reproducible with no manual install.
 
-- Two documents, no slide deck:
+- Two documents:
   - `report.typ` - the baseline report: the Michelson analytic baseline and
     the learned models on the real acquisitions. Its figures read the real
     HDF5 files, so it builds only where they are present (and the synthetic

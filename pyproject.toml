@@ -174,7 +174,7 @@ allow-dict-calls-with-keyword-arguments = true
 convention = "google"
 
 [tool.codespell]
-skip = ".git,*.ipynb"
+skip = ".git,*.ipynb,./report/build,./docs/superpowers,./scratch"
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
