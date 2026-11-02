@@ -19,7 +19,7 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 from lightning.pytorch.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
-from smi.core.paths import REPO_ROOT, TRAIN_RUNS_DIR
+from smi.core.paths import DATA_DIR, TRAIN_RUNS_DIR
 from smi.data.datamodule import VelocityDataModule
 from smi.data.schema import read_sample_rate
 from smi.learning.lit_module import LitModule
@@ -167,23 +167,6 @@ class TrainingConfig:
     synthetic_config: dict[str, Any] | None = None
 
 
-def resolve_data_dir(data_dir: str) -> Path:
-    """Resolve a relative ``data_dir`` against the repo root; it must exist.
-
-    The matched and displacement configs keep a stale ``./analysis/data``
-    because ``data_dir`` is hashed into the run fingerprints that resume
-    matches recorded cells by. Creating the directory would silently turn
-    that stale value into an empty folder, so a missing one is an error.
-    """
-    # Path joining keeps an absolute data_dir absolute and keeps '..' parts,
-    # which str.lstrip('./') stripped.
-    abs_dir = (REPO_ROOT / data_dir).resolve()
-    if not abs_dir.is_dir():
-        msg = f'data_dir {data_dir!r} resolves to {abs_dir}, which does not exist'
-        raise FileNotFoundError(msg)
-    return abs_dir
-
-
 class TrainingInterface:
     """Main trainer class for managing model training."""
 
@@ -205,7 +188,7 @@ class TrainingInterface:
             extra_callbacks: Additional Lightning callbacks to attach to the
                 trainer (e.g. Ray Tune's report callback). Defaults to none.
             dataset_path: HDF5 file to load, overriding the config's
-                ``data_dir``/``dataset_file`` (see :func:`resolve_data_dir`).
+                ``dataset_file`` under ``smi.core.paths.DATA_DIR``.
         """
         self.config = config
         self.checkpoint_dir = str(self.CHECKPOINT_DIR)
@@ -293,10 +276,7 @@ class TrainingInterface:
 
         # Real data: build a Lightning DataModule over the HDF5 dataset.
         if dataset_path is None:
-            data_dir = self.config.data_config['data_dir']
-            dataset_path = str(
-                resolve_data_dir(data_dir) / self.config.data_config['dataset_file']
-            )
+            dataset_path = str(DATA_DIR / self.config.data_config['dataset_file'])
 
         if split_ratios is None:
             split_ratios = self.config.data_config['split_ratios']

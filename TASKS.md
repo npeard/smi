@@ -38,7 +38,7 @@ Carried-over cleanup:
 
 - [ ] `notebooks/causal_inductive_bias_test.ipynb` imports a nonexistent
   `models.utcn` (it predates the restructure); fix or delete.
-- [ ] The `matched/` and `displacement/` entries of `smi/learning/configs.py` keep a stale `data_dir`
+- [x] The `matched/` and `displacement/` entries of `smi/learning/configs.py` keep a stale `data_dir`
   (`./analysis/data`) because it is hashed into run fingerprints; callers pass
   `dataset_path` explicitly. Retire it together with a fingerprint-golden
   regeneration.

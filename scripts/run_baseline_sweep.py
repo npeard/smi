@@ -349,8 +349,8 @@ def run_torch_config(
         interface = TrainingInterface(
             config=config,
             experiment_name=f'{name}_{dataset}_s{seed}',
-            # The configs' data_dir is stale (it is hashed into run
-            # fingerprints), so name the file instead of resolving it.
+            # The dataset label picks the file, not the config's
+            # dataset_file.
             dataset_path=str(DATA_DIR / DATASETS[dataset]),
         )
         if settings.preload:

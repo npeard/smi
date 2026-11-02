@@ -3,18 +3,12 @@
 ``MODEL_CONFIGS`` maps a name (e.g. ``'matched/tcn-44k'``, ``'tcn-config'``)
 to a :class:`TrainingConfig`. The names are the stems, relative to
 ``configs/models``, of the YAML files these entries replaced, and each entry
-resolves to exactly the dicts ``yaml.safe_load`` gave for its file. That is
-load-bearing, not cosmetic: experiment cells fingerprint the resolved dicts,
-and resume matches recorded cells by fingerprint. Hence two oddities kept on
-purpose:
-
-* ``weight_decay``, ``learning_rate`` and ``eta_min`` are the *strings*
-  ``'1e-6'``/``'1e-3'``: PyYAML (YAML 1.1) reads a float literal without a
-  dot as a string, consumers ``float()`` them, and the fingerprints hashed
-  the strings.
-* ``data_dir`` keeps the stale ``./analysis/data`` (synthetic and matched
-  entries) and ``./data`` (the legacy ``*-config`` entries); see
-  ``resolve_data_dir``.
+resolves to the dicts ``yaml.safe_load`` gave for its file, except that the
+stale ``data_dir`` is gone (real-data runs find files under
+``smi.core.paths.DATA_DIR``) and the YAML-1.1 string numerics (``'1e-3'``)
+are floats. That is load-bearing, not cosmetic: experiment cells fingerprint
+the resolved dicts and resume matches recorded cells by fingerprint, so an
+edit here moves the fingerprint of every grid cell that uses the entry.
 
 Three groups:
 
@@ -98,10 +92,10 @@ def _training(**overrides: Any) -> dict[str, Any]:
         'T_mult': 1,  # 1 = constant restart period, 2 = doubling
         'batch_size': 16,
         'optimizer': 'Adam',  # 'Adam', 'SGD' or 'Muon'
-        'weight_decay': '1e-6',  # Adam only
+        'weight_decay': 1e-6,  # Adam only
         'momentum': 0.9,  # SGD only
-        'learning_rate': '1e-3',
-        'eta_min': '1e-6',
+        'learning_rate': 1e-3,
+        'eta_min': 1e-6,
         'accelerator': 'cpu',
         'precision': '32-true',
         'devices': 1,
@@ -135,7 +129,6 @@ def _matched(model: dict[str, Any], train_crop_length: int | None) -> TrainingCo
         model_config=model,
         training_config=_training(),
         data_config={
-            'data_dir': './analysis/data',
             'dataset_file': 'unused',  # not used in synthetic mode
             'split_ratios': [80, 10, 10],
             'num_workers': 0,
@@ -169,7 +162,6 @@ def _real(model: dict[str, Any]) -> TrainingConfig:
         model_config=model,
         training_config=_training(accelerator='gpu', devices=[0]),
         data_config={
-            'data_dir': './analysis/data',
             'dataset_file': REAL_DATASET,
             'split_ratios': [80, 10, 10],
             'num_workers': 7,
@@ -196,7 +188,6 @@ def _legacy(
             **training,
         ),
         data_config={
-            'data_dir': './data',
             'dataset_file': LEGACY_DATASETS,
             'split_ratios': [[80, 10, 10]],  # train, val, test percentages
             'num_workers': 7,
@@ -569,7 +560,7 @@ _LEGACY: dict[str, TrainingConfig] = {
             'dropout': 0.1,
             'bidirectional': False,  # true for non-causal inference
         },
-        {'batch_size': 64, 'optimizer': 'Muon', 'learning_rate': '1e-2'},
+        {'batch_size': 64, 'optimizer': 'Muon', 'learning_rate': 1e-2},
         {'displacement_loss_weight': [0.0, 0.1]},
     ),
     'mamba-config': _legacy(
@@ -588,7 +579,6 @@ _LEGACY: dict[str, TrainingConfig] = {
             accelerator='gpu',
         ),
         data_config={
-            'data_dir': './data',
             'dataset_file': REAL_DATASET,
             'split_ratios': [80, 10, 10],
             'num_workers': 7,
@@ -617,7 +607,6 @@ _LEGACY: dict[str, TrainingConfig] = {
             batch_size=128,
         ),
         data_config={
-            'data_dir': './data',
             'dataset_file': 'unused',
             'split_ratios': [[80, 10, 10]],
             'num_workers': 0,
