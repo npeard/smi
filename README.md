@@ -15,8 +15,11 @@ This repository implements an optical and computational framework that overcomes
 The importable package is `smi/`:
 
 - `smi/core/` - acquisition config, kinematics, metrics and `paths`.
+- `smi/theory/` - physics simulation (coil driver, interferometers, waveform,
+  forward model) and estimation bounds.
 - `smi/learning/` - models (architectures + the `Model` normalization wrapper in
-  `base.py`), `lit_module.py`, `training_interface.py`.
+  `base.py`), the named training configs (`configs.py`), `lit_module.py`,
+  `training_interface.py`.
 - `smi/data/` - `features/` (Polars `FeatureRegistry` and version-controlled
   normalization stats), `datamodule.py`, `datasets.py`.
 - `smi/estimators/` - classical estimators (forward-model fits, Viterbi
@@ -27,10 +30,9 @@ The importable package is `smi/`:
 - `scripts/` - command-line entry points (training, acquisition, sweeps).
 - `report/results/`, `data/`, `runs/` - committed result JSON, raw and frozen
   data (ignored), run outputs (ignored).
-- `smi/theory/` - physics simulation (coil driver, interferometers, waveform).
 - `packages/redpitaya/` - `stemlab`, the standalone Red Pitaya AWG and
   acquisition library (its own package; see its README).
-- `report/` - Typst slides and reports, built from matplotlib figures through a
+- `report/` - Typst reports, built from matplotlib figures through a
   Snakemake DAG (`pixi run report`). See the `report/` section in `CLAUDE.md`.
 - `tests/`, `notebooks/` (marimo apps), `docs/`.
 
@@ -59,7 +61,7 @@ Python -- always go through `pixi`.
    ```
 
 4. Notebooks in `notebooks/` are [Marimo](https://marimo.io/) notebooks (`.py`
-   files); open them with `pixi run marimo edit notebooks/<name>.py` or via the
+   files); open them with `pixi run -e dev marimo edit notebooks/<name>.py` or via the
    Marimo VSCode extension.
 
 5. Create a feature branch, make changes, and run the tooling through Pixi:
@@ -70,7 +72,7 @@ Python -- always go through `pixi`.
    pixi run test       # pytest
    pixi run precommit  # all pre-commit hooks
    pixi run all        # format, lint, ascii, typecheck, test in sequence
-   pixi run report     # build the Typst slides and reports
+   pixi run report     # build the Typst reports
    ```
 
 6. Commit, push, and open a Pull Request on GitHub.
@@ -120,7 +122,7 @@ Board hosts and timing constants are in `smi/acquisition/rig.py`.
 To visualize predictions, residuals, and input gradient attributions from a trained checkpoint, use the interactive Marimo notebook:
 
 ```bash
-pixi run marimo edit notebooks/predictions.py
+pixi run -e dev marimo edit notebooks/predictions.py
 ```
 
 Set the checkpoint path and dataset path (or `"synthetic"`) in the UI controls at the top of the notebook.

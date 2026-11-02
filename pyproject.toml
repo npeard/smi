@@ -7,11 +7,11 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.14"
-license = {text = "MIT"}
+license = {text = "GPL-3.0"}
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -136,7 +136,6 @@ allow-dict-calls-with-keyword-arguments = true
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"docs/**.py" = ["INP001", "ARG001", "ANN"]
 "conftest.py" = ["ANN"]
 "tests/**.py" = ["ANN", "INP001"]
 "packages/redpitaya/tests/**.py" = ["ANN", "INP001"]
@@ -159,12 +158,8 @@ allow-dict-calls-with-keyword-arguments = true
 # Marimo notebooks define imports inside reactive cells (PLC0415 is expected).
 "notebooks/**.py" = ["T201", "ANN", "INP001", "E501", "B018", "PLR0915", "PTH123", "F841", "PLC0415"]
 "*.ipynb" = ["ALL"]
-# Print-interface scripts. These are run, not imported: what they write to
-# stdout (and their exit code) is the deliverable, so T201 does not apply,
-# and they are not packages, so INP001 does not either. Grouped under one
-# rationale rather than repeated per file -- a new script of this shape
-# belongs in this block, not in a fresh entry with its own justification.
-"report/scripts/*.py" = ["INP001", "T201"]
+# CLIs are run, not imported, and scripts/ is not a package (INP001). The
+# benchmark's stdout is its deliverable (T201).
 "scripts/*.py" = ["INP001"]
 "scripts/benchmark_loading.py" = ["T201"]
 # report/figures/*.py are the same shape, and additionally import their shared
@@ -253,7 +248,6 @@ marimo = "*"
 lmfit = "*"
 uncertainties = "*"
 schemdraw = "*"
-import-linter = "*"
 
 [tool.pixi.feature.test.pypi-dependencies]
 pytest = ">=8.0"
@@ -318,12 +312,11 @@ all = { depends-on = ["format", "lint", "ascii", "typecheck", "test"] }
 # agent-config's assets to answer "does a fix already exist?". Copying either
 # would fork a global tool and let the copies drift.
 #
-# The cost is a hard dependency on the sibling checkout living at
-# ~/Documents/Projects/agent-config, which is where both scripts resolve it
-# from unconditionally. On a machine without that layout these two tasks fail
+# The cost is a hard dependency on the sibling checkout at ../agent-config
+# (~/Documents/agent-config). On a machine without that layout these two tasks fail
 # and the rest of the project is unaffected.
-friction = "python ../Projects/agent-config/scripts/friction.py"
-toolgaps = "python ../Projects/agent-config/scripts/toolgaps.py"
+friction = "python ../agent-config/scripts/friction.py"
+toolgaps = "python ../agent-config/scripts/toolgaps.py"
 # Data-loading throughput measurement (scripts/benchmark_loading.py).
 # Deliberately not part of `all`: it needs a CUDA GPU and takes minutes, and
 # its answer only changes when the model or the loader path changes.

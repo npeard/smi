@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with
 code in this repository.
 
-See `~/.claude/CLAUDE.md` (from `~/Documents/Projects/agent-config`) for
+See `~/.claude/CLAUDE.md` (from `~/Documents/agent-config`) for
 cross-project workflow, verification, and design preferences -- the numbered
 workflow spine, the coding standards, and the agent-evolution rules all live
 there. This file covers only what is specific to smi and does not restate the
@@ -17,12 +17,10 @@ For everything else, see:
 
 ## Core development principles
 
-See the master CLAUDE.md's "Core philosophy" for the general rule (every line
-carries maintenance cost; write the smallest clear amount; reuse before writing
-new). In this repo that means: add a feature to the existing `FeatureRegistry`,
-an architecture under `learning/models/`, or a figure to `report/`, rather than
-building a parallel path beside one of them.
-
+The master's "reuse before writing new" means, here: add a feature to the
+existing `FeatureRegistry`, an architecture under `learning/models/`, a config
+to `learning/configs.py`, a grid to `experiments/grids/`, or a figure to
+`report/`, rather than building a parallel path beside one of them.
 
 ## Development Commands
 
@@ -56,14 +54,9 @@ Workflow-spine tasks (see the master CLAUDE.md's numbered spine):
 - `pixi run toolgaps` - Missing standard tooling, plus an inventory of
   agent-config assets available to adopt.
 
-`friction` and `toolgaps` are not agent-config commands and are deliberately
-**not** copied into this repo: both
-are cross-project by construction (friction mines `~/.claude/projects`
-transcripts against one shared ledger, because global transcripts need global
-suppression; toolgaps inventories agent-config's assets). They therefore
-depend on the sibling checkout at `~/Documents/Projects/agent-config`, which
-is where both resolve it unconditionally. Without that layout these two tasks
-fail and nothing else is affected.
+`friction` and `toolgaps` run agent-config's scripts from the sibling checkout
+`../agent-config` rather than copies (why: the comment on them in
+`pyproject.toml`); without that checkout only these two tasks fail.
 
 CI (`.github/workflows/pytest.yml`) runs three jobs -- `test`, `lint`
 (lint + ascii) and `typecheck` -- because `pixi run all`'s other gates were
@@ -90,11 +83,11 @@ committed for reproducibility.
 ### Environment constraints (three live ones, all easy to break)
 
 **Platforms are `win-64`, `linux-64` and `osx-arm64`.** macOS Apple silicon
-is back for MPS work (torch from the default PyPI wheel, libomp linked from torch for
-conda-forge for lightgbm); Intel Mac is unsupported. In `pyproject.toml` the
+is back for MPS work (torch from the default PyPI wheel, torch's libomp linked into the env for
+lightgbm); Intel Mac is unsupported. In `pyproject.toml` the
 osx-arm64 entry is named `macos-14-arm64` so it can declare macOS 14, which
 the torch>=2.14 wheels require; its target tables use that name. The stack is
-`torch>=2.14` / `numpy>=2`.
+`torch>=2.14` / `numpy>=2.5`.
 
 **Keep OpenMP runtimes from colliding; the numeric stack comes from PyPI.** `numpy`,
 `numba`, `matplotlib` and `h5py` resolve from PyPI (via
@@ -104,9 +97,9 @@ the torch>=2.14 wheels require; its target tables use that name. The stack is
 which previously killed the test suite inside `np.corrcoef`. Do not move
 these to `[tool.pixi.dependencies]`, and do not reach for
 `KMP_DUPLICATE_LIB_OK=TRUE` -- that flag's own error text warns it can
-silently produce incorrect results, which is disqualifying here. Only
-`typst` and `polars` come from conda; typst is a self-contained Rust
-binary with no BLAS linkage.
+silently produce incorrect results, which is disqualifying here. Of the
+runtime libraries only `polars` and `typst` come from conda; typst is a
+self-contained Rust binary with no BLAS linkage.
 
 On macOS torch and scikit-learn each bundle a libomp and coexist, but
 lightgbm's wheel needs one on the rpath: a second, conda `llvm-openmp` copy
@@ -123,9 +116,8 @@ through torch 2.14.1 (2.15.0 is on cu132), so those platforms resolve 2.14.1
 while macOS resolves 2.15.0. CUDA 13 drops Maxwell/Pascal/
 Volta but keeps sm_75, so both cards here (RTX 3090 Ti sm_86, Quadro RTX 4000
 sm_75) still run. Expect `torch.cuda.is_available()` to be true; if it is
-not, the index pin in `[tool.pixi.pypi-dependencies]` is the thing to check.
-
-**Important**: Always run `pixi run format` first when encountering linting/formatting issues before making manual edits. This auto-fixes most formatting problems and saves time.
+not, the index pin in the `win-64`/`linux-64` `pypi-dependencies` target tables
+is the thing to check.
 
 ## Package layout
 
@@ -217,11 +209,12 @@ HDF5 (gzip-4, chunked per shot) is the chosen storage format - see `docs/data-st
 
 ## Hyperparameter / architecture search
 
-There is no search machinery in the repo. `scripts/train.py` runs one training run from
-one named config (`--config matched/tcn-44k`; list-valued fields pass through
-verbatim). Sweeps are driven from outside, e.g. a grid of
-single runs; `SyntheticLitModule` draws its batches from
-`smi.theory.forward.simulate_batch` and bakes `normalization_stats`.
+There is no hyperparameter-search machinery (Ray Tune and the vmap ensemble
+were deleted). `scripts/train.py --config <name>` runs one training run from
+one registry config. Sweeps are experiment grids (`pixi run experiments
+<grid>`), which run each cell as its own fingerprinted, resumable run.
+`SyntheticLitModule` draws its batches from `smi.theory.forward.simulate_batch`
+and bakes `normalization_stats`.
 
 ## Reports (`report/`)
 
@@ -270,7 +263,7 @@ These override defaults; follow them unless explicitly told otherwise.
 - **Run the full suite (`pixi run -e dev python -m pytest`) when you touch
   `learning/models/`, `data/features/`, or `theory/`** -- the
   normalization stats, the TorchScript scriptability check and the model
-  forward tests are all coupled through those. It takes about 220 seconds on osx-arm64.
+  forward tests are all coupled through those. It takes about 235 seconds on osx-arm64.
 - **Otherwise** run the single most relevant test file. Scope tests to the
   code you changed rather than surfacing unrelated pre-existing failures.
 - **GPU claims need GPU evidence.** `torch.cuda.synchronize()` around any

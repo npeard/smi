@@ -26,7 +26,8 @@ handling, then resume experiments (P4-P6).
 - [x] **R3. Split `analysis/`.** `estimators`, `learning`, `experiments` and
   `theory`; `baseline_fit` and `gain_sweep` split into estimator, sweep and CLI.
 - [x] **R4. Scripts and artifacts out of the package.** CLIs in `scripts/`;
-  `configs/`, `report/results/`, `data/frozen/`, `runs/` at the repo root,
+  `report/results/`, `data/frozen/`, `runs/` at the repo root (configs and
+  grids became Python registries in `smi/`),
   resolved through `smi.core.paths`; Snakefile and figure scripts follow.
 - [x] **R5. Dead paths decided.** Ray Tune, the vmap ensemble, VICReg and the
   `torch.compile` branch deleted; `LitModule` now requires `target`;
@@ -36,8 +37,8 @@ handling, then resume experiments (P4-P6).
 
 Carried-over cleanup:
 
-- [ ] `notebooks/causal_inductive_bias_test.ipynb` imports a nonexistent
-  `models.utcn` (it predates the restructure); fix or delete.
+- [x] `notebooks/causal_inductive_bias_test.ipynb` (imported a nonexistent
+  `models.utcn`) deleted.
 - [x] The `matched/` and `displacement/` entries of `smi/learning/configs.py` keep a stale `data_dir`
   (`./analysis/data`) because it is hashed into run fingerprints; callers pass
   `dataset_path` explicitly. Retire it together with a fingerprint-golden
