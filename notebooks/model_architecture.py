@@ -7,12 +7,11 @@ app = marimo.App(width='medium')
 @app.cell
 def _():
     import marimo as mo
-    import yaml
     from torchview import draw_graph
 
     from smi.learning.models.factory import create_model
 
-    return create_model, draw_graph, mo, yaml
+    return create_model, draw_graph, mo
 
 
 @app.cell
@@ -26,18 +25,15 @@ def _(mo):
 
 @app.cell
 def _():
-    from smi.core.paths import CONFIGS_DIR
+    from smi.learning.configs import model_config
 
-    config_path = CONFIGS_DIR / 'models' / 'tcn-config.yaml'
-    return (config_path,)
+    config = model_config('tcn-config')
+    return (config,)
 
 
 @app.cell
-def _(config_path, create_model, yaml):
-    with open(config_path) as f:
-        _config = yaml.safe_load(f)
-
-    _model_hparams = _config['model']
+def _(config, create_model):
+    _model_hparams = config.model_config
 
     # Handle list-valued hyperparams (from sweep configs) by taking first element
     _clean_hparams = {}

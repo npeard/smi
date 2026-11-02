@@ -13,8 +13,9 @@ differing config blocks, rather than mixing the two in one table.
 
 Grid YAML keys (all required except where noted):
 
-* ``families``: ``[{name, config}]``; ``config`` is a model YAML, relative to
-  the grid file.
+* ``families``: ``[{name, config}]``; ``config`` names an entry of
+  :data:`smi.learning.configs.MODEL_CONFIGS` by the path of the model YAML it
+  replaced, ``../models/<registry name>.yaml`` (see :func:`registry_name`).
 * ``channel_subsets``: wavelength lists (um). Never part of a ``sim`` block.
 * ``sims``: ``[{name, preset, feedback_c, alpha, override?, sweep?,
   sign_invariant?}]``. ``preset`` is ``nominal`` or ``noise_free``
@@ -42,7 +43,6 @@ retraining or touching its fingerprint.
 """
 
 import argparse
-import copy
 import dataclasses
 import fcntl
 import fnmatch
@@ -59,7 +59,7 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import lightning
@@ -80,6 +80,7 @@ from smi.experiments.results_artifact import (
     read_results,
     write_results,
 )
+from smi.learning.configs import model_config
 from smi.learning.models.factory import create_model
 from smi.learning.training_interface import (
     TrainingConfig,
@@ -125,14 +126,15 @@ class RunnerLockedError(RuntimeError):
 class Cell:
     """One unit of work: a trained network (or the oracle) on one sim/subset.
 
-    ``seed`` is ``None`` for the oracle, which is not trained. ``sweep`` is
+    ``family_config`` is the family's registry name and ``seed`` its training
+    seed, both ``None`` for the oracle, which is not trained. ``sweep`` is
     the ``(field, value)`` a ``sweep`` entry set for this sim, ``None`` for a
     sim that is not a sweep point.
     """
 
     key: str
     family: str
-    family_config: Path
+    family_config: str | None
     wavelengths_um: tuple[float, ...]
     sim_name: str
     sim: SimConfig
@@ -212,6 +214,23 @@ def _build_sims(
     ]
 
 
+def registry_name(config: str) -> str:
+    """The model-registry name a grid's ``config: ../models/<name>.yaml`` means.
+
+    The grids still spell families as paths to the model YAMLs the registry
+    replaced, so the name is everything after the last ``models`` component,
+    without the suffix.
+
+    Raises:
+        ValueError: If the path has no ``models`` component.
+    """
+    parts = PurePosixPath(config).with_suffix('').parts
+    if 'models' not in parts:
+        raise ValueError(f'family config {config!r} is not under models/')
+    start = len(parts) - parts[::-1].index('models')
+    return '/'.join(parts[start:])
+
+
 def expand_grid(path: Path) -> tuple[dict[str, Any], list[Cell]]:
     """Parse a grid YAML and expand it into its cells, in a deterministic order.
 
@@ -226,6 +245,9 @@ def expand_grid(path: Path) -> tuple[dict[str, Any], list[Cell]]:
     """
     path = Path(path)
     grid = yaml.safe_load(path.read_text())
+    names = {f['name']: registry_name(f['config']) for f in grid['families']}
+    for name in names.values():
+        model_config(name)  # an unknown name fails here, not mid-run
     cells: list[Cell] = []
     for sim_entry in grid['sims']:
         entry = {'override': {}, 'sweep': None, **sim_entry}
@@ -240,7 +262,7 @@ def expand_grid(path: Path) -> tuple[dict[str, Any], list[Cell]]:
                         Cell(
                             cell_key(ORACLE_FAMILY, wavelengths, sim_name, None),
                             ORACLE_FAMILY,
-                            path,
+                            None,
                             wavelengths,
                             sim_name,
                             sim,
@@ -253,7 +275,7 @@ def expand_grid(path: Path) -> tuple[dict[str, Any], list[Cell]]:
                     Cell(
                         cell_key(family['name'], wavelengths, sim_name, seed),
                         family['name'],
-                        (path.parent / family['config']).resolve(),
+                        names[family['name']],
                         wavelengths,
                         sim_name,
                         sim,
@@ -322,26 +344,28 @@ def runner_lock(path: Path) -> Generator[None]:
 
 
 @functools.cache
-def _family(text: str) -> tuple[dict[str, Any], bool]:
-    """A family YAML's parse and its model's ``requires_full_length``.
+def _requires_full_length(model_json: str) -> bool:
+    """Whether the model a family's model block builds needs full shots.
 
-    Keyed by content, not path, so an edited file is never served stale; a
-    grid's cells share a handful of families, each built once.
+    Keyed by content, not registry name, so an edited entry is never served
+    stale; a grid's cells share a handful of families, each built once.
     """
-    family = yaml.safe_load(text)
-    return family, create_model(family['model']).requires_full_length
+    return create_model(json.loads(model_json)).requires_full_length
 
 
 def training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
     """The resolved training config of a trained ``cell`` of ``grid``."""
-    cached, requires_full_length = _family(cell.family_config.read_text())
-    # A copy: TrainingInterface writes in_channels into its model config.
-    family = copy.deepcopy(cached)
-    training = {**family['training'], **grid['training']}
-    loss = {**family['loss'], 'sign_invariant': cell.sign_invariant}
+    if cell.family_config is None:
+        raise ValueError(f'{cell.key} is the untrained oracle')
+    family = model_config(cell.family_config)
+    requires_full_length = _requires_full_length(
+        json.dumps(family.model_config, sort_keys=True)
+    )
+    training = {**family.training_config, **grid['training']}
+    loss = {**family.loss_config, 'sign_invariant': cell.sign_invariant}
     # Derived, not chosen: the monitor must follow the loss (Task 11 rule) and
     # the target, and a grid mixes Michelson (sign-invariant) and SMI sims over
-    # one family. So a family YAML's own ``convergence.monitor`` line is
+    # one family. So a family's own ``convergence.monitor`` is
     # overridden here.
     training['convergence'] = {
         **training['convergence'],
@@ -355,9 +379,9 @@ def training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
     if requires_full_length:
         synthetic['train_crop_length'] = None
     return TrainingConfig(
-        model_config=family['model'],
+        model_config=family.model_config,
         training_config=training,
-        data_config=family['data'],
+        data_config=family.data_config,
         loss_config=loss,
         synthetic_config=synthetic,
     )

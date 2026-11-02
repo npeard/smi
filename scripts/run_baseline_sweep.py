@@ -43,7 +43,7 @@ from smi.core.metrics import (
     per_shot_rmse,
     summarize_per_shot,
 )
-from smi.core.paths import CONFIGS_DIR, DATA_DIR, DATASETS, RESULTS_DIR
+from smi.core.paths import DATA_DIR, DATASETS, RESULTS_DIR
 from smi.data.datamodule import VelocityDataModule
 from smi.estimators.tabular import CAUSAL as TABULAR_CAUSAL
 from smi.estimators.tabular import (
@@ -54,6 +54,7 @@ from smi.estimators.tabular import (
     windowize,
 )
 from smi.experiments.results_artifact import RunRecord, write_results
+from smi.learning.configs import model_config
 from smi.learning.models.factory import create_model
 from smi.learning.training_interface import TrainingConfig, TrainingInterface
 from smi.theory.coil_driver import MS_PER_S
@@ -67,7 +68,6 @@ SPLIT_SEED = 42
 #: Model-initialization seeds. This is the axis that varies; the split does not.
 DEFAULT_SEEDS = (0, 1, 2)
 
-CONFIG_DIR = CONFIGS_DIR / 'models' / 'matched'
 DEFAULT_OUTPUT = RESULTS_DIR / 'learned_results.json'
 
 #: Torch configs to sweep, in the order the report tabulates them.
@@ -244,14 +244,14 @@ def _load_config(name: str, settings: SweepSettings, dataset: str) -> TrainingCo
     """Load a matched config and apply the sweep's overrides.
 
     Args:
-        name: Config stem under ``configs/models/matched``.
+        name: Registry name under ``matched/`` in ``smi.learning.configs``.
         settings: Sweep settings supplying the epoch cap and device.
         dataset: Dataset label to point the config at.
 
     Returns:
         The loaded config with epochs, device and dataset overridden.
     """
-    config = TrainingConfig.from_yaml(str(CONFIG_DIR / f'{name}.yaml'))
+    config = model_config(f'matched/{name}')
     config.training_config['max_epochs'] = settings.epochs
     config.training_config['T_0'] = settings.epochs
     config.training_config['use_logging'] = False
@@ -305,7 +305,7 @@ def run_torch_config(
     failure would remove the evidence for where not to look next.
 
     Args:
-        name: Config stem under ``configs/models/matched``.
+        name: Registry name under ``matched/`` in ``smi.learning.configs``.
         dataset: Dataset label.
         seed: Model-initialization seed. Does not touch the split.
         settings: Sweep settings.

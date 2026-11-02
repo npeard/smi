@@ -10,7 +10,6 @@ from typing import Any, override
 import h5py
 import lightning as lightning_module
 import torch
-import yaml
 from lightning.pytorch.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
@@ -157,7 +156,8 @@ class RelativeEarlyStopping(EarlyStopping):
 class TrainingConfig:
     """Configuration class for a single training run.
 
-    List-valued YAML fields are not expanded into a grid here.
+    Named entries live in :mod:`smi.learning.configs`; list-valued fields are
+    not expanded into a grid here.
     """
 
     model_config: dict[str, Any]
@@ -165,29 +165,6 @@ class TrainingConfig:
     data_config: dict[str, Any]
     loss_config: dict[str, Any]
     synthetic_config: dict[str, Any] | None = None
-
-    @classmethod
-    def from_yaml(cls, config_path: str) -> TrainingConfig:
-        """Load a single training configuration from a YAML file.
-
-        List-valued fields (if any) are passed through verbatim.
-
-        Args:
-            config_path: Path to YAML configuration file.
-
-        Returns:
-            A single :class:`TrainingConfig`.
-        """
-        with Path(config_path).open() as f:
-            config_dict = yaml.safe_load(f)
-
-        return cls(
-            model_config=config_dict['model'],
-            training_config=config_dict['training'],
-            loss_config=config_dict['loss'],
-            data_config=config_dict['data'],
-            synthetic_config=config_dict.get('synthetic'),
-        )
 
 
 def resolve_data_dir(data_dir: str) -> Path:

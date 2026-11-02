@@ -205,7 +205,7 @@ def test_config_rejects_dilation_base_that_outruns_the_kernel():
 
 @pytest.mark.parametrize(
     ('kernel_size', 'dilation_base'),
-    # (3, 4) is the case that matters: tcn-config.yaml and scnn-config.yaml
+    # (3, 4) is the case that matters: the tcn-config and scnn-config entries
     # both search kernel_size [3,5,7] x dilation_base [2,3,4], so a tighter
     # bound than 2*(k-1)+1 would crash those searches mid-run on a
     # configuration that is in fact exact.

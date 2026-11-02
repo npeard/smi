@@ -123,9 +123,8 @@ GRIDS = [
 # The emitter instantiates the matched model configs to probe the input span of
 # the sliding-window families (section Q2), so a model or config edit reruns it.
 MODEL_DIR = SMI_DIR / "learning" / "models"
-MATCHED_CONFIG_DIR = REPORT_DIR.parent / "configs" / "models" / "matched"
 MODELS = sorted(
-    str(p) for p in [*MODEL_DIR.glob("*.py"), *MATCHED_CONFIG_DIR.glob("*-44k.yaml")]
+    str(p) for p in [*MODEL_DIR.glob("*.py"), SMI_DIR / "learning" / "configs.py"]
 )
 
 # Without this, the unconstrained {document} wildcard in `rule document` also

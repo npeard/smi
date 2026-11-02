@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 import torch
-import yaml
 from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 
+from smi.learning.configs import MODEL_CONFIGS
 from smi.learning.lit_module import LitModule
 from smi.learning.training_interface import (
     RelativeEarlyStopping,
@@ -20,7 +20,6 @@ from smi.learning.training_interface import (
     convergence_monitor,
 )
 from tests._helpers import script_log
-from tests.test_synthetic_train_cli import CONFIG
 
 SIGNED = 'val/velocity_rmse_um_per_ms'
 INVARIANT = 'val/velocity_rmse_sign_invariant_um_per_ms'
@@ -135,7 +134,9 @@ def _config(monitor: str, *, sign_invariant: bool, max_epochs: int) -> TrainingC
 
 
 def _sim() -> dict:
-    return yaml.safe_load(CONFIG.read_text())['synthetic']['sim']
+    synthetic = MODEL_CONFIGS['synthetic-tcn-config'].synthetic_config
+    assert synthetic is not None
+    return dict(synthetic['sim'])
 
 
 def _run(config: TrainingConfig) -> TrainingInterface:

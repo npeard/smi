@@ -80,14 +80,14 @@ Command-line entry points live in `scripts/`; each takes `--help`.
 
 ### Training a New Model
 
-Train a neural network model using a YAML configuration file:
+Train a neural network model from a named config in `smi/learning/configs.py`:
 
 ```bash
-pixi run python scripts/train.py --config configs/models/tcn-config.yaml
+pixi run python scripts/train.py --config tcn-config
 ```
 
 **Arguments:**
-- `--config`: Path to YAML configuration file (configs live in `configs/models/`)
+- `--config`: Registry name of the config (e.g. `matched/tcn-44k`, `tcn-config`)
 - `--verbosity`: Set logging level (choices: DEBUG, INFO, WARNING, ERROR; default: INFO)
 
 Set the `synthetic` section of the config to train on data generated on-device

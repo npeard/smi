@@ -114,7 +114,7 @@ CONFIG_NAMES = (
 
 
 def build_model(sequence_length: int) -> nn.Module:
-    """Build the TCN at the size used in ``configs/models/tcn-config.yaml``.
+    """Build the TCN at the size of the ``tcn-config`` training config.
 
     Using the checked-in production configuration (6 dilated temporal blocks,
     16..64 channels, kernel 5) rather than a toy net is what makes the GPU-bound

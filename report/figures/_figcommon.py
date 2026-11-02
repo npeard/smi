@@ -61,7 +61,6 @@ from smi.theory.forward import (
 # Resolved by the package, not the cwd (pytest runs scripts from the repo
 # root, Snakemake from report/).
 EXPERIMENTS_DIR = CONFIGS_DIR / 'experiments'
-MATCHED_DIR = CONFIGS_DIR / 'models' / 'matched'
 
 FREE_SPACE_H5 = DATA_DIR / 'free-space-synchro_10k.h5'
 MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'

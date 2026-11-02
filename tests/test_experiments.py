@@ -31,11 +31,12 @@ from smi.experiments.runner import (
     training_config,
 )
 from smi.learning import synthetic_lit_module
+from smi.learning.configs import MODEL_CONFIGS, model_config
 from smi.learning.lit_module import LitModule
 from smi.learning.training_interface import SIGNED_RMSE_KEY
 from tests._helpers import script_log
 
-MATCHED = CONFIGS_DIR / 'models' / 'matched'
+TINY = 'tiny-tcn'
 
 
 @pytest.fixture(autouse=True)
@@ -43,15 +44,21 @@ def small_simulations(small_chunks, monkeypatch):
     monkeypatch.setattr(synthetic_lit_module, 'NORM_STATS_SHOTS', 2)
 
 
+@pytest.fixture(autouse=True)
+def tiny_family(monkeypatch):
+    """Register a 2-layer TCN as ``tiny-tcn``; tests edit it in place."""
+    family = model_config('matched/tcn-matched')
+    family.model_config['temporal_channels'] = [4, 4]
+    monkeypatch.setitem(MODEL_CONFIGS, TINY, family)
+    return family
+
+
 def _grid(tmp_path, family_synthetic=None, **overrides):
-    """A tiny CPU grid whose family is a 2-layer TCN."""
-    family = yaml.safe_load((MATCHED / 'tcn-matched.yaml').read_text())
-    family['model']['temporal_channels'] = [4, 4]
+    """A tiny CPU grid whose family is the registered 2-layer TCN."""
     if family_synthetic is not None:
-        family['synthetic'] = family_synthetic
-    (tmp_path / 'tiny-tcn.yaml').write_text(yaml.safe_dump(family))
+        MODEL_CONFIGS[TINY].synthetic_config = family_synthetic
     grid = {
-        'families': [{'name': 'tcn', 'config': 'tiny-tcn.yaml'}],
+        'families': [{'name': 'tcn', 'config': f'../models/{TINY}.yaml'}],
         'channel_subsets': [[0.635, 0.6748, 0.515]],
         'sims': [
             {'name': 'smi', 'preset': 'noise_free', 'feedback_c': 0.2, 'alpha': 3.0}
@@ -108,7 +115,7 @@ def test_two_cell_grid_writes_complete_records_and_resumes(tmp_path):
         assert r.best_monitor <= r.final_monitor
         assert r.zero_predictor_monitor > 0
         assert (r.train_crop_length, r.steps_per_epoch, r.batch_size) == (256, 1, 2)
-        family = yaml.safe_load((tmp_path / 'tiny-tcn.yaml').read_text())['training']
+        family = MODEL_CONFIGS[TINY].training_config
         assert (r.max_epochs, r.T_0) == (1, family['T_0'])
         assert r.lr == float(family['learning_rate'])
         assert {'velocity_rmse', 'velocity_rmse_sign_invariant'} <= set(r.metrics)
@@ -124,13 +131,14 @@ def _one_cell(tmp_path, **overrides):
     return path
 
 
-def test_displacement_target_cell_trains_and_scores_its_differentiated_output(tmp_path):
+def test_displacement_target_cell_trains_and_scores_its_differentiated_output(
+    tmp_path, tiny_family
+):
     path = _grid(tmp_path, seeds=[0])
-    family_path = tmp_path / 'tiny-tcn.yaml'
-    family = yaml.safe_load(family_path.read_text())
-    family['training']['target'] = 'displacement'
-    family['loss'].update(velocity_loss_weight=0.0, displacement_loss_weight=1.0)
-    family_path.write_text(yaml.safe_dump(family))
+    tiny_family.training_config['target'] = 'displacement'
+    tiny_family.loss_config.update(
+        velocity_loss_weight=0.0, displacement_loss_weight=1.0
+    )
     assert _run(path, tmp_path) == 1
     (record,) = read_results(tmp_path / 'results.json')
     ckpt = tmp_path / 'runs' / 'grid' / f'{record.cell_key}.ckpt'
@@ -184,11 +192,11 @@ def test_resume_refuses_a_key_recorded_under_another_unbudgeted_setting(tmp_path
     assert len(read_results(tmp_path / 'results.json')) == 1
 
 
-def test_resume_refuses_a_key_recorded_under_another_architecture(tmp_path):
+def test_resume_refuses_a_key_recorded_under_another_architecture(
+    tmp_path, tiny_family
+):
     path = _one_cell(tmp_path)
-    family = yaml.safe_load((tmp_path / 'tiny-tcn.yaml').read_text())
-    family['model']['temporal_channels'] = [4, 8]
-    (tmp_path / 'tiny-tcn.yaml').write_text(yaml.safe_dump(family))
+    tiny_family.model_config['temporal_channels'] = [4, 8]
     with pytest.raises(ValueError, match=r'differing blocks.*model'):
         _run(path, tmp_path)
 
@@ -218,8 +226,7 @@ def test_resume_refuses_a_key_recorded_under_another_sim(tmp_path):
 
 def test_full_length_model_ignores_the_grid_crop(tmp_path):
     """The offline neural operator trains on full shots when the grid crops."""
-    family = 'neuraloperator-offline-19k.yaml'
-    (tmp_path / family).write_text((MATCHED / family).read_text())
+    family = '../models/matched/neuraloperator-offline-19k.yaml'
     path = _grid(tmp_path, families=[{'name': 'no', 'config': family}])
     grid, (cell, *_) = expand_grid(path)
     config = experiments.training_config(cell, grid)
@@ -476,13 +483,14 @@ def test_shipped_grids_expand_and_name_existing_configs():
         path = CONFIGS_DIR / 'experiments' / f'{name}.yaml'
         _, cells = expand_grid(path)
         assert len(cells) == n_cells
-        assert all(c.family_config.exists() for c in cells)
+        assert all(
+            c.family_config in MODEL_CONFIGS for c in cells if c.seed is not None
+        )
         # Michelson cannot show direction; no SMI sim may claim sign invariance.
         for c in cells:
             assert c.sign_invariant == (c.sim.feedback_c == 0.0)
 
 
-DISPLACEMENT = CONFIGS_DIR / 'models' / 'displacement'
 EXPERIMENTS = CONFIGS_DIR / 'experiments'
 
 
@@ -498,13 +506,17 @@ def test_displacement_grid_retargets_the_s1_cells_and_nothing_else():
     s1_sims = {c.sim_name: c.sim for c in s1_cells}
     for cell in cells:
         assert cell.sim == s1_sims[cell.sim_name]
-        assert cell.family_config.parent == DISPLACEMENT
-        retargeted = yaml.safe_load(cell.family_config.read_text())
-        matched = yaml.safe_load((MATCHED / cell.family_config.name).read_text())
-        matched['training']['target'] = 'displacement'
-        matched['training']['convergence']['monitor'] = 'val/displacement_rmse_um'
-        matched['loss'].update(velocity_loss_weight=0.0, displacement_loss_weight=1.0)
-        assert retargeted == matched, cell.family_config.name
+        name = cell.family_config
+        assert name is not None
+        assert name.startswith('displacement/')
+        retargeted = MODEL_CONFIGS[name]
+        matched = model_config(name.replace('displacement/', 'matched/', 1))
+        matched.training_config['target'] = 'displacement'
+        matched.training_config['convergence']['monitor'] = 'val/displacement_rmse_um'
+        matched.loss_config.update(
+            velocity_loss_weight=0.0, displacement_loss_weight=1.0
+        )
+        assert retargeted == matched, name
         monitor = training_config(cell, grid).training_config['convergence']
         assert monitor['monitor'] == (
             'val/displacement_rmse_sign_invariant_um'
@@ -577,7 +589,9 @@ def test_lock_held_by_live_process_survives_an_emptied_lockfile(tmp_path):
 
 
 def test_concurrent_runner_process_exits_nonzero(tmp_path):
-    path = _grid(tmp_path)
+    # A shipped family: the child process does not see the monkeypatched one.
+    family = {'name': 'tcn', 'config': '../models/matched/tcn-44k.yaml'}
+    path = _grid(tmp_path, families=[family])
     lock = tmp_path / '.runner.lock'
     with runner_lock(lock):
         proc = subprocess.run(
@@ -643,3 +657,17 @@ def test_resume_refuses_a_key_recorded_by_another_simulator(tmp_path, monkeypatc
     monkeypatch.setattr(experiments, 'SIMULATOR_VERSION', -1)
     with pytest.raises(ValueError, match='simulator_version'):
         _run(path, tmp_path)
+
+
+def test_grid_naming_an_unknown_family_fails_at_expansion(tmp_path):
+    path = _grid(tmp_path, families=[{'name': 'x', 'config': '../models/tnc.yaml'}])
+    with pytest.raises(KeyError, match='unknown model config'):
+        expand_grid(path)
+
+
+def test_registry_name_strips_the_models_path():
+    assert experiments.registry_name('../models/matched/tcn-44k.yaml') == (
+        'matched/tcn-44k'
+    )
+    with pytest.raises(ValueError, match='not under models'):
+        experiments.registry_name('tiny.yaml')

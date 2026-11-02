@@ -186,9 +186,11 @@ Outside `smi/`:
   `compute_norm_stats`, `inspect_data`, `benchmark_loading`,
   `run_baseline_sweep`). `train.py` must not import `smi.acquisition`.
   `scripts/` is not a package; tests load a script by path.
-- `configs/models/`, `configs/experiments/` - model and grid YAML. The
-  `data_dir` in `configs/models/{matched,displacement}/` is stale on purpose
-  (it is hashed into run fingerprints); pass `dataset_path=` instead.
+- `smi/learning/configs.py` - the named training configs (`MODEL_CONFIGS`,
+  `model_config(name)`); `configs/experiments/` - grid YAML, whose families
+  name registry entries as `../models/<name>.yaml`. The `data_dir` of the
+  `matched/` and `displacement/` entries is stale on purpose (it is hashed into
+  run fingerprints); pass `dataset_path=` instead.
 - `report/results/` - committed result JSON. `data/` - raw HDF5 (ignored) and
   `data/frozen/`. `runs/` - gitignored: `runs/grids/<grid>/<cell-key>.ckpt` from
   the runner, `runs/train/<run-name>/` from `TrainingInterface`.
@@ -215,8 +217,8 @@ HDF5 (gzip-4, chunked per shot) is the chosen storage format - see `docs/data-st
 ## Hyperparameter / architecture search
 
 There is no search machinery in the repo. `scripts/train.py` runs one training run from
-one YAML (`TrainingConfig.from_yaml` returns a single config; list-valued
-fields pass through verbatim). Sweeps are driven from outside, e.g. a grid of
+one named config (`--config matched/tcn-44k`; list-valued fields pass through
+verbatim). Sweeps are driven from outside, e.g. a grid of
 single runs; `SyntheticLitModule` draws its batches from
 `smi.theory.forward.simulate_batch` and bakes `normalization_stats`.
 

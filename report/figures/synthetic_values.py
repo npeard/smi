@@ -40,7 +40,6 @@ from _figcommon import (
     DISPLACEMENT_METRICS,
     EXPERIMENTS_DIR,
     LEAVE_ONE_OUT,
-    MATCHED_DIR,
     MISMATCH_SHOTS,
     NOISE_KNOBS,
     Q1_BINNED_JSON,
@@ -85,6 +84,7 @@ from smi.core.acquisition import STEMLAB_125_14
 from smi.data.frozen import DEFAULT_ROOT, load_or_create
 from smi.experiments.results_artifact import RunRecord
 from smi.experiments.runner import ORACLE_FAMILY, cell_key, expand_grid
+from smi.learning.configs import MODEL_CONFIGS
 from smi.learning.models.factory import create_model
 from smi.learning.models.sliding_window import SlidingWindowModel
 from smi.learning.synthetic_lit_module import VAL_SEED
@@ -491,9 +491,7 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
     pins each against a gradient probe).
     """
     models = {
-        stem: create_model(
-            yaml.safe_load((MATCHED_DIR / f'{stem}.yaml').read_text('utf-8'))['model']
-        )
+        stem: create_model(MODEL_CONFIGS[f'matched/{stem}'].model_config)
         for stem in Q2_STEMS
     }
 
@@ -1061,8 +1059,7 @@ def methods_values(
     grids = [
         yaml.safe_load(p.read_text('utf-8')) for p in EXPERIMENTS_DIR.glob('*.yaml')
     ]
-    family = yaml.safe_load((MATCHED_DIR / 'tcn-44k.yaml').read_text('utf-8'))
-    convergence = family['training']['convergence']
+    convergence = MODEL_CONFIGS['matched/tcn-44k'].training_config['convergence']
 
     def one(values: Iterable[Any]) -> Any:
         (value,) = set(values)
@@ -1076,11 +1073,13 @@ def methods_values(
     test_set = one(tuple(sorted(g['test_set'].items())) for g in grids)
     full_length = sorted({r.model_type for r in trained if r.train_crop_length is None})
     # Each matched family's stopping rule, which the text states once.
-    for path in MATCHED_DIR.glob('*-44k.yaml'):
-        rule = yaml.safe_load(path.read_text('utf-8'))['training']['convergence']
+    for name, config in MODEL_CONFIGS.items():
+        if not (name.startswith('matched/') and name.endswith('-44k')):
+            continue
+        rule = config.training_config['convergence']
         assert {k: rule[k] for k in convergence if k != 'monitor'} == {
             k: v for k, v in convergence.items() if k != 'monitor'
-        }, path
+        }, name
     return {
         'm_batch': str(batch),
         'm_steps': str(steps),
