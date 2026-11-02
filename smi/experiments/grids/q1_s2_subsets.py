@@ -5,7 +5,7 @@ near the zero predictor there. Here all 7 subsets run noise-free, Michelson
 (sign-invariant) and SMI C = 0.2, alpha = 3, for the TCN and TCAN (the best
 causal family at C = 0.2 in S1). The oracle row is run for Michelson only (it
 decodes under the Michelson model).
-Run: python -m smi.experiments.runner q1_s2_subsets
+Run: pixi run experiments q1_s2_subsets
 """
 
 from smi.experiments.grid import (

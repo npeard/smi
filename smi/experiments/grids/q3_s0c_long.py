@@ -3,7 +3,7 @@
 The C = 0.2 cell of q3_s0c_ceiling (TCN-44k, all three channels, noise-free,
 alpha = 3), as evidence of how far the fixed-budget "ceiling" still moves past
 the adopted 90-epoch schedule.
-Run: python -m smi.experiments.runner q3_s0c_long
+Run: pixi run experiments q3_s0c_long
 """
 
 from smi.experiments.grid import (

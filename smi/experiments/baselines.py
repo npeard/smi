@@ -71,7 +71,7 @@ artifact's ``config`` block; never quote one N over the other's table.
 Run as a script to regenerate the results artifact -- the defaults are the
 settings it was produced with::
 
-    pixi run -e dev python -m smi.experiments.baselines
+    pixi run -e dev python scripts/run_baselines.py
 """
 
 from __future__ import annotations

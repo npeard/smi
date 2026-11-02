@@ -5,7 +5,7 @@ with ONE knob returned to its noise-free value (SimConfig.noise_free). The
 ladder sweeps knobs alone from the noise-free base, so it cannot say what the
 nominal error would be with one term removed -- the question a hardware fix
 asks. Read against the nominal point's three-seed spread (q3_s3_spread).
-Run: python -m smi.experiments.runner q3_s3_leave_one_out
+Run: pixi run experiments q3_s3_leave_one_out
 """
 
 from smi.experiments.grid import (

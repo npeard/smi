@@ -7,7 +7,7 @@ nominal operating point). Which single knob moves RMSE most, at its nominal
 value, is the case for or against new electronics. shot_noise is omitted
 alone: it needs an SNR and so is only meaningful inside the nominal point.
 drive_gain is motion scale, not noise.
-Run: python -m smi.experiments.runner q3_s3_noise_ladder
+Run: pixi run experiments q3_s3_noise_ladder
 """
 
 from smi.experiments.grid import (

@@ -2,7 +2,7 @@
 
 Same cells and budget as q3_s1_families; its rows join the S1 table, noted as
 run on the chunked scan and the Python 3.14 environment.
-Run: python -m smi.experiments.runner q3_s1m_mamba
+Run: pixi run experiments q3_s1m_mamba
 """
 
 from dataclasses import replace

@@ -2,7 +2,7 @@
 
 Every non-empty subset of the three rig lasers, at the nominal weak-feedback
 SMI point, noise-free (ceiling) and with the nominal noise model.
-Run: python -m smi.experiments.runner q1_channels
+Run: pixi run experiments q1_channels
 Every existing family at the 44k budget (Task 19); later families extend this.
 """
 

@@ -5,7 +5,7 @@ the first accuracy-vs-C curve. Michelson (C = 0) is sign-invariant by
 necessity; the alpha = 0 control at C = 0.2 keeps the d -> -d symmetry and so
 should look like Michelson under the signed loss, while alpha = 3 and 5 can
 show direction.
-Run: python -m smi.experiments.runner q3_s0_pilot
+Run: pixi run experiments q3_s0_pilot
 """
 
 from smi.experiments.grid import (

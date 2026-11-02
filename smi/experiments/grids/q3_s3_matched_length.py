@@ -6,7 +6,7 @@ base itself gains 36-49% from longer training. Here the nominal point, the
 nominal point without phase drift, and the noise-free base all train exactly
 60 epochs, so the comparison is at equal length; so does the ladder's
 phase-drift sweep.
-Run: python -m smi.experiments.runner q3_s3_matched_length
+Run: pixi run experiments q3_s3_matched_length
 """
 
 from smi.experiments.grid import (

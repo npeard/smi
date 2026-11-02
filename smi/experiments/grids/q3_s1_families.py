@@ -4,7 +4,7 @@ All three channels, noise-free: Michelson (sign-invariant; the "is the
 estimator the limit" test) and weak-feedback SMI at C = 0.2 (alpha = 3); the C
 curve itself is the TCN's (q3_s0c_ceiling). Causal families form the primary
 column, offline families the secondary.
-Run: python -m smi.experiments.runner q3_s1_families
+Run: pixi run experiments q3_s1_families
 """
 
 from smi.experiments.grid import (

@@ -12,7 +12,7 @@ phase of eq-excess, because the simulated fringe is cos(phi_F). Distance is
 in fractions of a fringe, so it runs from 0 (at an extremum) to 1/4 (midway
 between two).
 
-Usage: python -m smi.experiments.q1_binned [--out PATH]
+Usage: pixi run python scripts/q1_binned.py [--out PATH]
 """
 
 from __future__ import annotations

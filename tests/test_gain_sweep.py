@@ -880,7 +880,7 @@ class TestInteriorPeakSurvivesAPlateau:
         """
         assert ARTIFACT_PATH.exists(), (
             f'{ARTIFACT_PATH} is missing -- it is version-controlled evidence, '
-            f'regenerate with `python -m smi.experiments.gain_sweep`'
+            f'regenerate with `python scripts/gain_sweep.py`'
         )
         payload = json.loads(ARTIFACT_PATH.read_text(encoding='utf-8'))
         seen = 0

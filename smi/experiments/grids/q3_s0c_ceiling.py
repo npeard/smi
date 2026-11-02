@@ -6,7 +6,7 @@ is evidence of how far the fixed-budget "ceiling" still moves. TCN-44k, all
 three channels, noise-free, alpha = 3, with the alpha = 0 and alpha = 5
 controls at C = 0.2. Michelson and C = 0.2 at T_0 = 90 already exist from S0b
 (same cell keys, skipped).
-Run: python -m smi.experiments.runner q3_s0c_ceiling
+Run: pixi run experiments q3_s0c_ceiling
 """
 
 from smi.experiments.grid import (

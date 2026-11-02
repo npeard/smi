@@ -109,7 +109,7 @@ units the calibration file uses.
 
 Run as a script to regenerate the artifact::
 
-    pixi run -e dev python -m smi.experiments.gain_sweep
+    pixi run -e dev python scripts/gain_sweep.py
 
 This deliberately writes its own JSON file rather than extending
 ``baseline_results.json``: that artifact's method 2 is a ~20 min GPU Viterbi

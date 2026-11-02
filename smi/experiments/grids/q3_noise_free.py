@@ -2,7 +2,7 @@
 
 Michelson (C = 0) cannot show direction, so it trains and is scored with the
 sign-invariant loss; every C > 0 sim with alpha != 0 can.
-Run: python -m smi.experiments.runner q3_noise_free
+Run: pixi run experiments q3_noise_free
 Every existing family at the 44k budget (Task 19); later families extend this.
 """
 

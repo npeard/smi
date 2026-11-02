@@ -4,7 +4,7 @@ T_0 = 30, one seed per cell. Single-seed ladder rows differ by less than the
 spread the S0 C-curve shows at this budget, so the noise-free base (the
 ladder's origin) runs at three seeds and the nominal point at two more; the
 ladder is read against that spread.
-Run: python -m smi.experiments.runner q3_s3_spread
+Run: pixi run experiments q3_s3_spread
 """
 
 from smi.experiments.grid import (

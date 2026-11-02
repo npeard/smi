@@ -7,7 +7,7 @@ family that already trains. Same sims, channels, budget and frozen test sets
 as q3_s1_families, so each cell pairs with its S1 velocity-target cell on
 identical shots. Decision metrics are fixed in the round-2 rerun plan, section
 (b).
-Run: python -m smi.experiments.runner q3_s1d_displacement
+Run: pixi run experiments q3_s1d_displacement
 """
 
 from dataclasses import replace

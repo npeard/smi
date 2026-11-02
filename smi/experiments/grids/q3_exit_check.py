@@ -5,7 +5,7 @@ Michelson with the plain signed loss (predicted to collapse toward zero), (b)
 on Michelson with the sign-invariant loss, and (c) on weak-feedback SMI
 (C = 0.2, alpha = 3) with the signed loss. A short fixed budget (20 epochs);
 the point is the ordering, not a ceiling.
-Run: python -m smi.experiments.runner q3_exit_check
+Run: pixi run experiments q3_exit_check
 """
 
 from smi.experiments.grid import (

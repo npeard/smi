@@ -4,7 +4,7 @@ TCN-44k on all 7 subsets of the rig wavelengths, at the nominal operating point
 (SMI C = 0.2, alpha = 3, every knob nominal) with the SNR swept. The classical
 oracle runs separately (q1_s4_oracle) on the 3-channel and best single-channel
 subsets only, because inverse_fit costs ~8.5 min per set.
-Run: python -m smi.experiments.runner q1_s4_snr
+Run: pixi run experiments q1_s4_snr
 """
 
 from smi.experiments.grid import (

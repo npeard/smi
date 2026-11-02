@@ -3,7 +3,7 @@
 For the 3-channel subset and the 515 nm channel (chosen in advance: section 1
 shows the shortest wavelength carries the most Fisher information), SNR swept.
 inverse_fit costs ~8.5 min per 64-shot set, so only these two subsets.
-Run: python -m smi.experiments.runner q1_s4_oracle
+Run: pixi run experiments q1_s4_oracle
 """
 
 from smi.experiments.grid import (
