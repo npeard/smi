@@ -22,7 +22,6 @@ dependencies = [
     "lightning>=2.6",
     "h5py>=3.16",
     "tqdm",
-    "pyyaml",
     "scipy>=1.18",
 ]
 
@@ -298,7 +297,7 @@ spell = "python -m codespell_lib ."
 # --check-updates weekly rather than per session (a network round trip per
 # hook repo).
 preflight = "preflight"
-# Resumable synthetic-program grid runner: `pixi run experiments <grid.yaml>`.
+# Resumable synthetic-program grid runner: `pixi run experiments <grid name>`.
 experiments = "python scripts/run_experiments.py"
 
 [tool.pixi.feature.dev.tasks]

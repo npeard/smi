@@ -2511,7 +2511,6 @@ packages:
   - lightning>=2.6
   - h5py>=3.16
   - tqdm
-  - pyyaml
   - scipy>=1.18
   - pytest>=8.0 ; extra == 'test'
   - pytest-cov>=3.0 ; extra == 'test'
