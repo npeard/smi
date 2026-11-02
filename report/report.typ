@@ -3,12 +3,12 @@
 //
 // Build:  pixi run report-only  (or, from report/: snakemake build/report.pdf)
 //
-// Every number in this document comes from smi/analysis/data/baseline_results.json
-// (method 1 and method 2, written by smi.analysis.baseline_fit), from
-// smi/analysis/data/gain_sweep_results.json (the gain, delay and fringe-rate
-// sweeps, written by smi.analysis.gain_sweep), or from
-// smi/analysis/data/learned_results.json (the trained models, written by
-// smi.analysis.run_baseline_sweep). Nothing here is estimated or
+// Every number in this document comes from report/results/baseline_results.json
+// (method 1 and method 2, written by smi.experiments.baselines), from
+// report/results/gain_sweep_results.json (the gain, delay and fringe-rate
+// sweeps, written by smi.experiments.gain_sweep), or from
+// report/results/learned_results.json (the trained models, written by
+// scripts/run_baseline_sweep.py). Nothing here is estimated or
 // recalled: if a claim needs a number the artifacts do not contain, the claim
 // does not get made. Figures read the artifacts and recompute nothing.
 //
@@ -339,7 +339,7 @@ upper clip the opposite failure appears -- four windows in a record leave the
 within-shot phase drift the windowing exists to absorb largely unabsorbed, and
 both curves fall toward zero together. The clip brackets the range where the
 gap is worth reading. These window-sweep numbers are recorded in
-`smi/analysis/baseline_fit.py` beside the clip constants they justify, rather
+`smi/estimators/phase_fit.py` beside the clip constants they justify, rather
 than in the results artifacts.
 
 === Per-channel caveats
@@ -558,7 +558,7 @@ amplitude and phase are held fixed.
 The fringe phase and the fringe contrast both wander within a shot, and those
 are the two quantities the global fit holds constant. Within-shot drift of 1
 to 2.7 fringes has been measured on this data and is recorded in
-`smi/analysis/baseline_fit.py`; that magnitude lives there rather than in the
+`smi/estimators/phase_fit.py`; that magnitude lives there rather than in the
 results artifacts, so this document cites it and does not tabulate it. For
 scale, at the median true velocity RMS of 0.373 and 0.377 um/ms a
 1024-sample window sweeps 2.3 to 3.1 fringes depending on wavelength, and the
@@ -621,7 +621,7 @@ scalar `k` that lands in two different places on two acquisitions is absorbing
 something other than a pure gain error. The gain step is 0.25, which is 1.7%
 of the live value, so the disagreement is wider than the sweep's resolution.
 
-For that reason the calibration constant in `smi/synthetic/calib_params.py`
+For that reason the calibration constant in `smi/theory/calib_params.py`
 has deliberately *not* been re-tuned here. Changing it would shift every
 training target, and a constant the two acquisitions disagree about by up to
 6.5% is not settled enough to shift them on.
@@ -761,7 +761,7 @@ approach to three channels at 207,905 parameters, reporting a correlation of
 0.96 and a velocity RMSE of 0.13 um/ms; its best single channel reaches 0.97
 and 0.11 um/ms.
 
-`smi/analysis/models/barland_cnn.py` is a port of the 2021 architecture. At
+`smi/learning/models/barland_cnn.py` is a port of the 2021 architecture. At
 one input channel it comes to 57,153 trainable parameters, an exact match
 with the total the paper states, which is the check that establishes the port
 is faithful rather than merely similar. At the three channels this data
@@ -801,7 +801,7 @@ about every absolute number below.
 == What every configuration scored
 
 Velocity RMSE in um/ms and displacement RMSE in um, each the mean over the
-two seeds, from `smi/analysis/data/learned_results.json`. Every row carries
+two seeds, from `report/results/learned_results.json`. Every row carries
 its parameter count, its receptive field in samples, and whether it reads
 samples after the timestamp it predicts. The last three rows are the models
 that trained worst and are here for the same reason as the rest: a table that
@@ -1086,7 +1086,7 @@ fit the budget. Those two figures are the measurement, not a quotation: the
 compute side is 19.2 ms per step at batch 16, warmed, with
 `torch.cuda.synchronize()` around the timed region and the median taken over
 ten steps on the same GPU. The loader headroom reported by
-`smi.analysis.benchmark_loading` was measured on a production-size TCN at
+`scripts/benchmark_loading.py` was measured on a production-size TCN at
 batch 32, where training is GPU bound; it does not transfer to 19-44k
 parameters, which is why the sweep had to be measured on its own.
 

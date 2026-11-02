@@ -11,9 +11,11 @@ import numpy as np
 import pytest
 from plot_waveforms import calculate_fft
 
-from smi.synthetic import coil_driver as coil_driver_module
-from smi.synthetic.coil_driver import MS_PER_S, CoilDriver
-from smi.synthetic.waveform import Waveform
+from smi.core.acquisition import NOMINAL_ACQ_DECIMATION, STEMLAB_125_14
+from smi.core.kinematics import derivative_displacement, integrate_velocity
+from smi.theory import coil_driver as coil_driver_module
+from smi.theory.coil_driver import MS_PER_S, CoilDriver
+from smi.theory.waveform import Waveform
 
 
 def test_spectra_consistency():
@@ -21,7 +23,14 @@ def test_spectra_consistency():
     are consistent with those calculated using calculate_fft.
     """
     # Create a waveform generator with test parameters
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256, seed=0)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+        seed=0,
+    )
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()
@@ -59,7 +68,14 @@ def test_reconstructed_waveforms():
     match those retrieved from CoilDriver.
     """
     # Create a waveform generator with test parameters
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256, seed=0)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+        seed=0,
+    )
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()
@@ -154,7 +170,14 @@ def test_manual_transfer_function_computation():
 def test_displacement_velocity_relationship():
     """Test that the velocity is the time derivative of displacement."""
     # Create a waveform generator with test parameters
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256, seed=0)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+        seed=0,
+    )
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()
@@ -194,7 +217,14 @@ def test_integrated_velocity_and_derivative_displacement():
     frequency-domain approaches for calculating velocity and displacement.
     """
     # Create a waveform generator with test parameters
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256, seed=0)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+        seed=0,
+    )
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()
@@ -214,8 +244,8 @@ def test_integrated_velocity_and_derivative_displacement():
     )
 
     # Test 1: Integrated velocity should match displacement from transfer function
-    # Integrate velocity using the same method as in CoilDriver.integrate_velocity
-    displacement_integrated = coil_driver.integrate_velocity(velocity, sample_rate)
+    # Integrate velocity using the same method as in integrate_velocity
+    displacement_integrated = integrate_velocity(velocity, sample_rate)
 
     # Ensure displacement starts at zero (as done in
     # RedPitayaManager.get_displacement_data)
@@ -230,9 +260,7 @@ def test_integrated_velocity_and_derivative_displacement():
     # Test 2: Derivative of displacement should match velocity from transfer function
     # Calculate derivative of displacement using the same method as in
     # RedPitayaManager.get_velocity_data
-    derived_velocity = coil_driver.derivative_displacement(
-        displacement_zeroed, sample_rate
-    )
+    derived_velocity = derivative_displacement(displacement_zeroed, sample_rate)
 
     # Compare the derivative of displacement with the velocity from transfer function
     # Don't compare the end elements, not accurately computed at the edges
@@ -268,7 +296,14 @@ def test_coil_driver_sample_spectrum_hermitian(monkeypatch):
     # draw cannot push np.isclose's absolute tolerance past the spectrum.
     monkeypatch.setattr(coil_driver_module, '_rng', np.random.default_rng(0))
     # Create a waveform generator
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256, seed=0)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+        seed=0,
+    )
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()
@@ -328,7 +363,14 @@ def test_gain_normalization():
     normalized standard voltage spectrum shape
     """
     # Create a waveform generator
-    waveform = Waveform(start_freq=1, end_freq=100, gen_dec=8192, acq_dec=256, seed=0)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=1,
+        end_freq=100,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+        seed=0,
+    )
 
     # Create a coil driver with default calibration parameters
     coil_driver = CoilDriver()

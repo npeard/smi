@@ -9,21 +9,29 @@ import numpy as np
 import pytest
 import torch
 
-from smi.analysis import synthetic_lit_module
-from smi.analysis.datasets import VelocityDataset, select_pd_keys
-from smi.analysis.evaluate import CheckpointEstimator, InverseFitEstimator, evaluate
-from smi.analysis.metrics import sign_invariant_rmse
-from smi.analysis.results_artifact import (
+from smi.core.acquisition import STEMLAB_125_14
+from smi.core.kinematics import derivative_displacement, integrate_velocity
+from smi.core.metrics import sign_invariant_rmse
+from smi.data import frozen
+from smi.data.datasets import VelocityDataset, select_pd_keys
+from smi.data.frozen import pd_keys, write_frozen_set
+from smi.data.schema import LEGACY_SAMPLE_RATE_HZ
+from smi.experiments.evaluate import (
+    CheckpointEstimator,
+    InverseFitEstimator,
+    evaluate,
+    load_lit_module,
+    migrate_legacy_hparams,
+)
+from smi.experiments.results_artifact import (
     RunRecord,
     append_results,
     read_results,
     write_results,
 )
-from smi.analysis.synthetic_lit_module import SyntheticLitModule
-from smi.synthetic import frozen
-from smi.synthetic.coil_driver import CoilDriver
-from smi.synthetic.forward import SIMULATOR_VERSION
-from smi.synthetic.frozen import pd_keys, write_frozen_set
+from smi.learning import synthetic_lit_module
+from smi.learning.synthetic_lit_module import SyntheticLitModule
+from smi.theory.forward import SIMULATOR_VERSION
 from tests._sims import SAMPLE_RATE, SMALL_CHUNK_SHOTS, michelson_sim
 from tests._sims import WAVELENGTHS_UM as RIG
 
@@ -234,6 +242,23 @@ def test_checkpoint_estimator_uses_baked_normalization_and_checks_channels(
     assert json.loads(out.read_text())['schema_version'] == 1
 
 
+def test_pre_restructure_checkpoint_loads_on_the_stemlab(tmp_path):
+    module = _tcn_module('velocity')
+    hparams = dict(module.hparams)
+    hparams['sim'] = {k: v for k, v in hparams['sim'].items() if k != 'acquisition'}
+    ckpt = tmp_path / 'old.ckpt'
+    torch.save({'hyper_parameters': hparams, 'state_dict': module.state_dict()}, ckpt)
+    loaded = load_lit_module(ckpt, device='cpu')
+    assert isinstance(loaded, SyntheticLitModule)
+    assert loaded.sim_config.acquisition == STEMLAB_125_14
+
+
+def test_pre_restructure_real_data_hparams_get_the_legacy_rate():
+    old = {'model_hparams': {}, 'training_hparams': {'target': 'velocity'}}
+    assert migrate_legacy_hparams(old)['sample_rate'] == LEGACY_SAMPLE_RATE_HZ
+    assert migrate_legacy_hparams({**old, 'sample_rate': 1.0})['sample_rate'] == 1.0
+
+
 def test_displacement_checkpoint_is_differentiated_before_scoring(tmp_path):
     module = _tcn_module('displacement')
     ckpt = tmp_path / 'd.ckpt'
@@ -246,8 +271,7 @@ def test_displacement_checkpoint_is_differentiated_before_scoring(tmp_path):
     with torch.no_grad():
         displacement = module.eval().model(x)[:, 0]
     torch.testing.assert_close(
-        est.predict_velocity(x, RIG),
-        CoilDriver.derivative_displacement(displacement, SAMPLE_RATE),
+        est.predict_velocity(x, RIG), derivative_displacement(displacement, SAMPLE_RATE)
     )
 
 
@@ -417,9 +441,7 @@ def _integrable_file(path, offset_um):
     shots, length = 3, 256
     velocity = np.cumsum(rng.normal(size=(shots, length)), axis=1).astype('float32')
     displacement = (
-        CoilDriver.integrate_velocity(
-            torch.from_numpy(velocity).double(), SAMPLE_RATE
-        ).numpy()
+        integrate_velocity(torch.from_numpy(velocity).double(), SAMPLE_RATE).numpy()
         + np.asarray(offset_um)[:, None]
     )
     with h5py.File(path, 'w') as f:
@@ -541,3 +563,19 @@ ORACLE_SHOTS = 4
 # Measured mean sign-invariant velocity NRMSE 0.280 (signed 1.692: the decoder
 # returns an arbitrary sign per shot) on 4 shots, seed 7; pinned at 1.5x.
 ORACLE_NRMSE_BOUND = 0.42
+
+
+def test_load_or_create_regenerates_a_set_without_acquisition(tmp_path):
+    """Pre-acquisition sets cannot rebuild a SimConfig, so they are stale."""
+    cfg = michelson_sim()
+    path = frozen.load_or_create(cfg, 2, 5, tmp_path)
+    with h5py.File(path, 'a') as f:
+        stored = json.loads(f.attrs['sim_config'])
+        del stored['acquisition']
+        f.attrs['sim_config'] = json.dumps(stored)
+    assert frozen.load_or_create(cfg, 2, 5, tmp_path) == path
+    with h5py.File(path, 'r') as f:
+        assert 'acquisition' in json.loads(f.attrs['sim_config'])
+    rig = tuple(cfg.wavelengths_um)
+    record = evaluate(_Truth(path), path, rig, None, True, 0).record
+    assert record.sim_config_hash == cfg.hash()

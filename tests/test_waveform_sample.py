@@ -12,7 +12,8 @@ import pytest
 import torch
 from plot_waveforms import calculate_fft
 
-from smi.synthetic.waveform import Waveform
+from smi.core.acquisition import NOMINAL_ACQ_DECIMATION, STEMLAB_125_14
+from smi.theory.waveform import Waveform
 from tests._dtype_guard import no_float64
 
 logger = logging.getLogger(__name__)
@@ -36,10 +37,11 @@ def test_waveform_sample_spectrum_consistency():
         test_start_freq = 10 + i
         test_end_freq = 1000 + i * 10
         waveform = Waveform(
+            acquisition=STEMLAB_125_14,
             start_freq=test_start_freq,
             end_freq=test_end_freq,
             gen_dec=8192,
-            acq_dec=256,
+            acq_dec=NOMINAL_ACQ_DECIMATION,
         )
 
         # Generate a random waveform
@@ -67,7 +69,13 @@ def test_waveform_sample_reproducibility():
     produce different random waveforms as expected.
     """
     # Create a waveform generator
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+    )
 
     # Generate two consecutive waveforms
     _, voltage1, _ = waveform.sample()
@@ -85,7 +93,11 @@ def test_waveform_frequency_range():
     start_freq = 100
     end_freq = 200
     waveform = Waveform(
-        start_freq=start_freq, end_freq=end_freq, gen_dec=8192, acq_dec=256
+        acquisition=STEMLAB_125_14,
+        start_freq=start_freq,
+        end_freq=end_freq,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
     )
 
     # Generate a waveform
@@ -119,7 +131,13 @@ def test_waveform_frequency_range():
 def test_waveform_output_range():
     """Test that the waveform output is properly normalized to the [-1, 1] range."""
     # Create a waveform generator
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+    )
 
     # Generate multiple waveforms and check their ranges
     for i in range(5):
@@ -132,7 +150,13 @@ def test_waveform_output_range():
 def test_waveform_length_consistency():
     """Test that the time and voltage arrays have consistent lengths."""
     # Create a waveform generator
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+    )
 
     # Generate multiple waveforms and check their lengths
     for i in range(5):
@@ -145,7 +169,13 @@ def test_waveform_length_consistency():
 def test_waveform_reconstruction():
     """Test that the reconstructed signal is close to the original signal."""
     # Create a waveform generator
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+    )
 
     # Generate a waveform
     _, voltage, voltage_spectrum = waveform.sample()
@@ -186,10 +216,11 @@ def test_waveform_statistics():
     # it did exactly that, and an intermittently red suite is one people learn
     # to re-run rather than read.
     waveform = Waveform(
+        acquisition=STEMLAB_125_14,
         start_freq=start_freq,
         end_freq=end_freq,
         gen_dec=8192,
-        acq_dec=256,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
         seed=20250910,
     )
 
@@ -322,7 +353,13 @@ def test_waveform_ifft_real_valued():
     imaginary components
     """
     # Create a waveform generator
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+    )
 
     # Test with multiple samples
     num_samples = 5
@@ -358,7 +395,13 @@ def test_waveform_spectrum_hermitian():
     3. For each sample, verifies that the spectrum satisfies the Hermitian property
     """
     # Create a waveform generator
-    waveform = Waveform(start_freq=10, end_freq=1000, gen_dec=8192, acq_dec=256)
+    waveform = Waveform(
+        acquisition=STEMLAB_125_14,
+        start_freq=10,
+        end_freq=1000,
+        gen_dec=8192,
+        acq_dec=NOMINAL_ACQ_DECIMATION,
+    )
 
     # Test with multiple samples
     num_samples = 5
@@ -387,7 +430,7 @@ def test_waveform_spectrum_hermitian():
 
 def test_generate_batch_torch_seeded():
     """A seeded CPU generator makes generate_batch_torch reproducible."""
-    waveform = Waveform(10, 1000)
+    waveform = Waveform(10, 1000, STEMLAB_125_14)
     batches = [
         waveform.generate_batch_torch(
             2, 'cpu', generator=torch.Generator().manual_seed(0)
@@ -402,12 +445,14 @@ def test_generate_batch_torch_rejects_mismatched_generator_device():
     """A CPU generator cannot drive another device; fail with a clear error."""
     generator = torch.Generator().manual_seed(0)
     with pytest.raises(ValueError, match='generator'):
-        Waveform(10, 1000).generate_batch_torch(1, 'meta', generator=generator)
+        Waveform(10, 1000, STEMLAB_125_14).generate_batch_torch(
+            1, 'meta', generator=generator
+        )
 
 
 def test_generate_batch_torch_is_float32_without_float64_intermediates():
     with no_float64():
-        out = Waveform(10, 1000).generate_batch_torch(2, 'cpu')
+        out = Waveform(10, 1000, STEMLAB_125_14).generate_batch_torch(2, 'cpu')
     assert out.dtype == torch.float32
 
 

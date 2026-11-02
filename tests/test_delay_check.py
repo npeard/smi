@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from smi.analysis.delay_check import estimate_lag
+from smi.experiments.delay_check import estimate_lag
 
 
 def test_recovers_known_injected_lag():

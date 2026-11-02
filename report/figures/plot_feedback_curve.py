@@ -36,7 +36,7 @@ from _figcommon import (
     synthetic_records,
 )
 
-from smi.analysis.results_artifact import RunRecord
+from smi.experiments.results_artifact import RunRecord
 
 # The alpha controls, all at C = 0.2.
 CONTROLS = (('smi-a5', '^', r'$\alpha=5$'), ('smi-a0', 'X', r'$\alpha=0$'))

@@ -1,0 +1,97 @@
+[project]
+name = "stemlab"
+version = "0.1.0"
+description = "Arbitrary waveform generation and acquisition on Red Pitaya STEMlab 125-14 boards over SCPI"
+authors = [
+    {name = "Nolan Peard", email = "nolan.peard@gmail.com"},
+]
+readme = "README.md"
+requires-python = ">=3.14"
+license = {text = "MIT"}
+dependencies = [
+    "numpy>=2",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[build-system]
+requires = ["flit_core>=3.9.0,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# Mirrors smi's ruff settings so lint is identical inside smi (ruff uses the
+# nearest config) and after the package moves to its own repo.
+[tool.ruff.format]
+quote-style = "single"
+docstring-code-format = true
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+select = [
+    "F", "E", "W", "C90", "I", "D", "UP", "YTT", "ANN", "BLE", "B", "A", "C4", "FA",
+    "INP", "NPY201", "PIE", "T20", "PYI", "PT", "RSE", "RET", "SLF", "SIM", "INT",
+    "ARG", "PTH", "PL", "TRY", "FLY", "NPY", "RUF", "S", "N", "PERF", "FURB",
+]
+extend-select = ["D204", "D400", "D404", "D406", "D410"]
+ignore = [
+    # Import-related (keep for __init__.py files)
+    "F403", "F405",
+    # Style preferences
+    "E741",  # Ambiguous variable names (sometimes necessary in scientific code)
+    # Documentation (reasonable for scientific/research code)
+    "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107", "D205", "D405", "D417",
+    # Type annotations (reasonable choices)
+    "ANN002", "ANN003", "ANN401",
+    # Argument usage (common in scientific APIs)
+    "ARG001",
+    # Return style preference
+    "RET505",
+    # Exception handling (reasonable for research code)
+    "TRY003",
+    # Complexity (reasonable limits for scientific code)
+    # PLR0917 (new in ruff 0.17) is the positional twin of PLR0913: same call
+    # shape, same reason; keyword-only rewrites would touch every call site.
+    "PLR0913", "PLR0917", "PLR2004",
+    # Private access (sometimes needed for scientific libraries)
+    "SLF001",
+    # Security (may need adjustment based on your needs)
+    "S101",  # Use of assert (common in scientific code)
+    "S311",  # Random generators (often fine for scientific use)
+    # Naming (scientific computing often uses uppercase for matrices/operators)
+    "N803", # Argument names should be lowercase (conflicts with math notation for matrices)
+    "N806", "N802", # Variable names should be lowercase (conflicts with math notation)
+]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.ruff.lint.flake8-annotations]
+suppress-none-returning = true
+
+[tool.ruff.lint.flake8-comprehensions]
+allow-dict-calls-with-keyword-arguments = true
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**.py" = ["ANN", "INP001", "S603"]
+"src/stemlab/scpi.py" = ["C901", "PLR0912", "PLR0915", "E501"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.ty.rules]
+unresolved-attribute = "ignore"
+invalid-argument-type = "ignore"
+unsupported-operator = "ignore"
+not-iterable = "ignore"
+invalid-method-override = "ignore"
+not-subscriptable = "ignore"
+invalid-type-form = "ignore"
+possibly-missing-submodule = "ignore"

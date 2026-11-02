@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from smi.analysis.models.mamba import selective_scan
+from smi.learning.models.mamba import selective_scan
 from tests._devices import devices
 from tests._dtype_guard import no_float64
 

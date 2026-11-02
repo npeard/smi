@@ -2,7 +2,7 @@
 
 import torch
 
-from smi.analysis.models.factory import create_model
+from smi.learning.models.factory import create_model
 
 
 def _hparams(**overrides) -> dict:

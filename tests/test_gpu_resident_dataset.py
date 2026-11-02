@@ -6,21 +6,14 @@ that it refuses rather than OOMs when the data does not fit. A mode that is
 faster but returns different numbers is a silent training bug.
 """
 
-from pathlib import Path
-
 import pytest
 import torch
 
-from smi.analysis.datamodule import VelocityDataModule, _same_device
-from smi.analysis.datasets import GPUResidentDataset, VelocityDataset
+from smi.core.paths import DATA_DIR, DATASETS
+from smi.data.datamodule import VelocityDataModule, _same_device
+from smi.data.datasets import GPUResidentDataset, VelocityDataset
 
-DATASET = (
-    Path(__file__).parent.parent
-    / 'smi'
-    / 'analysis'
-    / 'data'
-    / 'free-space-synchro_10k.h5'
-)
+DATASET = DATA_DIR / DATASETS['free-space']
 SIGNAL_LENGTH = 16384
 NUM_PD_CHANNELS = 3
 MAX_SHOTS = 8

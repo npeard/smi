@@ -133,27 +133,32 @@ dmypy.json
 .pyre/
 
 # training data
+# Matches every data/ directory, which is meant for raw acquisitions and
+# frozen sets. smi/data/ (and smi/data/features/) is a Python package, so only its
+# sources are re-included. The top-level data/ holds raw acquisitions and
+# data/frozen/ the simulated frozen sets (regenerated on demand by
+# smi.data.frozen.load_or_create, nothing tracked), so both stay ignored; only
+# data/frozen/.gitkeep is tracked so that smi.core.paths.FROZEN_DIR exists in a
+# fresh clone.
 **/data/*
+!/smi/data/*.py
+!/smi/data/features/
+!/smi/data/features/*.py
+!/data/frozen/
+/data/frozen/*
+!/data/frozen/.gitkeep
 **/checkpoints/*
 **/lightning_logs/*
 
-# ...but the baseline results are a few KB of computed numbers, not data. A
-# report figure has to read them, and recomputing takes ~25 minutes on a GPU,
-# so they are version-controlled deliberately. Regenerate with
-# `python -m smi.analysis.baseline_fit`.
-!smi/analysis/data/baseline_results.json
-
-# Same reasoning for the gain sweep: it is the committed evidence for the
-# coil-driver gain finding, which previously lived only in a session
-# transcript. Regenerate with `python -m smi.analysis.gain_sweep` (~25 min on
-# CPU at N=1000). Kept separate from baseline_results.json so a gain question
-# never triggers that file's ~40 min method-2 GPU decode.
-!smi/analysis/data/gain_sweep_results.json
-
-# Same reasoning again for the learned-baseline sweep: a few KB of computed
-# numbers that the comparison table reads, costing ~2.5 GPU-hours to
-# recompute. Regenerate with `python -m smi.analysis.run_baseline_sweep`.
-!smi/analysis/data/learned_results.json
+# The JSON files under report/results/ are version-controlled deliberately: each is a
+# few KB of computed numbers that a report figure reads, while recomputing
+# costs minutes to GPU-hours (baseline_results.json ~25 min, learned_results.json
+# ~2.5 GPU-hours, gain_sweep_results.json ~25 min on CPU, synthetic_results.json
+# the grid runs). Regenerate with `scripts/run_baselines.py`,
+# `gain_sweep.py`, `run_baseline_sweep.py`, `run_experiments.py <grid name>` and
+# `q1_binned.py`
+# (the last from gitignored checkpoints). Only the runner's lock is not a result.
+report/results/.runner.lock
 
 # Session-scoped agent scaffolding (specs, plans) -- durable rationale goes
 # in commit messages and code comments instead.
@@ -166,13 +171,6 @@ scratch/
 report/build/
 report/.snakemake/
 
-# Per-cell checkpoints written by smi.analysis.experiments (named by cell key).
+# Grid checkpoints (runs/grids/<grid>/<cell-key>.ckpt) and training runs
+# (runs/train/<run-name>/).
 runs/
-
-# The synthetic-program results table is the committed evidence for the
-# report, like the baseline files above. Regenerate with
-# `python -m smi.analysis.experiments <grid.yaml>`.
-!smi/analysis/data/synthetic_results.json
-# Section Q1's binned errors, from gitignored checkpoints:
-# `python -m smi.analysis.q1_binned`.
-!smi/analysis/data/q1_binned_errors.json

@@ -4,11 +4,13 @@ Training previously logged only loss values, so no run produced a number
 comparable to the analytic baseline's RMSE without a separate evaluation pass.
 """
 
+import pytest
 import torch
 
-from smi.analysis.lit_module import SAMPLE_RATE, LitModule
-from smi.analysis.metrics import best_sign
-from smi.synthetic.coil_driver import CoilDriver
+from smi.core.kinematics import derivative_displacement
+from smi.core.metrics import best_sign
+from smi.learning.lit_module import LitModule
+from tests._sims import SAMPLE_RATE
 
 IN_CHANNELS = 3
 SEQ_LEN = 1024
@@ -31,6 +33,7 @@ MODEL_HPARAMS = dict(
 
 def _module(target: str = 'velocity', sign_invariant: bool = False) -> LitModule:
     return LitModule(
+        sample_rate=SAMPLE_RATE,
         model_hparams=dict(MODEL_HPARAMS),
         optimizer_hparams={'name': 'Adam', 'lr': 1e-3, 'weight_decay': 0.0},
         scheduler_hparams={},
@@ -191,7 +194,7 @@ def test_sign_invariant_displacement_target_chooses_the_sign_on_displacement():
     # so a sign chosen on velocity is wrong for displacement on every shot.
     d = torch.cumsum(torch.randn(2, SEQ_LEN, dtype=torch.float64), dim=-1)
     d = (d - d[:, :1]).float()
-    velocity = -CoilDriver.derivative_displacement(d, SAMPLE_RATE)
+    velocity = -derivative_displacement(d, SAMPLE_RATE)
     prediction = d + 0.01 * torch.randn_like(d)
     loss = _module('displacement', sign_invariant=True).loss_function(
         prediction, velocity, d.clone()
@@ -199,3 +202,22 @@ def test_sign_invariant_displacement_target_chooses_the_sign_on_displacement():
     d_hat = prediction - prediction[:, :1]
     assert (best_sign(d_hat, d) == 1).all()
     torch.testing.assert_close(loss['displacement'], torch.mean((d_hat - d) ** 2))
+
+
+def test_lit_module_requires_target():
+    """A missing target must fail loudly, not silently train a velocity model."""
+    with pytest.raises((KeyError, TypeError)):
+        LitModule(
+            sample_rate=SAMPLE_RATE,
+            model_hparams=dict(MODEL_HPARAMS),
+            optimizer_hparams={'name': 'Adam', 'lr': 1e-3, 'weight_decay': 0.0},
+            scheduler_hparams={},
+            loss_hparams={
+                'dynamic': False,
+                'velocity_loss_weight': 1.0,
+                'displacement_loss_weight': 1.0,
+                'sign_invariant': False,
+            },
+            training_hparams={},
+            data_hparams={},
+        )

@@ -13,13 +13,13 @@ lookahead (i.e. it has causal violations).
 import pytest
 import torch
 
-from smi.analysis.models.base import Model
-from smi.analysis.models.factory import MODEL_REGISTRY, create_model
-from smi.analysis.models.lstm import LSTM, LSTMConfig
-from smi.analysis.models.mamba import Mamba, MambaConfig
-from smi.analysis.models.scnn import SCNN, SCNNConfig
-from smi.analysis.models.tcan import TCAN, TCANConfig
-from smi.analysis.models.tcn import TCN, TCNConfig
+from smi.learning.models.base import Model
+from smi.learning.models.factory import MODEL_REGISTRY, create_model
+from smi.learning.models.lstm import LSTM, LSTMConfig
+from smi.learning.models.mamba import Mamba, MambaConfig
+from smi.learning.models.scnn import SCNN, SCNNConfig
+from smi.learning.models.tcan import TCAN, TCANConfig
+from smi.learning.models.tcn import TCN, TCNConfig
 from tests.test_receptive_field import phase_period
 
 SEQUENCE_LENGTH = 256

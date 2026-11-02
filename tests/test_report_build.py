@@ -28,7 +28,8 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+from smi.core.paths import DATA_DIR, DATASETS, REPO_ROOT
+
 REPORT_DIR = REPO_ROOT / 'report'
 FIGURE_DIR = REPORT_DIR / 'figures'
 SNAKEFILE = REPORT_DIR / 'Snakefile'
@@ -37,11 +38,7 @@ FIGURE_SCRIPTS = sorted(FIGURE_DIR.glob('plot_*.py'))
 
 # The figure scripts read the acquisition HDF5 files, which are gitignored, so
 # a fresh clone cannot run them.
-DATA_DIR = REPO_ROOT / 'smi' / 'analysis' / 'data'
-REQUIRED_DATA = (
-    DATA_DIR / 'free-space-synchro_10k.h5',
-    DATA_DIR / 'mmfiber-synchro_10k.h5',
-)
+REQUIRED_DATA = (DATA_DIR / DATASETS['free-space'], DATA_DIR / DATASETS['mmfiber'])
 data_available = all(p.exists() for p in REQUIRED_DATA)
 requires_data = pytest.mark.skipif(
     not data_available, reason='acquisition HDF5 files are not present'

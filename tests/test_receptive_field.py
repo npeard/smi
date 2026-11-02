@@ -9,17 +9,17 @@ gradient -- ground truth the formula cannot talk its way around.
 import pytest
 import torch
 
-from smi.analysis.models.barland_cnn import BarlandCNN, BarlandCNNConfig
-from smi.analysis.models.mlp import MLP, MLPConfig
-from smi.analysis.models.neural_operator import NeuralOperator, NeuralOperatorConfig
-from smi.analysis.models.patch_transformer import (
+from smi.learning.models.barland_cnn import BarlandCNN, BarlandCNNConfig
+from smi.learning.models.mlp import MLP, MLPConfig
+from smi.learning.models.neural_operator import NeuralOperator, NeuralOperatorConfig
+from smi.learning.models.patch_transformer import (
     PatchTransformer,
     PatchTransformerConfig,
 )
-from smi.analysis.models.scnn import SCNN, SCNNConfig
-from smi.analysis.models.tcan import TCAN, TCANConfig
-from smi.analysis.models.tcn import TCN, TCNConfig
-from smi.analysis.models.unet_transformer import UNetTransformer, UNetTransformerConfig
+from smi.learning.models.scnn import SCNN, SCNNConfig
+from smi.learning.models.tcan import TCAN, TCANConfig
+from smi.learning.models.tcn import TCN, TCNConfig
+from smi.learning.models.unet_transformer import UNetTransformer, UNetTransformerConfig
 
 
 def measure_receptive_field(
@@ -205,7 +205,7 @@ def test_config_rejects_dilation_base_that_outruns_the_kernel():
 
 @pytest.mark.parametrize(
     ('kernel_size', 'dilation_base'),
-    # (3, 4) is the case that matters: tcn-config.yaml and scnn-config.yaml
+    # (3, 4) is the case that matters: the tcn-config and scnn-config entries
     # both search kernel_size [3,5,7] x dilation_base [2,3,4], so a tighter
     # bound than 2*(k-1)+1 would crash those searches mid-run on a
     # configuration that is in fact exact.

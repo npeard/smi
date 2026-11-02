@@ -6,11 +6,12 @@ available to every test module.
 
 import pytest
 
-from smi.synthetic import frozen
-from smi.synthetic.forward import NOMINAL_DRIVE_GAIN, SimConfig
-from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
+from smi.core.acquisition import NOMINAL_ACQ_DECIMATION, STEMLAB_125_14
+from smi.data import frozen
+from smi.data.frozen import RIG_WAVELENGTHS_UM
+from smi.theory.forward import NOMINAL_DRIVE_GAIN, SimConfig
 
-SAMPLE_RATE = 125e6 / 256
+SAMPLE_RATE = STEMLAB_125_14.sample_rate_dec1_hz / NOMINAL_ACQ_DECIMATION
 WAVELENGTHS_UM = RIG_WAVELENGTHS_UM
 #: Frozen-set chunk size for tests: real chunks are 256 shots of 16384
 #: samples, and the logic under test is chunk-size free.
@@ -20,6 +21,7 @@ SMALL_CHUNK_SHOTS = 4
 def michelson_sim() -> SimConfig:
     """Noise-free Michelson (C = 0, alpha = 0) on the rig's three channels."""
     return SimConfig.noise_free(
+        acquisition=STEMLAB_125_14,
         wavelengths_um=WAVELENGTHS_UM,
         sample_rate=SAMPLE_RATE,
         start_freq_hz=1.0,

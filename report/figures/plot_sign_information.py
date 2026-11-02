@@ -6,7 +6,7 @@ thin lines are its leading-order form sum_k L C^2 E[V^2] alpha^2 / (4 sigma^2
 (1 + alpha^2)). The value is zero at C = 0 and at alpha = 0, which a log axis
 cannot show.
 
-Computed from smi.analysis.bounds; seeded, so deterministic.
+Computed from smi.theory.bounds; seeded, so deterministic.
 """
 
 from __future__ import annotations
@@ -23,8 +23,9 @@ from _figcommon import COLORS, FIGSIZE_HALF, SYNTHETIC_WAVELENGTHS_UM, parse_arg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from smi.analysis import bounds
-from smi.synthetic.forward import SimConfig, noise_std
+from smi.core.acquisition import STEMLAB_125_14
+from smi.theory import bounds
+from smi.theory.forward import SimConfig, noise_std
 
 FEEDBACK_C = (0.02, 0.05, 0.1, 0.2, 0.4, 0.7, 0.9)
 ALPHAS = ((3.0, 'o'), (5.0, 's'))
@@ -49,7 +50,7 @@ def leading_order(cfg: SimConfig, n_samples: int) -> float:
 
 def main() -> None:
     args = parse_args(__doc__.splitlines()[0])
-    some_cfg = SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.2, 3.0)
+    some_cfg = SimConfig.nominal(STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.2, 3.0)
     n_samples = bounds.ideal_shots(some_cfg, 1, SEED).velocity.shape[-1]
     c_line = np.geomspace(FEEDBACK_C[0], FEEDBACK_C[-1], 50)
 
@@ -59,7 +60,7 @@ def main() -> None:
         for alpha, marker in ALPHAS:
             values = [
                 bounds.sign_information(
-                    SimConfig.nominal(waves, c, alpha), N_SHOTS, SEED
+                    SimConfig.nominal(STEMLAB_125_14, waves, c, alpha), N_SHOTS, SEED
                 )
                 for c in FEEDBACK_C
             ]
@@ -73,7 +74,9 @@ def main() -> None:
                 label=rf'$K={n_channels}$, $\alpha={alpha:g}$',
             )
             line = [
-                leading_order(SimConfig.nominal(waves, float(c), alpha), n_samples)
+                leading_order(
+                    SimConfig.nominal(STEMLAB_125_14, waves, float(c), alpha), n_samples
+                )
                 for c in c_line
             ]
             ax.plot(c_line, line, color=color, linewidth=0.6)

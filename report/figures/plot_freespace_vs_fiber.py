@@ -33,7 +33,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import h5py
 from _figcommon import COLORS, FIGSIZE_HALF, FREE_SPACE_H5, MMFIBER_H5, parse_args, save
 
-CHANNEL = 'RP1_CH2'  # 635 nm photodiode
+from smi.data.schema import PD_KEYS, SAMPLE_RATE_ATTR
+
+CHANNEL = PD_KEYS[0]  # 635 nm photodiode
 N_SHOTS = 1024  # shots averaged for the spectrum; ~134 MB read per file
 
 
@@ -43,7 +45,7 @@ def mean_spectrum(
     """Amplitude spectrum of ``channel`` averaged over the first ``n_shots``."""
     with h5py.File(h5_path, 'r') as f:
         block = np.asarray(f[channel][:n_shots, :], dtype=np.float64)
-        sample_rate = float(f.attrs['sample_rate'])
+        sample_rate = float(f.attrs[SAMPLE_RATE_ATTR])
     block = block - block.mean(axis=1, keepdims=True)
     spectrum = np.abs(np.fft.rfft(block, axis=1)).mean(axis=0)
     freq = np.fft.rfftfreq(block.shape[1], d=1.0 / sample_rate)

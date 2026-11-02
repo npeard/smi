@@ -20,13 +20,13 @@ def _():
 def _():
     from torch.utils.data import DataLoader
 
-    from smi.analysis.datasets import VelocityDataset, get_data_loaders
-    from smi.analysis.evaluate import load_lit_module
-    from smi.redpitaya.redpitaya_config import RedPitayaConfig
-    from smi.synthetic.forward import SimConfig
-    from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
+    from smi.data.datasets import VelocityDataset, get_data_loaders
+    from smi.data.frozen import DEFAULT_ROOT, load_or_create
+    from smi.data.schema import LEGACY_SAMPLE_RATE_HZ
+    from smi.experiments.evaluate import load_lit_module
+    from smi.theory.forward import SimConfig
 
-    ACQ_SAMPLE_RATE = RedPitayaConfig.SAMPLE_RATE_DEC1 / 256
+    ACQ_SAMPLE_RATE = LEGACY_SAMPLE_RATE_HZ
     CHANNEL_NAMES = ['PD1 (635 nm)', 'PD2 (675 nm)', 'PD3 (515 nm)']
     return (
         ACQ_SAMPLE_RATE,
@@ -53,11 +53,15 @@ def _(mo):
 
 @app.cell
 def _():
-    freespace_datapath = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/data/free-space-synchro_10k.h5'
-    mmfiber_datapath = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/data/mmfiber-synchro_10k.h5'
+    freespace_datapath = (
+        '/Users/nolanpeard/Documents/Projects/smi/data/free-space-synchro_10k.h5'
+    )
+    mmfiber_datapath = (
+        '/Users/nolanpeard/Documents/Projects/smi/data/mmfiber-synchro_10k.h5'
+    )
 
-    best_freespace_model = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/models/checkpoints/4puqewmv_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
-    best_fiber_model = '/Users/nolanpeard/Documents/Projects/smi/smi/analysis/models/checkpoints/bfzctg24_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
+    best_freespace_model = '/Users/nolanpeard/Documents/Projects/smi/checkpoints/4puqewmv_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
+    best_fiber_model = '/Users/nolanpeard/Documents/Projects/smi/checkpoints/bfzctg24_epoch=199-val_total_unweighted_loss=0.0000.ckpt'
     return best_fiber_model, mmfiber_datapath
 
 

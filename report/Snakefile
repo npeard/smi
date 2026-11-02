@@ -69,51 +69,56 @@ THEME = "lib/theme.typ"
 # PDFs beside a document whose tables have moved. Listed for all figures
 # rather than per figure because the set is small and a figure that ignores
 # them is only rebuilt spuriously, while one omitted from the list is wrong.
-DATA_DIR = REPORT_DIR.parent / "smi" / "analysis" / "data"
+RESULTS_DIR = REPORT_DIR / "results"
 RESULTS = [
-    str(DATA_DIR / "baseline_results.json"),
-    str(DATA_DIR / "gain_sweep_results.json"),
-    str(DATA_DIR / "learned_results.json"),
-    str(DATA_DIR / "synthetic_results.json"),
-    # Per-sample binned errors of section Q1, from smi.analysis.q1_binned.
-    str(DATA_DIR / "q1_binned_errors.json"),
+    str(RESULTS_DIR / "baseline_results.json"),
+    str(RESULTS_DIR / "gain_sweep_results.json"),
+    str(RESULTS_DIR / "learned_results.json"),
+    str(RESULTS_DIR / "synthetic_results.json"),
+    # Per-sample binned errors of section Q1, from smi.experiments.q1_binned.
+    str(RESULTS_DIR / "q1_binned_errors.json"),
 ]
 
-# The library modules the synthetic figures compute from or read records
-# through, so a change to the bounds, the forward model, a preset or cell key
-# (expand_grid, whose sim hashes the records are checked against), the frozen
-# rig constants or the record loader rebuilds them. Listed for all figures for
-# the same reason as RESULTS.
+# The library modules the figures compute from or read records through, so a
+# change to the bounds, the forward model, a board constant, a preset or cell
+# key (expand_grid, whose sim hashes the records are checked against), the
+# frozen rig constants or the record loader rebuilds them. Listed for all
+# figures for the same reason as RESULTS. Derived from the transitive smi
+# imports of figures/*.py (grimp's find_upstream_modules over each module they
+# import): that closure covers smi.core, .data, .estimators, .learning and
+# .theory nearly whole -- smi.experiments.runner imports the training stack --
+# so those are globbed whole (a module the figures never reach only costs a
+# spurious rebuild), and only the three experiments modules it reaches are named.
 SMI_DIR = REPORT_DIR.parent / "smi"
-ANALYSIS_CODE = [
-    str(SMI_DIR / "analysis" / "bounds.py"),
-    str(SMI_DIR / "analysis" / "experiments.py"),
-    str(SMI_DIR / "analysis" / "results_artifact.py"),
-    str(SMI_DIR / "synthetic" / "forward.py"),
-    str(SMI_DIR / "synthetic" / "frozen.py"),
-]
+ANALYSIS_CODE = sorted(
+    [
+        *(
+            str(p)
+            for pkg in ("core", "data", "estimators", "learning", "theory")
+            for p in (SMI_DIR / pkg).rglob("*.py")
+        ),
+        *(
+            str(SMI_DIR / "experiments" / name)
+            for name in ("evaluate.py", "results_artifact.py", "runner.py")
+        ),
+    ]
+)
 
 # The experiment grids the synthetic figures expand to label records (the
-# sweep value of a cell comes from its grid), so a grid edit rebuilds them.
-EXPERIMENTS_DIR = SMI_DIR / "analysis" / "experiments"
-GRIDS = [
-    str(EXPERIMENTS_DIR / name)
-    for name in (
-        "q3_s0c_ceiling.yaml",
-        "q3_s3_noise_ladder.yaml",
-        "q3_s3_spread.yaml",
-        "q3_s3_leave_one_out.yaml",
-        "q3_s3_matched_length.yaml",
-        "q1_s2_subsets.yaml",
-        "q3_s1d_displacement.yaml",
-    )
-]
+# sweep value of a cell comes from its grid). smi.experiments.grids imports
+# every grid module, so any grid edit, or one to their types, rebuilds them.
+GRIDS = sorted(
+    [
+        str(SMI_DIR / "experiments" / "grid.py"),
+        *(str(p) for p in (SMI_DIR / "experiments" / "grids").glob("*.py")),
+    ]
+)
 
 # The emitter instantiates the matched model configs to probe the input span of
 # the sliding-window families (section Q2), so a model or config edit reruns it.
-MODEL_DIR = SMI_DIR / "analysis" / "models"
+MODEL_DIR = SMI_DIR / "learning" / "models"
 MODELS = sorted(
-    str(p) for p in [*MODEL_DIR.glob("*.py"), *(MODEL_DIR / "configs" / "matched").glob("*-44k.yaml")]
+    str(p) for p in [*MODEL_DIR.glob("*.py"), SMI_DIR / "learning" / "configs.py"]
 )
 
 # Without this, the unconstrained {document} wildcard in `rule document` also

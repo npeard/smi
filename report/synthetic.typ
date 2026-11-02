@@ -6,12 +6,12 @@
 //
 // Every number in this document comes from a committed artifact or from a
 // computation in a committed script:
-// - smi/analysis/data/synthetic_results.json, the experiment runner's records,
+// - report/results/synthetic_results.json, the experiment runner's records,
 //   read by the report/figures/plot_*.py scripts this document includes;
-// - smi.analysis.bounds, evaluated by the figure scripts
+// - smi.theory.bounds, evaluated by the figure scripts
 //   report/figures/plot_{fisher_phase,velocity_bounds,sign_information}.py;
 // - build/synthetic_values.json, written by report/figures/synthetic_values.py
-//   from smi.analysis.bounds, learned_results.json, synthetic_results.json and
+//   from smi.theory.bounds, learned_results.json, synthetic_results.json and
 //   the experiment grids: every value quoted in the prose is read from it
 //   below, so a library or artifact change rebuilds the prose rather than
 //   leaving it stale.
@@ -245,6 +245,15 @@ unchanged (@fig-fisher). The channel noises are independent, so $K$ channels
 together carry $sum_k J_k$. Because $J_k$ scales as $lambda_k^(-2)$, the
 515 nm channel carries $(0.635 \/ 0.515)^2 = 1.52$ times the information of
 the 635 nm channel at equal visibility and noise.
+
+Additivity alone does not remove the blind spots. Equal-wavelength Michelson
+channels with offsets spaced by $pi \/ K$ would remove them, since for $K >= 2$ their
+$sin^2 theta$ terms sum to $K \/ 2$ at every phase, but the rig's channels
+differ in wavelength and their offsets are not controlled. Different
+wavelengths usually put the extrema of different channels at different
+displacements, yet nothing prevents all channels from nearing their extrema
+together, so wavelength diversity raises the average information through the
+$lambda_k^(-2)$ factor without guaranteeing it in the worst case.
 
 The bounds below need the information averaged over a uniform fringe phase.
 That average has a closed form,

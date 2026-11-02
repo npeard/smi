@@ -35,7 +35,7 @@ from _figcommon import (
     synthetic_records,
 )
 
-from smi.synthetic.forward import rad_per_sqrt_s_to_fringes
+from smi.theory.forward import rad_per_sqrt_s_to_fringes
 
 # Per knob: (x label, log x, invert x). Inverted axes
 # are those where a smaller value is the worse signal.

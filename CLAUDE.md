@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with
 code in this repository.
 
-See `~/.claude/CLAUDE.md` (from `~/Documents/Projects/agent-config`) for
+See `~/.claude/CLAUDE.md` (from `~/Documents/agent-config`) for
 cross-project workflow, verification, and design preferences -- the numbered
 workflow spine, the coding standards, and the agent-evolution rules all live
 there. This file covers only what is specific to smi and does not restate the
@@ -13,17 +13,14 @@ For everything else, see:
 
 - **`README.md`** -- project intro, quickstart, install.
 - **`docs/data-storage-evaluation.md`** -- why HDF5, and the alternatives measured.
-- **`docs/hyperparameter-search-pipeline-design.md`** -- the two-level search design.
 - **`TASKS.md`** -- the live task list this project works from.
 
 ## Core development principles
 
-See the master CLAUDE.md's "Core philosophy" for the general rule (every line
-carries maintenance cost; write the smallest clear amount; reuse before writing
-new). In this repo that means: add a feature to the existing `FeatureRegistry`,
-an architecture under `analysis/models/`, or a figure to `report/`, rather than
-building a parallel path beside one of them.
-
+The master's "reuse before writing new" means, here: add a feature to the
+existing `FeatureRegistry`, an architecture under `learning/models/`, a config
+to `learning/configs.py`, a grid to `experiments/grids/`, or a figure to
+`report/`, rather than building a parallel path beside one of them.
 
 ## Development Commands
 
@@ -46,7 +43,7 @@ always invoke Python and tools through `pixi run` (or from inside `pixi shell`)
   `report-synthetic` (synthetic.typ)
 - `pixi run benchmark-loading` - Data-loading throughput benchmark (GPU; not in `all`)
 
-Workflow-spine tasks (see the master CLAUDE.md's numbered spine):
+Workflow-spine tasks (see the master guidance's numbered spine):
 
 - `pixi run preflight` - Step 0: is this project fit to start work in?
   `--with-tests` when starting fresh work; `--check-updates` weekly, not per
@@ -57,14 +54,9 @@ Workflow-spine tasks (see the master CLAUDE.md's numbered spine):
 - `pixi run toolgaps` - Missing standard tooling, plus an inventory of
   agent-config assets available to adopt.
 
-`friction` and `toolgaps` are not agent-config commands and are deliberately
-**not** copied into this repo: both
-are cross-project by construction (friction mines `~/.claude/projects`
-transcripts against one shared ledger, because global transcripts need global
-suppression; toolgaps inventories agent-config's assets). They therefore
-depend on the sibling checkout at `~/Documents/Projects/agent-config`, which
-is where both resolve it unconditionally. Without that layout these two tasks
-fail and nothing else is affected.
+`friction` and `toolgaps` run agent-config's scripts from the sibling checkout
+`../agent-config` rather than copies (why: the comment on them in
+`pyproject.toml`); without that checkout only these two tasks fail.
 
 CI (`.github/workflows/pytest.yml`) runs three jobs -- `test`, `lint`
 (lint + ascii) and `typecheck` -- because `pixi run all`'s other gates were
@@ -91,11 +83,11 @@ committed for reproducibility.
 ### Environment constraints (three live ones, all easy to break)
 
 **Platforms are `win-64`, `linux-64` and `osx-arm64`.** macOS Apple silicon
-is back for MPS work (torch from the default PyPI wheel, libomp linked from torch for
-conda-forge for lightgbm); Intel Mac is unsupported. In `pyproject.toml` the
+is back for MPS work (torch from the default PyPI wheel, torch's libomp linked into the env for
+lightgbm); Intel Mac is unsupported. In `pyproject.toml` the
 osx-arm64 entry is named `macos-14-arm64` so it can declare macOS 14, which
 the torch>=2.14 wheels require; its target tables use that name. The stack is
-`torch>=2.14` / `numpy>=2`.
+`torch>=2.14` / `numpy>=2.5`.
 
 **Keep OpenMP runtimes from colliding; the numeric stack comes from PyPI.** `numpy`,
 `numba`, `matplotlib` and `h5py` resolve from PyPI (via
@@ -105,9 +97,9 @@ the torch>=2.14 wheels require; its target tables use that name. The stack is
 which previously killed the test suite inside `np.corrcoef`. Do not move
 these to `[tool.pixi.dependencies]`, and do not reach for
 `KMP_DUPLICATE_LIB_OK=TRUE` -- that flag's own error text warns it can
-silently produce incorrect results, which is disqualifying here. Only
-`typst` and `polars` come from conda; typst is a self-contained Rust
-binary with no BLAS linkage.
+silently produce incorrect results, which is disqualifying here. Of the
+runtime libraries only `polars` and `typst` come from conda; typst is a
+self-contained Rust binary with no BLAS linkage.
 
 On macOS torch and scikit-learn each bundle a libomp and coexist, but
 lightgbm's wheel needs one on the rpath: a second, conda `llvm-openmp` copy
@@ -124,41 +116,82 @@ through torch 2.14.1 (2.15.0 is on cu132), so those platforms resolve 2.14.1
 while macOS resolves 2.15.0. CUDA 13 drops Maxwell/Pascal/
 Volta but keeps sm_75, so both cards here (RTX 3090 Ti sm_86, Quadro RTX 4000
 sm_75) still run. Expect `torch.cuda.is_available()` to be true; if it is
-not, the index pin in `[tool.pixi.pypi-dependencies]` is the thing to check.
-
-**Important**: Always run `pixi run format` first when encountering linting/formatting issues before making manual edits. This auto-fixes most formatting problems and saves time.
+not, the index pin in the `win-64`/`linux-64` `pypi-dependencies` target tables
+is the thing to check.
 
 ## Package layout
 
 The importable package is `smi/` (distribution name `smi`). Top-level repo
-layout: `smi/` (library), `tests/`, `notebooks/` (marimo apps), `docs/`.
+layout: `smi/` (library), `scripts/` (CLIs), `data/`,
+`runs/`, `packages/redpitaya/`, `report/`, `tests/`, `notebooks/`
+(marimo apps), `docs/`.
 
-Inside `smi/`:
+Inside `smi/`, lowest layer first. Layering is enforced by
+`[tool.importlinter]` via `tests/test_import_contracts.py`.
 
-- `analysis/` - ML pipeline.
-  - `features/` - Polars-based `FeatureRegistry` (`registry.py`), feature
-    definitions (`features.py`; `register_feature` decorator auto-registers on
-    the module-level `default_registry`), the stats script (`compute_norm_stats.py`),
-    and the **generated, version-controlled** per-feature mean/std
-    (`normalization.py` - do not hand-edit; regenerate with the script).
-  - `models/` - architectures (`tcn`, `scnn`, `tcan`, `lstm`, `mamba`,
-    `barland_cnn`, `patch_transformer`, `unet_transformer`,
-    `neural_operator`) plus `base.py`, which defines `Model(nn.Module)` (the
-    normalization wrapper) and `FeatureMap`.
-  - `datamodule.py` - `VelocityDataModule` (LightningDataModule).
-  - `datasets.py`, `lit_module.py`, `synthetic_lit_module.py`, `training_interface.py`.
-- `synthetic/` - physics simulation (coil driver, interferometers, waveform);
-  was `acquisition/simulations/`.
-- `redpitaya/` - hardware control (manager, scpi, config); was
-  `acquisition/redpitaya/`. Imports from `smi.synthetic`; import its manager via
-  `from smi.redpitaya.manager import RedPitayaManager` (not re-exported from the
-  package `__init__`, to avoid an init-time import cycle).
+- `core/` - bottom layer, imports nothing else in `smi`: acquisition config,
+  kinematics, metrics, and `paths` (`REPO_ROOT`, `RESULTS_DIR`,
+  `DATA_DIR`, `FROZEN_DIR`, `RUNS_DIR`, `GRID_RUNS_DIR`, `TRAIN_RUNS_DIR`; every artifact path comes from
+  here), and `cli` (shared `add_verbosity` / `setup_logging` for scripts).
+- `theory/` - physics: coil driver, interferometers, waveform, forward model
+  (`simulate_batch`) and the Fisher/Bayesian `bounds`; may import only
+  `smi.core`.
+- `data/` - data conventions (`schema`: HDF5 keys, attrs, `write_shot` /
+  `read_shots`, the one legacy sample-rate fallback; `frozen`: seeded synthetic
+  test sets in the real-data HDF5 schema), `datasets.py`, `datamodule.py`
+  (`VelocityDataModule`), and `features/` - Polars-based `FeatureRegistry`
+  (`registry.py`), feature definitions (`features.py`; `register_feature`
+  auto-registers on the module-level `default_registry`), and the **generated,
+  version-controlled** per-feature mean/std (`normalization.py` - do not
+  hand-edit; regenerate with `scripts/compute_norm_stats.py`). May import only
+  `smi.core` and `smi.theory`.
+- `estimators/` - array-in/array-out classical estimators: `phase_fit`
+  (method 1 forward-model fits, windowed/envelope/joint-gain variants, phase
+  drift), `inverse` (method 2 Viterbi decode), `gain_sweep` (gain, delay and
+  fringe-rate curves), `tabular` (LightGBM/Ridge). May import only `smi.core`
+  and `smi.theory`; never sees a file or a `FeatureRegistry`.
+- `learning/` - `models/` (one module per architecture, built by
+  `factory.py`; `base.py` defines `Model(nn.Module)`, the normalization
+  wrapper, and `FeatureMap`), `lit_module.py`, `synthetic_lit_module.py`,
+  `training_interface.py`. Does not import estimators, experiments or
+  acquisition.
+- `experiments/` - dataset-level runs: the grid `runner`, `evaluate`,
+  `results_artifact`, `baselines`, `gain_sweep`, `q1_binned`, `calibrate_sim`,
+  `delay_check`. Imports anything in `smi` except `smi.acquisition`.
+- `acquisition/` - SMI's side of the rig (`rig`: hosts and shot constants;
+  `shots`: the shot loop and HDF5 writing). The only `smi` package that imports
+  `stemlab`; it and `experiments` do not import each other.
+
+Outside `smi/`:
+
+- `packages/redpitaya/` is the standalone `stemlab` library (SCPI transport,
+  board/daisy-chain manager, arbitrary-waveform generation, raw acquisition, a
+  generic live view). It is its own distribution, installed editable via
+  `[tool.pixi.pypi-dependencies]`, and must never import `smi` (import-linter
+  contract); its README states the API and `stemlab.testing.FakeTransport`
+  stands in for hardware in tests.
+- `scripts/` - CLIs, run as `pixi run python scripts/<name>.py` (every one
+  takes `--help`). Argument-parsing wrappers over plain library functions
+  (`run_baselines`, `gain_sweep`, `run_experiments`, `q1_binned`,
+  `calibrate_sim`, `delay_check`), plus self-contained drivers (`train`, `acquire`,
+  `compute_norm_stats`, `inspect_data`, `benchmark_loading`,
+  `run_baseline_sweep`). `train.py` must not import `smi.acquisition`.
+  `scripts/` is not a package; tests load a script by path.
+- `smi/learning/configs.py` - the named training configs (`MODEL_CONFIGS`,
+  `model_config(name)`); `smi/experiments/grids/` - the experiment grids, one
+  module per grid exporting a typed `GRID` (`smi/experiments/grid.py`), whose
+  families name registry entries. Run one by module name:
+  `pixi run experiments q3_s1_families`. An edit to either moves the run
+  fingerprints of the cells using it, so resume treats those cells as new.
+- `report/results/` - committed result JSON. `data/` - raw HDF5 (ignored) and
+  `data/frozen/`. `runs/` - gitignored: `runs/grids/<grid>/<cell-key>.ckpt` from
+  the runner, `runs/train/<run-name>/` from `TrainingInterface`.
 
 ## Normalization & model wrapping
 
 Normalization stats are NOT computed in the dataset. Instead:
 
-1. `compute_norm_stats.py` points at an HDF5 dataset, evaluates the
+1. `scripts/compute_norm_stats.py` points at an HDF5 dataset, evaluates the
    `FeatureRegistry` (inputs = photodiode channels; targets = velocity,
    displacement), and writes per-feature mean/std to `features/normalization.py`.
 2. `Model(nn.Module)` wraps an inner architecture and bakes those stats into
@@ -170,25 +203,17 @@ Normalization stats are NOT computed in the dataset. Instead:
    inner model.
 
 Models are TorchScript-scriptable (`Model.to_torchscript()`), verified by
-`tests/test_torchscript.py`. `torch.compile` remains the training-speed path;
-TorchScript is for packaging the trained model. HDF5 (gzip-4, chunked per shot)
-is the chosen storage format - see `docs/data-storage-evaluation.md`.
+`tests/test_torchscript.py`. TorchScript is for packaging the trained model.
+HDF5 (gzip-4, chunked per shot) is the chosen storage format - see `docs/data-storage-evaluation.md`.
 
 ## Hyperparameter / architecture search
 
-Two-level search (design: `docs/hyperparameter-search-pipeline-design.md`):
-
-- **Ray Tune** (`analysis/tune_search.py`, `main.py --search`) replaces the old
-  YAML grid: list-valued YAML fields become `tune.choice` dimensions; trials run
-  via `train_func` (reusing `TrainingInterface`) with an ASHA scheduler and
-  fractional-GPU packing. `TrainingConfig.from_yaml` now returns one config.
-- **vmap-ensemble** (`analysis/ensemble.py`) trains K same-architecture models on
-  one shared on-GPU minibatch via `torch.func` for efficient within-architecture
-  sweeps; both it and `SyntheticLitModule` draw batches from
-  `smi.synthetic.forward.simulate_batch` and bake `normalization_stats`.
-
-Deps live in the `tune` pixi feature (`ray[tune]`, `optuna`), included in all
-test-running envs so the search path is CPU-tested in CI as well as on the GPU rig.
+There is no hyperparameter-search machinery (Ray Tune and the vmap ensemble
+were deleted). `scripts/train.py --config <name>` runs one training run from
+one registry config. Sweeps are experiment grids (`pixi run experiments
+<grid>`), which run each cell as its own fingerprinted, resumable run.
+`SyntheticLitModule` draws its batches from `smi.theory.forward.simulate_batch`
+and bakes `normalization_stats`.
 
 ## Reports (`report/`)
 
@@ -197,15 +222,15 @@ spirit of the `dispersion-engineering` paper repo but with Typst in place of
 LaTeX. Typst is a conda package, so unlike a TeX engine the whole toolchain is
 lockfile-reproducible with no manual install.
 
-- Two documents, no slide deck:
+- Two documents:
   - `report.typ` - the baseline report: the Michelson analytic baseline and
     the learned models on the real acquisitions. Its figures read the real
     HDF5 files, so it builds only where they are present (and the synthetic
     program is blinded to them).
   - `synthetic.typ` - the synthetic research report: identifiability,
     Fisher information and Bayesian bounds (computed in its figure scripts
-    from `smi.analysis.bounds`), then the Q3 and Q1 results from
-    `smi/analysis/data/synthetic_results.json`. Build it alone with
+    from `smi.theory.bounds`), then the Q3 and Q1 results from
+    `report/results/synthetic_results.json`. Build it alone with
     `pixi run report-synthetic`.
 - `figures/plot_<name>.py` - one script per figure, each taking `--output
   <path>` and writing exactly that path. Shared style lives in
@@ -235,9 +260,9 @@ These override defaults; follow them unless explicitly told otherwise.
 - **Always run `pixi run format`** after code changes. It is the verification
   entry point -- do not call `ruff check` separately as its own step.
 - **Run the full suite (`pixi run -e dev python -m pytest`) when you touch
-  `analysis/models/`, `analysis/features/`, or `synthetic/`** -- the
+  `learning/models/`, `data/features/`, or `theory/`** -- the
   normalization stats, the TorchScript scriptability check and the model
-  forward tests are all coupled through those. It takes about 95 seconds.
+  forward tests are all coupled through those. It takes about 235 seconds on osx-arm64.
 - **Otherwise** run the single most relevant test file. Scope tests to the
   code you changed rather than surfacing unrelated pre-existing failures.
 - **GPU claims need GPU evidence.** `torch.cuda.synchronize()` around any

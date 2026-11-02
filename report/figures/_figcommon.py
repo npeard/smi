@@ -38,46 +38,43 @@ import torch
 from matplotlib.typing import RcKeyType
 from scipy import signal
 
-from smi.analysis import bounds
-from smi.analysis.experiments import (
-    ANALYSIS_DIR,
+from smi.core.acquisition import STEMLAB_125_14
+from smi.core.paths import DATA_DIR, RESULTS_DIR
+from smi.data.frozen import RIG_WAVELENGTHS_UM
+from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, read_sample_rate
+from smi.experiments.grids import GRIDS
+from smi.experiments.results_artifact import RunRecord, read_results
+from smi.experiments.runner import (
     ORACLE_FAMILY,
     Cell,
     cell_key,
     expand_grid,
     training_config,
 )
-from smi.analysis.results_artifact import RunRecord, read_results
-from smi.synthetic.forward import (
+from smi.theory import bounds
+from smi.theory.forward import (
     NOMINAL_ALPHA,
     NOMINAL_FEEDBACK_C,
     SimConfig,
     simulate_batch,
 )
-from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
-
-# Resolved by the package, not the cwd (pytest runs scripts from the repo
-# root, Snakemake from report/).
-DATA_DIR = ANALYSIS_DIR / 'data'
-EXPERIMENTS_DIR = ANALYSIS_DIR / 'experiments'
-MATCHED_DIR = ANALYSIS_DIR / 'models' / 'configs' / 'matched'
 
 FREE_SPACE_H5 = DATA_DIR / 'free-space-synchro_10k.h5'
 MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
 
-# Baseline results, written by smi.analysis.baseline_fit and committed. Figures
+# Baseline results, written by smi.experiments.baselines and committed. Figures
 # read this rather than recomputing: method 2's Viterbi decode is ~20 minutes
 # per acquisition on a GPU, which is not work a document build should be
 # repeating, and reading a fixed artifact is what makes the figures
 # deterministic. (Method 1's fits are ~1 minute on CPU at N = 1000; it is
 # method 2 that makes regeneration expensive.)
-RESULTS_JSON = DATA_DIR / 'baseline_results.json'
+RESULTS_JSON = RESULTS_DIR / 'baseline_results.json'
 
 # Experiment-runner records behind synthetic.typ's learned-model results.
-SYNTHETIC_RESULTS_JSON = DATA_DIR / 'synthetic_results.json'
+SYNTHETIC_RESULTS_JSON = RESULTS_DIR / 'synthetic_results.json'
 
 # The same lasers as the synthetic simulator spells them, for figures that
-# compute from smi.synthetic.
+# compute from smi.theory.
 SYNTHETIC_WAVELENGTHS_UM = RIG_WAVELENGTHS_UM
 
 # The feedback values the Q3 grids sweep at alpha = 3.
@@ -157,9 +154,8 @@ def check_grace_protocol(
 def grace_by_cell() -> dict[str, int]:
     """``training.convergence.min_epochs`` of every trained cell of every grid."""
     grace = {}
-    for path in sorted(EXPERIMENTS_DIR.glob('*.yaml')):
-        grid, cells = expand_grid(path)
-        for cell in cells:
+    for grid in GRIDS.values():
+        for cell in expand_grid(grid):
             if cell.seed is not None:
                 config = training_config(cell, grid)
                 grace[cell.key] = config.training_config['convergence']['min_epochs']
@@ -203,11 +199,11 @@ def mean_metric(record: RunRecord, metric: str) -> float:
 
 # The noise ladder (each knob swept alone from the noise-free base) and the
 # grid that reruns its base and nominal cells at more seeds.
-CEILING_GRID = EXPERIMENTS_DIR / 'q3_s0c_ceiling.yaml'
-NOISE_LADDER_GRID = EXPERIMENTS_DIR / 'q3_s3_noise_ladder.yaml'
-NOISE_SPREAD_GRID = EXPERIMENTS_DIR / 'q3_s3_spread.yaml'
-LEAVE_ONE_OUT_GRID = EXPERIMENTS_DIR / 'q3_s3_leave_one_out.yaml'
-MATCHED_LENGTH_GRID = EXPERIMENTS_DIR / 'q3_s3_matched_length.yaml'
+CEILING_GRID = 'q3_s0c_ceiling'
+NOISE_LADDER_GRID = 'q3_s3_noise_ladder'
+NOISE_SPREAD_GRID = 'q3_s3_spread'
+LEAVE_ONE_OUT_GRID = 'q3_s3_leave_one_out'
+MATCHED_LENGTH_GRID = 'q3_s3_matched_length'
 # The noise knobs, as (SimConfig field, display label), in the order the
 # noise-ladder figure and the leave-one-out table show them.
 NOISE_KNOBS = {
@@ -242,7 +238,7 @@ class LadderRow:
 
 
 _NOMINAL_SIM = SimConfig.nominal(
-    SYNTHETIC_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
+    STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
 )
 
 
@@ -254,9 +250,9 @@ def _is_nominal(field: str, value: object) -> bool:
 
 
 def grid_cells(
-    records: dict[str, RunRecord], grid: Path
+    records: dict[str, RunRecord], grid: str
 ) -> list[tuple[Cell, RunRecord]]:
-    """``(cell, record)`` per cell of ``grid``, hash-checked.
+    """``(cell, record)`` per cell of the shipped grid ``grid``, hash-checked.
 
     The cell's sim config comes from expanding the grid, so a grid edited after
     its run fails here instead of labelling a record with the wrong knob value.
@@ -264,7 +260,7 @@ def grid_cells(
     Raises:
         ValueError: Naming the cell whose record's sim hash differs.
     """
-    _, cells = expand_grid(grid)
+    cells = expand_grid(GRIDS[grid])
     out = []
     for cell in cells:
         record = records[cell.key]
@@ -314,10 +310,10 @@ def matched_length_cells(
 
 
 # Section Q1's noise-free channel-subset grid, and the per-sample binned
-# errors smi.analysis.q1_binned writes from the Q1 checkpoints, which are
+# errors smi.experiments.q1_binned writes from the Q1 checkpoints, which are
 # gitignored and so cannot be read at build time.
-Q1_S2_GRID = EXPERIMENTS_DIR / 'q1_s2_subsets.yaml'
-Q1_BINNED_JSON = DATA_DIR / 'q1_binned_errors.json'
+Q1_S2_GRID = 'q1_s2_subsets'
+Q1_BINNED_JSON = RESULTS_DIR / 'q1_binned_errors.json'
 # The seven subsets of the Q1 grids, singles first, as (wavelengths, label).
 Q1_SUBSETS: tuple[tuple[tuple[float, ...], str], ...] = (
     ((0.635,), '635'),
@@ -384,6 +380,7 @@ def mismatch_spectra(noise_free: bool) -> MismatchSpectra:
     cfg = _NOMINAL_SIM
     if noise_free:
         cfg = SimConfig.noise_free(
+            acquisition=STEMLAB_125_14,
             wavelengths_um=cfg.wavelengths_um,
             sample_rate=cfg.sample_rate,
             start_freq_hz=cfg.start_freq_hz,
@@ -420,12 +417,8 @@ def mismatch_spectra(noise_free: bool) -> MismatchSpectra:
 
 # Photodiode channels, in the order the dataset feeds them to the model, with
 # the laser wavelength each one detects (microns).
-PD_CHANNELS: tuple[tuple[str, float], ...] = (
-    ('RP1_CH2', 0.635),
-    ('RP2_CH1', 0.675),
-    ('RP2_CH2', 0.515),
-)
-VOLTAGE_CHANNEL = 'RP1_CH1'
+PD_CHANNELS: tuple[tuple[str, float], ...] = tuple(PD_WAVELENGTHS_UM.items())
+VOLTAGE_CHANNEL = DRIVE_KEY
 
 # The two acquisitions, as (key in baseline_results.json, axis label). Shared
 # so that adding a third cannot leave one figure silently showing two.
@@ -434,11 +427,8 @@ BASELINE_DATASETS: tuple[tuple[str, str], ...] = (
     ('mmfiber', 'mm fiber'),
 )
 
-# Fallback sample rate; every real file carries `sample_rate` in its attrs.
-DEFAULT_SAMPLE_RATE = 488281.25
-
 # The leave-one-out grid's knobs, as (SimConfig field, sim-name stem); each
-# cell is named nominal-no-<stem> (q3_s3_leave_one_out.yaml).
+# cell is named nominal-no-<stem> (grid q3_s3_leave_one_out).
 LEAVE_ONE_OUT = (
     ('phase_drift_rad_per_sqrt_s', 'phasedrift'),
     ('snr_db', 'snr'),
@@ -452,8 +442,8 @@ LEAVE_ONE_OUT = (
 
 
 # Section Q2's families as (runner family stem, label), causal first. Each ran
-# as ``<stem>-T90`` from configs/matched/<stem>.yaml. Mamba ran as its own
-# stage (q3_s1m_mamba.yaml); it stays optional so a fresh artifact without that
+# as ``<stem>-T90`` from MODEL_CONFIGS['matched/<stem>']. Mamba ran as its own
+# stage (grid q3_s1m_mamba); it stays optional so a fresh artifact without that
 # stage still builds, with Mamba marked pending.
 Q2_CAUSAL = (
     ('tcn-44k', 'TCN'),
@@ -495,7 +485,7 @@ def q2_record(records: dict[str, RunRecord], stem: str, sim: str) -> RunRecord |
 
 # Displacement RMSE beside each velocity metric: the predicted velocity
 # integrated over the shot, each start offset removed, as LitModule's auxiliary
-# displacement loss compares them. In um. smi.analysis.evaluate does not write
+# displacement loss compares them. In um. smi.experiments.evaluate does not write
 # them yet; the rerun plan's backfill re-scores every checkpoint to add them.
 DISPLACEMENT_METRICS = {
     'velocity_rmse': 'displacement_rmse',
@@ -503,7 +493,7 @@ DISPLACEMENT_METRICS = {
 }
 
 
-# The S1d grid (q3_s1d_displacement.yaml): the families that stalled on the
+# The S1d grid (grid q3_s1d_displacement): the families that stalled on the
 # velocity target, retrained on displacement, plus a TCN control. Each ran as
 # ``<stem>-disp-T90`` on the same sims and test shots as its S1 cell.
 S1D_FAMILIES = (
@@ -704,7 +694,7 @@ def read_shot(
     """
     with h5py.File(h5_path, 'r') as f:
         trace = np.asarray(f[channel][index, :], dtype=np.float64)
-        sample_rate = float(f.attrs.get('sample_rate', DEFAULT_SAMPLE_RATE))
+        sample_rate = read_sample_rate(f.attrs)
     if decimate > 1:
         trace = trace[::decimate]
         sample_rate /= decimate

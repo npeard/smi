@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import torch
 
-from smi.synthetic.coil_driver import CoilDriver
+from smi.theory.coil_driver import CoilDriver
 from tests._devices import devices
 from tests._dtype_guard import no_float64
 

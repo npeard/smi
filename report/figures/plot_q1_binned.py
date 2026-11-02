@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Q1's binned test: TCN error by fringe-extremum distance and by |v|.
 
-Reads smi/analysis/data/q1_binned_errors.json (written by
-``python -m smi.analysis.q1_binned`` from gitignored checkpoints): the TCN on
+Reads report/results/q1_binned_errors.json (written by
+``scripts/q1_binned.py`` from gitignored checkpoints): the TCN on
 515 nm alone, on 635 + 515 nm and on all three channels, at C = 0.2, alpha =
 3, noise-free and at the nominal point at 30 dB. (a, b) pooled RMSE against
 distance to the nearest extremum of the 515 nm fringe (solid) and of every
@@ -34,10 +34,11 @@ from _figcommon import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from smi.analysis import bounds
-from smi.synthetic.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
+from smi.core.acquisition import STEMLAB_125_14
+from smi.theory import bounds
+from smi.theory.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
 
-# Subsets as smi.analysis.q1_binned evaluates them; the pair and the triple
+# Subsets as smi.experiments.q1_binned evaluates them; the pair and the triple
 # take fig-bounds' K = 2 and K = 3 colors.
 SUBSETS = (
     ((0.515,), '515 nm', COLORS['ch515']),
@@ -86,13 +87,15 @@ def main() -> None:
 
     ax = axes[2]
     prior = bounds.motion_prior(
-        SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
+        SimConfig.nominal(STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
     )
     for wavelengths, _, color in SUBSETS:
         for condition, _, linestyle in CONDITIONS:
             rmse = cells[condition, wavelengths]['abs_velocity']['rmse']
             ax.plot(speed, rmse, color=color, linestyle=linestyle, marker='o', ms=2.5)
-        cfg = SimConfig.nominal(wavelengths, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
+        cfg = SimConfig.nominal(
+            STEMLAB_125_14, wavelengths, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
+        )
         causal, _ = velocity_bounds(prior, cfg)
         ax.axhline(causal, color=color, linestyle='-.', lw=0.8)
     zero = next(iter(cells.values()))['abs_velocity']['zero']

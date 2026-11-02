@@ -6,9 +6,10 @@ import math
 import pytest
 import torch
 
-from smi.analysis.synthetic_lit_module import SyntheticLitModule
-from smi.synthetic import forward
-from smi.synthetic.forward import (
+from smi.core.acquisition import STEMLAB_125_14
+from smi.learning.synthetic_lit_module import SyntheticLitModule
+from smi.theory import forward
+from smi.theory.forward import (
     NOMINAL_DRIVE_GAIN,
     SMI_NEWTON_ITERATIONS,
     SimConfig,
@@ -231,6 +232,7 @@ def test_hash_is_stable_and_field_sensitive():
 def test_hash_ignores_int_vs_float_spelling():
     float_cfg = _noise_free()
     int_cfg = SimConfig.noise_free(
+        acquisition=STEMLAB_125_14,
         wavelengths_um=list(WAVELENGTHS_UM),
         sample_rate=SAMPLE_RATE,
         start_freq_hz=1,
@@ -338,34 +340,59 @@ def test_normalization_stats_scale_the_requested_target():
 TARGETS = ('velocity', 'displacement')
 
 
-def test_synthetic_module_rejects_a_sim_at_another_sample_rate():
+def test_synthetic_module_integrates_at_the_sims_sample_rate():
     sim = dataclasses.replace(_noise_free(), sample_rate=2 * SAMPLE_RATE)
-    with pytest.raises(ValueError, match='sample_rate'):
-        SyntheticLitModule(
-            model_hparams=dict(
-                type='TCN',
-                sequence_length=64,
-                in_channels=len(WAVELENGTHS_UM),
-                activation='GELU',
-                use_layer_norm=False,
-                use_weight_norm=False,
-                kernel_size=3,
-                temporal_channels=[4],
-                dilation_base=2,
-                dropout=0.0,
-            ),
-            optimizer_hparams={'name': 'Adam', 'lr': 1e-3, 'weight_decay': 0.0},
-            scheduler_hparams={},
-            loss_hparams={
-                'dynamic': False,
-                'velocity_loss_weight': 1.0,
-                'displacement_loss_weight': 0.0,
-                'sign_invariant': False,
-            },
-            training_hparams={'target': 'velocity'},
-            data_hparams={},
-            steps_per_epoch=1,
-            train_crop_length=None,
-            sim=dataclasses.asdict(sim),
-            restoring_checkpoint=True,
-        )
+    module = SyntheticLitModule(
+        model_hparams=dict(
+            type='TCN',
+            sequence_length=64,
+            in_channels=len(WAVELENGTHS_UM),
+            activation='GELU',
+            use_layer_norm=False,
+            use_weight_norm=False,
+            kernel_size=3,
+            temporal_channels=[4],
+            dilation_base=2,
+            dropout=0.0,
+        ),
+        optimizer_hparams={'name': 'Adam', 'lr': 1e-3, 'weight_decay': 0.0},
+        scheduler_hparams={},
+        loss_hparams={
+            'dynamic': False,
+            'velocity_loss_weight': 1.0,
+            'displacement_loss_weight': 0.0,
+            'sign_invariant': False,
+        },
+        training_hparams={'target': 'velocity'},
+        data_hparams={},
+        steps_per_epoch=1,
+        train_crop_length=None,
+        sim=dataclasses.asdict(sim),
+        restoring_checkpoint=True,
+    )
+
+    assert module.sample_rate == sim.sample_rate
+
+
+def test_simconfig_requires_acquisition():
+    fields = {
+        f.name: getattr(michelson_sim(), f.name)
+        for f in dataclasses.fields(SimConfig)
+        if f.name != 'acquisition'
+    }
+    with pytest.raises(TypeError, match='acquisition'):
+        SimConfig(**fields)
+
+
+def test_simconfig_accepts_a_board_name_and_hash_guards_other_boards():
+    sim = dataclasses.asdict(michelson_sim())
+    named = SimConfig.from_dict({**sim, 'acquisition': 'STEMLAB_125_14'})
+    assert named == michelson_sim()
+    other = dataclasses.replace(
+        michelson_sim(),
+        acquisition=dataclasses.replace(STEMLAB_125_14, buffer_size=1024),
+    )
+    with pytest.raises(ValueError, match='acquisition'):
+        other.hash()
+    with pytest.raises(ValueError, match='STEMlab'):
+        SimConfig.nominal(other.acquisition, WAVELENGTHS_UM, 0.2, 3.0)

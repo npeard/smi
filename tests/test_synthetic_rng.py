@@ -14,8 +14,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from smi.analysis.ensemble import SyntheticEnsembleModule
-from smi.analysis.synthetic_lit_module import (
+from smi.learning.synthetic_lit_module import (
     VAL_SEED,
     SyntheticIndexDataset,
     SyntheticLitModule,
@@ -67,12 +66,6 @@ def _lit_module() -> SyntheticLitModule:
     )
 
 
-def _ensemble_module() -> SyntheticEnsembleModule:
-    return SyntheticEnsembleModule(
-        _tcn(), [0, 1], sim=_sim(), target='velocity', sign_invariant=False
-    )
-
-
 def _record(module, method: str) -> dict:
     """Wrap ``module.<method>`` to log ``(stage, epoch) -> [signals]``."""
     seen = defaultdict(list)
@@ -121,10 +114,7 @@ def _val_key(seen: dict, epoch: int) -> tuple:
     return next(k for k in seen if k[1] == epoch and 'valid' in k[0])
 
 
-MODULES = [
-    pytest.param(_lit_module, '_generate_synthetic_batch', id='lit'),
-    pytest.param(_ensemble_module, '_shared_batch', id='ensemble'),
-]
+MODULES = [pytest.param(_lit_module, '_generate_synthetic_batch', id='lit')]
 
 
 @pytest.mark.parametrize('device', devices())

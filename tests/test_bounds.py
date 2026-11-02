@@ -8,13 +8,14 @@ import pytest
 import sympy as sp
 import torch
 
-from smi.analysis import bounds
-from smi.synthetic.forward import SimConfig, fringe, noise_std, smi_excess_phase
-from smi.synthetic.frozen import RIG_WAVELENGTHS_UM
+from smi.core.acquisition import STEMLAB_125_14
+from smi.data.frozen import RIG_WAVELENGTHS_UM
+from smi.theory import bounds
+from smi.theory.forward import SimConfig, fringe, noise_std, smi_excess_phase
 
 
 def _cfg(wavelengths_um, feedback_c, alpha):
-    return SimConfig.nominal(wavelengths_um, feedback_c, alpha)
+    return SimConfig.nominal(STEMLAB_125_14, wavelengths_um, feedback_c, alpha)
 
 
 @pytest.fixture(scope='module')
@@ -98,6 +99,21 @@ def test_k_channel_fi_adds():
             for k in range(3)
         )
         assert joint == pytest.approx(singles, rel=1e-8)
+
+
+@pytest.mark.parametrize('n_channels', [2, 3, 5])
+def test_spaced_offsets_remove_michelson_blind_spots(n_channels):
+    """Equal-wavelength offsets j pi / K sum sin^2 to K / 2 at every phase."""
+    amp, vis, sigma, lam = 1.0, 0.8, 0.02, 0.635
+    peak = (amp * vis * 4 * math.pi / lam / sigma) ** 2
+    theta = torch.tensor([0.0, 0.4, 2.3], dtype=torch.float64)
+    total = sum(
+        bounds.fisher_single(
+            theta + j * math.pi / n_channels, amp, vis, sigma, lam, 0.0, 0.0
+        )
+        for j in range(n_channels)
+    )
+    assert torch.allclose(total, torch.full_like(theta, n_channels / 2 * peak))
 
 
 def test_sign_information_zero_for_michelson():

@@ -9,18 +9,17 @@ from pathlib import Path
 
 import pytest
 import torch
-import yaml
 from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 
-from smi.analysis.lit_module import LitModule
-from smi.analysis.training_interface import (
+from smi.learning.configs import model_config
+from smi.learning.lit_module import LitModule
+from smi.learning.training_interface import (
     RelativeEarlyStopping,
     TrainingConfig,
     TrainingInterface,
     convergence_monitor,
 )
 from tests._helpers import script_log
-from tests.test_synthetic_train_cli import CONFIG
 
 SIGNED = 'val/velocity_rmse_um_per_ms'
 INVARIANT = 'val/velocity_rmse_sign_invariant_um_per_ms'
@@ -135,21 +134,15 @@ def _config(monitor: str, *, sign_invariant: bool, max_epochs: int) -> TrainingC
 
 
 def _sim() -> dict:
-    return yaml.safe_load(CONFIG.read_text())['synthetic']['sim']
+    synthetic = model_config('synthetic-tcn-config').synthetic_config
+    assert synthetic is not None
+    return dict(synthetic['sim'])
 
 
 def _run(config: TrainingConfig) -> TrainingInterface:
     interface = TrainingInterface(config=config)
     interface.train()
     return interface
-
-
-@pytest.fixture(autouse=True)
-def private_checkpoint_dir(tmp_path, monkeypatch):
-    # Every run here is a TCN, so a shared directory gives every xdist worker
-    # the same epoch=<n>.ckpt names, and one run's save_top_k cleanup deleted
-    # another's best checkpoint.
-    monkeypatch.setattr(TrainingInterface, 'CHECKPOINT_DIR', tmp_path)
 
 
 @pytest.fixture
@@ -380,3 +373,10 @@ def test_configured_monitor_must_match_the_target():
     config.training_config['target'] = 'displacement'
     with pytest.raises(ValueError, match='displacement'):
         TrainingInterface(config=config)
+
+
+def test_nonexistent_dataset_path_raises_without_creating_it(tmp_path):
+    missing = tmp_path / 'absent.h5'
+    with pytest.raises(OSError, match=r'absent\.h5'):
+        TrainingInterface(config=model_config('mlp-config'), dataset_path=str(missing))
+    assert not missing.exists()

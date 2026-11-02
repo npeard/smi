@@ -14,15 +14,16 @@ import h5py
 import numpy as np
 import pytest
 
-from smi.analysis.calibrate_sim import calibrate, main
-from smi.synthetic.forward import (
+from smi.core.acquisition import STEMLAB_125_14
+from smi.data.frozen import RIG_WAVELENGTHS_UM, write_frozen_set
+from smi.experiments.calibrate_sim import calibrate, write_calibration
+from smi.theory.forward import (
     NOMINAL_ALPHA,
     NOMINAL_DRIVE_GAIN,
     NOMINAL_FEEDBACK_C,
     NOMINAL_SWEEPS,
     SimConfig,
 )
-from smi.synthetic.frozen import RIG_WAVELENGTHS_UM, write_frozen_set
 
 N_SHOTS = 256
 REL_TOL = 0.2
@@ -50,7 +51,9 @@ DC_VOLTS = 0.5
 
 def _known(pd_bandwidth_hz: float, **changes) -> SimConfig:
     # Nominal, except a visibility top below 1 so both bounds are tested.
-    nominal = SimConfig.nominal(RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
+    nominal = SimConfig.nominal(
+        STEMLAB_125_14, RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
+    )
     return dataclasses.replace(
         nominal, visibility_range=(0.5, 0.9), pd_bandwidth_hz=pd_bandwidth_hz, **changes
     )
@@ -87,7 +90,7 @@ def calibrated(tmp_path_factory):
             cfg = _known(100e3, **OFF_NOMINAL[point])
             path = tmp_path_factory.mktemp(point) / 'known.h5'
             write_frozen_set(cfg, 0, N_SHOTS, path)
-            cache[point] = (cfg, calibrate(path, N_SHOTS, 'signal'))
+            cache[point] = (cfg, calibrate(path, N_SHOTS, 'signal', STEMLAB_125_14))
         return cache[point]
 
     return get
@@ -124,7 +127,7 @@ def _assert_knob(name: str, cfg: SimConfig, result: dict) -> None:
 
 def test_round_trip_recovers_known_knobs(known_set):
     cfg, path = known_set
-    result = calibrate(path, N_SHOTS, 'signal')
+    result = calibrate(path, N_SHOTS, 'signal', STEMLAB_125_14)
     for name in KNOBS:
         _assert_knob(name, cfg, result)
     assert result['adc_bits'] == cfg.adc_bits
@@ -133,7 +136,7 @@ def test_round_trip_recovers_known_knobs(known_set):
             assert ch[name] is None, f'{name} has no estimator, got {ch[name]}'
         assert ch['adc_full_scale'] is None, 'a signal-units file carries no volts'
 
-    rebuilt = SimConfig.from_calibration(result, cfg.wavelengths_um)
+    rebuilt = SimConfig.from_calibration(STEMLAB_125_14, result, cfg.wavelengths_um)
     assert abs(rebuilt.snr_db - cfg.snr_db) <= SNR_TOL_DB
     for name in ('drive_gain', 'feedback_c', 'alpha', 'pd_bandwidth_hz'):
         assert _close(getattr(rebuilt, name), getattr(cfg, name)), name
@@ -171,8 +174,8 @@ def test_volts_file_calibrates_like_its_signal_units(known_set, tmp_path):
         for key in ('RP1_CH1', 'RP1_CH2', 'RP2_CH1', 'RP2_CH2'):
             data = src[key][:]
             dst[key] = data if key == 'RP1_CH1' else DC_VOLTS * (1 + data)
-    signal = calibrate(path, N_SHOTS, 'signal')['channels']
-    result = calibrate(volts, N_SHOTS, 'volts')['channels']
+    signal = calibrate(path, N_SHOTS, 'signal', STEMLAB_125_14)['channels']
+    result = calibrate(volts, N_SHOTS, 'volts', STEMLAB_125_14)['channels']
     for key, ch in result.items():
         # The mean of a shot is the DC level only up to the fringe's own small
         # DC term, so the scale (hence visibility) matches to a few percent.
@@ -184,26 +187,17 @@ def test_volts_file_calibrates_like_its_signal_units(known_set, tmp_path):
         assert ch['adc_full_scale'] == pytest.approx(1.0 / DC_VOLTS, rel=0.05)
 
 
-def test_cli_writes_json(known_set, tmp_path):
+def test_write_calibration_writes_json(known_set, tmp_path):
     _, path = known_set
-    out = tmp_path / 'cal.json'
-    main(
-        [
-            '--dataset',
-            str(path),
-            '--out',
-            str(out),
-            '--n-shots',
-            '8',
-            '--units',
-            'signal',
-        ]
-    )
+    out = tmp_path / 'sub' / 'cal.json'
+    write_calibration(path, out, 8, 'signal', STEMLAB_125_14)
     assert json.loads(out.read_text())['n_shots'] == 8
 
 
 def test_nominal_sits_inside_every_sweep():
-    nominal = SimConfig.nominal(RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA)
+    nominal = SimConfig.nominal(
+        STEMLAB_125_14, RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
+    )
     names = {f.name for f in dataclasses.fields(SimConfig)}
     for name, sweep in NOMINAL_SWEEPS.items():
         assert name in names, name

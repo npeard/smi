@@ -2,7 +2,7 @@
 """Numbers that synthetic.typ quotes in prose and in its sign-evidence table.
 
 The document reads this JSON at compile time, so a change to
-smi.analysis.bounds (or to the results artifacts) rebuilds the quoted values
+smi.theory.bounds (or to the results artifacts) rebuilds the quoted values
 with the figures instead of leaving the prose stale. Learned-model values
 come from the runner's records in synthetic_results.json, through the same
 cell lookup as plot_exit_check.py and plot_feedback_curve.py; the one
@@ -31,17 +31,13 @@ from typing import Any
 
 import h5py
 import numpy as np
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import (
     CEILING_GRID,
-    DATA_DIR,
     DISPLACEMENT_METRICS,
-    EXPERIMENTS_DIR,
     LEAVE_ONE_OUT,
-    MATCHED_DIR,
     MISMATCH_SHOTS,
     NOISE_KNOBS,
     Q1_BINNED_JSON,
@@ -60,6 +56,7 @@ from _figcommon import (
     Q2_STEMS,
     Q3_BUDGETS,
     Q3_FEEDBACK_C,
+    RESULTS_DIR,
     S1D_FAMILIES,
     STALL_TOLERANCE,
     SYNTHETIC_WAVELENGTHS_UM,
@@ -81,20 +78,23 @@ from _figcommon import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from smi.analysis import bounds
-from smi.analysis.experiments import ORACLE_FAMILY, cell_key, expand_grid
-from smi.analysis.models.factory import create_model
-from smi.analysis.models.sliding_window import SlidingWindowModel
-from smi.analysis.results_artifact import RunRecord
-from smi.analysis.synthetic_lit_module import VAL_SEED
-from smi.synthetic.forward import (
+from smi.core.acquisition import STEMLAB_125_14
+from smi.data.frozen import DEFAULT_ROOT, load_or_create
+from smi.experiments.grids import GRIDS
+from smi.experiments.results_artifact import RunRecord
+from smi.experiments.runner import ORACLE_FAMILY, cell_key, expand_grid
+from smi.learning.configs import MODEL_CONFIGS
+from smi.learning.models.factory import create_model
+from smi.learning.models.sliding_window import SlidingWindowModel
+from smi.learning.synthetic_lit_module import VAL_SEED
+from smi.theory import bounds
+from smi.theory.forward import (
     NOMINAL_ALPHA,
     NOMINAL_PHASE_DRIFT_FRINGES,
     NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S,
     SimConfig,
     rad_per_sqrt_s_to_fringes,
 )
-from smi.synthetic.frozen import DEFAULT_ROOT, load_or_create
 
 # Matches plot_velocity_bounds.py.
 N_STEPS = 2000
@@ -121,12 +121,13 @@ def nominal_bounds(
 ) -> tuple[float, float]:
     """Causal and offline bounds of ``wavelengths_um`` at the nominal point."""
     return velocity_bounds(
-        prior, SimConfig.nominal(wavelengths_um, NOMINAL_C, NOMINAL_ALPHA)
+        prior,
+        SimConfig.nominal(STEMLAB_125_14, wavelengths_um, NOMINAL_C, NOMINAL_ALPHA),
     )
 
 
 def real_tcn_rmse() -> float:
-    results = json.loads((DATA_DIR / 'learned_results.json').read_text('utf-8'))
+    results = json.loads((RESULTS_DIR / 'learned_results.json').read_text('utf-8'))
     runs = [
         run['metrics']['velocity_rmse_um_per_ms']['mean']
         for run in results['datasets']['free-space']
@@ -160,12 +161,12 @@ def test_shots(record: RunRecord) -> int:
     """Shot count of the frozen set, from its dataset key ``<hash>_seed<s>_n<n>``.
 
     The record stores the set's seed but not its size; the key is written by
-    smi.synthetic.frozen.frozen_set_path.
+    smi.data.frozen.frozen_set_path.
     """
     return int(record.dataset.rsplit('_n', 1)[1])
 
 
-def zero_predictor_rmse(records: dict[str, RunRecord], grid: Path, key: str) -> float:
+def zero_predictor_rmse(records: dict[str, RunRecord], grid: str, key: str) -> float:
     """Test RMSE of predicting zero velocity on cell ``key``'s test set.
 
     That is each shot's velocity RMS, averaged over shots. The sim config
@@ -174,7 +175,7 @@ def zero_predictor_rmse(records: dict[str, RunRecord], grid: Path, key: str) -> 
     grid edit.
     """
     record = records[key]
-    (cfg,) = [cell.sim for cell in expand_grid(grid)[1] if cell.key == key]
+    (cfg,) = [cell.sim for cell in expand_grid(GRIDS[grid]) if cell.key == key]
     if record.sim_config_hash != cfg.hash():
         raise ValueError(f'{key}: record was run under another sim config')
     if record.test_seed is None:
@@ -189,7 +190,9 @@ def shot_length(records: dict[str, RunRecord]) -> int:
     """Samples per simulated shot, read off the alpha = 0 control's frozen set."""
     record = records[cell_key('tcn-44k-T90', SYNTHETIC_WAVELENGTHS_UM, 'smi-a0', 0)]
     (cfg,) = [
-        cell.sim for cell in expand_grid(CEILING_GRID)[1] if cell.key == record.cell_key
+        cell.sim
+        for cell in expand_grid(GRIDS[CEILING_GRID])
+        if cell.key == record.cell_key
     ]
     assert record.test_seed is not None
     path = load_or_create(cfg, record.test_seed, test_shots(record), DEFAULT_ROOT)
@@ -489,9 +492,7 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
     pins each against a gradient probe).
     """
     models = {
-        stem: create_model(
-            yaml.safe_load((MATCHED_DIR / f'{stem}.yaml').read_text('utf-8'))['model']
-        )
+        stem: create_model(MODEL_CONFIGS[f'matched/{stem}'].model_config)
         for stem in Q2_STEMS
     }
 
@@ -848,7 +849,7 @@ def q1_s2_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
 def q1_binned_values(
     records: dict[str, RunRecord], prior: bounds.StateSpace
 ) -> dict[str, object]:
-    """Values section Q1 quotes from the binned errors (smi.analysis.q1_binned).
+    """Values section Q1 quotes from the binned errors (smi.experiments.q1_binned).
 
     The JSON holds the TCN on 515 nm alone, on 635 + 515 nm and on all three
     channels, noise-free and at the nominal point at 30 dB.
@@ -1056,11 +1057,8 @@ def methods_values(
     them, and each is asserted single-valued where the text states one value.
     """
     trained = [r for r in records.values() if r.steps_per_epoch is not None]
-    grids = [
-        yaml.safe_load(p.read_text('utf-8')) for p in EXPERIMENTS_DIR.glob('*.yaml')
-    ]
-    family = yaml.safe_load((MATCHED_DIR / 'tcn-44k.yaml').read_text('utf-8'))
-    convergence = family['training']['convergence']
+    grids = GRIDS.values()
+    convergence = MODEL_CONFIGS['matched/tcn-44k'].training_config['convergence']
 
     def one(values: Iterable[Any]) -> Any:
         (value,) = set(values)
@@ -1070,15 +1068,17 @@ def methods_values(
     steps = one(r.steps_per_epoch for r in trained)
     crop = one(r.train_crop_length for r in trained if r.train_crop_length is not None)
     per_epoch = batch * steps
-    val_steps = one(g['synthetic']['val_steps'] for g in grids)
-    test_set = one(tuple(sorted(g['test_set'].items())) for g in grids)
+    val_steps = one(g.synthetic.val_steps for g in grids)
+    test_set = one(g.test_set for g in grids)
     full_length = sorted({r.model_type for r in trained if r.train_crop_length is None})
     # Each matched family's stopping rule, which the text states once.
-    for path in MATCHED_DIR.glob('*-44k.yaml'):
-        rule = yaml.safe_load(path.read_text('utf-8'))['training']['convergence']
+    for name, config in MODEL_CONFIGS.items():
+        if not (name.startswith('matched/') and name.endswith('-44k')):
+            continue
+        rule = config.training_config['convergence']
         assert {k: rule[k] for k in convergence if k != 'monitor'} == {
             k: v for k, v in convergence.items() if k != 'monitor'
-        }, path
+        }, name
     return {
         'm_batch': str(batch),
         'm_steps': str(steps),
@@ -1099,8 +1099,8 @@ def methods_values(
         'm_val_batches': str(val_steps),
         'm_val_shots': str(val_steps * batch),
         'm_val_seed': str(VAL_SEED),
-        'm_test_shots': str(dict(test_set)['n_shots']),
-        'm_test_seed': str(dict(test_set)['seed']),
+        'm_test_shots': str(test_set.n_shots),
+        'm_test_seed': str(test_set.seed),
         'm_test_sets': str(len({r.dataset for r in records.values()})),
         'm_trained_cells': str(len(trained)),
         'm_patience': str(convergence['patience_epochs']),
@@ -1280,13 +1280,15 @@ def main() -> None:
     output = parser.parse_args().output
 
     prior = bounds.motion_prior(
-        SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
+        SimConfig.nominal(STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
     )
     causal_k1, _ = nominal_bounds(prior, SYNTHETIC_WAVELENGTHS_UM[:1])
     causal_k3, offline_k3 = nominal_bounds(prior, SYNTHETIC_WAVELENGTHS_UM)
     info = [
         bounds.expected_information(
-            SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM[:k], NOMINAL_C, NOMINAL_ALPHA)
+            SimConfig.nominal(
+                STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM[:k], NOMINAL_C, NOMINAL_ALPHA
+            )
         )
         for k in (1, 3)
     ]
@@ -1312,10 +1314,16 @@ def main() -> None:
         # three-channel causal bound, beside what the extra channels do.
         'causal_ratio_c09_c0': sig(
             velocity_bounds(
-                prior, SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.9, NOMINAL_ALPHA)
+                prior,
+                SimConfig.nominal(
+                    STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.9, NOMINAL_ALPHA
+                ),
             )[0]
             / velocity_bounds(
-                prior, SimConfig.nominal(SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
+                prior,
+                SimConfig.nominal(
+                    STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA
+                ),
             )[0],
             2,
         ),

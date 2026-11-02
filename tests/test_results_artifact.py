@@ -3,7 +3,7 @@
 import json
 from dataclasses import asdict
 
-from smi.analysis.results_artifact import SCHEMA_VERSION, read_results, write_results
+from smi.experiments.results_artifact import SCHEMA_VERSION, read_results, write_results
 from tests._helpers import run_record
 
 
