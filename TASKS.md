@@ -26,7 +26,7 @@ handling, then resume experiments (P4-P6).
 - [x] **R3. Split `analysis/`.** `estimators`, `learning`, `experiments` and
   `theory`; `baseline_fit` and `gain_sweep` split into estimator, sweep and CLI.
 - [x] **R4. Scripts and artifacts out of the package.** CLIs in `scripts/`;
-  `configs/`, `results/`, `data/frozen/`, `checkpoints/` at the repo root,
+  `configs/`, `report/results/`, `data/frozen/`, `runs/` at the repo root,
   resolved through `smi.core.paths`; Snakefile and figure scripts follow.
 - [x] **R5. Dead paths decided.** Ray Tune, the vmap ensemble, VICReg and the
   `torch.compile` branch deleted; `LitModule` now requires `target`;

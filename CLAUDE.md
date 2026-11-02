@@ -130,8 +130,8 @@ not, the index pin in `[tool.pixi.pypi-dependencies]` is the thing to check.
 ## Package layout
 
 The importable package is `smi/` (distribution name `smi`). Top-level repo
-layout: `smi/` (library), `scripts/` (CLIs), `configs/`, `results/`, `data/`,
-`checkpoints/`, `packages/redpitaya/`, `report/`, `tests/`, `notebooks/`
+layout: `smi/` (library), `scripts/` (CLIs), `configs/`, `data/`,
+`runs/`, `packages/redpitaya/`, `report/`, `tests/`, `notebooks/`
 (marimo apps), `docs/`.
 
 Inside `smi/`, lowest layer first. Layering is enforced by
@@ -139,7 +139,7 @@ Inside `smi/`, lowest layer first. Layering is enforced by
 
 - `core/` - bottom layer, imports nothing else in `smi`: acquisition config,
   kinematics, metrics, and `paths` (`REPO_ROOT`, `CONFIGS_DIR`, `RESULTS_DIR`,
-  `DATA_DIR`, `FROZEN_DIR`, `CHECKPOINTS_DIR`; every artifact path comes from
+  `DATA_DIR`, `FROZEN_DIR`, `RUNS_DIR`, `GRID_RUNS_DIR`, `TRAIN_RUNS_DIR`; every artifact path comes from
   here).
 - `theory/` - physics: coil driver, interferometers, waveform, forward model
   (`simulate_batch`) and the Fisher/Bayesian `bounds`; may import only
@@ -189,8 +189,9 @@ Outside `smi/`:
 - `configs/models/`, `configs/experiments/` - model and grid YAML. The
   `data_dir` in `configs/models/{matched,displacement}/` is stale on purpose
   (it is hashed into run fingerprints); pass `dataset_path=` instead.
-- `results/` - committed result JSON. `data/` - raw HDF5 (ignored) and
-  `data/frozen/`. `checkpoints/` - gitignored.
+- `report/results/` - committed result JSON. `data/` - raw HDF5 (ignored) and
+  `data/frozen/`. `runs/` - gitignored: `runs/grids/<grid>/<cell-key>.ckpt` from
+  the runner, `runs/train/<run-name>/` from `TrainingInterface`.
 
 ## Normalization & model wrapping
 
@@ -234,7 +235,7 @@ lockfile-reproducible with no manual install.
   - `synthetic.typ` - the synthetic research report: identifiability,
     Fisher information and Bayesian bounds (computed in its figure scripts
     from `smi.theory.bounds`), then the Q3 and Q1 results from
-    `results/synthetic_results.json`. Build it alone with
+    `report/results/synthetic_results.json`. Build it alone with
     `pixi run report-synthetic`.
 - `figures/plot_<name>.py` - one script per figure, each taking `--output
   <path>` and writing exactly that path. Shared style lives in

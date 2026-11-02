@@ -5,7 +5,7 @@
 # with the alpha = 0 and alpha = 5 controls at C = 0.2. Michelson and C = 0.2
 # at T_0 = 90 already exist from S0b (same cell keys, skipped).
 # Run: python -m smi.experiments.runner configs/experiments/q3_s0c_ceiling.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k-T90, config: ../models/matched/tcn-44k.yaml}
 

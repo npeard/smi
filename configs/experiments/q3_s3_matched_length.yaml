@@ -6,7 +6,7 @@
 # train exactly 60 epochs, so the comparison is at equal length; so does the
 # ladder's phase-drift sweep.
 # Run: python -m smi.experiments.runner configs/experiments/q3_s3_matched_length.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k-E60, config: ../models/matched/tcn-44k.yaml}
 

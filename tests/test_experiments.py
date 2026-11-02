@@ -79,7 +79,7 @@ def _run(path, tmp_path, only=None):
     return run_grid(
         path,
         tmp_path / 'results.json',
-        runs_dir=tmp_path / 'runs',
+        runs_dir=tmp_path / 'runs' / 'grid',
         lock_path=tmp_path / '.runner.lock',
         frozen_root=tmp_path / 'frozen',
         only=only,
@@ -112,7 +112,7 @@ def test_two_cell_grid_writes_complete_records_and_resumes(tmp_path):
         assert (r.max_epochs, r.T_0) == (1, family['T_0'])
         assert r.lr == float(family['learning_rate'])
         assert {'velocity_rmse', 'velocity_rmse_sign_invariant'} <= set(r.metrics)
-        assert (tmp_path / 'runs' / f'{r.cell_key}.ckpt').exists()
+        assert (tmp_path / 'runs' / 'grid' / f'{r.cell_key}.ckpt').exists()
     # Rerun: every key is present, nothing is trained or appended.
     assert _run(path, tmp_path) == 0
     assert len(read_results(tmp_path / 'results.json')) == 2
@@ -133,7 +133,7 @@ def test_displacement_target_cell_trains_and_scores_its_differentiated_output(tm
     family_path.write_text(yaml.safe_dump(family))
     assert _run(path, tmp_path) == 1
     (record,) = read_results(tmp_path / 'results.json')
-    ckpt = tmp_path / 'runs' / f'{record.cell_key}.ckpt'
+    ckpt = tmp_path / 'runs' / 'grid' / f'{record.cell_key}.ckpt'
     module = load_lit_module(ckpt, device='cpu')
     assert module.target == 'displacement'
     # Scored by hand: the raw output is displacement, so it is differentiated
@@ -350,7 +350,9 @@ def test_runner_evaluates_the_best_checkpoint(tmp_path, monkeypatch):
     assert record.epochs_run == 3
     assert record.best_monitor == pytest.approx(0.1)
     assert record.final_monitor == pytest.approx(5.0)
-    ckpt = torch.load(tmp_path / 'runs' / f'{record.cell_key}.ckpt', weights_only=False)
+    ckpt = torch.load(
+        tmp_path / 'runs' / 'grid' / f'{record.cell_key}.ckpt', weights_only=False
+    )
     saved = ckpt['state_dict']
     best, last = snapshots[1], snapshots[2]
     assert any(not torch.equal(best[k], last[k]) for k in best), 'epochs identical'
@@ -575,7 +577,7 @@ def test_concurrent_runner_process_exits_nonzero(tmp_path):
                 '--lock',
                 str(lock),
                 '--runs-dir',
-                str(tmp_path / 'runs'),
+                str(tmp_path / 'runs' / 'grid'),
                 '--frozen-root',
                 str(tmp_path / 'frozen'),
             ],

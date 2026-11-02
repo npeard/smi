@@ -5,7 +5,7 @@
 # TCN and TCAN (the best causal family at C = 0.2 in S1). The oracle row is
 # run for Michelson only (it decodes under the Michelson model).
 # Run: python -m smi.experiments.runner configs/experiments/q1_s2_subsets.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k, config: ../models/matched/tcn-44k.yaml}
   - {name: tcan-44k, config: ../models/matched/tcan-44k.yaml}

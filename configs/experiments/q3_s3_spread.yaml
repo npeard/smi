@@ -4,7 +4,7 @@
 # runs at three seeds and the nominal point at two more; the ladder is read
 # against that spread.
 # Run: python -m smi.experiments.runner configs/experiments/q3_s3_spread.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k, config: ../models/matched/tcn-44k.yaml}
 

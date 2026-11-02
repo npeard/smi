@@ -24,8 +24,8 @@ The importable package is `smi/`:
 - `smi/experiments/` - grid runner, evaluation and baseline sweeps.
 - `smi/acquisition/` - SMI's side of the rig, built on `stemlab`.
 - `scripts/` - command-line entry points (training, acquisition, sweeps).
-- `configs/`, `results/`, `data/`, `checkpoints/` - model and experiment YAML,
-  committed result JSON, raw and frozen data (ignored), checkpoints (ignored).
+- `configs/`, `report/results/`, `data/`, `runs/` - model and experiment YAML,
+  committed result JSON, raw and frozen data (ignored), run outputs (ignored).
 - `smi/theory/` - physics simulation (coil driver, interferometers, waveform).
 - `packages/redpitaya/` - `stemlab`, the standalone Red Pitaya AWG and
   acquisition library (its own package; see its README).

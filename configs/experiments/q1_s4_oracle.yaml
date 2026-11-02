@@ -3,7 +3,7 @@
 # the shortest wavelength carries the most Fisher information), SNR swept.
 # inverse_fit costs ~8.5 min per 64-shot set, so only these two subsets.
 # Run: python -m smi.experiments.runner configs/experiments/q1_s4_oracle.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k, config: ../models/matched/tcn-44k.yaml}
 

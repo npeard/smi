@@ -6,7 +6,7 @@
 # electronics. shot_noise is omitted alone: it needs an SNR and so is only
 # meaningful inside the nominal point. drive_gain is motion scale, not noise.
 # Run: python -m smi.experiments.runner configs/experiments/q3_s3_noise_ladder.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k, config: ../models/matched/tcn-44k.yaml}
 

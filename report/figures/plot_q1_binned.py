@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Q1's binned test: TCN error by fringe-extremum distance and by |v|.
 
-Reads results/q1_binned_errors.json (written by
+Reads report/results/q1_binned_errors.json (written by
 ``python -m smi.experiments.q1_binned`` from gitignored checkpoints): the TCN on
 515 nm alone, on 635 + 515 nm and on all three channels, at C = 0.2, alpha =
 3, noise-free and at the nominal point at 30 dB. (a, b) pooled RMSE against

@@ -3,7 +3,7 @@
 # noise-free, alpha = 3), as evidence of how far the fixed-budget "ceiling"
 # still moves past the adopted 90-epoch schedule.
 # Run: python -m smi.experiments.runner configs/experiments/q3_s0c_long.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k-T270, config: ../models/matched/tcn-44k.yaml}
 

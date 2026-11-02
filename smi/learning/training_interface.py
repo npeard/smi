@@ -20,7 +20,7 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 from lightning.pytorch.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
-from smi.core.paths import CHECKPOINTS_DIR, REPO_ROOT
+from smi.core.paths import REPO_ROOT, TRAIN_RUNS_DIR
 from smi.data.datamodule import VelocityDataModule
 from smi.data.schema import read_sample_rate
 from smi.learning.lit_module import LitModule
@@ -210,7 +210,7 @@ def resolve_data_dir(data_dir: str) -> Path:
 class TrainingInterface:
     """Main trainer class for managing model training."""
 
-    CHECKPOINT_DIR = CHECKPOINTS_DIR
+    CHECKPOINT_DIR = TRAIN_RUNS_DIR
 
     def __init__(
         self,

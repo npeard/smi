@@ -6,7 +6,7 @@
 //
 // Every number in this document comes from a committed artifact or from a
 // computation in a committed script:
-// - results/synthetic_results.json, the experiment runner's records,
+// - report/results/synthetic_results.json, the experiment runner's records,
 //   read by the report/figures/plot_*.py scripts this document includes;
 // - smi.theory.bounds, evaluated by the figure scripts
 //   report/figures/plot_{fisher_phase,velocity_bounds,sign_information}.py;

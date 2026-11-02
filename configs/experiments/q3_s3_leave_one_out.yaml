@@ -5,7 +5,7 @@
 # would be with one term removed -- the question a hardware fix asks. Read
 # against the nominal point's three-seed spread (q3_s3_spread.yaml).
 # Run: python -m smi.experiments.runner configs/experiments/q3_s3_leave_one_out.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k, config: ../models/matched/tcn-44k.yaml}
 

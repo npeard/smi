@@ -27,18 +27,17 @@ import numpy as np
 import torch
 
 from smi.core.metrics import best_sign, per_shot_rmse
-from smi.core.paths import CONFIGS_DIR, RESULTS_DIR
+from smi.core.paths import CONFIGS_DIR, GRID_RUNS_DIR, RESULTS_DIR
 from smi.data.datasets import select_pd_keys
 from smi.data.frozen import DEFAULT_ROOT, load_or_create
 from smi.experiments.evaluate import EVAL_CHUNK_SHOTS, N_BINS, CheckpointEstimator
 from smi.experiments.results_artifact import read_results
-from smi.experiments.runner import DEFAULT_RUNS_DIR, Cell, cell_key, expand_grid
+from smi.experiments.runner import Cell, cell_key, expand_grid
 from smi.theory.forward import smi_excess_phase
 
 EXPERIMENTS_DIR = CONFIGS_DIR / 'experiments'
 DEFAULT_OUT = RESULTS_DIR / 'q1_binned_errors.json'
 RESULTS = RESULTS_DIR / 'synthetic_results.json'
-RUNS_DIR = DEFAULT_RUNS_DIR
 
 FAMILY = 'tcn-44k'
 # 515 nm is the best single channel and 635 + 515 the best pair of the TCN in
@@ -140,7 +139,9 @@ def evaluate_cell(
     )
     if path.stem != record.dataset:
         raise ValueError(f'{key}: scored on {record.dataset}, not {path.stem}')
-    est = CheckpointEstimator(RUNS_DIR / f'{key}.ckpt', 'cpu')
+    est = CheckpointEstimator(
+        GRID_RUNS_DIR / Path(grid_path).stem / f'{key}.ckpt', 'cpu'
+    )
     with h5py.File(path, 'r') as f:
         keys = select_pd_keys(f, cell.wavelengths_um)
         signals = torch.from_numpy(np.stack([f[k][:] for k in keys], axis=1))

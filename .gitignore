@@ -150,14 +150,14 @@ dmypy.json
 **/checkpoints/*
 **/lightning_logs/*
 
-# The JSON files under results/ are version-controlled deliberately: each is a
+# The JSON files under report/results/ are version-controlled deliberately: each is a
 # few KB of computed numbers that a report figure reads, while recomputing
 # costs minutes to GPU-hours (baseline_results.json ~25 min, learned_results.json
 # ~2.5 GPU-hours, gain_sweep_results.json ~25 min on CPU, synthetic_results.json
 # the grid runs). Regenerate with `python -m smi.experiments.baselines`,
 # `.gain_sweep`, `.run_baseline_sweep`, `.runner <grid.yaml>` and `.q1_binned`
 # (the last from gitignored checkpoints). Only the runner's lock is not a result.
-results/.runner.lock
+report/results/.runner.lock
 
 # Session-scoped agent scaffolding (specs, plans) -- durable rationale goes
 # in commit messages and code comments instead.
@@ -170,5 +170,6 @@ scratch/
 report/build/
 report/.snakemake/
 
-# Per-cell checkpoints written by smi.experiments.runner (named by cell key).
+# Grid checkpoints (runs/grids/<grid>/<cell-key>.ckpt) and training runs
+# (runs/train/<run-name>/).
 runs/

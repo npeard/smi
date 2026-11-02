@@ -5,7 +5,7 @@
 # alpha = 3) with the signed loss. A short fixed budget (20 epochs); the point is
 # the ordering, not a ceiling.
 # Run: python -m smi.experiments.runner configs/experiments/q3_exit_check.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k-E20, config: ../models/matched/tcn-44k.yaml}
 

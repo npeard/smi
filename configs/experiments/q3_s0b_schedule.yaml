@@ -4,7 +4,7 @@
 # Same TCN-44k cells with a 3x longer cosine period; if RMSE moves by more
 # than ~10%, every later stage uses the longer schedule.
 # Run: python -m smi.experiments.runner configs/experiments/q3_s0b_schedule.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k-T90, config: ../models/matched/tcn-44k.yaml}
 

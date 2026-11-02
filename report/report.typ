@@ -3,11 +3,11 @@
 //
 // Build:  pixi run report-only  (or, from report/: snakemake build/report.pdf)
 //
-// Every number in this document comes from results/baseline_results.json
+// Every number in this document comes from report/results/baseline_results.json
 // (method 1 and method 2, written by smi.experiments.baselines), from
-// results/gain_sweep_results.json (the gain, delay and fringe-rate
+// report/results/gain_sweep_results.json (the gain, delay and fringe-rate
 // sweeps, written by smi.experiments.gain_sweep), or from
-// results/learned_results.json (the trained models, written by
+// report/results/learned_results.json (the trained models, written by
 // scripts/run_baseline_sweep.py). Nothing here is estimated or
 // recalled: if a claim needs a number the artifacts do not contain, the claim
 // does not get made. Figures read the artifacts and recompute nothing.
@@ -801,7 +801,7 @@ about every absolute number below.
 == What every configuration scored
 
 Velocity RMSE in um/ms and displacement RMSE in um, each the mean over the
-two seeds, from `results/learned_results.json`. Every row carries
+two seeds, from `report/results/learned_results.json`. Every row carries
 its parameter count, its receptive field in samples, and whether it reads
 samples after the timestamp it predicts. The last three rows are the models
 that trained worst and are here for the same reason as the rest: a table that

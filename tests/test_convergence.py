@@ -144,14 +144,6 @@ def _run(config: TrainingConfig) -> TrainingInterface:
     return interface
 
 
-@pytest.fixture(autouse=True)
-def private_checkpoint_dir(tmp_path, monkeypatch):
-    # Every run here is a TCN, so a shared directory gives every xdist worker
-    # the same epoch=<n>.ckpt names, and one run's save_top_k cleanup deleted
-    # another's best checkpoint.
-    monkeypatch.setattr(TrainingInterface, 'CHECKPOINT_DIR', tmp_path)
-
-
 @pytest.fixture
 def beats_zero_predictor(monkeypatch):
     script_log(monkeypatch, None, zero=lambda v: v * 1e6)

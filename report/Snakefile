@@ -69,7 +69,7 @@ THEME = "lib/theme.typ"
 # PDFs beside a document whose tables have moved. Listed for all figures
 # rather than per figure because the set is small and a figure that ignores
 # them is only rebuilt spuriously, while one omitted from the list is wrong.
-RESULTS_DIR = REPORT_DIR.parent / "results"
+RESULTS_DIR = REPORT_DIR / "results"
 RESULTS = [
     str(RESULTS_DIR / "baseline_results.json"),
     str(RESULTS_DIR / "gain_sweep_results.json"),

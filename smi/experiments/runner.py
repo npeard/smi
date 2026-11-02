@@ -66,7 +66,7 @@ import lightning
 import yaml
 
 from smi.core.acquisition import STEMLAB_125_14
-from smi.core.paths import REPO_ROOT, RESULTS_DIR
+from smi.core.paths import GRID_RUNS_DIR, RESULTS_DIR
 from smi.data.frozen import DEFAULT_ROOT, load_or_create
 from smi.experiments.evaluate import (
     CheckpointEstimator,
@@ -92,7 +92,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OUT = RESULTS_DIR / 'synthetic_results.json'
 DEFAULT_LOCK = RESULTS_DIR / '.runner.lock'
-DEFAULT_RUNS_DIR = REPO_ROOT / 'runs'
 
 # Sim fields whose YAML lists must become tuples (SimConfig coerces the float
 # ones, but the sweep and override values are compared and named before that).
@@ -540,7 +539,8 @@ def run_grid(
     Args:
         path: Grid YAML.
         out: Results artifact; its records' ``cell_key`` values mark done cells.
-        runs_dir: Where each cell's checkpoint is written, named by its key.
+        runs_dir: Where each cell's checkpoint is written, named by its key
+            (``runs/grids/<grid-name>`` from the CLI).
         lock_path: Single-instance lockfile.
         frozen_root: Cache directory of frozen test sets.
         only: Glob patterns over cell keys; a cell runs if any matches.
@@ -595,7 +595,7 @@ def rescore_metrics(
 ) -> int:
     """Add ``RESCORED_METRICS`` to every recorded cell that lacks them.
 
-    Each cell is re-scored from ``runs_dir/<cell_key>.ckpt`` (or, with
+    Each cell is re-scored from ``runs_dir/<grid>/<cell_key>.ckpt`` (or, with
     ``include_oracle``, by the oracle) on its frozen set, found from the
     record itself: ``record.dataset`` is the set's file stem. Only the new
     metric keys are copied in; velocity metrics, bins, fingerprints, budget
@@ -605,7 +605,7 @@ def rescore_metrics(
 
     Args:
         out: Results artifact, rewritten in place.
-        runs_dir: Directory of the cells' checkpoints.
+        runs_dir: Directory of per-grid checkpoint directories.
         lock_path: Single-instance lockfile shared with ``run_grid``, so a
             rescore cannot race a training grid writing the same artifact.
         frozen_root: Cache directory of frozen test sets.
@@ -635,9 +635,11 @@ def rescore_metrics(
                     continue
                 est = InverseFitEstimator.for_dataset(dataset, None)
             else:
-                ckpt = Path(runs_dir) / f'{record.cell_key}.ckpt'
-                if not ckpt.exists():
-                    logger.warning('%s: no checkpoint at %s', record.cell_key, ckpt)
+                ckpt = next(Path(runs_dir).glob(f'*/{record.cell_key}.ckpt'), None)
+                if ckpt is None:
+                    logger.warning(
+                        '%s: no checkpoint under %s', record.cell_key, runs_dir
+                    )
                     continue
                 est = CheckpointEstimator(ckpt, device)
             assert record.wavelengths_um is not None
@@ -684,7 +686,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--only', action='append', help='glob over cell keys; repeatable (OR)'
     )
-    parser.add_argument('--runs-dir', type=Path, default=DEFAULT_RUNS_DIR)
+    parser.add_argument(
+        '--runs-dir',
+        type=Path,
+        help='grid run: its checkpoint directory (default runs/grids/<grid>); '
+        '--rescore-metrics: the directory of grid directories (default runs/grids)',
+    )
     parser.add_argument('--lock', type=Path, default=DEFAULT_LOCK)
     parser.add_argument('--frozen-root', type=Path, default=DEFAULT_ROOT)
     parser.add_argument(
@@ -708,7 +715,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.rescore_metrics:
             n = rescore_metrics(
                 args.out,
-                runs_dir=args.runs_dir,
+                runs_dir=args.runs_dir or GRID_RUNS_DIR,
                 lock_path=args.lock,
                 frozen_root=args.frozen_root,
                 device=args.device,
@@ -719,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
         n = run_grid(
             args.grid,
             args.out,
-            runs_dir=args.runs_dir,
+            runs_dir=args.runs_dir or GRID_RUNS_DIR / args.grid.stem,
             lock_path=args.lock,
             frozen_root=args.frozen_root,
             only=args.only,

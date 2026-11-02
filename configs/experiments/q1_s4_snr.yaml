@@ -4,7 +4,7 @@
 # oracle runs separately (q1_s4_oracle.yaml) on the 3-channel and best
 # single-channel subsets only, because inverse_fit costs ~8.5 min per set.
 # Run: python -m smi.experiments.runner configs/experiments/q1_s4_snr.yaml \
-#        --out results/synthetic_results.json
+#        --out report/results/synthetic_results.json
 families:
   - {name: tcn-44k, config: ../models/matched/tcn-44k.yaml}
 
