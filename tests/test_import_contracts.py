@@ -1,5 +1,6 @@
 """The package layering is enforced by import-linter, run from the suite."""
 
+import re
 import shutil
 import subprocess
 import sys
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from importlinter.cli import lint_imports
 
-from smi.core.paths import CONFIGS_DIR, DATA_DIR, FROZEN_DIR, REPO_ROOT, RESULTS_DIR
+from smi.core.paths import DATA_DIR, FROZEN_DIR, REPO_ROOT, RESULTS_DIR
 
 
 def test_contracts_hold():
@@ -16,8 +17,20 @@ def test_contracts_hold():
 
 def test_paths_exist():
     # Checkpoints are gitignored and created on first training run.
-    for path in (CONFIGS_DIR, RESULTS_DIR, DATA_DIR, FROZEN_DIR):
+    for path in (RESULTS_DIR, DATA_DIR, FROZEN_DIR):
         assert path.is_dir(), path
+
+
+def test_nothing_imports_yaml():
+    """Pyyaml is no dependency: configs and grids are Python registries."""
+    pattern = re.compile(r'^\s*(import yaml\b|from yaml\b)', re.MULTILINE)
+    offenders = [
+        str(path.relative_to(REPO_ROOT))
+        for top in ('smi', 'scripts', 'tests', 'report', 'notebooks')
+        for path in (REPO_ROOT / top).rglob('*.py')
+        if pattern.search(path.read_text('utf-8'))
+    ]
+    assert offenders == []
 
 
 def _only_python_sources(directory: str, names: list[str]) -> list[str]:

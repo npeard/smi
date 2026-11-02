@@ -1,7 +1,6 @@
 """Q1's binned errors: fringe-extremum distance and per-bin pooled RMSE."""
 
 import math
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -91,5 +90,5 @@ def test_binned_rmse_puts_the_top_edge_in_the_last_bin():
 
 
 def test_checkpoint_is_looked_up_under_its_grid_directory(tmp_path):
-    path = grid_checkpoint(Path('configs/experiments/q1_s2_subsets.yaml'), 'k')
+    path = grid_checkpoint('q1_s2_subsets', 'k')
     assert path == tmp_path / 'grids' / 'q1_s2_subsets' / 'k.ckpt'

@@ -31,14 +31,12 @@ from typing import Any
 
 import h5py
 import numpy as np
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import (
     CEILING_GRID,
     DISPLACEMENT_METRICS,
-    EXPERIMENTS_DIR,
     LEAVE_ONE_OUT,
     MISMATCH_SHOTS,
     NOISE_KNOBS,
@@ -82,6 +80,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from smi.core.acquisition import STEMLAB_125_14
 from smi.data.frozen import DEFAULT_ROOT, load_or_create
+from smi.experiments.grids import GRIDS
 from smi.experiments.results_artifact import RunRecord
 from smi.experiments.runner import ORACLE_FAMILY, cell_key, expand_grid
 from smi.learning.configs import MODEL_CONFIGS
@@ -167,7 +166,7 @@ def test_shots(record: RunRecord) -> int:
     return int(record.dataset.rsplit('_n', 1)[1])
 
 
-def zero_predictor_rmse(records: dict[str, RunRecord], grid: Path, key: str) -> float:
+def zero_predictor_rmse(records: dict[str, RunRecord], grid: str, key: str) -> float:
     """Test RMSE of predicting zero velocity on cell ``key``'s test set.
 
     That is each shot's velocity RMS, averaged over shots. The sim config
@@ -176,7 +175,7 @@ def zero_predictor_rmse(records: dict[str, RunRecord], grid: Path, key: str) -> 
     grid edit.
     """
     record = records[key]
-    (cfg,) = [cell.sim for cell in expand_grid(grid)[1] if cell.key == key]
+    (cfg,) = [cell.sim for cell in expand_grid(GRIDS[grid]) if cell.key == key]
     if record.sim_config_hash != cfg.hash():
         raise ValueError(f'{key}: record was run under another sim config')
     if record.test_seed is None:
@@ -191,7 +190,9 @@ def shot_length(records: dict[str, RunRecord]) -> int:
     """Samples per simulated shot, read off the alpha = 0 control's frozen set."""
     record = records[cell_key('tcn-44k-T90', SYNTHETIC_WAVELENGTHS_UM, 'smi-a0', 0)]
     (cfg,) = [
-        cell.sim for cell in expand_grid(CEILING_GRID)[1] if cell.key == record.cell_key
+        cell.sim
+        for cell in expand_grid(GRIDS[CEILING_GRID])
+        if cell.key == record.cell_key
     ]
     assert record.test_seed is not None
     path = load_or_create(cfg, record.test_seed, test_shots(record), DEFAULT_ROOT)
@@ -1056,9 +1057,7 @@ def methods_values(
     them, and each is asserted single-valued where the text states one value.
     """
     trained = [r for r in records.values() if r.steps_per_epoch is not None]
-    grids = [
-        yaml.safe_load(p.read_text('utf-8')) for p in EXPERIMENTS_DIR.glob('*.yaml')
-    ]
+    grids = GRIDS.values()
     convergence = MODEL_CONFIGS['matched/tcn-44k'].training_config['convergence']
 
     def one(values: Iterable[Any]) -> Any:
@@ -1069,8 +1068,8 @@ def methods_values(
     steps = one(r.steps_per_epoch for r in trained)
     crop = one(r.train_crop_length for r in trained if r.train_crop_length is not None)
     per_epoch = batch * steps
-    val_steps = one(g['synthetic']['val_steps'] for g in grids)
-    test_set = one(tuple(sorted(g['test_set'].items())) for g in grids)
+    val_steps = one(g.synthetic.val_steps for g in grids)
+    test_set = one(g.test_set for g in grids)
     full_length = sorted({r.model_type for r in trained if r.train_crop_length is None})
     # Each matched family's stopping rule, which the text states once.
     for name, config in MODEL_CONFIGS.items():
@@ -1100,8 +1099,8 @@ def methods_values(
         'm_val_batches': str(val_steps),
         'm_val_shots': str(val_steps * batch),
         'm_val_seed': str(VAL_SEED),
-        'm_test_shots': str(dict(test_set)['n_shots']),
-        'm_test_seed': str(dict(test_set)['seed']),
+        'm_test_shots': str(test_set.n_shots),
+        'm_test_seed': str(test_set.seed),
         'm_test_sets': str(len({r.dataset for r in records.values()})),
         'm_trained_cells': str(len(trained)),
         'm_patience': str(convergence['patience_epochs']),

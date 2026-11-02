@@ -105,20 +105,14 @@ ANALYSIS_CODE = sorted(
 )
 
 # The experiment grids the synthetic figures expand to label records (the
-# sweep value of a cell comes from its grid), so a grid edit rebuilds them.
-EXPERIMENTS_DIR = REPORT_DIR.parent / "configs" / "experiments"
-GRIDS = [
-    str(EXPERIMENTS_DIR / name)
-    for name in (
-        "q3_s0c_ceiling.yaml",
-        "q3_s3_noise_ladder.yaml",
-        "q3_s3_spread.yaml",
-        "q3_s3_leave_one_out.yaml",
-        "q3_s3_matched_length.yaml",
-        "q1_s2_subsets.yaml",
-        "q3_s1d_displacement.yaml",
-    )
-]
+# sweep value of a cell comes from its grid). smi.experiments.grids imports
+# every grid module, so any grid edit, or one to their types, rebuilds them.
+GRIDS = sorted(
+    [
+        str(SMI_DIR / "experiments" / "grid.py"),
+        *(str(p) for p in (SMI_DIR / "experiments" / "grids").glob("*.py")),
+    ]
+)
 
 # The emitter instantiates the matched model configs to probe the input span of
 # the sliding-window families (section Q2), so a model or config edit reruns it.

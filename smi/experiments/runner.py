@@ -1,40 +1,17 @@
 """Resumable experiment runner: a grid of train-then-evaluate cells.
 
-A grid YAML expands to cells ``family x channel subset x sim x seed`` (plus one
-optional classical oracle per ``sim x subset``). Each cell trains one network on
-its own simulator config, then scores it on the frozen test set of that config
-through :func:`smi.experiments.evaluate.evaluate`. A cell's record carries its
+A :class:`~smi.experiments.grid.Grid` (the shipped ones are
+:data:`smi.experiments.grids.GRIDS`, run by name) expands to cells
+``family x channel subset x sim x seed`` (plus one optional classical oracle
+per ``sim x subset``). Each cell trains one network on its own simulator
+config, then scores it on the frozen test set of that config through
+:func:`smi.experiments.evaluate.evaluate`. A cell's record carries its
 ``cell_key``, ``sim_config_hash``, ``simulator_version`` and training budget
 (``BUDGET_FIELDS``), plus a ``run_fingerprint`` hashing the whole resolved
 training config and test set; a cell recorded with sim, simulator and
 fingerprint matching is skipped, so an interrupted grid resumes where it
 stopped. A recorded key whose setup has since changed raises, naming the
 differing config blocks, rather than mixing the two in one table.
-
-Grid YAML keys (all required except where noted):
-
-* ``families``: ``[{name, config}]``; ``config`` names an entry of
-  :data:`smi.learning.configs.MODEL_CONFIGS` by the path of the model YAML it
-  replaced, ``../models/<registry name>.yaml`` (see :func:`registry_name`).
-* ``channel_subsets``: wavelength lists (um). Never part of a ``sim`` block.
-* ``sims``: ``[{name, preset, feedback_c, alpha, override?, sweep?,
-  sign_invariant?}]``. ``preset`` is ``nominal`` or ``noise_free``
-  (:class:`SimConfig` constructors); ``override`` replaces fields after that;
-  ``sweep: {field: [values]}`` expands into one sim per value, named
-  ``<name>-<field>=<value>``. ``sign_invariant`` overrides the grid's for this
-  sim (Michelson sims need it; see ``loss.sign_invariant``).
-* ``seeds``: training seeds.
-* ``oracle``: also score ``InverseFitEstimator`` on every (sim, subset).
-* ``loss: {sign_invariant}``: the default for every sim.
-* ``synthetic: {steps_per_epoch, val_steps, train_crop_length}``. A model
-  whose ``requires_full_length`` is set trains on full shots
-  (``train_crop_length`` ``None``) whatever the grid says; the record's
-  ``train_crop_length`` reports what it trained on.
-* ``training``: shallow overrides of the family's ``training`` block (device,
-  epoch cap). ``convergence.monitor`` is derived from the sim's sign
-  invariance and the family's target, so one family YAML serves Michelson
-  and SMI sims.
-* ``test_set: {seed, n_shots}``.
 
 ``--rescore-metrics`` instead re-scores every recorded cell that lacks a
 metric added to :func:`~smi.experiments.evaluate.evaluate` after it ran
@@ -59,11 +36,10 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 import lightning
-import yaml
 
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.paths import GRID_RUNS_DIR, RESULTS_DIR
@@ -74,6 +50,8 @@ from smi.experiments.evaluate import (
     InverseFitEstimator,
     evaluate,
 )
+from smi.experiments.grid import Grid, Sim
+from smi.experiments.grids import grid as shipped_grid
 from smi.experiments.results_artifact import (
     RunRecord,
     append_results,
@@ -94,8 +72,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_OUT = RESULTS_DIR / 'synthetic_results.json'
 DEFAULT_LOCK = RESULTS_DIR / '.runner.lock'
 
-# Sim fields whose YAML lists must become tuples (SimConfig coerces the float
-# ones, but the sweep and override values are compared and named before that).
+# Sim fields whose values must be tuples (SimConfig coerces the float ones,
+# but the sweep and override values are compared and named before that).
 _TUPLE_FIELDS = frozenset(
     name for name, values in NOMINAL_SWEEPS.items() if isinstance(values[0], tuple)
 )
@@ -170,23 +148,22 @@ def cell_key(
 
 
 def _build_sims(
-    entry: dict[str, Any], wavelengths_um: tuple[float, ...]
+    entry: Sim, wavelengths_um: tuple[float, ...]
 ) -> list[tuple[str, SimConfig, tuple[str, object] | None]]:
     """Expand one ``sims`` entry (and its sweep) for a channel subset.
 
     Each item is ``(sim name, sim, (field, value) swept or None)``.
     """
-    preset = entry['preset']
     args = {
         'wavelengths_um': wavelengths_um,
-        'feedback_c': entry['feedback_c'],
-        'alpha': entry['alpha'],
+        'feedback_c': entry.feedback_c,
+        'alpha': entry.alpha,
     }
-    # The grid YAMLs describe the one rig the data was taken on.
+    # The grids describe the one rig the data was taken on.
     nominal = SimConfig.nominal(STEMLAB_125_14, **args)
-    if preset == 'nominal':
+    if entry.preset == 'nominal':
         base = nominal
-    elif preset == 'noise_free':
+    else:
         base = SimConfig.noise_free(
             acquisition=STEMLAB_125_14,
             **args,
@@ -195,18 +172,14 @@ def _build_sims(
             end_freq_hz=nominal.end_freq_hz,
             drive_gain=nominal.drive_gain,
         )
-    else:
-        raise ValueError(f'sim {entry["name"]!r}: unknown preset {preset!r}')
-    override = {k: _as_field_value(k, v) for k, v in entry['override'].items()}
+    override = {k: _as_field_value(k, v) for k, v in entry.override.items()}
     base = dataclasses.replace(base, **override)
-    sweep = entry['sweep']
-    if not sweep:
-        return [(entry['name'], base, None)]
-    # One field per sweep: a Cartesian product would hide cell counts.
-    ((field, values),) = sweep.items()
+    if entry.sweep is None:
+        return [(entry.name, base, None)]
+    field, values = entry.sweep
     return [
         (
-            f'{entry["name"]}-{field}={_fmt(value)}',
+            f'{entry.name}-{field}={_fmt(value)}',
             dataclasses.replace(base, **{field: _as_field_value(field, value)}),
             (field, _as_field_value(field, value)),
         )
@@ -214,50 +187,25 @@ def _build_sims(
     ]
 
 
-def registry_name(config: str) -> str:
-    """The model-registry name a grid's ``config: ../models/<name>.yaml`` means.
-
-    The grids still spell families as paths to the model YAMLs the registry
-    replaced, so the name is everything after the last ``models`` component,
-    without the suffix.
-
-    Raises:
-        ValueError: If the path has no ``models`` component.
-    """
-    parts = PurePosixPath(config).with_suffix('').parts
-    if 'models' not in parts:
-        raise ValueError(f'family config {config!r} is not under models/')
-    start = len(parts) - parts[::-1].index('models')
-    return '/'.join(parts[start:])
-
-
-def expand_grid(path: Path) -> tuple[dict[str, Any], list[Cell]]:
-    """Parse a grid YAML and expand it into its cells, in a deterministic order.
+def expand_grid(grid: Grid) -> list[Cell]:
+    """Expand a grid into its cells, in a deterministic order.
 
     Order is sim, then subset, then (oracle first) family and seed, so a
     ``--only`` filter on a sim name picks a contiguous block.
 
-    Returns:
-        ``(grid, cells)``: the parsed YAML and its cells.
-
     Raises:
         ValueError: On duplicate cell keys (two entries with the same name).
     """
-    path = Path(path)
-    grid = yaml.safe_load(path.read_text())
-    names = {f['name']: registry_name(f['config']) for f in grid['families']}
-    for name in names.values():
-        model_config(name)  # an unknown name fails here, not mid-run
     cells: list[Cell] = []
-    for sim_entry in grid['sims']:
-        entry = {'override': {}, 'sweep': None, **sim_entry}
-        sign_invariant = bool(
-            entry.get('sign_invariant', grid['loss']['sign_invariant'])
+    for entry in grid.sims:
+        sign_invariant = (
+            grid.sign_invariant
+            if entry.sign_invariant is None
+            else entry.sign_invariant
         )
-        for subset in grid['channel_subsets']:
-            wavelengths = tuple(float(w) for w in subset)
+        for wavelengths in grid.channel_subsets:
             for sim_name, sim, sweep in _build_sims(entry, wavelengths):
-                if grid['oracle']:
+                if grid.oracle:
                     cells.append(
                         Cell(
                             cell_key(ORACLE_FAMILY, wavelengths, sim_name, None),
@@ -273,24 +221,24 @@ def expand_grid(path: Path) -> tuple[dict[str, Any], list[Cell]]:
                     )
                 cells.extend(
                     Cell(
-                        cell_key(family['name'], wavelengths, sim_name, seed),
-                        family['name'],
-                        names[family['name']],
+                        cell_key(family.name, wavelengths, sim_name, seed),
+                        family.name,
+                        family.config,
                         wavelengths,
                         sim_name,
                         sim,
                         sweep,
                         sign_invariant,
-                        int(seed),
+                        seed,
                     )
-                    for family in grid['families']
-                    for seed in grid['seeds']
+                    for family in grid.families
+                    for seed in grid.seeds
                 )
     keys = [c.key for c in cells]
     if len(set(keys)) != len(keys):
         dupes = sorted({k for k in keys if keys.count(k) > 1})
         raise ValueError(f'duplicate cell keys: {dupes}')
-    return grid, cells
+    return cells
 
 
 def _kill_children() -> None:
@@ -353,7 +301,7 @@ def _requires_full_length(model_json: str) -> bool:
     return create_model(json.loads(model_json)).requires_full_length
 
 
-def training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
+def training_config(cell: Cell, grid: Grid) -> TrainingConfig:
     """The resolved training config of a trained ``cell`` of ``grid``."""
     if cell.family_config is None:
         raise ValueError(f'{cell.key} is the untrained oracle')
@@ -361,7 +309,7 @@ def training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
     requires_full_length = _requires_full_length(
         json.dumps(family.model_config, sort_keys=True)
     )
-    training = {**family.training_config, **grid['training']}
+    training = {**family.training_config, **grid.training}
     loss = {**family.loss_config, 'sign_invariant': cell.sign_invariant}
     # Derived, not chosen: the monitor must follow the loss (Task 11 rule) and
     # the target, and a grid mixes Michelson (sign-invariant) and SMI sims over
@@ -373,7 +321,7 @@ def training_config(cell: Cell, grid: dict[str, Any]) -> TrainingConfig:
     }
     synthetic = {
         'use_synthetic_training': True,
-        **grid['synthetic'],
+        **dataclasses.asdict(grid.synthetic),
         'sim': dataclasses.asdict(cell.sim),
     }
     if requires_full_length:
@@ -401,7 +349,7 @@ def _budget(config: TrainingConfig) -> dict[str, Any]:
 
 
 def cell_fingerprint(
-    cell: Cell, grid: dict[str, Any], config: TrainingConfig | None
+    cell: Cell, grid: Grid, config: TrainingConfig | None
 ) -> dict[str, Any]:
     """What a cell trained and was scored on, as its record carries it.
 
@@ -411,8 +359,7 @@ def cell_fingerprint(
     the per-block hashes so a mismatch can name what changed. The oracle has no
     training config, so its blocks are the sim and test set only.
     """
-    test = grid['test_set']
-    blocks: dict[str, Any] = {'test_set': test}
+    blocks: dict[str, Any] = {'test_set': dataclasses.asdict(grid.test_set)}
     if config is None:
         budget = dict.fromkeys(BUDGET_FIELDS)
         blocks['sim'] = cell.sim.identity_fields()
@@ -438,7 +385,7 @@ def cell_fingerprint(
 
 
 def _stable_hash(value: object) -> str:
-    """Short sha1 of the JSON form of ``value`` (YAML-loaded, so JSON-safe)."""
+    """Short sha1 of the JSON form of ``value``."""
     blob = json.dumps(value, sort_keys=True, default=str)
     return hashlib.sha1(blob.encode(), usedforsecurity=False).hexdigest()[:16]
 
@@ -508,7 +455,7 @@ def _train(
 
 def run_cell(
     cell: Cell,
-    grid: dict[str, Any],
+    grid: Grid,
     config: TrainingConfig | None,
     fingerprint: dict[str, Any],
     out: Path,
@@ -520,8 +467,8 @@ def run_cell(
     ``config`` is the cell's :func:`_training_config` (None for the oracle),
     and ``fingerprint`` its :func:`cell_fingerprint`.
     """
-    test = grid['test_set']
-    dataset = load_or_create(cell.sim, test['seed'], test['n_shots'], frozen_root)
+    test = grid.test_set
+    dataset = load_or_create(cell.sim, test.seed, test.n_shots, frozen_root)
     start = time.perf_counter()
     est: Estimator
     extra: dict[str, Any] = {
@@ -529,7 +476,7 @@ def run_cell(
         for k in ('run_fingerprint', 'fingerprint_blocks', *BUDGET_FIELDS)
     }
     if config is None:
-        est = InverseFitEstimator.for_dataset(dataset, test['n_shots'])
+        est = InverseFitEstimator.for_dataset(dataset, test.n_shots)
         converged = True
     else:
         ckpt = runs_dir / f'{cell.key}.ckpt'
@@ -537,7 +484,7 @@ def run_cell(
         extra.update(trained)
         est = CheckpointEstimator(ckpt, device)
     result = evaluate(
-        est, dataset, cell.wavelengths_um, test['n_shots'], converged, cell.seed
+        est, dataset, cell.wavelengths_um, test.n_shots, converged, cell.seed
     )
     record = dataclasses.replace(
         result.record,
@@ -550,7 +497,7 @@ def run_cell(
 
 
 def run_grid(
-    path: Path,
+    grid: Grid,
     out: Path,
     *,
     runs_dir: Path,
@@ -561,7 +508,7 @@ def run_grid(
     """Run every cell of a grid not already recorded in ``out``.
 
     Args:
-        path: Grid YAML.
+        grid: The grid.
         out: Results artifact; its records' ``cell_key`` values mark done cells.
         runs_dir: Where each cell's checkpoint is written, named by its key
             (``runs/grids/<grid-name>`` from the CLI).
@@ -576,7 +523,7 @@ def run_grid(
     Raises:
         RunnerLockedError: If another runner is alive.
     """
-    grid, cells = expand_grid(path)
+    cells = expand_grid(grid)
     if only is not None:
         cells = [c for c in cells if any(fnmatch.fnmatch(c.key, p) for p in only)]
     # Resolved once, before any training: TrainingInterface edits its config.
@@ -712,7 +659,10 @@ def main(argv: list[str] | None = None) -> int:
     """CLI entry point; exits non-zero when another runner holds the lock."""
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument(
-        'grid', type=Path, nargs='?', help='grid YAML (omit with --rescore-metrics)'
+        'grid',
+        nargs='?',
+        help='grid name, a module of smi.experiments.grids (omit with '
+        '--rescore-metrics)',
     )
     parser.add_argument('--out', type=Path, default=DEFAULT_OUT)
     parser.add_argument(
@@ -756,9 +706,9 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(f'rescored {n} records\n')
             return 0
         n = run_grid(
-            args.grid,
+            shipped_grid(args.grid),
             args.out,
-            runs_dir=args.runs_dir or GRID_RUNS_DIR / args.grid.stem,
+            runs_dir=args.runs_dir or GRID_RUNS_DIR / args.grid,
             lock_path=args.lock,
             frozen_root=args.frozen_root,
             only=args.only,

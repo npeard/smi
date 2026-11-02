@@ -27,15 +27,15 @@ import numpy as np
 import torch
 
 from smi.core.metrics import best_sign, per_shot_rmse
-from smi.core.paths import CONFIGS_DIR, GRID_RUNS_DIR, RESULTS_DIR
+from smi.core.paths import GRID_RUNS_DIR, RESULTS_DIR
 from smi.data.datasets import select_pd_keys
 from smi.data.frozen import DEFAULT_ROOT, load_or_create
 from smi.experiments.evaluate import EVAL_CHUNK_SHOTS, N_BINS, CheckpointEstimator
+from smi.experiments.grids import grid as shipped_grid
 from smi.experiments.results_artifact import read_results
 from smi.experiments.runner import Cell, cell_key, expand_grid
 from smi.theory.forward import smi_excess_phase
 
-EXPERIMENTS_DIR = CONFIGS_DIR / 'experiments'
 DEFAULT_OUT = RESULTS_DIR / 'q1_binned_errors.json'
 RESULTS = RESULTS_DIR / 'synthetic_results.json'
 
@@ -47,8 +47,8 @@ FAMILY = 'tcn-44k'
 # it, and the nominal point at 30 dB shows what is left under drift and noise.
 SUBSETS = ((0.515,), (0.635, 0.515), (0.635, 0.6748, 0.515))
 CONDITIONS = (
-    ('noise_free', 'q1_s2_subsets.yaml', 's2-smi-a3'),
-    ('nominal_30db', 'q1_s4_snr.yaml', 'q1-nominal-snr_db=30'),
+    ('noise_free', 'q1_s2_subsets', 's2-smi-a3'),
+    ('nominal_30db', 'q1_s4_snr', 'q1-nominal-snr_db=30'),
 )
 # Shot-pooled per-shot RMSE must match the runner's record to this: the record
 # was scored on MPS, this on CPU, both float32.
@@ -115,13 +115,13 @@ def _table(
     return {'rmse': rmse.tolist(), 'zero': zero.tolist(), 'n': n.tolist()}
 
 
-def grid_checkpoint(grid_path: Path, key: str) -> Path:
-    """The runner's checkpoint of cell ``key`` of the grid at ``grid_path``."""
-    return GRID_RUNS_DIR / Path(grid_path).stem / f'{key}.ckpt'
+def grid_checkpoint(grid_name: str, key: str) -> Path:
+    """The runner's checkpoint of cell ``key`` of the grid ``grid_name``."""
+    return GRID_RUNS_DIR / grid_name / f'{key}.ckpt'
 
 
 def evaluate_cell(
-    grid_path: Path, wavelengths_um: tuple[float, ...], sim_name: str
+    grid_name: str, wavelengths_um: tuple[float, ...], sim_name: str
 ) -> tuple[Cell, float, np.ndarray, np.ndarray, np.ndarray]:
     """Squared error, truth and feedback phase of one cell on its frozen test set.
 
@@ -133,18 +133,19 @@ def evaluate_cell(
         ``(cell, mean per-shot RMSE, squared error [B, L], velocity [B, L],
         phase_f [B, C, L])``.
     """
-    grid, cells = expand_grid(grid_path)
+    grid = shipped_grid(grid_name)
+    cells = expand_grid(grid)
     key = cell_key(FAMILY, wavelengths_um, sim_name, 0)
     (cell,) = [c for c in cells if c.key == key]
     record = {r.cell_key: r for r in read_results(RESULTS)}[key]
     if record.sim_config_hash != cell.sim.hash() or record.test_seed is None:
         raise ValueError(f'{key}: record does not match its grid cell')
     path = load_or_create(
-        cell.sim, record.test_seed, grid['test_set']['n_shots'], DEFAULT_ROOT
+        cell.sim, record.test_seed, grid.test_set.n_shots, DEFAULT_ROOT
     )
     if path.stem != record.dataset:
         raise ValueError(f'{key}: scored on {record.dataset}, not {path.stem}')
-    est = CheckpointEstimator(grid_checkpoint(grid_path, key), 'cpu')
+    est = CheckpointEstimator(grid_checkpoint(grid_name, key), 'cpu')
     with h5py.File(path, 'r') as f:
         keys = select_pd_keys(f, cell.wavelengths_um)
         signals = torch.from_numpy(np.stack([f[k][:] for k in keys], axis=1))
@@ -178,9 +179,7 @@ def main(argv: list[str] | None = None) -> None:
     cells = {}
     for condition, grid, sim_name in CONDITIONS:
         for wavelengths in SUBSETS:
-            cell, rmse, sq_err, v, phase_f = evaluate_cell(
-                EXPERIMENTS_DIR / grid, wavelengths, sim_name
-            )
+            cell, rmse, sq_err, v, phase_f = evaluate_cell(grid, wavelengths, sim_name)
             if reference_velocity is None:
                 reference_velocity = v
                 v_edges = np.quantile(np.abs(v), np.linspace(0.0, 1.0, N_BINS + 1))

@@ -33,7 +33,7 @@ MARGIN = 8
 
 
 def _model(stem: str) -> dict:
-    return MODEL_CONFIGS[f'matched/{stem}'].model_config
+    return model_config(f'matched/{stem}').model_config
 
 
 def _expected_crop(hparams: dict) -> int | None:
@@ -97,7 +97,7 @@ def test_parameter_count_within_band(stem):
 
 @pytest.mark.parametrize('stem', CONFIGS)
 def test_context_rule_follows_the_column(stem):
-    config = MODEL_CONFIGS[f'matched/{stem}']
+    config = model_config(f'matched/{stem}')
     hparams = config.model_config
     synthetic = config.synthetic_config
     assert synthetic is not None
@@ -118,7 +118,7 @@ def test_context_rule_follows_the_column(stem):
 
 @pytest.mark.parametrize('stem', CONFIGS)
 def test_config_follows_training_rules(stem):
-    config = MODEL_CONFIGS[f'matched/{stem}']
+    config = model_config(f'matched/{stem}')
     training = config.training_config
     assert training['precision'] == '32-true'
     assert training['check_val_every_n_epoch'] == 1
@@ -190,4 +190,4 @@ def test_unknown_name_lists_the_closest_entries():
 def test_lookup_returns_a_private_copy():
     config = model_config('matched/tcn-44k')
     config.model_config['in_channels'] = 1
-    assert MODEL_CONFIGS['matched/tcn-44k'].model_config['in_channels'] == 3
+    assert model_config('matched/tcn-44k').model_config['in_channels'] == 3

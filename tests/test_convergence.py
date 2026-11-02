@@ -11,7 +11,7 @@ import pytest
 import torch
 from lightning.pytorch.callbacks.early_stopping import EarlyStoppingReason
 
-from smi.learning.configs import MODEL_CONFIGS
+from smi.learning.configs import model_config
 from smi.learning.lit_module import LitModule
 from smi.learning.training_interface import (
     RelativeEarlyStopping,
@@ -134,7 +134,7 @@ def _config(monitor: str, *, sign_invariant: bool, max_epochs: int) -> TrainingC
 
 
 def _sim() -> dict:
-    synthetic = MODEL_CONFIGS['synthetic-tcn-config'].synthetic_config
+    synthetic = model_config('synthetic-tcn-config').synthetic_config
     assert synthetic is not None
     return dict(synthetic['sim'])
 

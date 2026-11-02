@@ -155,7 +155,7 @@ dmypy.json
 # costs minutes to GPU-hours (baseline_results.json ~25 min, learned_results.json
 # ~2.5 GPU-hours, gain_sweep_results.json ~25 min on CPU, synthetic_results.json
 # the grid runs). Regenerate with `python -m smi.experiments.baselines`,
-# `.gain_sweep`, `.run_baseline_sweep`, `.runner <grid.yaml>` and `.q1_binned`
+# `.gain_sweep`, `.run_baseline_sweep`, `.runner <grid name>` and `.q1_binned`
 # (the last from gitignored checkpoints). Only the runner's lock is not a result.
 report/results/.runner.lock
 

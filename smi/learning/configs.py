@@ -32,6 +32,7 @@ Three groups:
 import copy
 import difflib
 from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any
 
 from smi.learning.training_interface import TrainingConfig
@@ -72,8 +73,11 @@ def _sim(feedback_c: float, alpha: float) -> dict[str, Any]:
     }
 
 
-def _training(experiment_name: str, **overrides: Any) -> dict[str, Any]:
+def _training(**overrides: Any) -> dict[str, Any]:
     """The matched training block, with ``overrides`` replacing its fields.
+
+    ``experiment_name`` is an override, or :func:`_named` sets it from the
+    registry key.
 
     The experiment grid overrides device and precision, and the runner derives
     ``convergence.monitor`` from the loss and target.
@@ -103,7 +107,6 @@ def _training(experiment_name: str, **overrides: Any) -> dict[str, Any]:
         'devices': 1,
         'use_logging': False,
         'wandb_project': 'smi',
-        'experiment_name': experiment_name,
         'target': 'velocity',  # what the model predicts: velocity or displacement
         **overrides,
     }
@@ -122,15 +125,15 @@ def _loss(**overrides: Any) -> dict[str, Any]:
     }
 
 
-def _matched(
-    stem: str, model: dict[str, Any], train_crop_length: int | None
-) -> TrainingConfig:
-    """A synthetic matched-budget entry; ``in_channels`` is replaced by the
-    number of wavelengths of the cell's sim.
+def _matched(model: dict[str, Any], train_crop_length: int | None) -> TrainingConfig:
+    """A synthetic matched-budget entry.
+
+    ``model['in_channels']`` is a placeholder: synthetic training replaces it
+    with ``len(synthetic.sim.wavelengths_um)``.
     """
     return TrainingConfig(
         model_config=model,
-        training_config=_training(stem.replace('-', '_')),
+        training_config=_training(),
         data_config={
             'data_dir': './analysis/data',
             'dataset_file': 'unused',  # not used in synthetic mode
@@ -160,13 +163,11 @@ def _displacement(config: TrainingConfig) -> TrainingConfig:
     return out
 
 
-def _real(stem: str, model: dict[str, Any]) -> TrainingConfig:
+def _real(model: dict[str, Any]) -> TrainingConfig:
     """A real-data entry at the 57,377-parameter Barland budget."""
     return TrainingConfig(
         model_config=model,
-        training_config=_training(
-            stem.replace('-', '_'), accelerator='gpu', devices=[0]
-        ),
+        training_config=_training(accelerator='gpu', devices=[0]),
         data_config={
             'data_dir': './analysis/data',
             'dataset_file': REAL_DATASET,
@@ -187,7 +188,7 @@ def _legacy(
     return TrainingConfig(
         model_config=model,
         training_config=_training(
-            experiment_name,
+            experiment_name=experiment_name,
             max_epochs=200,
             T_0=200,
             accelerator='gpu',
@@ -202,6 +203,13 @@ def _legacy(
         },
         loss_config=_loss(**loss),
     )
+
+
+def _named(entries: dict[str, TrainingConfig]) -> dict[str, TrainingConfig]:
+    """``entries`` with each one logging under its key, dashes as underscores."""
+    for stem, config in entries.items():
+        config.training_config['experiment_name'] = stem.replace('-', '_')
+    return entries
 
 
 def _conv(type_: str, kernel_size: int, temporal_channels: list[int]) -> dict[str, Any]:
@@ -351,164 +359,138 @@ def _tcan(siamese_channels: list[int], decoder_channels: list[int]) -> dict[str,
     }
 
 
-_MATCHED: dict[str, TrainingConfig] = {
-    # Causal column: one-sided lookback of 85 samples, the tcn-44k value
-    # (kernel 7, dilations 1-2-4).
-    'tcn-19k': _matched('tcn-19k', _conv('TCN', 7, [16, 16, 32]), MATCHED_CROP),
-    'tcn-44k': _matched('tcn-44k', _conv('TCN', 7, [16, 32, 48]), MATCHED_CROP),
-    'tcan-19k': _matched('tcan-19k', _tcan([16, 16], [16, 20]), MATCHED_CROP),
-    'tcan-44k': _matched('tcan-44k', _tcan([24, 24], [24, 32]), MATCHED_CROP),
-    # Offline column: symmetric field of 85 samples (kernel 7, dilations
-    # 1-2-4), within 10% of Barland's 91, which is fixed by the published
-    # network. An odd kernel is required: symmetric padding cannot preserve
-    # length otherwise. Widths as the TCN of the same budget.
-    'scnn-19k': _matched('scnn-19k', _conv('SCNN', 7, [16, 16, 32]), MATCHED_CROP),
-    'scnn-44k': _matched('scnn-44k', _conv('SCNN', 7, [16, 32, 48]), MATCHED_CROP),
-    # Offline column: one window spans 91 samples, set by the published
-    # network's fixed depth and kernels, and every other offline family's
-    # field is matched to that window. Averaging every window that covers an
-    # output widens Barland's true dependency span to 498 samples (its
-    # receptive_field).
-    'barland-19k': _matched('barland-19k', _barland([24, 24, 24, 32]), MATCHED_CROP),
-    'barland-44k': _matched('barland-44k', _barland([24, 24, 48, 64]), MATCHED_CROP),
-    # Offline column: one window spans 91 samples (the shared offline field),
-    # matched to Barland's published window. Averaging every window that
-    # covers an output widens the MLP's true dependency span to 181 samples
-    # (its receptive_field). Stride 1: point-to-point, see mlp-matched.
-    'mlp-19k': _matched('mlp-19k', _mlp(91, [66, 16], 1), MATCHED_CROP),
-    'mlp-44k': _matched('mlp-44k', _mlp(91, [130, 64], 1), MATCHED_CROP),
-    # LSTM and Mamba: lookback is unbounded (recurrent state), so context
-    # cannot be matched; only the parameter budget is; the model reports
-    # receptive_field None. A unidirectional LSTM and Mamba are causal; a
-    # bidirectional LSTM is offline.
-    'lstm-19k': _matched('lstm-19k', _lstm(39, bidirectional=False), MATCHED_CROP),
-    'lstm-44k': _matched('lstm-44k', _lstm(59, bidirectional=False), MATCHED_CROP),
-    'lstm-bidir-19k': _matched(
-        'lstm-bidir-19k', _lstm(24, bidirectional=True), MATCHED_CROP
-    ),
-    'lstm-bidir-44k': _matched(
-        'lstm-bidir-44k', _lstm(36, bidirectional=True), MATCHED_CROP
-    ),
-    'mamba-19k': _matched('mamba-19k', _mamba(24, 8, 2, 2), MATCHED_CROP),
-    'mamba-44k': _matched('mamba-44k', _mamba(48, 16, 1, 3), MATCHED_CROP),
-    # Causal column: one-sided lookback of 85 samples, the tcn-44k value:
-    # n_layers (kernel_len - 1) + 1 = 4 * 21 + 1. Each layer's kernel lives on
-    # lags 0..21 and is the inverse DFT of 8 complex coefficients per channel
-    # pair, so the budget is set by modes, not kernel_len. Applied by
-    # zero-padded FFT (no circular wrap).
-    'neuraloperator-causal-19k': _matched(
-        'neuraloperator-causal-19k', _neural_operator(17, 22), MATCHED_CROP
-    ),
-    'neuraloperator-causal-44k': _matched(
-        'neuraloperator-causal-44k', _neural_operator(26, 22), MATCHED_CROP
-    ),
-    # Offline column, unbounded context: the spectral convolution spans the
-    # whole input (8 retained modes), so every output sees every sample and
-    # context cannot be matched; only the parameter budget is (like
-    # lstm-bidir); the model reports receptive_field None. Same width, depth
-    # and modes as the causal variant, hence the same parameter count.
-    # Trains on full shots (crop None, as the model's requires_full_length
-    # demands; the experiment runner sets that itself from the model, whatever
-    # its grid says), so a step carries ~4x the samples of the 4096-crop
-    # siblings: a training-budget confound, to be quoted with the "matched on
-    # budget only" caveat.
-    'neuraloperator-offline-19k': _matched(
-        'neuraloperator-offline-19k', _neural_operator(17, None), None
-    ),
-    'neuraloperator-offline-44k': _matched(
-        'neuraloperator-offline-44k', _neural_operator(26, None), None
-    ),
-    # Causal column: worst-phase one-sided lookback of 85 samples, the tcn-44k
-    # value: (n_layers * attention_span + 1) * stride + patch_len - 1
-    # = (2 * 3 + 1) * 10 + 16 - 1.
-    'patchtransformer-causal-19k': _matched(
-        'patchtransformer-causal-19k',
-        _patch_transformer(32, 56, 3, causal=True),
-        MATCHED_CROP,
-    ),
-    'patchtransformer-causal-44k': _matched(
-        'patchtransformer-causal-44k',
-        _patch_transformer(48, 104, 3, causal=True),
-        MATCHED_CROP,
-    ),
-    # Offline column: symmetric field of 96 samples, +5.5% of Barland's 91:
-    # 2 * n_layers * attention_span * stride + patch_len = 2 * 4 * 10 + 16.
-    # Same patches as the causal variant; span 2, not 3, since both sides are
-    # attended.
-    'patchtransformer-offline-19k': _matched(
-        'patchtransformer-offline-19k',
-        _patch_transformer(32, 56, 2, causal=False),
-        MATCHED_CROP,
-    ),
-    'patchtransformer-offline-44k': _matched(
-        'patchtransformer-offline-44k',
-        _patch_transformer(48, 104, 2, causal=False),
-        MATCHED_CROP,
-    ),
-    # Causal column: worst-phase one-sided lookback of 85 samples, the tcn-44k
-    # value: (K - 1)(G + S) + (N + 2) P - 1 with K = 4, pool p = 2, D = 2
-    # levels (P = 4, G = 3, S = 7) and N = n_layers * attention_span = 12:
-    # 3 * 10 + 14 * 4 - 1. Pooling latency makes it phase-dependent: 82 at
-    # best.
-    'unettransformer-causal-19k': _matched(
-        'unettransformer-causal-19k',
-        _unet_transformer([12, 16, 28], 48, 6, causal=True),
-        MATCHED_CROP,
-    ),
-    'unettransformer-causal-44k': _matched(
-        'unettransformer-causal-44k',
-        _unet_transformer([16, 28, 40], 80, 6, causal=True),
-        MATCHED_CROP,
-    ),
-    # Offline column: total width 81..85 over phase, right-heavy by 8..12
-    # samples (even K); the worst phase, 85, is -6.6% of Barland's 91:
-    # (ceil((K - 1) G / P) + 1 + 2N) P + (K - 1) S = (3 + 1 + 12) * 4 + 3 * 7,
-    # with the causal variant's K, pool and levels and N = 2 * 3. Span 3, not
-    # 6, since both sides are attended; the window (7 tokens) and so the
-    # parameter count equal the causal variant's.
-    'unettransformer-offline-19k': _matched(
-        'unettransformer-offline-19k',
-        _unet_transformer([12, 16, 28], 48, 3, causal=False),
-        MATCHED_CROP,
-    ),
-    'unettransformer-offline-44k': _matched(
-        'unettransformer-offline-44k',
-        _unet_transformer([16, 28, 40], 80, 3, causal=False),
-        MATCHED_CROP,
-    ),
-    # Real-data runs at the Barland budget itself: 57,377 parameters at
-    # in_channels=3, receptive field 91. Barland's use_weight_norm is false
-    # (unlike barland-config): the weight-norm reparametrization adds 176
-    # g-scalars, and the 57,377 ceiling every other config is held to is the
-    # unnormalized count.
-    'barland-matched': _real('barland-matched', _barland([16, 32, 64, 64])),
-    # Matched to the Barland budget on BOTH axes: 44,049 parameters (under
-    # the ceiling) and a receptive field of 85 samples. Matching on parameters
-    # alone would confound capacity with context -- at a fixed budget the TCN
-    # field ranges from 37 to 373 samples. The SCNN counterpart differs only
-    # in type, so causality is the only variable on that leg.
-    'tcn-matched': _real('tcn-matched', _conv('TCN', 7, [16, 32, 48])),
-    'scnn-matched': _real('scnn-matched', _conv('SCNN', 7, [16, 32, 48])),
-    # Second capacity point at the SAME receptive field (85 samples), at
-    # 19,329 parameters instead of 44,049. Holding the field fixed while
-    # moving only the width is what separates "needs capacity" from "needs
-    # context".
-    'tcn-matched-small': _real('tcn-matched-small', _conv('TCN', 7, [16, 16, 32])),
-    'scnn-matched-small': _real('scnn-matched-small', _conv('SCNN', 7, [16, 16, 32])),
-    # All-varying widths [16, 32, 64] (27,985 parameters) against a repeated
-    # first width [32, 32, 64] (35,585), both at receptive field 29: whether
-    # repeating a channel width earns its place.
-    'tcn-varying': _real('tcn-varying', _conv('TCN', 3, [16, 32, 64])),
-    'tcn-repeated': _real('tcn-repeated', _conv('TCN', 3, [32, 32, 64])),
-    # The simple learned floor at the matched budget: 51,329 parameters, close
-    # under the ceiling; receptive field is the window exactly (256). Stride 1
-    # makes it a point-to-point map from local input to velocity -- "a CNN
-    # with kernel size 1" -- which is the question the MLP row answers: how
-    # much does windowed context buy over none? At stride 256 the output was a
-    # staircase of 256-sample constants and the row measured that
-    # discretization rather than the model.
-    'mlp-matched': _real('mlp-matched', _mlp(256, [64, 32], 1)),
-}
+_MATCHED: dict[str, TrainingConfig] = _named(
+    {
+        # Causal column: one-sided lookback of 85 samples, the tcn-44k value
+        # (kernel 7, dilations 1-2-4).
+        'tcn-19k': _matched(_conv('TCN', 7, [16, 16, 32]), MATCHED_CROP),
+        'tcn-44k': _matched(_conv('TCN', 7, [16, 32, 48]), MATCHED_CROP),
+        'tcan-19k': _matched(_tcan([16, 16], [16, 20]), MATCHED_CROP),
+        'tcan-44k': _matched(_tcan([24, 24], [24, 32]), MATCHED_CROP),
+        # Offline column: symmetric field of 85 samples (kernel 7, dilations
+        # 1-2-4), within 10% of Barland's 91, which is fixed by the published
+        # network. An odd kernel is required: symmetric padding cannot preserve
+        # length otherwise. Widths as the TCN of the same budget.
+        'scnn-19k': _matched(_conv('SCNN', 7, [16, 16, 32]), MATCHED_CROP),
+        'scnn-44k': _matched(_conv('SCNN', 7, [16, 32, 48]), MATCHED_CROP),
+        # Offline column: one window spans 91 samples, set by the published
+        # network's fixed depth and kernels, and every other offline family's
+        # field is matched to that window. Averaging every window that covers an
+        # output widens Barland's true dependency span to 498 samples (its
+        # receptive_field).
+        'barland-19k': _matched(_barland([24, 24, 24, 32]), MATCHED_CROP),
+        'barland-44k': _matched(_barland([24, 24, 48, 64]), MATCHED_CROP),
+        # Offline column: one window spans 91 samples (the shared offline field),
+        # matched to Barland's published window. Averaging every window that
+        # covers an output widens the MLP's true dependency span to 181 samples
+        # (its receptive_field). Stride 1: point-to-point, see mlp-matched.
+        'mlp-19k': _matched(_mlp(91, [66, 16], 1), MATCHED_CROP),
+        'mlp-44k': _matched(_mlp(91, [130, 64], 1), MATCHED_CROP),
+        # LSTM and Mamba: lookback is unbounded (recurrent state), so context
+        # cannot be matched; only the parameter budget is; the model reports
+        # receptive_field None. A unidirectional LSTM and Mamba are causal; a
+        # bidirectional LSTM is offline.
+        'lstm-19k': _matched(_lstm(39, bidirectional=False), MATCHED_CROP),
+        'lstm-44k': _matched(_lstm(59, bidirectional=False), MATCHED_CROP),
+        'lstm-bidir-19k': _matched(_lstm(24, bidirectional=True), MATCHED_CROP),
+        'lstm-bidir-44k': _matched(_lstm(36, bidirectional=True), MATCHED_CROP),
+        'mamba-19k': _matched(_mamba(24, 8, 2, 2), MATCHED_CROP),
+        'mamba-44k': _matched(_mamba(48, 16, 1, 3), MATCHED_CROP),
+        # Causal column: one-sided lookback of 85 samples, the tcn-44k value:
+        # n_layers (kernel_len - 1) + 1 = 4 * 21 + 1. Each layer's kernel lives on
+        # lags 0..21 and is the inverse DFT of 8 complex coefficients per channel
+        # pair, so the budget is set by modes, not kernel_len. Applied by
+        # zero-padded FFT (no circular wrap).
+        'neuraloperator-causal-19k': _matched(_neural_operator(17, 22), MATCHED_CROP),
+        'neuraloperator-causal-44k': _matched(_neural_operator(26, 22), MATCHED_CROP),
+        # Offline column, unbounded context: the spectral convolution spans the
+        # whole input (8 retained modes), so every output sees every sample and
+        # context cannot be matched; only the parameter budget is (like
+        # lstm-bidir); the model reports receptive_field None. Same width, depth
+        # and modes as the causal variant, hence the same parameter count.
+        # Trains on full shots (crop None, as the model's requires_full_length
+        # demands; the experiment runner sets that itself from the model, whatever
+        # its grid says), so a step carries ~4x the samples of the 4096-crop
+        # siblings: a training-budget confound, to be quoted with the "matched on
+        # budget only" caveat.
+        'neuraloperator-offline-19k': _matched(_neural_operator(17, None), None),
+        'neuraloperator-offline-44k': _matched(_neural_operator(26, None), None),
+        # Causal column: worst-phase one-sided lookback of 85 samples, the tcn-44k
+        # value: (n_layers * attention_span + 1) * stride + patch_len - 1
+        # = (2 * 3 + 1) * 10 + 16 - 1.
+        'patchtransformer-causal-19k': _matched(
+            _patch_transformer(32, 56, 3, causal=True), MATCHED_CROP
+        ),
+        'patchtransformer-causal-44k': _matched(
+            _patch_transformer(48, 104, 3, causal=True), MATCHED_CROP
+        ),
+        # Offline column: symmetric field of 96 samples, +5.5% of Barland's 91:
+        # 2 * n_layers * attention_span * stride + patch_len = 2 * 4 * 10 + 16.
+        # Same patches as the causal variant; span 2, not 3, since both sides are
+        # attended.
+        'patchtransformer-offline-19k': _matched(
+            _patch_transformer(32, 56, 2, causal=False), MATCHED_CROP
+        ),
+        'patchtransformer-offline-44k': _matched(
+            _patch_transformer(48, 104, 2, causal=False), MATCHED_CROP
+        ),
+        # Causal column: worst-phase one-sided lookback of 85 samples, the tcn-44k
+        # value: (K - 1)(G + S) + (N + 2) P - 1 with K = 4, pool p = 2, D = 2
+        # levels (P = 4, G = 3, S = 7) and N = n_layers * attention_span = 12:
+        # 3 * 10 + 14 * 4 - 1. Pooling latency makes it phase-dependent: 82 at
+        # best.
+        'unettransformer-causal-19k': _matched(
+            _unet_transformer([12, 16, 28], 48, 6, causal=True), MATCHED_CROP
+        ),
+        'unettransformer-causal-44k': _matched(
+            _unet_transformer([16, 28, 40], 80, 6, causal=True), MATCHED_CROP
+        ),
+        # Offline column: total width 81..85 over phase, right-heavy by 8..12
+        # samples (even K); the worst phase, 85, is -6.6% of Barland's 91:
+        # (ceil((K - 1) G / P) + 1 + 2N) P + (K - 1) S = (3 + 1 + 12) * 4 + 3 * 7,
+        # with the causal variant's K, pool and levels and N = 2 * 3. Span 3, not
+        # 6, since both sides are attended; the window (7 tokens) and so the
+        # parameter count equal the causal variant's.
+        'unettransformer-offline-19k': _matched(
+            _unet_transformer([12, 16, 28], 48, 3, causal=False), MATCHED_CROP
+        ),
+        'unettransformer-offline-44k': _matched(
+            _unet_transformer([16, 28, 40], 80, 3, causal=False), MATCHED_CROP
+        ),
+        # Real-data runs at the Barland budget itself: 57,377 parameters at
+        # in_channels=3, receptive field 91. Barland's use_weight_norm is false
+        # (unlike barland-config): the weight-norm reparametrization adds 176
+        # g-scalars, and the 57,377 ceiling every other config is held to is the
+        # unnormalized count.
+        'barland-matched': _real(_barland([16, 32, 64, 64])),
+        # Matched to the Barland budget on BOTH axes: 44,049 parameters (under
+        # the ceiling) and a receptive field of 85 samples. Matching on parameters
+        # alone would confound capacity with context -- at a fixed budget the TCN
+        # field ranges from 37 to 373 samples. The SCNN counterpart differs only
+        # in type, so causality is the only variable on that leg.
+        'tcn-matched': _real(_conv('TCN', 7, [16, 32, 48])),
+        'scnn-matched': _real(_conv('SCNN', 7, [16, 32, 48])),
+        # Second capacity point at the SAME receptive field (85 samples), at
+        # 19,329 parameters instead of 44,049. Holding the field fixed while
+        # moving only the width is what separates "needs capacity" from "needs
+        # context".
+        'tcn-matched-small': _real(_conv('TCN', 7, [16, 16, 32])),
+        'scnn-matched-small': _real(_conv('SCNN', 7, [16, 16, 32])),
+        # All-varying widths [16, 32, 64] (27,985 parameters) against a repeated
+        # first width [32, 32, 64] (35,585), both at receptive field 29: whether
+        # repeating a channel width earns its place.
+        'tcn-varying': _real(_conv('TCN', 3, [16, 32, 64])),
+        'tcn-repeated': _real(_conv('TCN', 3, [32, 32, 64])),
+        # The simple learned floor at the matched budget: 51,329 parameters, close
+        # under the ceiling; receptive field is the window exactly (256). Stride 1
+        # makes it a point-to-point map from local input to velocity -- "a CNN
+        # with kernel size 1" -- which is the question the MLP row answers: how
+        # much does windowed context buy over none? At stride 256 the output was a
+        # staircase of 256-sample constants and the row measured that
+        # discretization rather than the model.
+        'mlp-matched': _real(_mlp(256, [64, 32], 1)),
+    }
+)
 
 # Search-space TCN/SCNN: lists are tune.choice dimensions.
 _LEGACY_CONV = {
@@ -599,7 +581,11 @@ _LEGACY: dict[str, TrainingConfig] = {
     'mlp-config': TrainingConfig(
         model_config=_mlp(256, [64, 32], 256),
         training_config=_training(
-            'mlp_baseline', max_epochs=200, T_0=200, batch_size=128, accelerator='gpu'
+            experiment_name='mlp_baseline',
+            max_epochs=200,
+            T_0=200,
+            batch_size=128,
+            accelerator='gpu',
         ),
         data_config={
             'data_dir': './data',
@@ -624,7 +610,11 @@ _LEGACY: dict[str, TrainingConfig] = {
             'dilation_base': 2,
         },
         training_config=_training(
-            'synthetic_tcn', max_epochs=200, warmup_epochs=5, T_0=200, batch_size=128
+            experiment_name='synthetic_tcn',
+            max_epochs=200,
+            warmup_epochs=5,
+            T_0=200,
+            batch_size=128,
         ),
         data_config={
             'data_dir': './data',
@@ -650,14 +640,16 @@ _DISPLACEMENT_STEMS = (
     'neuraloperator-offline-44k',
 )
 
-MODEL_CONFIGS: Mapping[str, TrainingConfig] = {
-    **{f'matched/{stem}': config for stem, config in _MATCHED.items()},
-    **{
-        f'displacement/{stem}': _displacement(_MATCHED[stem])
-        for stem in _DISPLACEMENT_STEMS
-    },
-    **_LEGACY,
-}
+MODEL_CONFIGS: Mapping[str, TrainingConfig] = MappingProxyType(
+    {
+        **{f'matched/{stem}': config for stem, config in _MATCHED.items()},
+        **{
+            f'displacement/{stem}': _displacement(_MATCHED[stem])
+            for stem in _DISPLACEMENT_STEMS
+        },
+        **_LEGACY,
+    }
+)
 
 
 def model_config(name: str) -> TrainingConfig:

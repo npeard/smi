@@ -1,5 +1,5 @@
 {
-  "q1_channels.yaml": {
+  "q1_channels": {
     "barland-44k__ch515__noise-free__seed0": "59ffc0c229367593",
     "barland-44k__ch515__noise-free__seed1": "59ffc0c229367593",
     "barland-44k__ch515__noise-free__seed2": "59ffc0c229367593",
@@ -603,7 +603,7 @@
     "unettransformer-offline-44k__ch675__nominal__seed1": "99bb0c6103335e7f",
     "unettransformer-offline-44k__ch675__nominal__seed2": "99bb0c6103335e7f"
   },
-  "q1_s2_subsets.yaml": {
+  "q1_s2_subsets": {
     "inverse_fit__ch515__s2-michelson__oracle": "67819e6b068cc656",
     "inverse_fit__ch515__s2-smi-a3__oracle": "6908a90251a75595",
     "inverse_fit__ch635-515__s2-michelson__oracle": "d623009ee4cbf715",
@@ -647,7 +647,7 @@
     "tcn-44k__ch675__s2-michelson__seed0": "1d74af5723e5df6f",
     "tcn-44k__ch675__s2-smi-a3__seed0": "0882ea23f23ed411"
   },
-  "q1_s4_oracle.yaml": {
+  "q1_s4_oracle": {
     "inverse_fit__ch515__q1-nominal-snr_db=0__oracle": "e7a130fef6c9f9ce",
     "inverse_fit__ch515__q1-nominal-snr_db=10__oracle": "da2d44dfbef97e6c",
     "inverse_fit__ch515__q1-nominal-snr_db=20__oracle": "dfd44402650d0808",
@@ -669,7 +669,7 @@
     "tcn-44k__ch635-675-515__q1-nominal-snr_db=30__seed0": "570540b924ddf3ae",
     "tcn-44k__ch635-675-515__q1-nominal-snr_db=40__seed0": "f95f176fd28361e6"
   },
-  "q1_s4_snr.yaml": {
+  "q1_s4_snr": {
     "tcn-44k__ch515__q1-nominal-snr_db=0__seed0": "e1f41107b0e54767",
     "tcn-44k__ch515__q1-nominal-snr_db=10__seed0": "6a7d6956e56b3748",
     "tcn-44k__ch515__q1-nominal-snr_db=20__seed0": "992561dd27ac87cf",
@@ -706,12 +706,12 @@
     "tcn-44k__ch675__q1-nominal-snr_db=30__seed0": "257d183861d061d4",
     "tcn-44k__ch675__q1-nominal-snr_db=40__seed0": "7b295e4a2a8bd64e"
   },
-  "q3_exit_check.yaml": {
+  "q3_exit_check": {
     "tcn-44k-E20__ch635-675-515__michelson-signed__seed0": "ce6ef2494ae31d84",
     "tcn-44k-E20__ch635-675-515__michelson-signinv__seed0": "64a0c9c2478acb4e",
     "tcn-44k-E20__ch635-675-515__smi-c0.2-signed__seed0": "6a682ad793b4ccea"
   },
-  "q3_noise_free.yaml": {
+  "q3_noise_free": {
     "barland-44k__ch635-675-515__michelson__seed0": "5d7453f64c5ecd83",
     "barland-44k__ch635-675-515__michelson__seed1": "5d7453f64c5ecd83",
     "barland-44k__ch635-675-515__michelson__seed2": "5d7453f64c5ecd83",
@@ -1014,7 +1014,7 @@
     "unettransformer-offline-44k__ch635-675-515__smi-feedback_c=0.9__seed1": "eea688c5b8e3488d",
     "unettransformer-offline-44k__ch635-675-515__smi-feedback_c=0.9__seed2": "eea688c5b8e3488d"
   },
-  "q3_s0_pilot.yaml": {
+  "q3_s0_pilot": {
     "tcn-44k__ch635-675-515__michelson__seed0": "bd331f14ff74683c",
     "tcn-44k__ch635-675-515__smi-a0__seed0": "e6bdebb6127f0946",
     "tcn-44k__ch635-675-515__smi-a3-feedback_c=0.05__seed0": "5b03275e905f0b0a",
@@ -1025,11 +1025,11 @@
     "tcn-44k__ch635-675-515__smi-a3-feedback_c=0.9__seed0": "001402d104a466c2",
     "tcn-44k__ch635-675-515__smi-a5__seed0": "cd07755503282643"
   },
-  "q3_s0b_schedule.yaml": {
+  "q3_s0b_schedule": {
     "tcn-44k-T90__ch635-675-515__michelson__seed0": "e8c2976eb3796d1e",
     "tcn-44k-T90__ch635-675-515__smi-a3-feedback_c=0.2__seed0": "90061147980669b4"
   },
-  "q3_s0c_ceiling.yaml": {
+  "q3_s0c_ceiling": {
     "tcn-44k-T90__ch635-675-515__michelson__seed0": "e8c2976eb3796d1e",
     "tcn-44k-T90__ch635-675-515__smi-a0__seed0": "3c99da6eac5e32da",
     "tcn-44k-T90__ch635-675-515__smi-a3-feedback_c=0.05__seed0": "2730ec04119b81ad",
@@ -1040,10 +1040,10 @@
     "tcn-44k-T90__ch635-675-515__smi-a3-feedback_c=0.9__seed0": "c8fc449e735daa73",
     "tcn-44k-T90__ch635-675-515__smi-a5__seed0": "6d64c76de77e17a4"
   },
-  "q3_s0c_long.yaml": {
+  "q3_s0c_long": {
     "tcn-44k-T270__ch635-675-515__smi-a3-feedback_c=0.2__seed0": "70e66c3de6459c98"
   },
-  "q3_s1_families.yaml": {
+  "q3_s1_families": {
     "barland-44k-T90__ch635-675-515__michelson__seed0": "a68e661c26eb1d6b",
     "barland-44k-T90__ch635-675-515__smi-a3__seed0": "37181a0e629b0bd7",
     "inverse_fit__ch635-675-515__michelson__oracle": "3e3adfa7dcde1592",
@@ -1073,11 +1073,11 @@
     "unettransformer-offline-44k-T90__ch635-675-515__michelson__seed0": "0918db9e8ab14c71",
     "unettransformer-offline-44k-T90__ch635-675-515__smi-a3__seed0": "ec7b5488544f4204"
   },
-  "q3_s1m_mamba.yaml": {
+  "q3_s1m_mamba": {
     "mamba-44k-T90__ch635-675-515__michelson__seed0": "5c30ffbb6f66db80",
     "mamba-44k-T90__ch635-675-515__smi-a3__seed0": "fcb8c06d1c2f7a91"
   },
-  "q3_s3_leave_one_out.yaml": {
+  "q3_s3_leave_one_out": {
     "tcn-44k__ch635-675-515__nominal-no-adc__seed0": "8b7dce4c7372d487",
     "tcn-44k__ch635-675-515__nominal-no-ampdrift__seed0": "89243596c525b079",
     "tcn-44k__ch635-675-515__nominal-no-contrastdrift__seed0": "cc9fe7cae75a254f",
@@ -1087,7 +1087,7 @@
     "tcn-44k__ch635-675-515__nominal-no-snr__seed0": "88517844013fe2b9",
     "tcn-44k__ch635-675-515__nominal-no-visibility__seed0": "d7dec7d876fcad52"
   },
-  "q3_s3_matched_length.yaml": {
+  "q3_s3_matched_length": {
     "tcn-44k-E60__ch635-675-515__ladder-base__seed0": "ea98ba7eb9d9c54f",
     "tcn-44k-E60__ch635-675-515__ladder-phasedrift-phase_drift_rad_per_sqrt_s=10.7474__seed0": "077e4885106a57c3",
     "tcn-44k-E60__ch635-675-515__ladder-phasedrift-phase_drift_rad_per_sqrt_s=116.072__seed0": "0005600f432553d0",
@@ -1097,7 +1097,7 @@
     "tcn-44k-E60__ch635-675-515__nominal-no-phasedrift__seed0": "1c6405ad237de728",
     "tcn-44k-E60__ch635-675-515__nominal__seed0": "3cf90b97a3327980"
   },
-  "q3_s3_noise_ladder.yaml": {
+  "q3_s3_noise_ladder": {
     "tcn-44k__ch635-675-515__ladder-adc-adc_bits=10__seed0": "60f6eeaf9c334874",
     "tcn-44k__ch635-675-515__ladder-adc-adc_bits=12__seed0": "a91862bca4c94f4b",
     "tcn-44k__ch635-675-515__ladder-adc-adc_bits=14__seed0": "3c0300ecda3f49f5",
@@ -1138,7 +1138,7 @@
     "tcn-44k__ch635-675-515__nominal-c0.9__seed0": "8df83c5089bf3476",
     "tcn-44k__ch635-675-515__nominal__seed0": "570540b924ddf3ae"
   },
-  "q3_s3_spread.yaml": {
+  "q3_s3_spread": {
     "tcn-44k__ch635-675-515__ladder-base__seed0": "39970a45cb603067",
     "tcn-44k__ch635-675-515__ladder-base__seed1": "39970a45cb603067",
     "tcn-44k__ch635-675-515__ladder-base__seed2": "39970a45cb603067",

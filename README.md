@@ -21,11 +21,12 @@ The importable package is `smi/`:
   normalization stats), `datamodule.py`, `datasets.py`.
 - `smi/estimators/` - classical estimators (forward-model fits, Viterbi
   decode, gain sweep, tabular baselines).
-- `smi/experiments/` - grid runner, evaluation and baseline sweeps.
+- `smi/experiments/` - grid runner, the experiment grids (`grids/`),
+  evaluation and baseline sweeps.
 - `smi/acquisition/` - SMI's side of the rig, built on `stemlab`.
 - `scripts/` - command-line entry points (training, acquisition, sweeps).
-- `configs/`, `report/results/`, `data/`, `runs/` - model and experiment YAML,
-  committed result JSON, raw and frozen data (ignored), run outputs (ignored).
+- `report/results/`, `data/`, `runs/` - committed result JSON, raw and frozen
+  data (ignored), run outputs (ignored).
 - `smi/theory/` - physics simulation (coil driver, interferometers, waveform).
 - `packages/redpitaya/` - `stemlab`, the standalone Red Pitaya AWG and
   acquisition library (its own package; see its README).
@@ -109,7 +110,7 @@ Board hosts and timing constants are in `smi/acquisition/rig.py`.
 
 ### Other scripts
 
-`run_experiments.py` (grid runner: `pixi run experiments <grid.yaml>`),
+`run_experiments.py` (grid runner: `pixi run experiments <grid name>`),
 `run_baselines.py`, `gain_sweep.py`, `q1_binned.py`, `calibrate_sim.py`,
 `delay_check.py`, `compute_norm_stats.py`, `inspect_data.py`,
 `run_baseline_sweep.py` and `benchmark_loading.py` (GPU).

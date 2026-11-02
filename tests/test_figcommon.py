@@ -1,9 +1,6 @@
 """Tests for the report-side helpers shared by the synthetic figures."""
 
-from pathlib import Path
-
 import pytest
-import yaml
 from _figcommon import (
     MATCHED_LENGTH_GRID,
     NOISE_LADDER_GRID,
@@ -12,6 +9,8 @@ from _figcommon import (
     noise_ladder,
 )
 
+from smi.experiments.grid import Sim
+from smi.experiments.grids import GRIDS
 from smi.experiments.results_artifact import RunRecord
 from smi.experiments.runner import expand_grid
 from tests._helpers import run_record
@@ -83,7 +82,7 @@ def test_grace_comes_from_each_grids_resolved_training_config():
 
 
 def test_record_run_under_another_sim_config_names_its_cell():
-    _, (first, *_) = expand_grid(NOISE_LADDER_GRID)
+    first, *_ = expand_grid(GRIDS[NOISE_LADDER_GRID])
     stale = run_record(cell_key=first.key, sim_config_hash='not-the-grid-hash')
     with pytest.raises(ValueError, match=first.key):
         noise_ladder({first.key: stale})
@@ -92,12 +91,8 @@ def test_record_run_under_another_sim_config_names_its_cell():
 def test_matched_length_grid_repeats_the_ladders_phase_drift_sweep():
     """plot_noise_ladder pairs the 60-epoch cells to ladder rows by sweep point."""
 
-    def sweep(grid: Path) -> dict:
-        (entry,) = [
-            s
-            for s in yaml.safe_load(grid.read_text())['sims']
-            if s['name'] == 'ladder-phasedrift'
-        ]
+    def sweep(grid: str) -> Sim:
+        (entry,) = [s for s in GRIDS[grid].sims if s.name == 'ladder-phasedrift']
         return entry
 
     assert sweep(MATCHED_LENGTH_GRID) == sweep(NOISE_LADDER_GRID)

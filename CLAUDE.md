@@ -130,7 +130,7 @@ not, the index pin in `[tool.pixi.pypi-dependencies]` is the thing to check.
 ## Package layout
 
 The importable package is `smi/` (distribution name `smi`). Top-level repo
-layout: `smi/` (library), `scripts/` (CLIs), `configs/`, `data/`,
+layout: `smi/` (library), `scripts/` (CLIs), `data/`,
 `runs/`, `packages/redpitaya/`, `report/`, `tests/`, `notebooks/`
 (marimo apps), `docs/`.
 
@@ -138,7 +138,7 @@ Inside `smi/`, lowest layer first. Layering is enforced by
 `[tool.importlinter]` via `tests/test_import_contracts.py`.
 
 - `core/` - bottom layer, imports nothing else in `smi`: acquisition config,
-  kinematics, metrics, and `paths` (`REPO_ROOT`, `CONFIGS_DIR`, `RESULTS_DIR`,
+  kinematics, metrics, and `paths` (`REPO_ROOT`, `RESULTS_DIR`,
   `DATA_DIR`, `FROZEN_DIR`, `RUNS_DIR`, `GRID_RUNS_DIR`, `TRAIN_RUNS_DIR`; every artifact path comes from
   here).
 - `theory/` - physics: coil driver, interferometers, waveform, forward model
@@ -187,10 +187,11 @@ Outside `smi/`:
   `run_baseline_sweep`). `train.py` must not import `smi.acquisition`.
   `scripts/` is not a package; tests load a script by path.
 - `smi/learning/configs.py` - the named training configs (`MODEL_CONFIGS`,
-  `model_config(name)`); `configs/experiments/` - grid YAML, whose families
-  name registry entries as `../models/<name>.yaml`. The `data_dir` of the
-  `matched/` and `displacement/` entries is stale on purpose (it is hashed into
-  run fingerprints); pass `dataset_path=` instead.
+  `model_config(name)`); `smi/experiments/grids/` - the experiment grids, one
+  module per grid exporting a typed `GRID` (`smi/experiments/grid.py`), whose
+  families name registry entries. Run one by module name:
+  `pixi run experiments q3_s1_families`. An edit to either moves the run
+  fingerprints of the cells using it, so resume treats those cells as new.
 - `report/results/` - committed result JSON. `data/` - raw HDF5 (ignored) and
   `data/frozen/`. `runs/` - gitignored: `runs/grids/<grid>/<cell-key>.ckpt` from
   the runner, `runs/train/<run-name>/` from `TrainingInterface`.

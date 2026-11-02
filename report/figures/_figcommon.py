@@ -39,9 +39,10 @@ from matplotlib.typing import RcKeyType
 from scipy import signal
 
 from smi.core.acquisition import STEMLAB_125_14
-from smi.core.paths import CONFIGS_DIR, DATA_DIR, RESULTS_DIR
+from smi.core.paths import DATA_DIR, RESULTS_DIR
 from smi.data.frozen import RIG_WAVELENGTHS_UM
 from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, read_sample_rate
+from smi.experiments.grids import GRIDS
 from smi.experiments.results_artifact import RunRecord, read_results
 from smi.experiments.runner import (
     ORACLE_FAMILY,
@@ -57,10 +58,6 @@ from smi.theory.forward import (
     SimConfig,
     simulate_batch,
 )
-
-# Resolved by the package, not the cwd (pytest runs scripts from the repo
-# root, Snakemake from report/).
-EXPERIMENTS_DIR = CONFIGS_DIR / 'experiments'
 
 FREE_SPACE_H5 = DATA_DIR / 'free-space-synchro_10k.h5'
 MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
@@ -157,9 +154,8 @@ def check_grace_protocol(
 def grace_by_cell() -> dict[str, int]:
     """``training.convergence.min_epochs`` of every trained cell of every grid."""
     grace = {}
-    for path in sorted(EXPERIMENTS_DIR.glob('*.yaml')):
-        grid, cells = expand_grid(path)
-        for cell in cells:
+    for grid in GRIDS.values():
+        for cell in expand_grid(grid):
             if cell.seed is not None:
                 config = training_config(cell, grid)
                 grace[cell.key] = config.training_config['convergence']['min_epochs']
@@ -203,11 +199,11 @@ def mean_metric(record: RunRecord, metric: str) -> float:
 
 # The noise ladder (each knob swept alone from the noise-free base) and the
 # grid that reruns its base and nominal cells at more seeds.
-CEILING_GRID = EXPERIMENTS_DIR / 'q3_s0c_ceiling.yaml'
-NOISE_LADDER_GRID = EXPERIMENTS_DIR / 'q3_s3_noise_ladder.yaml'
-NOISE_SPREAD_GRID = EXPERIMENTS_DIR / 'q3_s3_spread.yaml'
-LEAVE_ONE_OUT_GRID = EXPERIMENTS_DIR / 'q3_s3_leave_one_out.yaml'
-MATCHED_LENGTH_GRID = EXPERIMENTS_DIR / 'q3_s3_matched_length.yaml'
+CEILING_GRID = 'q3_s0c_ceiling'
+NOISE_LADDER_GRID = 'q3_s3_noise_ladder'
+NOISE_SPREAD_GRID = 'q3_s3_spread'
+LEAVE_ONE_OUT_GRID = 'q3_s3_leave_one_out'
+MATCHED_LENGTH_GRID = 'q3_s3_matched_length'
 # The noise knobs, as (SimConfig field, display label), in the order the
 # noise-ladder figure and the leave-one-out table show them.
 NOISE_KNOBS = {
@@ -254,9 +250,9 @@ def _is_nominal(field: str, value: object) -> bool:
 
 
 def grid_cells(
-    records: dict[str, RunRecord], grid: Path
+    records: dict[str, RunRecord], grid: str
 ) -> list[tuple[Cell, RunRecord]]:
-    """``(cell, record)`` per cell of ``grid``, hash-checked.
+    """``(cell, record)`` per cell of the shipped grid ``grid``, hash-checked.
 
     The cell's sim config comes from expanding the grid, so a grid edited after
     its run fails here instead of labelling a record with the wrong knob value.
@@ -264,7 +260,7 @@ def grid_cells(
     Raises:
         ValueError: Naming the cell whose record's sim hash differs.
     """
-    _, cells = expand_grid(grid)
+    cells = expand_grid(GRIDS[grid])
     out = []
     for cell in cells:
         record = records[cell.key]
@@ -316,7 +312,7 @@ def matched_length_cells(
 # Section Q1's noise-free channel-subset grid, and the per-sample binned
 # errors smi.experiments.q1_binned writes from the Q1 checkpoints, which are
 # gitignored and so cannot be read at build time.
-Q1_S2_GRID = EXPERIMENTS_DIR / 'q1_s2_subsets.yaml'
+Q1_S2_GRID = 'q1_s2_subsets'
 Q1_BINNED_JSON = RESULTS_DIR / 'q1_binned_errors.json'
 # The seven subsets of the Q1 grids, singles first, as (wavelengths, label).
 Q1_SUBSETS: tuple[tuple[tuple[float, ...], str], ...] = (
@@ -432,7 +428,7 @@ BASELINE_DATASETS: tuple[tuple[str, str], ...] = (
 )
 
 # The leave-one-out grid's knobs, as (SimConfig field, sim-name stem); each
-# cell is named nominal-no-<stem> (q3_s3_leave_one_out.yaml).
+# cell is named nominal-no-<stem> (grid q3_s3_leave_one_out).
 LEAVE_ONE_OUT = (
     ('phase_drift_rad_per_sqrt_s', 'phasedrift'),
     ('snr_db', 'snr'),
@@ -446,8 +442,8 @@ LEAVE_ONE_OUT = (
 
 
 # Section Q2's families as (runner family stem, label), causal first. Each ran
-# as ``<stem>-T90`` from configs/models/matched/<stem>.yaml. Mamba ran as its own
-# stage (q3_s1m_mamba.yaml); it stays optional so a fresh artifact without that
+# as ``<stem>-T90`` from MODEL_CONFIGS['matched/<stem>']. Mamba ran as its own
+# stage (grid q3_s1m_mamba); it stays optional so a fresh artifact without that
 # stage still builds, with Mamba marked pending.
 Q2_CAUSAL = (
     ('tcn-44k', 'TCN'),
@@ -497,7 +493,7 @@ DISPLACEMENT_METRICS = {
 }
 
 
-# The S1d grid (q3_s1d_displacement.yaml): the families that stalled on the
+# The S1d grid (grid q3_s1d_displacement): the families that stalled on the
 # velocity target, retrained on displacement, plus a TCN control. Each ran as
 # ``<stem>-disp-T90`` on the same sims and test shots as its S1 cell.
 S1D_FAMILIES = (
