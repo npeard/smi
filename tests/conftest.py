@@ -43,15 +43,8 @@ pytest_plugins = ['tests._sims']
 # save_top_k cleanup deleted another's.
 REDIRECTED_DEFAULTS = (
     ('smi.learning.training_interface.TrainingInterface.CHECKPOINT_DIR', 'train'),
-    ('smi.experiments.runner.GRID_RUNS_DIR', 'grids'),
-    ('smi.experiments.runner.DEFAULT_OUT', 'synthetic_results.json'),
-    ('smi.experiments.runner.DEFAULT_LOCK', '.runner.lock'),
-    ('smi.experiments.runner.DEFAULT_ROOT', 'frozen'),
     ('smi.experiments.q1_binned.GRID_RUNS_DIR', 'grids'),
-    ('smi.experiments.q1_binned.DEFAULT_OUT', 'q1_binned_errors.json'),
     ('smi.experiments.q1_binned.DEFAULT_ROOT', 'frozen'),
-    ('smi.experiments.baselines.DEFAULT_RESULTS_PATH', 'baseline_results.json'),
-    ('smi.experiments.gain_sweep.DEFAULT_RESULTS_PATH', 'gain_sweep_results.json'),
     ('smi.data.frozen.DEFAULT_ROOT', 'frozen'),
 )
 

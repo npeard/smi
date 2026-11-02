@@ -42,9 +42,8 @@ Carried-over cleanup:
   (`./analysis/data`) because it is hashed into run fingerprints; callers pass
   `dataset_path` explicitly. Retire it together with a fingerprint-golden
   regeneration.
-- [ ] The `scripts/` wrappers over library `main`s (`run_baselines`,
-  `gain_sweep`, ...) leave argument parsing in the library because tests call
-  those `main`s; move it if that coupling stops being useful.
+- [x] Argument parsing moved out of the library `main`s (`run_baselines`,
+  `gain_sweep`, ...) into `scripts/`; tests call the plain functions.
 
 ---
 

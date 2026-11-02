@@ -17,7 +17,6 @@ Usage: python -m smi.experiments.q1_binned [--out PATH]
 
 from __future__ import annotations
 
-import argparse
 import json
 import math
 from pathlib import Path
@@ -36,7 +35,6 @@ from smi.experiments.results_artifact import read_results
 from smi.experiments.runner import Cell, cell_key, expand_grid
 from smi.theory.forward import smi_excess_phase
 
-DEFAULT_OUT = RESULTS_DIR / 'q1_binned_errors.json'
 RESULTS = RESULTS_DIR / 'synthetic_results.json'
 
 FAMILY = 'tcn-44k'
@@ -168,11 +166,8 @@ def evaluate_cell(
     return cell, rmse, sq_err, velocity.double().numpy(), phase_f
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--out', type=Path, default=DEFAULT_OUT)
-    out = parser.parse_args(argv).out
-
+def run_q1_binned(out: Path) -> None:
+    """Evaluate every Q1 cell and write the binned-error JSON to ``out``."""
     dist_edges = np.linspace(0.0, 0.25, N_BINS + 1)
     v_edges = None
     reference_velocity = None
@@ -208,7 +203,3 @@ def main(argv: list[str] | None = None) -> None:
         'cells': cells,
     }
     out.write_text(json.dumps(payload, indent=1) + '\n', encoding='utf-8')
-
-
-if __name__ == '__main__':
-    main()

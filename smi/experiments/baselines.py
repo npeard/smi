@@ -76,7 +76,6 @@ settings it was produced with::
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import time
@@ -86,10 +85,9 @@ from typing import Any
 
 import h5py
 import numpy as np
-import torch
 
 from smi.core.metrics import summarize_per_shot
-from smi.core.paths import DATA_DIR, DATASETS, RESULTS_DIR
+from smi.core.paths import DATA_DIR
 from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, SAMPLE_RATE_ATTR
 from smi.estimators.inverse import inverse_fit
 from smi.estimators.phase_fit import (
@@ -109,7 +107,6 @@ logger = logging.getLogger(__name__)
 
 
 # Default location of the committed artifacts.
-DEFAULT_RESULTS_PATH = RESULTS_DIR / 'baseline_results.json'
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +152,7 @@ class DatasetBaseline:
 # report's artifact uses so every table in it means one estimator. 'fixed'
 # holds W at ``window_samples``, which is what the known-answer tests want:
 # their fringe rate is synthetic, so matching a window to it measures nothing.
-_WINDOWING_MODES = frozenset({'fringe-matched', 'fixed'})
+WINDOWING_MODES = frozenset({'fringe-matched', 'fixed'})
 
 
 def _method1_channel(
@@ -311,9 +308,9 @@ def evaluate_dataset(
             scrambled-theta control no other shot to borrow a displacement
             from, or if ``windowing`` is not one of the two accepted values.
     """
-    if windowing not in _WINDOWING_MODES:
+    if windowing not in WINDOWING_MODES:
         raise ValueError(
-            f'windowing must be one of {sorted(_WINDOWING_MODES)}, got {windowing!r}'
+            f'windowing must be one of {sorted(WINDOWING_MODES)}, got {windowing!r}'
         )
     start = time.perf_counter()
     coil = CoilDriver()
@@ -464,16 +461,16 @@ def evaluate_dataset(
 
 
 def run_baselines(
-    n_shots: int = 1000,
-    n_shots_method2: int = 200,
-    device: str = 'cpu',
-    batch_size: int = 16,
-    output: Path | None = None,
-    datasets: dict[str, str] | None = None,
-    grid_points: int = 1201,
-    phase_grid_points: int = 16,
-    window_samples: int | None = DEFAULT_WINDOW_SAMPLES,
-    windowing: str = 'fringe-matched',
+    n_shots: int,
+    n_shots_method2: int,
+    device: str,
+    batch_size: int,
+    output: Path,
+    datasets: dict[str, str],
+    grid_points: int,
+    phase_grid_points: int,
+    window_samples: int | None,
+    windowing: str,
 ) -> dict[str, Any]:
     """Evaluate both baselines on every configured dataset and write JSON.
 
@@ -484,22 +481,18 @@ def run_baselines(
             :func:`evaluate_dataset`).
         device: Torch device for the method-2 decode.
         batch_size: Shots per decode batch.
-        output: Destination JSON path. Defaults to
-            ``report/results/baseline_results.json``.
+        output: Destination JSON path.
         datasets: Mapping of label to file name under ``data/``.
         grid_points: Displacement grid resolution.
         phase_grid_points: Phase search resolution.
         window_samples: Window length for method 1's windowed refit, used
             only when ``windowing='fixed'``.
-        windowing: ``'fringe-matched'`` (default) or ``'fixed'``; see
+        windowing: ``'fringe-matched'`` or ``'fixed'``; see
             :func:`evaluate_dataset`.
 
     Returns:
         The results dictionary that was written to disk.
     """
-    datasets = datasets or DATASETS
-    output = output or DEFAULT_RESULTS_PATH
-
     results: dict[str, Any] = {
         # 3: method 1 gained the windowed refit and its scrambled-theta
         # control, the excursion bins split 2+ into 2-3 and 3+, and the two
@@ -580,72 +573,3 @@ def run_baselines(
     output.write_text(json.dumps(results, indent=2) + '\n', encoding='utf-8')
     logger.info('wrote %s', output)
     return results
-
-
-def main(argv: list[str] | None = None) -> None:
-    """Command-line entry point for regenerating the baseline artifact."""
-    # These defaults are the settings the committed artifact was produced
-    # with, so a bare `python -m smi.experiments.baselines` reproduces it.
-    # They previously differed (cpu, 1201 grid points), which meant the
-    # documented regeneration command silently returned different numbers
-    # than the ones in the file it overwrote -- the config block records
-    # them, but only a reader who compared would have noticed.
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        '--n-shots',
-        type=int,
-        default=1000,
-        help='Shots for method 1, which costs about a millisecond per shot.',
-    )
-    parser.add_argument(
-        '--n-shots-method2',
-        type=int,
-        default=200,
-        help='Shots for method 2. Kept well below --n-shots because the '
-        'Viterbi decode is ~5.85 s per shot on cuda:0.',
-    )
-    parser.add_argument(
-        '--windowing',
-        choices=sorted(_WINDOWING_MODES),
-        default='fringe-matched',
-        help="How method 1's windowed measure picks its window length. "
-        "'fringe-matched' (the default, and what the committed artifact "
-        "uses) scales W by each shot's own fringe rate; 'fixed' uses "
-        '--window-samples for every shot.',
-    )
-    parser.add_argument(
-        '--window-samples',
-        type=int,
-        default=DEFAULT_WINDOW_SAMPLES,
-        help="Window length for method 1's windowed refit under "
-        '--windowing=fixed. Pass 0 to report only the global fit.',
-    )
-    parser.add_argument(
-        '--device',
-        type=str,
-        default='cuda:0' if torch.cuda.is_available() else 'cpu',
-        help='Decode device. The Viterbi pass is a long sequential loop: '
-        'seconds per shot on a GPU, minutes on CPU.',
-    )
-    parser.add_argument('--batch-size', type=int, default=32)
-    parser.add_argument('--grid-points', type=int, default=1601)
-    parser.add_argument('--phase-grid-points', type=int, default=8)
-    parser.add_argument('--output', type=Path, default=None)
-    args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format='%(message)s')
-
-    run_baselines(
-        n_shots=args.n_shots,
-        n_shots_method2=args.n_shots_method2,
-        device=args.device,
-        batch_size=args.batch_size,
-        output=args.output,
-        grid_points=args.grid_points,
-        phase_grid_points=args.phase_grid_points,
-        window_samples=args.window_samples or None,
-        windowing=args.windowing,
-    )
-
-
-if __name__ == '__main__':
-    main()

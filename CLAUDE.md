@@ -180,9 +180,9 @@ Outside `smi/`:
   contract); its README states the API and `stemlab.testing.FakeTransport`
   stands in for hardware in tests.
 - `scripts/` - CLIs, run as `pixi run python scripts/<name>.py` (every one
-  takes `--help`). Thin wrappers over a library `main` (`run_baselines`,
-  `gain_sweep`, `run_experiments`, `q1_binned`, `calibrate_sim`,
-  `delay_check`), plus self-contained drivers (`train`, `acquire`,
+  takes `--help`). Argument-parsing wrappers over plain library functions
+  (`run_baselines`, `gain_sweep`, `run_experiments`, `q1_binned`,
+  `calibrate_sim`, `delay_check`), plus self-contained drivers (`train`, `acquire`,
   `compute_norm_stats`, `inspect_data`, `benchmark_loading`,
   `run_baseline_sweep`). `train.py` must not import `smi.acquisition`.
   `scripts/` is not a package; tests load a script by path.

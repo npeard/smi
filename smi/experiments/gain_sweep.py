@@ -7,7 +7,6 @@ module only reads the HDF5 files, runs it, and writes
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 from pathlib import Path
@@ -16,7 +15,6 @@ from typing import Any
 import h5py
 import numpy as np
 
-from smi.core.paths import DATA_DIR, DATASETS, RESULTS_DIR
 from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, SAMPLE_RATE_ATTR
 from smi.estimators.gain_sweep import (
     LEGACY_K,
@@ -32,7 +30,6 @@ from smi.estimators.phase_fit import DEFAULT_WINDOW_SAMPLES
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_RESULTS_PATH = RESULTS_DIR / 'gain_sweep_results.json'
 
 # Sweep range and step. The range brackets the live 14.553 generously on both
 # sides and reaches the 2024 calibration's 33.42, so that value is refuted by
@@ -128,39 +125,31 @@ def sweep_dataset(
 
 
 def run_gain_sweep(
-    n_shots: int = 1000,
-    gains: np.ndarray | None = None,
-    window_samples: int | None = DEFAULT_WINDOW_SAMPLES,
-    output: Path | None = None,
-    datasets: dict[str, str] | None = None,
-    delay_max_shift: int = 8,
-    include_per_shot: bool = True,
-    data_dir: Path | None = None,
+    n_shots: int,
+    gains: np.ndarray,
+    window_samples: int | None,
+    output: Path,
+    datasets: dict[str, str],
+    delay_max_shift: int,
+    include_per_shot: bool,
+    data_dir: Path,
 ) -> dict[str, Any]:
     """Sweep every configured acquisition and write the JSON artifact.
 
     Args:
         n_shots: Shots per dataset.
-        gains: Candidate gains; defaults to the module's grid.
+        gains: Candidate gains.
         window_samples: Window length for the windowed measure.
-        output: Destination JSON path. Defaults to
-            ``report/results/gain_sweep_results.json``.
+        output: Destination JSON path.
         datasets: Mapping of label to file name under ``data_dir``.
         delay_max_shift: Half-width of the delay check in samples.
         include_per_shot: Also fit an optimal gain per shot, bounding what any
             scalar correction could achieve.
-        data_dir: Directory the dataset file names are relative to. Defaults
-            to ``data/``.
+        data_dir: Directory the dataset file names are relative to.
 
     Returns:
         The results dictionary that was written to disk.
     """
-    datasets = datasets or DATASETS
-    output = output or DEFAULT_RESULTS_PATH
-    data_dir = data_dir or DATA_DIR
-    if gains is None:
-        gains = gain_grid(DEFAULT_GAIN_LOW, DEFAULT_GAIN_HIGH, DEFAULT_GAIN_STEP)
-
     results: dict[str, Any] = {
         # 1: first committed gain sweep. Bump when the schema changes shape,
         # as baseline_results.json does, so a stale reader fails loudly.
@@ -253,69 +242,3 @@ def run_gain_sweep(
     output.write_text(json.dumps(results, indent=2) + '\n', encoding='utf-8')
     logger.info('wrote %s', output)
     return results
-
-
-def main(argv: list[str] | None = None) -> None:
-    """Command-line entry point for regenerating the gain-sweep artifact.
-
-    The defaults are the settings the committed artifact was produced with, so
-    a bare ``python -m smi.experiments.gain_sweep`` reproduces it.
-
-    Args:
-        argv: Argument list; defaults to ``sys.argv[1:]``.
-    """
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        '--n-shots',
-        type=int,
-        default=1000,
-        help='Shots per dataset. This is method 1, sub-millisecond per fit, '
-        "so 1000 costs ~9 min per acquisition -- do not copy method 2's 200, "
-        'which exists for a 5.85 s/shot GPU decode.',
-    )
-    parser.add_argument('--gain-low', type=float, default=DEFAULT_GAIN_LOW)
-    parser.add_argument(
-        '--gain-high',
-        type=float,
-        default=DEFAULT_GAIN_HIGH,
-        help='Top of the swept range. The default reaches the 2024 '
-        "calibration's k=33.42 so the same curve adjudicates it.",
-    )
-    parser.add_argument('--gain-step', type=float, default=DEFAULT_GAIN_STEP)
-    parser.add_argument(
-        '--window-samples',
-        type=int,
-        default=DEFAULT_WINDOW_SAMPLES,
-        help='Window length for the windowed measure. Pass 0 to report only '
-        'the global fit, which is about twice as fast.',
-    )
-    parser.add_argument(
-        '--delay-max-shift',
-        type=int,
-        default=8,
-        help='Half-width in samples of the drive-to-photodiode delay check, '
-        'swept at the winning gain. Pass 0 to skip it.',
-    )
-    parser.add_argument(
-        '--no-per-shot',
-        action='store_true',
-        help='Skip the per-shot optimal-gain fit. That fit is the evidence '
-        'that the residual is not a scale error, so the artifact is weaker '
-        'without it.',
-    )
-    parser.add_argument('--output', type=Path, default=None)
-    args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format='%(message)s')
-
-    run_gain_sweep(
-        n_shots=args.n_shots,
-        gains=gain_grid(args.gain_low, args.gain_high, args.gain_step),
-        window_samples=args.window_samples or None,
-        output=args.output,
-        delay_max_shift=args.delay_max_shift,
-        include_per_shot=not args.no_per_shot,
-    )
-
-
-if __name__ == '__main__':
-    main()

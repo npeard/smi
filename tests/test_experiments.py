@@ -17,6 +17,7 @@ import pytest
 import torch
 
 from smi.core.kinematics import derivative_displacement
+from smi.core.paths import REPO_ROOT
 from smi.data.datasets import select_pd_keys
 from smi.experiments import grid as grid_module
 from smi.experiments import runner as experiments
@@ -576,8 +577,7 @@ def test_concurrent_runner_process_exits_nonzero(tmp_path):
         proc = subprocess.run(
             [
                 sys.executable,
-                '-m',
-                'smi.experiments.runner',
+                str(REPO_ROOT / 'scripts' / 'run_experiments.py'),
                 'q3_s0c_long',
                 '--out',
                 str(tmp_path / 'results.json'),

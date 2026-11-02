@@ -726,6 +726,7 @@ class TestPerShotLandsInTheArtifact:
             datasets={'known': 'known.h5'},
             data_dir=data_dir,
             delay_max_shift=2,
+            include_per_shot=True,
         )
 
         on_disk = json.loads(output.read_text(encoding='utf-8'))

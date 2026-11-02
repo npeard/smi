@@ -71,7 +71,6 @@ knob holds the bar at those points, and all knobs hold it at drive_gain x2,
 snr_db 40, D = 21.5 and alpha = 5.
 """
 
-import argparse
 import functools
 import json
 import logging
@@ -84,7 +83,7 @@ import numpy as np
 import torch
 from scipy.signal import periodogram
 
-from smi.core.acquisition import BOARDS, AcquisitionConfig
+from smi.core.acquisition import AcquisitionConfig
 from smi.data.datasets import file_pd_channels
 from smi.data.schema import DRIVE_KEY, SAMPLE_RATE_ATTR
 from smi.estimators.phase_fit import fit_window_basis, window_fringe_coefficients
@@ -515,21 +514,11 @@ def calibrate(
     }
 
 
-def main(argv: list[str] | None = None) -> None:
-    """CLI: write the calibration JSON. Do not run on real data before P6."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--dataset', type=Path, required=True)
-    parser.add_argument('--out', type=Path, required=True)
-    parser.add_argument('--n-shots', type=int, required=True)
-    parser.add_argument('--units', choices=('signal', 'volts'), required=True)
-    parser.add_argument('--board', choices=sorted(BOARDS), required=True)
-    args = parser.parse_args(argv)
-    result = calibrate(args.dataset, args.n_shots, args.units, BOARDS[args.board])
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(result, indent=2) + '\n')
-    logger.info('wrote %s', args.out)
-
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    main()
+def write_calibration(
+    path: Path, out: Path, n_shots: int, units: Units, acquisition: AcquisitionConfig
+) -> None:
+    """Write :func:`calibrate`'s result as JSON. Do not run on real data before P6."""
+    result = calibrate(path, n_shots, units, acquisition)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, indent=2) + '\n')
+    logger.info('wrote %s', out)

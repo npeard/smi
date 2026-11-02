@@ -373,3 +373,10 @@ def test_configured_monitor_must_match_the_target():
     config.training_config['target'] = 'displacement'
     with pytest.raises(ValueError, match='displacement'):
         TrainingInterface(config=config)
+
+
+def test_nonexistent_dataset_path_raises_without_creating_it(tmp_path):
+    missing = tmp_path / 'absent.h5'
+    with pytest.raises(OSError, match=r'absent\.h5'):
+        TrainingInterface(config=model_config('mlp-config'), dataset_path=str(missing))
+    assert not missing.exists()

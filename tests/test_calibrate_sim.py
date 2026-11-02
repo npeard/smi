@@ -16,7 +16,7 @@ import pytest
 
 from smi.core.acquisition import STEMLAB_125_14
 from smi.data.frozen import RIG_WAVELENGTHS_UM, write_frozen_set
-from smi.experiments.calibrate_sim import calibrate, main
+from smi.experiments.calibrate_sim import calibrate, write_calibration
 from smi.theory.forward import (
     NOMINAL_ALPHA,
     NOMINAL_DRIVE_GAIN,
@@ -187,23 +187,10 @@ def test_volts_file_calibrates_like_its_signal_units(known_set, tmp_path):
         assert ch['adc_full_scale'] == pytest.approx(1.0 / DC_VOLTS, rel=0.05)
 
 
-def test_cli_writes_json(known_set, tmp_path):
+def test_write_calibration_writes_json(known_set, tmp_path):
     _, path = known_set
-    out = tmp_path / 'cal.json'
-    main(
-        [
-            '--dataset',
-            str(path),
-            '--out',
-            str(out),
-            '--n-shots',
-            '8',
-            '--units',
-            'signal',
-            '--board',
-            'STEMLAB_125_14',
-        ]
-    )
+    out = tmp_path / 'sub' / 'cal.json'
+    write_calibration(path, out, 8, 'signal', STEMLAB_125_14)
     assert json.loads(out.read_text())['n_shots'] == 8
 
 

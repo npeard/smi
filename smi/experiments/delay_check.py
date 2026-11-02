@@ -33,7 +33,6 @@ resolve a delay and ``lag_samples`` must not be acted on.
 
 from __future__ import annotations
 
-import argparse
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,7 +40,6 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from smi.core.paths import DATA_DIR, DATASETS
 from smi.data.schema import DRIVE_KEY, LEGACY_SAMPLE_RATE_HZ, PD_KEYS, read_sample_rate
 from smi.theory.coil_driver import CoilDriver
 
@@ -253,30 +251,25 @@ def measure_dataset(
     return results
 
 
-def main() -> None:
-    """Report the measured lag for every dataset and photodiode channel."""
-    parser = argparse.ArgumentParser(description='Velocity/photodiode delay check.')
-    parser.add_argument('--n-shots', type=int, default=200)
-    parser.add_argument('--max-lag', type=int, default=512)
-    parser.add_argument('--smooth-samples', type=int, default=64)
-    args = parser.parse_args()
-
-    logging.basicConfig(level=logging.INFO, format='%(message)s')
-
+def report_lags(
+    datasets: dict[str, str],
+    data_dir: Path,
+    n_shots: int,
+    max_lag: int,
+    smooth_samples: int,
+) -> None:
+    """Log the measured lag for every dataset and photodiode channel."""
     columns = ('dataset', 'channel', 'lag', 'lag_us', 'peak')
     header = '{:<12} {:<9} {:>8} {:>10} {:>7}  verdict'.format(*columns)
     logger.info(header)
     logger.info('-' * len(header))
-    for label, name in DATASETS.items():
-        path = DATA_DIR / name
+    for label, name in datasets.items():
+        path = data_dir / name
         if not path.exists():
             logger.warning('%-12s (missing: %s)', label, path)
             continue
         results = measure_dataset(
-            path,
-            n_shots=args.n_shots,
-            max_lag=args.max_lag,
-            smooth_samples=args.smooth_samples,
+            path, n_shots=n_shots, max_lag=max_lag, smooth_samples=smooth_samples
         )
         for channel, r in results.items():
             verdict = 'interior peak' if r.is_interior_peak else 'NO interior peak'
@@ -289,7 +282,3 @@ def main() -> None:
                 r.peak_correlation,
                 verdict,
             )
-
-
-if __name__ == '__main__':
-    main()
