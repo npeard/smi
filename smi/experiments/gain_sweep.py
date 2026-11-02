@@ -144,7 +144,7 @@ def run_gain_sweep(
         gains: Candidate gains; defaults to the module's grid.
         window_samples: Window length for the windowed measure.
         output: Destination JSON path. Defaults to
-            ``results/gain_sweep_results.json``.
+            ``report/results/gain_sweep_results.json``.
         datasets: Mapping of label to file name under ``data_dir``.
         delay_max_shift: Half-width of the delay check in samples.
         include_per_shot: Also fit an optimal gain per shot, bounding what any

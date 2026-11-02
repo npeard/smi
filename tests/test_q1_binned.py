@@ -1,6 +1,7 @@
 """Q1's binned errors: fringe-extremum distance and per-bin pooled RMSE."""
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -10,6 +11,7 @@ from smi.experiments.q1_binned import (
     binned_rmse,
     extremum_distance,
     fringe_phase,
+    grid_checkpoint,
     nearest_extremum_distances,
 )
 from smi.theory.forward import fringe
@@ -86,3 +88,8 @@ def test_binned_rmse_puts_the_top_edge_in_the_last_bin():
     )
     np.testing.assert_array_equal(n, [1, 1])
     np.testing.assert_allclose(rmse, [2.0, 3.0])
+
+
+def test_checkpoint_is_looked_up_under_its_grid_directory(tmp_path):
+    path = grid_checkpoint(Path('configs/experiments/q1_s2_subsets.yaml'), 'k')
+    assert path == tmp_path / 'grids' / 'q1_s2_subsets' / 'k.ckpt'

@@ -153,6 +153,8 @@ allow-dict-calls-with-keyword-arguments = true
 # Same shape: argv is sys.executable plus a literal import-linter call, run
 # in a tmp copy of the tree so the negative contract test never edits smi/.
 "tests/test_import_contracts.py" = ["S603"]
+# Same shape: argv is the resolved git binary plus a literal status call.
+"tests/conftest.py" = ["S603"]
 # Marimo notebooks define imports inside reactive cells (PLC0415 is expected).
 "notebooks/**.py" = ["T201", "ANN", "INP001", "E501", "B018", "PLR0915", "PTH123", "F841", "PLC0415"]
 "*.ipynb" = ["ALL"]

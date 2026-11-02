@@ -485,7 +485,7 @@ def run_baselines(
         device: Torch device for the method-2 decode.
         batch_size: Shots per decode batch.
         output: Destination JSON path. Defaults to
-            ``results/baseline_results.json``.
+            ``report/results/baseline_results.json``.
         datasets: Mapping of label to file name under ``data/``.
         grid_points: Displacement grid resolution.
         phase_grid_points: Phase search resolution.

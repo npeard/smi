@@ -13,10 +13,13 @@ is early enough even though numpy is already imported.
 """
 
 import os
+import shutil
+import subprocess
+import sys
 
 import pytest
 
-from tests._repo_outputs import repo_output_files
+from smi.core.paths import REPO_ROOT
 
 for _var in (
     'OMP_NUM_THREADS',
@@ -33,24 +36,65 @@ for _var in (
 pytest_plugins = ['tests._sims']
 
 
+# Every library default that names a repo path, as (dotted module attribute,
+# subpath under the test's tmp_path). Patched by name so torch loads after the
+# thread pins above, not at import. The shared TrainingInterface directory also
+# gave every xdist worker the same ``epoch=<n>.ckpt`` names, and one run's
+# save_top_k cleanup deleted another's.
+REDIRECTED_DEFAULTS = (
+    ('smi.learning.training_interface.TrainingInterface.CHECKPOINT_DIR', 'train'),
+    ('smi.experiments.runner.GRID_RUNS_DIR', 'grids'),
+    ('smi.experiments.runner.DEFAULT_OUT', 'synthetic_results.json'),
+    ('smi.experiments.runner.DEFAULT_LOCK', '.runner.lock'),
+    ('smi.experiments.runner.DEFAULT_ROOT', 'frozen'),
+    ('smi.experiments.q1_binned.GRID_RUNS_DIR', 'grids'),
+    ('smi.experiments.q1_binned.DEFAULT_OUT', 'q1_binned_errors.json'),
+    ('smi.experiments.q1_binned.DEFAULT_ROOT', 'frozen'),
+    ('smi.experiments.baselines.DEFAULT_RESULTS_PATH', 'baseline_results.json'),
+    ('smi.experiments.gain_sweep.DEFAULT_RESULTS_PATH', 'gain_sweep_results.json'),
+    ('smi.data.frozen.DEFAULT_ROOT', 'frozen'),
+)
+
+
 @pytest.fixture(autouse=True)
-def private_train_dir(tmp_path, monkeypatch):
-    """Send every TrainingInterface's checkpoints under the test's tmp_path.
-
-    The class default is the repo's ``runs/train``, which a test must not
-    write: one shared directory also gave every xdist worker the same
-    ``epoch=<n>.ckpt`` names, and one run's save_top_k cleanup deleted another's.
-    """
-    # By dotted name so torch loads after the thread pins above, not at import.
-    monkeypatch.setattr(
-        'smi.learning.training_interface.TrainingInterface.CHECKPOINT_DIR', tmp_path
-    )
+def private_write_defaults(tmp_path, monkeypatch):
+    """Send every default output location under the test's tmp_path."""
+    for name, sub in REDIRECTED_DEFAULTS:
+        monkeypatch.setattr(name, tmp_path / sub)
+    monkeypatch.setenv('WANDB_DIR', str(tmp_path))
+    monkeypatch.setenv('WANDB_MODE', 'offline')
 
 
-@pytest.fixture(scope='session', autouse=True)
-def no_repo_writes():
-    """Fail the session if it added a file to the run tree or the legacy dirs."""
-    before = repo_output_files()
-    yield
-    added = sorted(repo_output_files() - before)
-    assert not added, f'the test session wrote into the repo: {added}'
+def _git_status() -> str:
+    # Untracked-but-ignored paths (runs/, data/) are excluded by default, so a
+    # real run writing there concurrently cannot trip the check.
+    git = shutil.which('git')
+    assert git is not None
+    return subprocess.run(
+        [git, 'status', '--porcelain'],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def _is_worker(config) -> bool:
+    return hasattr(config, 'workerinput')
+
+
+def pytest_sessionstart(session):
+    if not _is_worker(session.config):
+        session.config.stash_status = _git_status()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Fail the session if it changed the tracked or unignored files in the repo."""
+    config = session.config
+    if _is_worker(config) or not hasattr(config, 'stash_status'):
+        return
+    before = set(config.stash_status.splitlines())
+    changed = sorted(before ^ set(_git_status().splitlines()))
+    if changed:
+        sys.stderr.write(f'\nthe test session changed the repo: {changed}\n')
+        session.exitstatus = 1

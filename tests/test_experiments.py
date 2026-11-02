@@ -317,6 +317,20 @@ def test_rescore_scores_oracle_records_only_when_asked(tmp_path, monkeypatch):
     assert out.read_text() == fresh
 
 
+def test_rescore_names_an_empty_runs_dir(tmp_path):
+    _one_cell(tmp_path)
+    _strip_displacement_metrics(tmp_path / 'results.json')
+    with pytest.raises(FileNotFoundError, match='grid directories'):
+        rescore_metrics(
+            tmp_path / 'results.json',
+            runs_dir=tmp_path / 'nothing',
+            lock_path=tmp_path / '.runner.lock',
+            frozen_root=tmp_path / 'frozen',
+            device='cpu',
+            include_oracle=False,
+        )
+
+
 def test_only_filters_cells_by_glob(tmp_path):
     path = _grid(tmp_path)
     assert _run(path, tmp_path, only=['*seed1']) == 1

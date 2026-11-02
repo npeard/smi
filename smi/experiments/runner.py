@@ -618,6 +618,8 @@ def rescore_metrics(
 
     Raises:
         RunnerLockedError: If another runner is alive.
+        FileNotFoundError: If a cell needs a checkpoint and ``runs_dir`` holds
+            no ``*/*.ckpt`` at all.
         ValueError: If a re-scored cell's sim hash differs from its record's,
             or its velocity RMSE mean differs by more than
             ``RESCORE_REL_TOL``.
@@ -635,7 +637,13 @@ def rescore_metrics(
                     continue
                 est = InverseFitEstimator.for_dataset(dataset, None)
             else:
-                ckpt = next(Path(runs_dir).glob(f'*/{record.cell_key}.ckpt'), None)
+                matches = sorted(Path(runs_dir).glob(f'*/{record.cell_key}.ckpt'))
+                if not matches and not any(Path(runs_dir).glob('*/*.ckpt')):
+                    raise FileNotFoundError(
+                        f'{runs_dir} holds no <grid>/<cell-key>.ckpt; pass the '
+                        'directory of grid directories (default runs/grids)'
+                    )
+                ckpt = matches[0] if matches else None
                 if ckpt is None:
                     logger.warning(
                         '%s: no checkpoint under %s', record.cell_key, runs_dir

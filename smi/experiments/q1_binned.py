@@ -115,6 +115,11 @@ def _table(
     return {'rmse': rmse.tolist(), 'zero': zero.tolist(), 'n': n.tolist()}
 
 
+def grid_checkpoint(grid_path: Path, key: str) -> Path:
+    """The runner's checkpoint of cell ``key`` of the grid at ``grid_path``."""
+    return GRID_RUNS_DIR / Path(grid_path).stem / f'{key}.ckpt'
+
+
 def evaluate_cell(
     grid_path: Path, wavelengths_um: tuple[float, ...], sim_name: str
 ) -> tuple[Cell, float, np.ndarray, np.ndarray, np.ndarray]:
@@ -139,9 +144,7 @@ def evaluate_cell(
     )
     if path.stem != record.dataset:
         raise ValueError(f'{key}: scored on {record.dataset}, not {path.stem}')
-    est = CheckpointEstimator(
-        GRID_RUNS_DIR / Path(grid_path).stem / f'{key}.ckpt', 'cpu'
-    )
+    est = CheckpointEstimator(grid_checkpoint(grid_path, key), 'cpu')
     with h5py.File(path, 'r') as f:
         keys = select_pd_keys(f, cell.wavelengths_um)
         signals = torch.from_numpy(np.stack([f[k][:] for k in keys], axis=1))
