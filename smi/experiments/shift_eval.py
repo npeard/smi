@@ -56,7 +56,7 @@ runs the model as trained, on purpose.
 import dataclasses
 import math
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, get_args
 
 import numpy as np
 from torch import Tensor
@@ -75,13 +75,7 @@ Knob = Literal[
     'phase_offset',
     'phase_random',
 ]
-KNOBS: tuple[Knob, ...] = (
-    'feedback_c',
-    'wavelength_scale',
-    'wavelength_independent',
-    'phase_offset',
-    'phase_random',
-)
+KNOBS: tuple[Knob, ...] = get_args(Knob)
 
 #: Per-channel signs and sizes of the ``wavelength_independent`` shift.
 WAVELENGTH_PATTERN = (1.0, -1.0, 0.5)
@@ -141,7 +135,7 @@ def shifted_config(cfg: SimConfig, knob: Knob, value: float) -> SimConfig:
 class _TrainedChannels:
     """Feeds a checkpoint the shifted channels as if they were its own.
 
-    Every attribute but ``predict_velocity`` is the checkpoint's, so the record
+    The ``Estimator`` attributes are the checkpoint's, so the record
     describes the checkpoint itself.
     """
 
@@ -150,9 +144,13 @@ class _TrainedChannels:
     ) -> None:
         self.inner = inner
         self.shifted_um = shifted_um
-
-    def __getattr__(self, name: str) -> object:
-        return getattr(self.inner, name)
+        self.name: str = inner.name
+        self.model_type: str = inner.model_type
+        self.causal: bool = inner.causal
+        self.receptive_field: int | None = inner.receptive_field
+        self.total_params: int = inner.total_params
+        self.device: str = inner.device
+        self.config: dict[str, Any] = inner.config
 
     def predict_velocity(
         self, signals: Tensor, wavelengths_um: tuple[float, ...]
