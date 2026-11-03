@@ -22,6 +22,7 @@ import dataclasses
 import hashlib
 import importlib
 import pkgutil
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +101,25 @@ def multimodal_fraction(draws: np.ndarray) -> float:
     return multi / draws.shape[1]
 
 
+def _draw_chunks(
+    module: FlowLitModule,
+    cond: Tensor,
+    n_samples: int,
+    n_steps: int,
+    per_call: int,
+    generator: torch.Generator,
+) -> Iterator[Tensor]:
+    """``[n, B, C, L]`` CPU chunks of S draws, ``per_call`` at a time.
+
+    Chunking bounds activation memory; the draws do not depend on it, since
+    each chunk continues ``generator``'s stream.
+    """
+    cond = cond.to(module.device)
+    for start in range(0, n_samples, per_call):
+        n = min(per_call, n_samples - start)
+        yield module.sample(cond, n, n_steps, generator).cpu()
+
+
 def _draws(
     module: FlowLitModule,
     cond: Tensor,
@@ -108,13 +128,10 @@ def _draws(
     per_call: int,
     generator: torch.Generator,
 ) -> Tensor:
-    """``[S, B, C, L]`` draws, ``per_call`` at a time to bound activation memory."""
-    cond = cond.to(module.device)
-    chunks = []
-    for start in range(0, n_samples, per_call):
-        n = min(per_call, n_samples - start)
-        chunks.append(module.sample(cond, n, n_steps, generator).cpu())
-    return torch.cat(chunks)
+    """``[S, B, C, L]`` draws."""
+    return torch.cat(
+        list(_draw_chunks(module, cond, n_samples, n_steps, per_call, generator))
+    )
 
 
 def _check_wavelengths(module: FlowLitModule, wavelengths_um: tuple[float, ...]):
@@ -138,9 +155,12 @@ class Sampling:
 class DenoisedEstimator:
     """A regressor applied to the mean of the denoiser's first ``n_mean`` draws.
 
-    Draws are memoized per input batch in ``cache``, so estimators that share
-    a cache score nested subsets (8, 16, 32 draws) of one set of draws instead
-    of paying for each separately.
+    The means of the first ``n`` draws for every ``n`` in ``prefixes`` are
+    memoized per input batch in ``cache``, so estimators that share a cache
+    (and so must share ``prefixes``) score nested subsets (8, 16, 32 draws)
+    of one set of draws instead of paying for each separately. Only running
+    sums are kept, not the draws: 32 draws of the 64-shot fiber set are
+    ~400 MB.
     """
 
     causal = False
@@ -152,14 +172,18 @@ class DenoisedEstimator:
         regressor: CheckpointEstimator,
         sampling: Sampling,
         n_mean: int,
-        cache: dict[str, Tensor],
+        prefixes: tuple[int, ...],
+        cache: dict[str, dict[int, Tensor]],
     ):
-        if n_mean > sampling.n_samples:
-            raise ValueError(f'n_mean {n_mean} > n_samples {sampling.n_samples}')
+        if n_mean not in prefixes:
+            raise ValueError(f'n_mean {n_mean} is not one of prefixes {prefixes}')
+        if max(prefixes) > sampling.n_samples:
+            raise ValueError(f'prefixes {prefixes} > n_samples {sampling.n_samples}')
         self.flow = flow
         self.regressor = regressor
         self.sampling = sampling
         self.n_mean = n_mean
+        self.prefixes = prefixes
         self.cache = cache
         self.generator = torch.Generator(flow.device).manual_seed(sampling.seed)
         self.name = f'denoised:{regressor.name}'
@@ -182,11 +206,19 @@ class DenoisedEstimator:
         key = hashlib.blake2b(signals.numpy().tobytes()).hexdigest()
         if key not in self.cache:
             s = self.sampling
-            self.cache[key] = _draws(
+            means, total, count = {}, None, 0
+            for chunk in _draw_chunks(
                 self.flow, signals, s.n_samples, s.n_steps, s.per_call, self.generator
-            )
-        mean = self.cache[key][: self.n_mean].mean(dim=0)
-        return self.regressor.predict_velocity(mean, wavelengths_um)
+            ):
+                for draw in chunk:
+                    total = draw.clone() if total is None else total + draw
+                    count += 1
+                    if count in self.prefixes:
+                        means[count] = total / count
+            self.cache[key] = means
+        return self.regressor.predict_velocity(
+            self.cache[key][self.n_mean], wavelengths_um
+        )
 
 
 class PosteriorEstimator:
@@ -362,17 +394,23 @@ def score_denoise(
     def run(est: Any, dataset: Path) -> dict[str, float]:
         return _rmse(evaluate(est, dataset, wl, test.n_shots, True, 0).record)
 
-    def denoised(s: Sampling, n_mean: int, cache: dict[str, Tensor]) -> Any:
-        return run(DenoisedEstimator(flow, free_tcan, s, n_mean, cache), fiber_set)
+    def denoised(
+        s: Sampling,
+        n_mean: int,
+        prefixes: tuple[int, ...],
+        cache: dict[str, dict[int, Tensor]],
+    ) -> Any:
+        est = DenoisedEstimator(flow, free_tcan, s, n_mean, prefixes, cache)
+        return run(est, fiber_set)
 
     if sampling.n_samples != DENOISE_DRAWS[-1]:
         raise ValueError(f'denoise sampling must draw {DENOISE_DRAWS[-1]}')
-    shared: dict[str, Tensor] = {}
-    by_draws = {n: denoised(sampling, n, shared) for n in DENOISE_DRAWS}
+    shared: dict[str, dict[int, Tensor]] = {}
+    by_draws = {n: denoised(sampling, n, DENOISE_DRAWS, shared) for n in DENOISE_DRAWS}
     long = dataclasses.replace(
         sampling, n_samples=STEP_CHECK_DRAWS, n_steps=2 * sampling.n_steps
     )
-    long_rmse = denoised(long, STEP_CHECK_DRAWS, {})
+    long_rmse = denoised(long, STEP_CHECK_DRAWS, (STEP_CHECK_DRAWS,), {})
 
     def moved(a: dict[str, float], b: dict[str, float]) -> float:
         return abs(a['mean'] - b['mean']) / b['mean']

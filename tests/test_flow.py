@@ -1,8 +1,10 @@
 """Flow matching: the paired simulation, the sampler on a known posterior, shapes."""
 
 import dataclasses
+from collections.abc import Iterator
 from unittest.mock import Mock
 
+import lightning
 import pytest
 import torch
 from torch import nn
@@ -11,6 +13,7 @@ from smi.experiments import flow_eval
 from smi.experiments.flow_eval import _cell, _grid, _training
 from smi.experiments.grids.q3_fiber import GRID as Q3_FIBER
 from smi.experiments.runner import expand_grid
+from smi.learning import flow_lit_module
 from smi.learning.configs import model_config
 from smi.learning.flow import FlowMatching
 from smi.learning.flow_lit_module import FlowLitModule, paired_batch
@@ -141,6 +144,7 @@ def test_lit_module_shapes(task):
         task=task,
         n_time_features=syn['flow']['n_time_features'],
         train_crop_length=256,
+        fit_norm_stats=True,
     )
     loss = module.training_step(torch.arange(2), 0)
     assert loss.dtype == torch.float32
@@ -172,6 +176,7 @@ def test_validation_loss_is_identical_across_passes(monkeypatch: pytest.MonkeyPa
         task='posterior',
         n_time_features=syn['flow']['n_time_features'],
         train_crop_length=128,
+        fit_norm_stats=True,
     ).eval()
     logged: list[float] = []
     monkeypatch.setattr(module, 'log', lambda _k, v, **_: logged.append(v.item()))
@@ -181,6 +186,43 @@ def test_validation_loss_is_identical_across_passes(monkeypatch: pytest.MonkeyPa
             module.validation_step(torch.arange(2), 0)
             torch.rand(10)
     assert logged[0] == logged[1]
+
+
+def test_checkpoint_restores_stats_without_refitting(tmp_path, monkeypatch):
+    """Loading simulates one shot to size the buffers, then takes the saved stats."""
+    cfg = model_config(DENOISE)
+    syn = cfg.synthetic_config
+    assert syn is not None
+    module = FlowLitModule(
+        cfg.model_config,
+        cfg.training_config,
+        steps_per_epoch=1,
+        sim=syn['sim'],
+        task='posterior',
+        n_time_features=syn['flow']['n_time_features'],
+        train_crop_length=128,
+        fit_norm_stats=True,
+    )
+    path = tmp_path / 'flow.ckpt'
+    torch.save(
+        {
+            'state_dict': module.state_dict(),
+            'hyper_parameters': dict(module.hparams),
+            'pytorch-lightning_version': lightning.__version__,
+        },
+        path,
+    )
+    sizes = []
+
+    def counted(cfg, task, batch_size, generator):
+        sizes.append(batch_size)
+        return paired_batch(cfg, task, batch_size, generator)
+
+    monkeypatch.setattr(flow_lit_module, 'paired_batch', counted)
+    loaded = FlowLitModule.load_from_checkpoint(path, fit_norm_stats=False)
+    assert sizes == [1]
+    for name in ('x1_mean', 'x1_std', 'cond_mean', 'cond_std'):
+        assert torch.equal(getattr(loaded, name), getattr(module, name))
 
 
 def test_ensemble_members_share_the_training_budget():
@@ -202,21 +244,21 @@ def test_denoised_estimator_nests_draw_counts(monkeypatch: pytest.MonkeyPatch):
     """Estimators sharing a cache average prefixes of one set of draws."""
     calls = []
 
-    def fake_draws(*args: object) -> torch.Tensor:
+    def fake_chunks(*args: object) -> Iterator[torch.Tensor]:
         calls.append(args)
-        return torch.arange(4.0).reshape(4, 1, 1, 1)
+        yield from torch.arange(4.0).reshape(4, 1, 1, 1).split(2)
 
-    monkeypatch.setattr(flow_eval, '_draws', fake_draws)
+    monkeypatch.setattr(flow_eval, '_draw_chunks', fake_chunks)
     monkeypatch.setattr(flow_eval, '_check_wavelengths', lambda *_: None)
     flow = Mock(device=torch.device('cpu'))
     flow.parameters.return_value = []
     regressor = Mock(name='r', model_type='r', total_params=0, device='cpu')
     regressor.predict_velocity = lambda x, _wl: x
     sampling = flow_eval.Sampling(n_samples=4, n_steps=2, per_call=2, seed=0)
-    cache: dict[str, torch.Tensor] = {}
+    cache: dict[str, dict[int, torch.Tensor]] = {}
     signals = torch.zeros(1, 1, 1)
     means = [
-        flow_eval.DenoisedEstimator(flow, regressor, sampling, n, cache)
+        flow_eval.DenoisedEstimator(flow, regressor, sampling, n, (2, 4), cache)
         .predict_velocity(signals, ())
         .item()
         for n in (2, 4)

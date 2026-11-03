@@ -87,6 +87,7 @@ class FlowLitModule(lightning.LightningModule):
         task: str,
         n_time_features: int,
         train_crop_length: int | None,
+        fit_norm_stats: bool,
     ):
         """Build the velocity network from ``model_hparams`` for ``task``.
 
@@ -100,6 +101,9 @@ class FlowLitModule(lightning.LightningModule):
             task: ``'denoise'`` or ``'posterior'``.
             n_time_features: Sin/cos pairs embedding t.
             train_crop_length: Training/validation window; None = full shot.
+            fit_norm_stats: True to fit the affine stats on NORM_STATS_SHOTS
+                seeded shots; False when restoring a checkpoint, whose state
+                dict carries them, so one shot only sizes the buffers.
         """
         super().__init__()
         self.save_hyperparameters()
@@ -112,7 +116,7 @@ class FlowLitModule(lightning.LightningModule):
         x1, cond = paired_batch(
             self.sim_config,
             task,
-            NORM_STATS_SHOTS,
+            NORM_STATS_SHOTS if fit_norm_stats else 1,
             torch.Generator().manual_seed(NORM_STATS_SEED),
         )
         for name, t in (('x1', x1), ('cond', cond)):

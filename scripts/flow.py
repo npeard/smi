@@ -73,6 +73,7 @@ def train(name: str, accelerator: str, seed: int) -> Path:
         task=syn['flow']['task'],
         n_time_features=syn['flow']['n_time_features'],
         train_crop_length=syn['train_crop_length'],
+        fit_norm_stats=True,
     )
     batch = hp['batch_size']
     best = ModelCheckpoint(
@@ -111,7 +112,7 @@ def score(device: str, frozen_root: Path, out: Path) -> None:
 
     def load(name: str) -> FlowLitModule:
         module = FlowLitModule.load_from_checkpoint(
-            checkpoint(name), map_location=device
+            checkpoint(name), map_location=device, fit_norm_stats=False
         )
         return module.eval()
 
