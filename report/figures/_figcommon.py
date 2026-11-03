@@ -206,8 +206,8 @@ def shot_se(record: RunRecord, metric: str = 'velocity_rmse') -> float:
     """SE of the shot mean of ``metric``: IQR / 1.349 / sqrt(n).
 
     The record keeps quartiles, not the per-shot std, and IQR / 1.349 is the
-    std of a normal law. Two cells on shared trajectories are compared with
-    these in quadrature, an upper bound on the paired SE.
+    std of a normal law. Arm differences on shared trajectories take the
+    paired SE from per_shot_rmse.json instead.
     """
     m = record.metrics[metric]
     n = int(record.dataset.rsplit('_n', 1)[1])

@@ -1568,10 +1568,22 @@ def r7_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
         rows.append(row)
     out['r7_table'] = rows
 
+    per_shot = json.loads((RESULTS_DIR / 'per_shot_rmse.json').read_text('utf-8'))
+
     def diff(fam: str, a: str, b: str) -> tuple[float, float]:
-        ra, rb = (r_cell(records, fam, FIBER_ARMS[x], x) for x in (a, b))
-        d = mean_metric(ra, 'velocity_rmse') - mean_metric(rb, 'velocity_rmse')
-        return d, math.hypot(shot_se(ra), shot_se(rb))
+        # The arms share trajectories shot for shot, so the paired SE of the
+        # per-shot differences is the honest error of an arm difference.
+        ra, rb = (
+            np.asarray(per_shot[cell_key(fam, FIBER_ARMS[x], x, 0)]['velocity_rmse'])
+            for x in (a, b)
+        )
+        for x, shots in ((a, ra), (b, rb)):
+            record = mean_metric(
+                r_cell(records, fam, FIBER_ARMS[x], x), 'velocity_rmse'
+            )
+            assert math.isclose(shots.mean(), record, rel_tol=1e-5), x
+        d = ra - rb
+        return float(d.mean()), float(d.std(ddof=1) / math.sqrt(d.size))
 
     tcan, unet = R_FAMILIES
     for name, a, b in (
@@ -1979,6 +1991,87 @@ def fiber_values() -> dict[str, Any]:
     }
 
 
+def diagnosis_values() -> dict[str, Any]:
+    """Q3.1 and Q3.2: the reference RMSE and the training-failure checks."""
+    data = json.loads((RESULTS_DIR / 'fiber_diagnosis.json').read_text('utf-8'))
+    ref = data['reference_rmse']
+    full = 'fading=True_speckle=True_path=True'
+    no_path = 'fading=True_speckle=True_path=False'
+    probes = data['probes']
+    tcan = 'tcan-44k__ch635-675-515__fiber__seed0'
+    unet = 'unettransformer-offline-44k__ch635-675-515__fiber__seed0'
+    static = [p['static_fiber'] / p['zero_predictor'] for p in probes.values()]
+    rescaled = [
+        v['rescaled'] / probes[k]['zero_predictor']
+        for k, v in data['remedy_as_trained_rescaled'].items()
+    ]
+    inverse = data['check_a_inverse_fit_static']
+    check_b = data['check_b_static_rescaled']['fiber']
+    return {
+        'dg_ref_fs': sig(ref['nominal'][full]['rmse'], 2),
+        'dg_ref_fiber': sig(ref['fiber'][full]['rmse'], 2),
+        'dg_ratio_fiber': sig(ref['fiber'][full]['mse_ratio_to_free_space'], 2),
+        'dg_ratio_monitor': sig(
+            ref['fiber-monitor'][full]['mse_ratio_to_free_space'], 2
+        ),
+        'dg_ratio_pbs': sig(ref['fiber-pbs'][full]['mse_ratio_to_free_space'], 2),
+        'dg_ratio_nopath': sig(ref['fiber'][no_path]['mse_ratio_to_free_space'], 2),
+        'dg_shots': str(data['n_shots']),
+        'dg_zero': f'{probes[tcan]["zero_predictor"]:.4f}',
+        'dg_tcan_static': f'{probes[tcan]["static_fiber"]:.3f}',
+        'dg_unet_static': f'{probes[unet]["static_fiber"]:.3f}',
+        **lo_hi('dg_static_oz', static, lambda x: f'{x:.2f}'),
+        **lo_hi('dg_rescaled_oz', rescaled, lambda x: f'{x:.2f}'),
+        'dg_tcan_rescaled': f'{check_b[f"fiber-trained:{tcan}"]["rescaled"]:.3f}',
+        'dg_inverse_nominal': sig(inverse['nominal']['inverse_fit'], 3),
+        'dg_inverse_fiber': sig(inverse['fiber']['inverse_fit'], 3),
+    }
+
+
+def flow_values() -> dict[str, Any]:
+    """Q3.3 and Q3.4: the R8 flow-matching scores, from scripts/flow.py's JSON."""
+    data = json.loads((RESULTS_DIR / 'flow_results.json').read_text('utf-8'))
+    den = data['q3_3_denoise']
+    rmse = {k: v['mean'] for k, v in den['velocity_rmse'].items()}
+    check = den['sampling_check']
+    post = data['q3_4_posterior']
+    nom, fib = post['nominal'], post['fiber']
+    ens = nom['deep_ensemble']
+    return {
+        'fl_den_chain': f'{rmse["free_tcan_on_denoised_fiber"]:.3f}',
+        'fl_den_fiber': f'{rmse["fiber_tcan_on_fiber"]:.3f}',
+        'fl_den_free_raw': f'{rmse["free_tcan_on_fiber"]:.3f}',
+        'fl_den_free_fs': f'{rmse["free_tcan_on_free_space"]:.3f}',
+        'fl_den_draws': str(den['sampling']['n_samples']),
+        'fl_den_draws_half': str(den['sampling']['n_samples'] // 2),
+        'fl_den_draws_change': f'{100 * check["draws_rel_change"]:.1f}',
+        'fl_den_steps_change': sig(100 * check['steps_rel_change'], 1),
+        'fl_plateau_rtol': pct(check['plateau_rtol']),
+        'fl_den_draws_plateau': check['draws_plateau'],
+        'fl_den_steps_plateau': check['steps_plateau'],
+        'fl_shots': str(den['test_set']['n_shots']),
+        'fl_post_draws': str(nom['sampling']['n_samples']),
+        'fl_post_fs': f'{nom["posterior_mean_velocity_rmse"]["mean"]:.3f}',
+        'fl_post_fiber': f'{fib["posterior_mean_velocity_rmse"]["mean"]:.3f}',
+        'fl_tcan_fs': f'{nom["best_regressor"]["velocity_rmse"]["mean"]:.3f}',
+        'fl_tcan_fiber': f'{fib["best_regressor"]["velocity_rmse"]["mean"]:.3f}',
+        'fl_ens_fs': f'{ens["velocity_rmse"]["mean"]:.3f}',
+        'fl_ens_seeds': str(len(ens['members'])),
+        'fl_band': pct(nom['band_level']),
+        'fl_cov_fs': sig(nom['coverage'], 2),
+        'fl_cov_fiber': sig(fib['coverage'], 2),
+        'fl_cov_ens': sig(ens['coverage'], 2),
+        'fl_crps_fs': sig(nom['crps_um_per_ms']['mean'], 2),
+        'fl_crps_fiber': sig(fib['crps_um_per_ms']['mean'], 2),
+        'fl_crps_ens': sig(ens['crps_um_per_ms']['mean'], 2),
+        'fl_multi_fs': sig(nom['multimodal_fraction'], 2),
+        'fl_multi_fiber': sig(fib['multimodal_fraction'], 2),
+        'fl_sign_split_all': nom['sign_split_fraction'] == 1.0
+        and fib['sign_split_fraction'] == 1.0,
+        'fl_sign_split_min': pct(nom['sign_split_min']),
+    }
+
+
 def r8_values(shot_s: float) -> dict[str, str]:
     """Q3.3 and Q3.4 analytic values: arithmetic on the R8 fiber operating point."""
     fiber = R8_FIBER
@@ -2079,6 +2172,8 @@ def main() -> None:
         **r2_values(records, zero),
         **r4_values(records, zero),
         **r7_values(records, zero),
+        **diagnosis_values(),
+        **flow_values(),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(values, indent=1) + '\n', encoding='utf-8')

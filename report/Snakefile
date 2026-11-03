@@ -85,6 +85,12 @@ RESULTS = [
     str(RESULTS_DIR / "channel_analytics.json"),
     # Section Q3.1 and Q3.2: scripts/fiber_analytics.py over smi.theory.fiber.
     str(RESULTS_DIR / "fiber_results.json"),
+    # Section Q3.1 and Q3.2: scripts/fiber_diagnosis.py's reference RMSE and
+    # training checks, and the per-shot RMSE behind the paired arm SEs.
+    str(RESULTS_DIR / "fiber_diagnosis.json"),
+    str(RESULTS_DIR / "per_shot_rmse.json"),
+    # Section Q3.3 and Q3.4: scripts/flow.py's R8 flow-matching scores.
+    str(RESULTS_DIR / "flow_results.json"),
 ]
 
 # The library modules the figures compute from or read records through, so a
