@@ -622,6 +622,42 @@ _LEGACY: dict[str, TrainingConfig] = {
     ),
 }
 
+# R8 operating point (the R7 plan's Task-3 grid point): N = 8 modes, speckle
+# drift 3 rad/sqrt(s), path drift 2.8 um/sqrt(s), no monitor.
+R8_FIBER = {
+    'n_modes': 8,
+    'drift_rad_per_sqrt_s': 3.0,
+    'path_drift_um_per_sqrt_s': 2.8,
+    'dispersion_per_um': 0.0,
+    'spectral_corr_width_um': 0.01,
+    'monitor_wavelengths_um': [],
+    'pbs_channel': False,
+}
+
+
+def _flow(task: str) -> TrainingConfig:
+    """Flow-matching entry (``FlowLitModule``) on the unettransformer-offline-44k
+    backbone; offline because a posterior over a trace may use both sides of
+    each sample. ``in_channels`` / ``out_channels`` are placeholders the module
+    sets from the task.
+    """
+    config = _matched(
+        {**_unet_transformer([16, 28, 40], 80, 3, causal=False), 'out_channels': 1},
+        MATCHED_CROP,
+    )
+    assert config.synthetic_config is not None
+    config.synthetic_config['sim']['fiber'] = dict(R8_FIBER)
+    config.synthetic_config['flow'] = {'task': task, 'n_time_features': 8}
+    return config
+
+
+_FLOW: dict[str, TrainingConfig] = {
+    # Q3.3: fiber signals -> the paired free-space signals.
+    'flow/denoise-unettransformer-offline-44k': _flow('denoise'),
+    # Q3.4: fiber signals -> velocity trajectory.
+    'flow/posterior-unettransformer-offline-44k': _flow('posterior'),
+}
+
 _DISPLACEMENT_STEMS = (
     'tcn-44k',
     'lstm-44k',
@@ -637,6 +673,7 @@ MODEL_CONFIGS: Mapping[str, TrainingConfig] = MappingProxyType(
             for stem in _DISPLACEMENT_STEMS
         },
         **_LEGACY,
+        **_FLOW,
     }
 )
 

@@ -52,6 +52,10 @@ class UNetTransformerConfig:
         dropout: Dropout on attention weights and residual branches.
         causal: True for left-padded convolutions, causal pooling and
             past-only attention.
+        out_channels: Output channels; more than one only for the flow
+            matching velocity field (``smi.learning.flow``), which emits one
+            per sampled channel. Defaulted, unlike the rest, so the regression
+            entries' resolved dicts and hence their run fingerprints stay put.
     """
 
     sequence_length: int
@@ -65,6 +69,7 @@ class UNetTransformerConfig:
     attention_span: int
     dropout: float
     causal: bool
+    out_channels: int = 1
 
     def __post_init__(self):
         """Validate the geometry the receptive-field formula relies on.
@@ -145,7 +150,7 @@ class UNetTransformer(SequenceModel):
                 for i in reversed(range(self.n_levels))
             ]
         )
-        self.projection = nn.Conv1d(widths[0], 1, 1)
+        self.projection = nn.Conv1d(widths[0], config.out_channels, 1)
 
         logger.info(
             f'Number of parameters in {self.__class__.__name__}: {self.total_params:,}'
@@ -161,7 +166,7 @@ class UNetTransformer(SequenceModel):
         return functional.avg_pool1d(x, self.pool, self.pool)
 
     def forward(self, x: Tensor) -> Tensor:
-        """Map [batch, in_channels, length] to [batch, 1, length]."""
+        """Map [batch, in_channels, length] to [batch, out_channels, length]."""
         skips: list[Tensor] = []
         h = x
         for i, conv in enumerate(self.encoder):
