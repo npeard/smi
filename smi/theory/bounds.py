@@ -218,6 +218,18 @@ def fisher_from_shots(cfg: SimConfig, shots: IdealShots) -> np.ndarray:
     return (flat.T @ flat).numpy() / (n_shots * length * sigma**2)
 
 
+def profiled_information(fisher: np.ndarray, target: int) -> float:
+    """Information on parameter ``target`` with every other one unknown.
+
+    The Schur complement J_tt - J_to J_oo^-1 J_ot, i.e. 1 / (J^-1)_tt; the
+    solve avoids forming the inverse. ``target`` may be negative.
+    """
+    others = np.delete(np.arange(len(fisher)), target)
+    j_to = fisher[target, others]
+    j_oo = fisher[np.ix_(others, others)]
+    return float(fisher[target, target] - j_to @ np.linalg.solve(j_oo, j_to))
+
+
 def _mirror_mismatch(
     target: torch.Tensor,
     mirror: torch.Tensor,

@@ -60,11 +60,6 @@ def _fiber(
     )
 
 
-def _profiled(j: np.ndarray) -> float:
-    """Velocity information with every nuisance profiled out (Schur)."""
-    return float(j[0, 0] - j[0, 1:] @ np.linalg.solve(j[1:, 1:], j[1:, 0]))
-
-
 def _cond(j: np.ndarray) -> float:
     """Condition number of the unit-diagonal (correlation) form: unit-free."""
     d = 1 / np.sqrt(np.diag(j))
@@ -82,8 +77,7 @@ def _monitor_info(
         rig, wavelengths_um=monitors, fiber=_fiber(4, 0.0, 0.0, monitors)
     )
     j = bounds.fisher_matrix(cfg, n_shots, seed)[1:, 1:]
-    j = j[::-1, ::-1]  # u first, for _profiled
-    return _profiled(np.ascontiguousarray(j))
+    return bounds.profiled_information(j, -1)
 
 
 def q31(n_shots: int, seed: int) -> dict:
@@ -104,7 +98,7 @@ def q31(n_shots: int, seed: int) -> dict:
         STEMLAB_125_14, RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
     )
     four = (*RIG_WAVELENGTHS_UM, MONITOR_UM)
-    ref = _profiled(bounds.fisher_matrix(rig, n_shots, seed))
+    ref = bounds.profiled_information(bounds.fisher_matrix(rig, n_shots, seed), 0)
     rows = [{'arm': 'free_space', 'dispersion_per_um': None, 'info': ref}]
     rows[0].update(cond=_cond(bounds.fisher_matrix(rig, n_shots, seed)))
     arms = {
@@ -127,7 +121,7 @@ def q31(n_shots: int, seed: int) -> dict:
                 rig, wavelengths_um=lam, fiber=_fiber(4, 0.0, disp, monitor)
             )
             j = bounds.fisher_matrix(cfg, n_shots, seed)
-            info = _profiled(j)
+            info = bounds.profiled_information(j, 0)
             row = {
                 'arm': arm,
                 'dispersion_per_um': disp,

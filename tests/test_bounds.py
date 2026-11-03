@@ -476,3 +476,12 @@ def test_fiber_phase_is_collinear_without_a_dichroic_monitor():
     monitor = bounds.fisher_matrix(_fiber_cfg(lam, (0.515,), 0.0), n_shots=2, seed=0)
     assert np.linalg.cond(through) > 1e12
     assert np.linalg.cond(monitor) < 1e8
+
+
+@pytest.mark.parametrize('target', [0, 2, -1])
+def test_profiled_information_is_the_inverse_diagonal(target):
+    rng = np.random.default_rng(0)
+    a = rng.normal(size=(4, 4))
+    fisher = a @ a.T + 4 * np.eye(4)
+    expected = 1 / np.linalg.inv(fisher)[target, target]
+    assert math.isclose(bounds.profiled_information(fisher, target), expected)

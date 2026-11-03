@@ -33,6 +33,7 @@ from smi.theory.bounds import (
     fisher_matrix,
     ideal_shots,
     phase_factor,
+    profiled_information,
     sign_information,
 )
 from smi.theory.forward import SimConfig
@@ -74,15 +75,9 @@ def config(
     return dataclasses.replace(free, snr_db=SNR_DB, channel_phase_offsets_rad=offsets)
 
 
-def profiled_velocity_information(fisher: np.ndarray) -> float:
-    """J_vv - J_vp J_pp^-1 J_pv: velocity information with the phases unknown."""
-    j_vp = fisher[0, 1:]
-    return float(fisher[0, 0] - j_vp @ np.linalg.solve(fisher[1:, 1:], j_vp))
-
-
 def info(cfg: SimConfig) -> float:
     """Profiled per-sample velocity information of ``cfg``."""
-    return profiled_velocity_information(fisher_matrix(cfg, FISHER_SHOTS, SEED))
+    return profiled_information(fisher_matrix(cfg, FISHER_SHOTS, SEED), 0)
 
 
 def offsets_quadrature(n: int) -> tuple[float, ...]:
@@ -112,8 +107,8 @@ def channel_count() -> dict[str, object]:
 
         def info_of(idx: list[int], c: float, shots: IdealShots = shots) -> float:
             cfg = config(tuple(COLORS_UM[k] for k in idx), c, None)
-            return profiled_velocity_information(
-                fisher_from_shots(cfg, channels(shots, idx))
+            return profiled_information(
+                fisher_from_shots(cfg, channels(shots, idx)), 0
             )
 
         per_c = {}
