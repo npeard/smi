@@ -27,7 +27,7 @@ import torch
 from smi.core.acquisition import AcquisitionConfig
 from smi.theory.forward import (
     SimConfig,
-    add_static_offsets,
+    channel_phases,
     drive,
     fringe,
     noise_std,
@@ -140,8 +140,7 @@ def ideal_shots(cfg: SimConfig, n_shots: int, seed: int) -> IdealShots:
         n_shots, waveform, coil, cfg.drive_gain, cfg.sample_rate, _CPU, gen
     )
     k = len(cfg.wavelengths_um)
-    phase = 2 * math.pi * torch.rand(n_shots, k, 1, generator=gen, dtype=_F64)
-    phase = add_static_offsets(phase, cfg.channel_phase_offsets_rad)
+    phase = channel_phases(cfg.channel_phase_offsets_rad, (n_shots, k), _CPU, _F64, gen)
     lo, hi = cfg.visibility_range
     vis = lo + (hi - lo) * torch.rand(n_shots, k, generator=gen, dtype=_F64)
     lam = torch.tensor(cfg.wavelengths_um, dtype=_F64).view(1, -1, 1)
@@ -150,28 +149,36 @@ def ideal_shots(cfg: SimConfig, n_shots: int, seed: int) -> IdealShots:
 
 
 def fisher_matrix(cfg: SimConfig, n_shots: int, seed: int) -> np.ndarray:
-    """Mean per-sample Fisher matrix of (velocity, phi_1 .. phi_K), [K+1, K+1].
+    """Mean per-sample Fisher matrix of (velocity, phases), from ``ideal_shots``."""
+    return fisher_from_shots(cfg, ideal_shots(cfg, n_shots, seed))
+
+
+def fisher_from_shots(cfg: SimConfig, shots: IdealShots) -> np.ndarray:
+    """Mean per-sample Fisher matrix of (v, phase nuisances) on given shots.
 
     Model: channel k, sample n reads ``V_k F(theta_kn) + N(0, sigma^2)`` with
-    theta_kn = 4 pi (d_n + v t_n) / lambda_k + phi_k, where v is a velocity
+    theta_kn = 4 pi (d_n + v t_n) / lambda_k + phase_k, where v is a velocity
     offset (um/ms) entering as a displacement ramp over the shot, t_n in ms
-    centred on the shot middle, and phi_k each channel's unknown static phase.
-    The Gaussian-likelihood Fisher is sum g g^T / sigma^2 with gradients
-    g_v = V_k F' 4 pi t_n / lambda_k and g_phi_k = V_k F' (``fringe_slope``),
-    averaged over the L samples and over ``ideal_shots`` draws (unit amplitude).
+    centred on the shot middle. Gaussian-likelihood Fisher: sum over (k, n) of
+    g g^T / sigma^2, averaged over the L samples and the shots (unit amplitude),
+    with g_v = V_k F'_kn 4 pi t_n / lambda_k (F' = ``fringe_slope``).
 
-    Why this parametrisation: phases are per channel, so J is block-arrowhead
-    and the profiled velocity information J_vv - J_vp J_pp^-1 J_pv is the sum
-    of per-channel profiled information (R1: additivity in N). Whether a
-    configuration leaves v and the phases near-degenerate shows in J's
-    conditioning (R2: colors vs a phase-offset one-color array). The velocity
-    entry scales as T^2 with shot length T, so compare at fixed cfg length.
-    It is a local (CRB) quantity: it does not see the global sign and
-    fringe-order ambiguities, which ``sign_information`` addresses.
+    The nuisances follow ``cfg.channel_phase_offsets_rad``:
+    - None (independent paths): one unknown phi_k per channel, matrix
+      [K+1, K+1], g_phi_k = V_k F'_kn on channel k only. J is then
+      block-arrowhead, so the profiled velocity information
+      J_vv - J_vp J_pp^-1 J_pv is exactly the sum of per-channel profiled
+      information (R1).
+    - Set (shared target): one unknown phi_0, offsets known, matrix [2, 2],
+      g_phi0 = V_k F'_kn on every channel. The offsets now matter: they
+      change where each channel's fringe slope vanishes and how the
+      channels' phi_0 information correlates with v (R2).
+    The velocity entry scales as T^2 with shot length T, so compare at fixed
+    length. Local (CRB) only: global sign and fringe-order ambiguities are
+    ``sign_information``'s.
     """
     sigma = _check_noise(cfg)
-    shots = ideal_shots(cfg, n_shots, seed)
-    n_ch, length = shots.theta.shape[1:]
+    n_shots, n_ch, length = shots.theta.shape
     t_ms = (torch.arange(length, dtype=_F64) - (length - 1) / 2) * (
         1e3 / cfg.sample_rate
     )
@@ -179,10 +186,15 @@ def fisher_matrix(cfg: SimConfig, n_shots: int, seed: int) -> np.ndarray:
     slope = shots.visibility[..., None] * fringe_slope(
         shots.theta, cfg.feedback_c, cfg.alpha
     )
-    grads = torch.zeros(n_shots, n_ch, length, n_ch + 1, dtype=_F64)
-    grads[..., 0] = slope * (4 * math.pi / lam) * t_ms
-    grads[..., 1:] = slope[..., None] * torch.eye(n_ch, dtype=_F64)[None, :, None]
-    flat = grads.reshape(-1, n_ch + 1)
+    if cfg.channel_phase_offsets_rad is None:
+        phase_jac = torch.eye(n_ch, dtype=_F64)[None, :, None]
+    else:
+        phase_jac = torch.ones(1, n_ch, 1, 1, dtype=_F64)
+    grads = torch.cat(
+        [(slope * (4 * math.pi / lam) * t_ms)[..., None], slope[..., None] * phase_jac],
+        -1,
+    )
+    flat = grads.reshape(-1, grads.shape[-1])
     return (flat.T @ flat).numpy() / (n_shots * length * sigma**2)
 
 

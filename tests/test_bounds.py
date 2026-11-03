@@ -363,18 +363,43 @@ def _velocity_marginal(j):
 
 
 def test_fisher_matrix_additive_independent_channels():
-    """Each channel has its own nuisance phase, so velocity information adds."""
-    cfg = dataclasses.replace(
-        _cfg((0.635, 0.635, 0.635), 0.2, 3.0),
-        channel_phase_offsets_rad=(0.0, 2 * math.pi / 3, 4 * math.pi / 3),
-    )
-    j = bounds.fisher_matrix(cfg, n_shots=4, seed=0)
+    """Independent phases: 3-channel profiled velocity information equals the
+    sum of single-channel matrices computed on the same (sliced) draws.
+    """
+    cfg = _cfg((0.635, 0.6748, 0.515), 0.2, 3.0)
+    shots = bounds.ideal_shots(cfg, 4, 0)
+    j = bounds.fisher_from_shots(cfg, shots)
     assert j.shape == (4, 4)
-    phases = j[1:, 1:]
-    np.testing.assert_array_equal(phases - np.diag(np.diag(phases)), 0.0)
-    # Arrowhead: J_vv - sum_k J_vk^2 / J_kk, one profiled term per channel.
-    per_channel = j[0, 0] - sum(j[0, k] ** 2 / j[k, k] for k in (1, 2, 3))
-    assert _velocity_marginal(j) == pytest.approx(per_channel, rel=1e-6)
+    singles = 0.0
+    for k, lam in enumerate(cfg.wavelengths_um):
+        one = dataclasses.replace(cfg, wavelengths_um=(lam,))
+        sub = dataclasses.replace(
+            shots,
+            theta=shots.theta[:, k : k + 1],
+            visibility=shots.visibility[:, k : k + 1],
+        )
+        singles += _velocity_marginal(bounds.fisher_from_shots(one, sub))
+    assert _velocity_marginal(j) == pytest.approx(singles, rel=1e-6)
+
+
+def test_fisher_matrix_shared_phase_depends_on_offsets():
+    """Shared phase: 2 pi k / 3 offsets make sum_k F'^2 constant at C = 0, so
+    v decouples from phi_0 exactly; zero offsets leave them coupled.
+    """
+
+    def corr(offsets):
+        cfg = dataclasses.replace(
+            _cfg((0.635,) * 3, 0.0, 3.0),
+            channel_phase_offsets_rad=offsets,
+            visibility_range=(1.0, 1.0),
+        )
+        j = bounds.fisher_matrix(cfg, n_shots=4, seed=0)
+        assert j.shape == (2, 2)
+        return abs(j[0, 1]) / math.sqrt(j[0, 0] * j[1, 1])
+
+    spread = corr(tuple(2 * math.pi * k / 3 for k in range(3)))
+    assert spread < 1e-9
+    assert corr((0.0, 0.0, 0.0)) > 1e3 * spread + 1e-4
 
 
 def test_fisher_matrix_matches_finite_difference():

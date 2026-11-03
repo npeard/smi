@@ -211,11 +211,15 @@ class SimConfig:
         adc_bits: Quantizer bits; None is unquantized.
         adc_full_scale: Quantizer range [-full_scale, +full_scale) in signal
             units; out-of-range samples clip to the end codes.
-        channel_phase_offsets_rad: Static per-channel phase (rad) added to
-            phi_0 on top of the random per-shot phase, one per channel. It
-            lets an array of one repeated color carry known relative phases
-            (R2: colors vs a phase-diverse one-color array). None adds nothing
-            and is left out of ``hash()`` so existing hashes do not move.
+        channel_phase_offsets_rad: None (default): each channel draws its
+            own uniform phase, as physically distinct paths do. Set: the
+            channels share ONE uniform phase phi_0 per shot plus these known,
+            fixed offsets (rad, one per channel) -- a one-color array on a
+            common target, whose geometric offsets are known (R2). Offsets
+            on independent uniform phases would be statistically a no-op,
+            hence the shared phase. The only defaulted field, and left out of
+            ``hash()`` when None, so configs and recorded hashes written
+            before it existed stay valid.
     """
 
     acquisition: AcquisitionConfig
@@ -629,14 +633,27 @@ def drive(
     )
 
 
-def add_static_offsets(
-    phase: torch.Tensor, offsets: tuple[float, ...] | None
+def channel_phases(
+    offsets: tuple[float, ...] | None,
+    shape: tuple[int, int],
+    device: torch.device | str,
+    dtype: torch.dtype,
+    generator: torch.Generator | None,
 ) -> torch.Tensor:
-    """``phase`` [B, C, L] plus one static offset per channel; None adds nothing."""
+    """Per-shot channel phases [B, C, 1] (rad), see ``channel_phase_offsets_rad``.
+
+    The None path draws exactly what it always did, so existing outputs are
+    bitwise unchanged; the shared path draws one phase per shot.
+    """
+    batch, n_ch = shape
     if offsets is None:
-        return phase
-    shift = torch.tensor(offsets, device=phase.device, dtype=phase.dtype)
-    return phase + shift.view(1, -1, 1)
+        draw = torch.rand(
+            batch, n_ch, 1, device=device, generator=generator, dtype=dtype
+        )
+        return 2 * math.pi * draw
+    draw = torch.rand(batch, 1, 1, device=device, generator=generator, dtype=dtype)
+    shift = torch.tensor(offsets, device=device, dtype=dtype).view(1, -1, 1)
+    return 2 * math.pi * draw + shift
 
 
 def simulate_batch(
@@ -686,12 +703,17 @@ def simulate_batch(
     lam = _wavelengths_tensor(
         cfg.wavelengths_um, torch.device(sim_device), torch.get_default_dtype()
     )
-    phi_k = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
+    phi_k = channel_phases(
+        cfg.channel_phase_offsets_rad,
+        (batch_size, n_ch),
+        sim_device,
+        torch.get_default_dtype(),
+        generator,
+    )
     lo, hi = cfg.visibility_range
     u = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
     visibility = lo + (hi - lo) * u
-    phase = 4 * math.pi * displacement[:, None] / lam + 2 * math.pi * phi_k
-    phase = add_static_offsets(phase, cfg.channel_phase_offsets_rad)
+    phase = 4 * math.pi * displacement[:, None] / lam + phi_k
     if cfg.phase_drift_rad_per_sqrt_s > 0:
         sigma = cfg.phase_drift_rad_per_sqrt_s / math.sqrt(cfg.sample_rate)
         phase = phase + sigma * _walk(full, sim_device, generator)
