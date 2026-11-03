@@ -151,39 +151,113 @@ def real_tcn_rmse() -> float:
     return sum(runs) / len(runs)
 
 
+# Key stems of the learned configurations the real-data prose quotes.
+REAL_CONFIGS = {
+    'barland-matched': 'barland',
+    'scnn-matched': 'scnn44',
+    'tcn-matched': 'tcn44',
+    'scnn-matched-small': 'scnn19',
+    'mlp-matched': 'mlp',
+    'tcn-matched-small': 'tcn19',
+    'tcn-repeated': 'tcn36',
+    'tcn-varying': 'tcn28',
+    'lightgbm': 'lgbm',
+    'ridge': 'ridge',
+}
+REAL_DATASETS = {'free-space': 'fs', 'mmfiber': 'mmf'}
+
+
 def real_values() -> dict[str, str]:
-    """The intro's real-data takeaways, from the committed real-data records."""
+    """Real-data values the prose and tables quote, from the committed records.
+
+    Every RMSE is the mean over a run's test shots, for the learned rows and
+    the decode alike, so the two compare under one statistic; a learned
+    configuration's value is then the mean over its seeds. NRMSE and the
+    decode's Pearson r are medians over shots, because a near-motionless
+    shot's NRMSE runs into the hundreds and drags any mean.
+    """
     learned = json.loads((RESULTS_DIR / 'learned_results.json').read_text('utf-8'))
     baseline = json.loads((RESULTS_DIR / 'baseline_results.json').read_text('utf-8'))
+    out: dict[str, str] = {}
+    vel: dict[tuple[str, str], float] = {}
+    for dataset, ds in REAL_DATASETS.items():
+        runs = learned['datasets'][dataset]
+        seeds: dict[str, list[dict[str, Any]]] = {}
+        for run in runs:
+            seeds.setdefault(REAL_CONFIGS[run['config']['config_name']], []).append(run)
+        for stem, group in seeds.items():
+            v = [r['metrics']['velocity_rmse_um_per_ms']['mean'] for r in group]
+            d = [r['metrics']['displacement_rmse_um']['mean'] for r in group]
+            vel[stem, ds] = sum(v) / len(v)
+            out[f'rl_{stem}_v_{ds}'] = f'{vel[stem, ds]:.4f}'
+            out[f'rl_{stem}_d_{ds}'] = f'{sum(d) / len(d):.4f}'
+            out[f'rl_{stem}_spread_{ds}'] = f'{max(v) - min(v):.4f}'
+            out[f'rl_{stem}_params'] = f'{group[0]["total_params"]:,}'
+        every = [r['metrics']['velocity_rmse_um_per_ms']['mean'] for r in runs]
+        out[f'rl_all_mean_{ds}'] = f'{sum(every) / len(every):.4f}'
+        out[f'rl_best_{ds}'] = f'{min(every):.4f}'
+        out[f'rl_runs_{ds}'] = str(len(every))
 
-    def mean_vel(dataset: str) -> dict[tuple[str, int], float]:
-        groups: dict[tuple[str, int], list[float]] = {}
-        for run in learned['datasets'][dataset]:
-            key = (run['model_type'], run['total_params'])
-            groups.setdefault(key, []).append(
-                run['metrics']['velocity_rmse_um_per_ms']['mean']
-            )
-        return {k: sum(v) / len(v) for k, v in groups.items()}
+        m2 = baseline['datasets'][dataset]['method2']
+        scale = baseline['datasets'][dataset]['signal_scale']
+        vel['decode', ds] = m2['velocity_rmse_um_per_ms']['mean']
+        out[f'rd_v_{ds}'] = f'{vel["decode", ds]:.4f}'
+        out[f'rd_d_{ds}'] = f'{m2["displacement_rmse_um"]["mean"]:.4f}'
+        out[f'rd_vnrmse_{ds}'] = sig(m2['velocity_nrmse']['median'], 3)
+        out[f'rd_dnrmse_{ds}'] = sig(m2['displacement_nrmse']['median'], 3)
+        out[f'rd_dnrmse_mean_{ds}'] = sig(m2['displacement_nrmse']['mean'], 3)
+        out[f'rd_dnrmse_max_{ds}'] = f'{m2["displacement_nrmse"]["max"]:.0f}'
+        out[f'rd_r_{ds}'] = f'{m2["displacement_correlation"]["median"]:.2f}'
+        zero = scale['true_velocity_rms_um_per_ms']['mean']
+        out[f'rs_vrms_{ds}'] = f'{zero:.3f}'
+        out[f'rs_drms_{ds}'] = f'{scale["true_displacement_rms_um"]["mean"]:.3f}'
+        out[f'rs_drms_min_{ds}'] = f'{scale["true_displacement_rms_um"]["min"]:.3f}'
+        out[f'rd_over_zero_{ds}'] = f'{vel["decode", ds] / zero:.2f}'
+        out[f'rd_over_zero_pct_{ds}'] = pct(vel['decode', ds] / zero - 1)
 
-    fs, mmf = mean_vel('free-space'), mean_vel('mmfiber')
-    ratio = {k: mmf[k] / fs[k] for k in fs}
-    tabular = ('Ridge', 'LightGBM')
-    neural = sorted((k for k in fs if k[0] not in tabular), key=lambda k: fs[k])[:4]
-    ridge = next(k for k in fs if k[0] == 'Ridge')
-    m2 = {d: baseline['datasets'][d]['method2'] for d in ('free-space', 'mmfiber')}
-    decode = (
-        m2['mmfiber']['velocity_rmse_um_per_ms']['mean']
-        / m2['free-space']['velocity_rmse_um_per_ms']['mean']
-    )
-    return {
-        'real_ridge_params': str(ridge[1]),
-        'real_ridge_ratio': f'{ratio[ridge]:.2f}',
-        'real_decode_ratio': f'{decode:.2f}',
+    def ratio(stem: str) -> float:
+        return vel[stem, 'mmf'] / vel[stem, 'fs']
+
+    def lower_pct(a: str, b: str, ds: str) -> str:
+        return pct(1 - vel[a, ds] / vel[b, ds])
+
+    stems = [*REAL_CONFIGS.values(), 'decode']
+    out |= {f'rl_{stem}_ratio': f'{ratio(stem):.2f}' for stem in stems}
+    neural = sorted(
+        (s for s in REAL_CONFIGS.values() if s not in {'ridge', 'lgbm'}),
+        key=lambda s: vel[s, 'fs'],
+    )[:4]
+    out |= {
+        'real_ridge_params': out['rl_ridge_params'].replace(',', ''),
+        'real_ridge_ratio': out['rl_ridge_ratio'],
+        'real_decode_ratio': out['rl_decode_ratio'],
         'real_decode_shots': str(baseline['config']['n_shots_method2']),
-        'real_decode_nrmse': sig(m2['free-space']['velocity_nrmse']['median'], 3),
-        'real_top4_ratio_lo': f'{min(ratio[k] for k in neural):.1f}',
-        'real_top4_ratio_hi': f'{max(ratio[k] for k in neural):.1f}',
+        'real_decode_nrmse': out['rd_vnrmse_fs'],
+        'real_top4_ratio_lo': f'{min(ratio(s) for s in neural):.1f}',
+        'real_top4_ratio_hi': f'{max(ratio(s) for s in neural):.1f}',
+        'rd_over_ridge_fs': f'{vel["decode", "fs"] / vel["ridge", "fs"]:.2f}',
+        'rd_over_barland_fs': f'{vel["decode", "fs"] / vel["barland", "fs"]:.1f}',
+        'rl_scnn_over_tcn_pct_fs': lower_pct('scnn44', 'tcn44', 'fs'),
+        'rl_barland_over_tcn_pct_fs': lower_pct('barland', 'tcn44', 'fs'),
+        'rl_barland_over_tcn_pct_mmf': lower_pct('barland', 'tcn44', 'mmf'),
+        'rl_field_cut_pct': lower_pct('tcn19', 'tcn36', 'fs'),
+        'rl_field29_gain': f'{vel["tcn28", "fs"] - vel["tcn36", "fs"]:.4f}',
+        'rl_lgbm_over_mlp_fs': f'{vel["lgbm", "fs"] / vel["mlp", "fs"]:.2f}',
+        'rl_ratio_lo': f'{min(ratio(s) for s in REAL_CONFIGS.values()):.2f}',
+        'rl_ratio_hi': f'{max(ratio(s) for s in REAL_CONFIGS.values()):.2f}',
     }
+    rho = spearmanr(
+        [vel[s, 'fs'] for s in REAL_CONFIGS.values()],
+        [ratio(s) for s in REAL_CONFIGS.values()],
+    ).statistic
+    out['rl_ratio_spearman'] = f'{rho:.2f}'
+    params = {
+        s: int(out[f'rl_{s}_params'].replace(',', ''))
+        for s in ('tcn19', 'tcn28', 'tcn36')
+    }
+    out['rl_field29_capacity_pct'] = pct(params['tcn36'] / params['tcn28'] - 1)
+    out['rl_tcn19_fewer_pct'] = pct(1 - params['tcn19'] / params['tcn36'])
+    return out
 
 
 def pct(x: float) -> str:
