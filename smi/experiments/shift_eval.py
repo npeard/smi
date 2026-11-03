@@ -65,7 +65,7 @@ from smi.data.frozen import load_or_create
 from smi.experiments.evaluate import CheckpointEstimator, evaluate
 from smi.experiments.grids import grid as get_grid
 from smi.experiments.results_artifact import RunRecord, append_results
-from smi.experiments.runner import Cell, expand_grid
+from smi.experiments.runner import Cell, expand_grid, trained_checkpoint
 from smi.theory.forward import SimConfig
 
 Knob = Literal[
@@ -200,7 +200,7 @@ def evaluate_shifts(
     test = get_grid(grid_name).test_set
     records = []
     for cell in _nominal_cells(grid_name, families):
-        est = CheckpointEstimator(runs_dir / grid_name / f'{cell.key}.ckpt', device)
+        est = CheckpointEstimator(trained_checkpoint(cell, grid_name, runs_dir), device)
         for value in values:
             cfg = shifted_config(cell.sim, knob, value)
             dataset = load_or_create(cfg, test_seed, test.n_shots, frozen_root)

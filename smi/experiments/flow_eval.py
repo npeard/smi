@@ -44,7 +44,13 @@ from smi.data.schema import VELOCITY_KEY
 from smi.experiments import grids
 from smi.experiments.evaluate import CheckpointEstimator, evaluate
 from smi.experiments.grid import Grid
-from smi.experiments.runner import Cell, cell_fingerprint, expand_grid, training_config
+from smi.experiments.runner import (
+    Cell,
+    cell_fingerprint,
+    expand_grid,
+    trained_checkpoint,
+    training_config,
+)
 from smi.learning.flow_lit_module import FlowLitModule
 
 BAND_LEVEL = 0.9
@@ -374,15 +380,18 @@ def score_denoise(
 ) -> dict[str, Any]:
     """Q3.3 on the grid's ``fiber`` frozen set; RMSEs in um/ms."""
     grid = grids.grid(grid_name)
-    grid_runs = runs_dir / grid_name
     test = grid.test_set
     nominal, fiber = arm_cell(grid, 'nominal'), arm_cell(grid, 'fiber')
     if flow.sim_config.hash() != fiber.sim.hash():
         raise ValueError('the denoiser was not trained on the fiber arm sim')
     fiber_set = load_or_create(fiber.sim, test.seed, test.n_shots, frozen_root)
     free_set = load_or_create(nominal.sim, test.seed, test.n_shots, frozen_root)
-    free_tcan = CheckpointEstimator(grid_runs / f'{nominal.key}.ckpt', device)
-    fiber_tcan = CheckpointEstimator(grid_runs / f'{fiber.key}.ckpt', device)
+    free_tcan = CheckpointEstimator(
+        trained_checkpoint(nominal, grid_name, runs_dir), device
+    )
+    fiber_tcan = CheckpointEstimator(
+        trained_checkpoint(fiber, grid_name, runs_dir), device
+    )
     wl = fiber.wavelengths_um
 
     def run(est: Any, dataset: Path) -> dict[str, float]:
@@ -464,7 +473,7 @@ def score_posterior(
         **band_scores(torch.cat(est.draws, dim=1), _velocity(dataset, test.n_shots)),
     }
     members = tcan_cells(cell, grid, runs_dir)
-    regressor = runs_dir / grid_name / f'{cell.key}.ckpt'
+    regressor = trained_checkpoint(cell, grid_name, runs_dir)
     out['best_regressor'] = {
         'cell': cell.key,
         'velocity_rmse': _rmse(

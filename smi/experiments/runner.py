@@ -48,6 +48,7 @@ from smi.experiments.evaluate import (
     evaluate,
 )
 from smi.experiments.grid import Grid, Sim
+from smi.experiments.grids import GRIDS
 from smi.experiments.results_artifact import (
     RunRecord,
     append_results,
@@ -436,6 +437,37 @@ def is_done(key: str, want: dict[str, Any], records: list[RunRecord]) -> bool:
         f'{differing or "(record predates fingerprints)"}; readable fields '
         f'(recorded, grid) {diff}; write to another --out or remove those '
         'records rather than mixing them'
+    )
+
+
+def trained_checkpoint(cell: Cell, grid_name: str, runs_dir: Path) -> Path:
+    """The checkpoint that trained ``cell`` of grid ``grid_name``.
+
+    Resume matches records by key and fingerprint regardless of which grid
+    wrote them, so a cell another grid already trained identically is skipped
+    and its checkpoint lives under that grid's directory, not this one's.
+
+    Raises:
+        FileNotFoundError: If no grid with an identically fingerprinted
+            ``cell.key`` has its checkpoint under ``runs_dir``.
+    """
+    own = runs_dir / grid_name / f'{cell.key}.ckpt'
+    if own.exists():
+        return own
+    grid = GRIDS[grid_name]
+    want = cell_fingerprint(cell, grid, training_config(cell, grid))
+    for name, other in GRIDS.items():
+        path = runs_dir / name / f'{cell.key}.ckpt'
+        if path.exists() and any(
+            c.key == cell.key
+            and cell_fingerprint(c, other, training_config(c, other))['run_fingerprint']
+            == want['run_fingerprint']
+            for c in expand_grid(other)
+        ):
+            return path
+    raise FileNotFoundError(
+        f'{cell.key} of {grid_name}: no identically trained checkpoint under '
+        f'{runs_dir}/<grid>/'
     )
 
 

@@ -824,3 +824,35 @@ def test_fiber_arm_trains_and_scores_end_to_end(tmp_path, arm):
     assert _run(grid, tmp_path) == 1
     (record,) = read_results(tmp_path / 'results.json')
     assert math.isfinite(record.metrics['velocity_rmse']['mean'])
+
+
+_SHARED_KEY = 'tcan-44k__ch635-675-515__nominal__seed0'
+
+
+def _touch(runs_dir: Path, grid_name: str) -> Path:
+    path = runs_dir / grid_name / f'{_SHARED_KEY}.ckpt'
+    path.parent.mkdir(parents=True)
+    path.touch()
+    return path
+
+
+def _shared_cell():
+    (cell,) = [
+        c for c in experiments.expand_grid(GRIDS['q3_fiber']) if c.key == _SHARED_KEY
+    ]
+    return cell
+
+
+def test_a_cell_trained_by_another_grid_resolves_to_its_checkpoint(tmp_path):
+    # q1_r1_count trains this cell identically, so q3_fiber's resume skips it.
+    other = _touch(tmp_path, 'q1_r1_count')
+    assert experiments.trained_checkpoint(_shared_cell(), 'q3_fiber', tmp_path) == other
+    own = _touch(tmp_path, 'q3_fiber')
+    assert experiments.trained_checkpoint(_shared_cell(), 'q3_fiber', tmp_path) == own
+
+
+def test_a_same_key_checkpoint_trained_differently_is_not_used(tmp_path):
+    # q1_channels shares the key under another fingerprint.
+    _touch(tmp_path, 'q1_channels')
+    with pytest.raises(FileNotFoundError, match='no identically trained checkpoint'):
+        experiments.trained_checkpoint(_shared_cell(), 'q3_fiber', tmp_path)
