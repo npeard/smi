@@ -1,0 +1,235 @@
+{
+  "grid": "q3_fiber",
+  "device": "mps",
+  "torch_threads": 2,
+  "q3_3_denoise": {
+    "config": "flow/denoise-unettransformer-offline-44k",
+    "test_set": {
+      "seed": 1000,
+      "n_shots": 64,
+      "dataset": "41831d8deffbacbec6a01d56e631cd5838d3758c_seed1000_n64"
+    },
+    "sampling": {
+      "n_samples": 32,
+      "n_steps": 16,
+      "per_call": 4,
+      "seed": 0
+    },
+    "sampling_check": {
+      "velocity_rmse_by_draws": {
+        "8": {
+          "mean": 0.40521952509880066,
+          "median": 0.2831330895423889,
+          "p25": 0.21119646728038788,
+          "p75": 0.5251536965370178,
+          "min": 0.13800999522209167,
+          "max": 1.1836081743240356
+        },
+        "16": {
+          "mean": 0.3867822289466858,
+          "median": 0.2626463770866394,
+          "p25": 0.1867886483669281,
+          "p75": 0.5155637264251709,
+          "min": 0.10128365457057953,
+          "max": 1.1771736145019531
+        },
+        "32": {
+          "mean": 0.37581777572631836,
+          "median": 0.25292325019836426,
+          "p25": 0.17102265357971191,
+          "p75": 0.5101041197776794,
+          "min": 0.07481992244720459,
+          "max": 1.1764658689498901
+        }
+      },
+      "step_check": {
+        "n_samples": 16,
+        "n_steps": 32,
+        "velocity_rmse": {
+          "mean": 0.38676324486732483,
+          "median": 0.26329174637794495,
+          "p25": 0.1873500794172287,
+          "p75": 0.5118210911750793,
+          "min": 0.1011086255311966,
+          "max": 1.1814223527908325
+        }
+      },
+      "draws_rel_change": 0.029174919145793867,
+      "steps_rel_change": 4.9084497073847354e-05,
+      "plateau_rtol": 0.01,
+      "draws_plateau": false,
+      "steps_plateau": true
+    },
+    "velocity_rmse": {
+      "free_tcan_on_denoised_fiber": {
+        "mean": 0.37581777572631836,
+        "median": 0.25292325019836426,
+        "p25": 0.17102265357971191,
+        "p75": 0.5101041197776794,
+        "min": 0.07481992244720459,
+        "max": 1.1764658689498901
+      },
+      "fiber_tcan_on_fiber": {
+        "mean": 0.3576691746711731,
+        "median": 0.25034579634666443,
+        "p25": 0.1636674851179123,
+        "p75": 0.4925447404384613,
+        "min": 0.02578062005341053,
+        "max": 1.0436344146728516
+      },
+      "free_tcan_on_fiber": {
+        "mean": 0.3589419424533844,
+        "median": 0.24257826805114746,
+        "p25": 0.15578098595142365,
+        "p75": 0.49594104290008545,
+        "min": 0.03187675029039383,
+        "max": 1.1245920658111572
+      },
+      "free_tcan_on_free_space": {
+        "mean": 0.20005618035793304,
+        "median": 0.19305557012557983,
+        "p25": 0.1441943645477295,
+        "p75": 0.27099329233169556,
+        "min": 0.06177208945155144,
+        "max": 0.338866651058197
+      }
+    },
+    "regressors": {
+      "free": "tcan-44k__ch635-675-515__nominal__seed0",
+      "fiber": "tcan-44k__ch635-675-515__fiber__seed0"
+    }
+  },
+  "q3_4_posterior": {
+    "nominal": {
+      "config": "flow/posterior-free-unettransformer-global-44k",
+      "test_set": {
+        "seed": 1000,
+        "n_shots": 64,
+        "dataset": "cff4feacfeb37e58bc15e94b2e3b8f1a18b40baf_seed1000_n64"
+      },
+      "sampling": {
+        "n_samples": 64,
+        "n_steps": 16,
+        "per_call": 8,
+        "seed": 0
+      },
+      "posterior_mean_velocity_rmse": {
+        "mean": 0.3686133325099945,
+        "median": 0.25632286071777344,
+        "p25": 0.16661104559898376,
+        "p75": 0.513174295425415,
+        "min": 0.02977895550429821,
+        "max": 1.1812729835510254
+      },
+      "band_level": 0.9,
+      "coverage": 0.8241708278656006,
+      "crps_um_per_ms": {
+        "mean": 0.24064671993255615,
+        "median": 0.143748939037323,
+        "p25": 0.09799759835004807,
+        "p75": 0.3409840166568756,
+        "min": 0.04946282133460045,
+        "max": 0.8171609044075012
+      },
+      "multimodal_fraction": 0.00152587890625,
+      "modality_stride": 64,
+      "sign_split_fraction": 1.0,
+      "sign_split_min": 0.1,
+      "best_regressor": {
+        "cell": "tcan-44k__ch635-675-515__nominal__seed0",
+        "velocity_rmse": {
+          "mean": 0.20005618035793304,
+          "median": 0.19305557012557983,
+          "p25": 0.1441943645477295,
+          "p75": 0.27099329233169556,
+          "min": 0.06177208945155144,
+          "max": 0.338866651058197
+        }
+      },
+      "deep_ensemble": {
+        "coverage": 0.3044881820678711,
+        "crps_um_per_ms": {
+          "mean": 0.11425351351499557,
+          "median": 0.1216343343257904,
+          "p25": 0.09443958848714828,
+          "p75": 0.14639650285243988,
+          "min": 0.028081685304641724,
+          "max": 0.18080109357833862
+        },
+        "velocity_rmse": {
+          "mean": 0.18347710371017456,
+          "median": 0.18154413998126984,
+          "p25": 0.13512378931045532,
+          "p75": 0.2499065101146698,
+          "min": 0.04968593269586563,
+          "max": 0.32014673948287964
+        },
+        "members": [
+          {
+            "grid": "q1_r1_count",
+            "cell": "tcan-44k__ch635-675-515__nominal__seed0",
+            "seed": 0
+          },
+          {
+            "grid": "q1_r1_seeds",
+            "cell": "tcan-44k__ch635-675-515__nominal__seed1",
+            "seed": 1
+          },
+          {
+            "grid": "q1_r1_seeds",
+            "cell": "tcan-44k__ch635-675-515__nominal__seed2",
+            "seed": 2
+          }
+        ]
+      }
+    },
+    "fiber": {
+      "config": "flow/posterior-fiber-unettransformer-global-44k",
+      "test_set": {
+        "seed": 1000,
+        "n_shots": 64,
+        "dataset": "41831d8deffbacbec6a01d56e631cd5838d3758c_seed1000_n64"
+      },
+      "sampling": {
+        "n_samples": 64,
+        "n_steps": 16,
+        "per_call": 8,
+        "seed": 0
+      },
+      "posterior_mean_velocity_rmse": {
+        "mean": 0.3676517605781555,
+        "median": 0.2560434639453888,
+        "p25": 0.16787345707416534,
+        "p75": 0.5142821669578552,
+        "min": 0.03467726334929466,
+        "max": 1.179945468902588
+      },
+      "band_level": 0.9,
+      "coverage": 0.8226892948150635,
+      "crps_um_per_ms": {
+        "mean": 0.24032354354858398,
+        "median": 0.14410707354545593,
+        "p25": 0.09926445782184601,
+        "p75": 0.34117430448532104,
+        "min": 0.050381943583488464,
+        "max": 0.815773069858551
+      },
+      "multimodal_fraction": 0.001220703125,
+      "modality_stride": 64,
+      "sign_split_fraction": 1.0,
+      "sign_split_min": 0.1,
+      "best_regressor": {
+        "cell": "tcan-44k__ch635-675-515__fiber__seed0",
+        "velocity_rmse": {
+          "mean": 0.3576691746711731,
+          "median": 0.25034579634666443,
+          "p25": 0.1636674851179123,
+          "p75": 0.4925447404384613,
+          "min": 0.02578062005341053,
+          "max": 1.0436344146728516
+        }
+      },
+      "deep_ensemble": "unavailable: 1 TCAN-44k seed(s) trained as tcan-44k__ch635-675-515__fiber__seed0"
+    }
+  }
+}
