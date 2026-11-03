@@ -25,12 +25,13 @@ import json
 import math
 from pathlib import Path
 
-import numpy as np
 import torch
+from scipy.stats import pearsonr, spearmanr
 
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.paths import RESULTS_DIR
 from smi.data.frozen import RIG_WAVELENGTHS_UM
+from smi.experiments.analytics import correlation_condition
 from smi.theory import bounds
 from smi.theory.fiber import FiberConfig, simulate_fiber
 from smi.theory.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
@@ -58,12 +59,6 @@ def _fiber(
         monitor_wavelengths_um=monitor,
         pbs_channel=False,
     )
-
-
-def _cond(j: np.ndarray) -> float:
-    """Condition number of the unit-diagonal (correlation) form: unit-free."""
-    d = 1 / np.sqrt(np.diag(j))
-    return float(np.linalg.cond(j * d[:, None] * d[None, :]))
 
 
 def _monitor_info(
@@ -100,7 +95,7 @@ def q31(n_shots: int, seed: int) -> dict:
     four = (*RIG_WAVELENGTHS_UM, MONITOR_UM)
     ref = bounds.profiled_information(bounds.fisher_matrix(rig, n_shots, seed), 0)
     rows = [{'arm': 'free_space', 'dispersion_per_um': None, 'info': ref}]
-    rows[0].update(cond=_cond(bounds.fisher_matrix(rig, n_shots, seed)))
+    rows[0].update(cond=correlation_condition(bounds.fisher_matrix(rig, n_shots, seed)))
     arms = {
         'fiber_no_monitor': (RIG_WAVELENGTHS_UM, ()),
         'fiber_monitor_through_target': (four, ()),
@@ -126,7 +121,7 @@ def q31(n_shots: int, seed: int) -> dict:
                 'arm': arm,
                 'dispersion_per_um': disp,
                 'info': info,
-                'cond': _cond(j),
+                'cond': correlation_condition(j),
             }
             if arm in predicted and disp == 0.0:
                 row['predicted_rel_free_space'] = predicted[arm]['rel']
@@ -143,14 +138,6 @@ def q31(n_shots: int, seed: int) -> dict:
     }
 
 
-def _corr(a: torch.Tensor, b: torch.Tensor) -> float:
-    return float(torch.corrcoef(torch.stack([a, b]).double())[0, 1])
-
-
-def _rank(x: torch.Tensor) -> torch.Tensor:
-    return x.argsort().argsort().double()
-
-
 def q32(n_draws: int, seed: int) -> dict:
     """corr(P_perp, |kappa|^2) over static fiber draws, per mode count."""
     rows = []
@@ -159,8 +146,9 @@ def q32(n_draws: int, seed: int) -> dict:
         cfg = _fiber(n, 0.0, 0.0, ())
         draw = simulate_fiber(cfg, (0.635,), n_draws, 1, 1.0, CPU, gen)
         k2, perp = draw.kappa.abs().flatten() ** 2, draw.p_perp.flatten()
-        r = _corr(perp, k2)
-        r_amp = _corr(perp, k2.sqrt())
+        k2_64, perp_64 = k2.double().numpy(), perp.double().numpy()
+        r = float(pearsonr(perp_64, k2_64).statistic)
+        r_amp = float(pearsonr(perp_64, k2.sqrt().double().numpy()).statistic)
         rows.append(
             {
                 'n_modes': n,
@@ -168,7 +156,7 @@ def q32(n_draws: int, seed: int) -> dict:
                 # Large-sample (delta-method) standard error of a Pearson r.
                 'corr_se': (1 - r * r) / math.sqrt(n_draws),
                 'corr_times_sqrt_n': r * math.sqrt(n),
-                'spearman': _corr(_rank(perp), _rank(k2)),
+                'spearman': float(spearmanr(perp_64, k2_64).statistic),
                 # Fraction of fading (|kappa|^2) variance a linear P_perp fit explains.
                 'r2': r * r,
                 # |kappa| is what C and the visibility scale with.

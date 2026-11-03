@@ -20,4 +20,3 @@ def test_allowed_swing_keeps_effective_feedback_below_one():
     assert math.isinf(sagnac.allowed_swing(0.99, math.pi / 2))
     swing = sagnac.allowed_swing(1.3, math.pi / 2)
     assert math.isclose(1.3 * math.cos((math.pi / 2 - swing) / 2), 1.0)
-

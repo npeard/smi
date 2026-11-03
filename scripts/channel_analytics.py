@@ -22,10 +22,9 @@ import json
 import math
 from pathlib import Path
 
-import numpy as np
-
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.paths import RESULTS_DIR
+from smi.experiments.analytics import channels, offsets_quadrature
 from smi.experiments.shift_eval import random_offsets
 from smi.theory.bounds import (
     IdealShots,
@@ -80,23 +79,6 @@ def info(cfg: SimConfig) -> float:
     return profiled_information(fisher_matrix(cfg, FISHER_SHOTS, SEED), 0)
 
 
-def offsets_quadrature(n: int) -> tuple[float, ...]:
-    """N = 2: (0, pi/2); otherwise 2 pi k / N."""
-    if n == 2:
-        return (0.0, math.pi / 2)
-    return tuple(2 * math.pi * k / n for k in range(n))
-
-
-def channels(shots: IdealShots, idx: list[int]) -> IdealShots:
-    """``shots`` restricted to channels ``idx``: the same draws, fewer channels."""
-    return IdealShots(
-        shots.displacement,
-        shots.velocity,
-        shots.theta[:, idx],
-        shots.visibility[:, idx],
-    )
-
-
 def channel_count() -> dict[str, object]:
     """Q1.1 rows per seed: info of the first N colors and the sum of singles."""
     out: dict[str, object] = {
@@ -107,9 +89,7 @@ def channel_count() -> dict[str, object]:
 
         def info_of(idx: list[int], c: float, shots: IdealShots = shots) -> float:
             cfg = config(tuple(COLORS_UM[k] for k in idx), c, None)
-            return profiled_information(
-                fisher_from_shots(cfg, channels(shots, idx)), 0
-            )
+            return profiled_information(fisher_from_shots(cfg, channels(shots, idx)), 0)
 
         per_c = {}
         for c in FEEDBACK_C:

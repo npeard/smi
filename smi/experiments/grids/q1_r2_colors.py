@@ -12,16 +12,15 @@ Run: pixi run experiments q1_r2_colors
 """
 
 import dataclasses
-import math
 
+from smi.experiments.analytics import offsets_quadrature
 from smi.experiments.grid import Grid
 from smi.experiments.grids.q1_r1_count import GRID as COUNT
 
 
 def one_color(n: int) -> Grid:
-    """q1_r1_count at 0.635 um x ``n``; offsets as in the module docstring."""
-    step = math.pi / 2 if n == 2 else 2 * math.pi / n
-    offsets = tuple(step * k for k in range(n))
+    """q1_r1_count at 0.635 um x ``n`` with ``offsets_quadrature(n)``."""
+    offsets = offsets_quadrature(n)
     return dataclasses.replace(
         COUNT,
         channel_subsets=((0.635,) * n,),
