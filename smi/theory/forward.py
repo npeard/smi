@@ -292,9 +292,9 @@ class SimConfig:
                 f'need one offset per channel: {len(offsets)} offsets for '
                 f'{len(self.wavelengths_um)} wavelengths'
             )
-        monitor = None if self.fiber is None else self.fiber.monitor_wavelength_um
-        if monitor is not None and monitor not in self.wavelengths_um:
-            raise ValueError(f'monitor_wavelength_um {monitor} is not a channel')
+        monitors = () if self.fiber is None else self.fiber.monitor_wavelengths_um
+        if stray := set(monitors) - set(self.wavelengths_um):
+            raise ValueError(f'monitor wavelengths {sorted(stray)} are not channels')
         dc_lo, dc_hi = self.dc_offset_range
         if dc_lo > dc_hi:
             raise ValueError(f'dc_offset_range must satisfy lo <= hi: {dc_lo, dc_hi}')
@@ -535,7 +535,10 @@ def smi_excess_phase(
     Returns:
         ``(delta, psi)``, so the residual is ``delta + C sin(psi + delta)``.
     """
-    if not isinstance(feedback_c, torch.Tensor):
+    if isinstance(feedback_c, torch.Tensor):
+        if feedback_c.numel() and float(feedback_c.max()) >= 1.0:
+            raise ValueError('per-sample feedback C must stay below 1')
+    else:
         _check_feedback(feedback_c)
     psi = torch.remainder(phase + math.atan(alpha), 2 * math.pi)
     delta = -feedback_c * torch.sin(psi)
@@ -679,6 +682,18 @@ def channel_phases(
     return 2 * math.pi * draw + shift
 
 
+def derived_generator(
+    generator: torch.Generator, device: torch.device
+) -> torch.Generator:
+    """A generator on ``device`` seeded by one draw from ``generator``.
+
+    A generator draws only on its own device, so this keeps an off-device
+    stream (MPS caller, CPU fiber) a deterministic function of the seed.
+    """
+    seed = torch.randint(2**62, (1,), device=generator.device, generator=generator)
+    return torch.Generator(device).manual_seed(int(seed.item()))
+
+
 def _through_fiber(
     cfg: SimConfig,
     phase: torch.Tensor,
@@ -690,7 +705,7 @@ def _through_fiber(
     """Apply ``cfg.fiber`` to the free-space phase: (phase, visibility, C, perp).
 
     |kappa| is the return-field amplitude, so it scales both C and the
-    modulation depth; arg(kappa) adds to the phase. The monitor color keeps
+    modulation depth; arg(kappa) adds to the phase. Monitor colors keep
     phi_k and the fiber phase only (the dichroic returns it before the
     target). ``perp`` holds the [B, C, L] P_perp channels with
     ``pbs_channel``, else nothing. No fiber: inputs back, nothing drawn.
@@ -703,13 +718,16 @@ def _through_fiber(
     fiber_device = torch.device(sim_device)
     if fiber_device.type == 'mps':
         fiber_device = torch.device('cpu')
+    if generator is not None and generator.device != fiber_device:
+        generator = derived_generator(generator, fiber_device)
     draw = simulate_fiber(
         fib, cfg.wavelengths_um, batch, length, cfg.sample_rate, fiber_device, generator
     )
-    if fib.monitor_wavelength_um is not None:
-        k = cfg.wavelengths_um.index(fib.monitor_wavelength_um)
+    if fib.monitor_wavelengths_um:
         phase = phase.clone()
-        phase[:, k] = phi_k[:, k]
+        for lam in fib.monitor_wavelengths_um:
+            k = cfg.wavelengths_um.index(lam)
+            phase[:, k] = phi_k[:, k]
     kappa = draw.kappa.to(phase.device)
     coupling = kappa.abs()
     feedback_c = cfg.feedback_c * coupling if cfg.feedback_c > 0 else 0.0

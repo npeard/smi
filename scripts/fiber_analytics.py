@@ -3,9 +3,12 @@
 Q3.1: profiled velocity information and condition number of the local Fisher
 matrix (``bounds.fisher_matrix`` with ``SimConfig.fiber``) for free space, a
 fiber with no monitor, a fourth color through the fiber to the target, and
-that color returned by a dichroic at the distal face, against the dispersion
-of the fiber-phase drift. Q3.2: corr(P_perp, |kappa|^2) against mode count
-over static fully mixed fibers, with corr * sqrt(N) (the 1/sqrt(N) law) and
+that color returned by a dichroic at the distal face (one color, and three),
+against the dispersion of the fiber-phase drift; all fading-free upper bounds
+(see ``q31``). Q3.2: corr(P_perp, |kappa|^2) against mode count over static
+fully mixed fibers -- about -1.3 / sqrt(N) for N >= 8 -- with its Spearman
+rank form, R^2 (the fraction of fading variance P_perp explains), the same
+against |kappa| (what C scales with), and
 the Haar round-trip (COE) mean E|kappa|^2 = 2 / (2N + 1), which includes the
 factor-2 coherent-backscatter enhancement of a reciprocal fiber, plus the
 within-shot decorrelation of kappa against drift rate (to pick Task 3's grid
@@ -35,6 +38,8 @@ from smi.theory.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
 DEFAULT_OUTPUT = RESULTS_DIR / 'fiber_results.json'
 # Fourth color for the monitor arms: a common diode line clear of the rig's.
 MONITOR_UM = 0.785
+# Three dichroic monitor colors, as many as the target set (diode lines).
+MONITORS_3_UM = (0.785, 0.808, 0.850)
 MODES = (1, 2, 4, 8, 16, 32, 64)
 DISPERSIONS_PER_UM = (0.0, 1e-3, 1e-2, 1e-1)
 DRIFTS_RAD_PER_SQRT_S = (1.0, 3.0, 10.0, 30.0, 100.0)
@@ -42,7 +47,7 @@ CPU = torch.device('cpu')
 
 
 def _fiber(
-    n_modes: int, drift: float, dispersion: float, monitor: float | None
+    n_modes: int, drift: float, dispersion: float, monitor: tuple[float, ...]
 ) -> FiberConfig:
     return FiberConfig(
         n_modes=n_modes,
@@ -50,7 +55,7 @@ def _fiber(
         path_drift_um_per_sqrt_s=0.0,
         dispersion_per_um=dispersion,
         spectral_corr_width_um=0.01,
-        monitor_wavelength_um=monitor,
+        monitor_wavelengths_um=monitor,
         pbs_channel=False,
     )
 
@@ -66,8 +71,35 @@ def _cond(j: np.ndarray) -> float:
     return float(np.linalg.cond(j * d[:, None] * d[None, :]))
 
 
+def _monitor_info(
+    rig: SimConfig, monitors: tuple[float, ...], n_shots: int, seed: int
+) -> float:
+    """Fiber-rate information M of the monitor colors alone, u profiled.
+
+    The v column is zero for a monitor-only set, so it is dropped first.
+    """
+    cfg = dataclasses.replace(
+        rig, wavelengths_um=monitors, fiber=_fiber(4, 0.0, 0.0, monitors)
+    )
+    j = bounds.fisher_matrix(cfg, n_shots, seed)[1:, 1:]
+    j = j[::-1, ::-1]  # u first, for _profiled
+    return _profiled(np.ascontiguousarray(j))
+
+
 def q31(n_shots: int, seed: int) -> dict:
-    """Fisher table for the four arms against dispersion."""
+    """Fisher table for the monitor arms against dispersion.
+
+    At zero dispersion the target colors measure v + u with information S
+    (the free-space value) and the monitors measure u alone with M, so the
+    profiled velocity information is the parallel combination S M / (S + M),
+    a fraction M / (S + M) of free space: ~1/4 for one monitor color beside
+    three targets, rising toward 1/2 as the monitor set matches the target
+    set (``predicted_rel_free_space``). Every fiber arm holds |kappa| = 1
+    (genie, fading-free), so the monitor rows are upper bounds; and a
+    static-rate u stands in for the path drift: a random walk would make the
+    no-monitor degeneracy hold sample by sample (stronger still) and leave
+    the monitor rows more optimistic.
+    """
     rig = SimConfig.nominal(
         STEMLAB_125_14, RIG_WAVELENGTHS_UM, NOMINAL_FEEDBACK_C, NOMINAL_ALPHA
     )
@@ -76,10 +108,19 @@ def q31(n_shots: int, seed: int) -> dict:
     rows = [{'arm': 'free_space', 'dispersion_per_um': None, 'info': ref}]
     rows[0].update(cond=_cond(bounds.fisher_matrix(rig, n_shots, seed)))
     arms = {
-        'fiber_no_monitor': (RIG_WAVELENGTHS_UM, None),
-        'fiber_monitor_through_target': (four, None),
-        'fiber_dichroic_monitor': (four, MONITOR_UM),
+        'fiber_no_monitor': (RIG_WAVELENGTHS_UM, ()),
+        'fiber_monitor_through_target': (four, ()),
+        'fiber_dichroic_monitor': (four, (MONITOR_UM,)),
+        'fiber_dichroic_monitor_x3': (
+            (*RIG_WAVELENGTHS_UM, *MONITORS_3_UM),
+            MONITORS_3_UM,
+        ),
     }
+    predicted = {}
+    for arm, (_, monitor) in arms.items():
+        if monitor:
+            m = _monitor_info(rig, monitor, n_shots, seed)
+            predicted[arm] = {'monitor_info': m, 'rel': m / (ref + m)}
     for arm, (lam, monitor) in arms.items():
         for disp in DISPERSIONS_PER_UM:
             cfg = dataclasses.replace(
@@ -87,16 +128,33 @@ def q31(n_shots: int, seed: int) -> dict:
             )
             j = bounds.fisher_matrix(cfg, n_shots, seed)
             info = _profiled(j)
-            rows.append(
-                {'arm': arm, 'dispersion_per_um': disp, 'info': info, 'cond': _cond(j)}
-            )
+            row = {
+                'arm': arm,
+                'dispersion_per_um': disp,
+                'info': info,
+                'cond': _cond(j),
+            }
+            if arm in predicted and disp == 0.0:
+                row['predicted_rel_free_space'] = predicted[arm]['rel']
+                row['monitor_info'] = predicted[arm]['monitor_info']
+            rows.append(row)
     for row in rows:
         row['info_rel_free_space'] = row['info'] / ref
-    return {'rows': rows, 'monitor_um': MONITOR_UM, 'n_shots': n_shots}
+    return {
+        'rows': rows,
+        'monitor_um': MONITOR_UM,
+        'monitors_x3_um': MONITORS_3_UM,
+        'n_shots': n_shots,
+        'note': 'fading-free (|kappa| = 1) upper bounds; ramp-rate path drift',
+    }
 
 
 def _corr(a: torch.Tensor, b: torch.Tensor) -> float:
     return float(torch.corrcoef(torch.stack([a, b]).double())[0, 1])
+
+
+def _rank(x: torch.Tensor) -> torch.Tensor:
+    return x.argsort().argsort().double()
 
 
 def q32(n_draws: int, seed: int) -> dict:
@@ -104,10 +162,11 @@ def q32(n_draws: int, seed: int) -> dict:
     rows = []
     for n in MODES:
         gen = torch.Generator().manual_seed(seed)
-        cfg = _fiber(n, 0.0, 0.0, None)
+        cfg = _fiber(n, 0.0, 0.0, ())
         draw = simulate_fiber(cfg, (0.635,), n_draws, 1, 1.0, CPU, gen)
         k2, perp = draw.kappa.abs().flatten() ** 2, draw.p_perp.flatten()
         r = _corr(perp, k2)
+        r_amp = _corr(perp, k2.sqrt())
         rows.append(
             {
                 'n_modes': n,
@@ -115,6 +174,12 @@ def q32(n_draws: int, seed: int) -> dict:
                 # Large-sample (delta-method) standard error of a Pearson r.
                 'corr_se': (1 - r * r) / math.sqrt(n_draws),
                 'corr_times_sqrt_n': r * math.sqrt(n),
+                'spearman': _corr(_rank(perp), _rank(k2)),
+                # Fraction of fading (|kappa|^2) variance a linear P_perp fit explains.
+                'r2': r * r,
+                # |kappa| is what C and the visibility scale with.
+                'corr_abs_kappa': r_amp,
+                'r2_abs_kappa': r_amp * r_amp,
                 'mean_kappa2': float(k2.mean()),
                 'coe_mean_kappa2': 2 / (2 * n + 1),
                 'mean_p_perp': float(perp.mean()),
@@ -132,7 +197,7 @@ def drift_scan(n_modes: int, n_shots: int, seed: int) -> dict:
     rows = []
     for drift in DRIFTS_RAD_PER_SQRT_S:
         gen = torch.Generator().manual_seed(seed)
-        cfg = _fiber(n_modes, drift, 0.0, None)
+        cfg = _fiber(n_modes, drift, 0.0, ())
         k = simulate_fiber(cfg, (0.635,), n_shots, length, rig.sample_rate, CPU, gen)
         a, b = k.kappa[:, 0, 0], k.kappa[:, 0, -1]
         num = (a * b.conj()).mean().abs()

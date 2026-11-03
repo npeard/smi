@@ -150,10 +150,11 @@ def ideal_shots(cfg: SimConfig, n_shots: int, seed: int) -> IdealShots:
 
 
 def _sees_target(cfg: SimConfig) -> torch.Tensor:
-    """[1, K, 1] mask: 0 for a dichroic monitor channel (fiber only), else 1."""
+    """[1, K, 1] mask: 0 for each dichroic monitor channel (fiber only), else 1."""
     mask = torch.ones(1, len(cfg.wavelengths_um), 1, dtype=_F64)
-    if cfg.fiber is not None and cfg.fiber.monitor_wavelength_um is not None:
-        mask[0, cfg.wavelengths_um.index(cfg.fiber.monitor_wavelength_um)] = 0.0
+    monitors = () if cfg.fiber is None else cfg.fiber.monitor_wavelengths_um
+    for lam in monitors:
+        mask[0, cfg.wavelengths_um.index(lam)] = 0.0
     return mask
 
 

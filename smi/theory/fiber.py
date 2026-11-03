@@ -21,7 +21,9 @@ Physics, and the assumptions the Q3.1/Q3.2 analyses rest on:
 - The PBS after the collimated fiber output sends the whole orthogonal (y)
   polarization to one large-area PD: ``P_perp = sum_{m} |r_{N+m}|^2`` over
   all N modes. Lossless, so ``|kappa|^2 <= 1 - P_perp`` with equality only
-  at N = 1, where corr(P_perp, |kappa|^2) is exactly -1.
+  at N = 1, where corr(P_perp, |kappa|^2) is exactly -1. Exact at the speckle
+  knots; between them the linear interpolation is renormalized per sample
+  onto the same bound.
 - Fiber phase vs wavelength: ``4 pi p(t) n(lambda) / lambda`` round trip
   with ``n(lambda) / n_ref = 1 + dispersion_per_um (lambda - 1 um)``; with
   zero dispersion it scales as 1/lambda exactly like the target's
@@ -71,9 +73,9 @@ class FiberConfig:
             (1/um), 0 is pure 1/lambda scaling.
         spectral_corr_width_um: Gaussian scale w of the speckle generator
             correlation across wavelength (um).
-        monitor_wavelength_um: None, or the one channel wavelength that a
-            dichroic at the distal face returns before the target: that
-            channel carries fiber phase only.
+        monitor_wavelengths_um: The channel wavelengths (possibly none) that
+            a dichroic at the distal face returns before the target: those
+            channels carry fiber phase only.
         pbs_channel: Append one P_perp input channel per color.
     """
 
@@ -82,10 +84,14 @@ class FiberConfig:
     path_drift_um_per_sqrt_s: float
     dispersion_per_um: float
     spectral_corr_width_um: float
-    monitor_wavelength_um: float | None
+    monitor_wavelengths_um: tuple[float, ...]
     pbs_channel: bool
 
     def __post_init__(self) -> None:
+        # JSON/YAML give a list; equality and the hash must not depend on it.
+        object.__setattr__(
+            self, 'monitor_wavelengths_um', tuple(self.monitor_wavelengths_um)
+        )
         if self.n_modes < 1:
             raise ValueError(f'n_modes must be >= 1, got {self.n_modes}')
         if self.spectral_corr_width_um <= 0:
@@ -196,9 +202,11 @@ def simulate_fiber(
     kappa_knots = r[..., 0]
     perp_knots = (r[..., n:].abs() ** 2).sum(-1)
     kappa = _interp(kappa_knots, length)
-    # Interpolating r_00 can leave the unit disk by O(step^2); keep it physical.
-    kappa = kappa / kappa.abs().clamp(min=1.0)
-    p_perp = _interp(perp_knots, length).clamp(0.0, 1.0)
+    p_perp = _interp(perp_knots, length).clamp(min=0.0)
+    # Interpolating between unitary knots can break |kappa|^2 + P_perp <= 1
+    # by O(step^2); scale both powers back onto it (a no-op at the knots).
+    excess = (kappa.abs() ** 2 + p_perp).clamp(min=1.0)
+    kappa, p_perp = kappa / excess.sqrt(), p_perp / excess
     if cfg.path_drift_um_per_sqrt_s > 0:
         sigma = cfg.path_drift_um_per_sqrt_s / math.sqrt(sample_rate)
         path = sigma * torch.randn(

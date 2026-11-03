@@ -85,7 +85,7 @@ def test_hash_changes_with_any_field(tmp_path):
         'adc_bits': 10,
         'adc_full_scale': 3.0,
         'channel_phase_offsets_rad': (0.0, 1.0, 2.0),
-        'fiber': FiberConfig(4, 3.0, 2.8, 0.0, 0.01, None, False),
+        'fiber': FiberConfig(4, 3.0, 2.8, 0.0, 0.01, (), False),
     }
     # `acquisition` is deliberately unhashed (see SimConfig.hash).
     hashed = {f.name for f in dataclasses.fields(SimConfig)} - {'acquisition'}

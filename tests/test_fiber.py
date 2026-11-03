@@ -8,7 +8,12 @@ import torch
 
 from smi.theory import fiber
 from smi.theory.fiber import FiberConfig, simulate_fiber
-from smi.theory.forward import SimConfig, simulate_batch
+from smi.theory.forward import (
+    SimConfig,
+    derived_generator,
+    simulate_batch,
+    smi_excess_phase,
+)
 from tests._sims import SAMPLE_RATE, michelson_sim
 
 CPU = torch.device('cpu')
@@ -21,7 +26,7 @@ def _fiber(**kw) -> FiberConfig:
         'path_drift_um_per_sqrt_s': 0.0,
         'dispersion_per_um': 0.0,
         'spectral_corr_width_um': 0.01,
-        'monitor_wavelength_um': None,
+        'monitor_wavelengths_um': (),
         'pbs_channel': False,
     }
     return FiberConfig(**{**base, **kw})
@@ -93,7 +98,7 @@ def test_fiber_config_round_trips_through_dict():
 def test_monitor_channel_ignores_target():
     """Same draws, different motion: only the target channels change."""
     lam = michelson_sim().wavelengths_um
-    fib = _fiber(monitor_wavelength_um=lam[1], path_drift_um_per_sqrt_s=1.0)
+    fib = _fiber(monitor_wavelengths_um=(lam[1],), path_drift_um_per_sqrt_s=1.0)
     cfg, b = _sim(fib)
     gen = torch.Generator().manual_seed(0)
     faster = dataclasses.replace(cfg, drive_gain=2 * cfg.drive_gain)
@@ -112,8 +117,8 @@ def test_pbs_channel_appends_perp_power():
 
 
 def test_monitor_must_be_a_channel():
-    with pytest.raises(ValueError, match='not a channel'):
-        _sim(_fiber(monitor_wavelength_um=1.55))
+    with pytest.raises(ValueError, match='not channels'):
+        _sim(_fiber(monitor_wavelengths_um=(1.55,)))
 
 
 def test_fiber_phase_scale():
@@ -122,3 +127,38 @@ def test_fiber_phase_scale():
     assert fib.fiber_phase_scale(0.5) == pytest.approx(4 * math.pi / 0.5)
     disp = dataclasses.replace(fib, dispersion_per_um=0.1)
     assert disp.fiber_phase_scale(0.5) == pytest.approx(4 * math.pi * 0.95 / 0.5)
+
+
+def test_interpolated_powers_stay_lossless():
+    """Between unitary knots, |kappa|^2 + P_perp is renormalized onto <= 1."""
+    gen = torch.Generator().manual_seed(3)
+    fib = _fiber(drift_rad_per_sqrt_s=300.0)
+    draw = simulate_fiber(fib, (0.635,), 8, 4096, SAMPLE_RATE, CPU, gen)
+    assert float((draw.kappa.abs() ** 2 + draw.p_perp).max()) <= 1 + 1e-6
+
+
+def test_tensor_feedback_must_stay_weak():
+    with pytest.raises(ValueError, match='below 1'):
+        smi_excess_phase(torch.zeros(3), torch.tensor([0.2, 1.0, 0.1]), 3.0)
+
+
+def test_derived_generator_is_deterministic():
+    """The off-device fiber stream is a function of the caller's seed alone."""
+
+    def draws(seed):
+        parent = torch.Generator().manual_seed(seed)
+        return torch.randn(4, generator=derived_generator(parent, CPU))
+
+    assert torch.equal(draws(0), draws(0))
+    assert not torch.equal(draws(0), draws(1))
+
+
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason='needs MPS')
+def test_fiber_runs_with_an_mps_generator():
+    cfg = dataclasses.replace(
+        michelson_sim(), feedback_c=0.2, alpha=3.0, fiber=_fiber()
+    )
+    mps = torch.device('mps')
+    a = simulate_batch(cfg, 2, mps, torch.Generator(mps).manual_seed(0))
+    b = simulate_batch(cfg, 2, mps, torch.Generator(mps).manual_seed(0))
+    assert torch.equal(a.signals.cpu(), b.signals.cpu())
