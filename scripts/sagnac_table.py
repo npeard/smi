@@ -61,6 +61,11 @@ def sagnac_results() -> dict[str, object]:
                     # The conventional SMI phase readout at the same C:
                     # 2 Phi(C, alpha), 1 at C = 0 (eq. phase-factor).
                     'smi_phase_gain': 2 * phase_factor(c0 * c_bias, alpha),
+                    # The same laser in a conventional SMI sees the full C_0;
+                    # None where C_0 >= 1 leaves the monotone regime.
+                    'smi_phase_gain_c0': (
+                        2 * phase_factor(c0, alpha) if c0 < 1 else None
+                    ),
                 }
             )
     curves = {}

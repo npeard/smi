@@ -19,7 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import COLORS, FIGSIZE_HALF, RESULTS_DIR, parse_args, save
 
-ALPHA_COLORS = {'0': COLORS['muted'], '3': COLORS['accent'], '5': COLORS['highlight']}
+# alpha = 5 is in the JSON and the table but not drawn: within a few percent
+# of alpha = 3 on this log axis, it only overlaps it.
+ALPHA_COLORS = {'0': COLORS['muted'], '3': COLORS['accent']}
 
 
 def main() -> None:
