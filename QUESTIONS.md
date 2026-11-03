@@ -49,6 +49,7 @@ through fiber be retrieved most faithfully?
 
 ## Q4. Sagnac self-mixing accelerometer
 
-A common-path Sagnac self-mixing interferometer should be insensitive to fiber
-noise, and so buildable on single-mode fiber with no user-facing ports. Does the
-self-mixing nonlinearity enhance its acceleration sensing? (Analytic only.)
+A common-path Sagnac loop cancels reciprocal fiber phase in its conventional
+readout, but read through the laser's self-mixing the reciprocal phase returns
+as the feedback phase. Does the self-mixing nonlinearity still enhance its
+acceleration sensing? (Analytic only.)
