@@ -1,18 +1,33 @@
-"""Why the q3_fiber networks score at the zero predictor: a linear-Gaussian bound.
+"""Why the q3_fiber networks score at the zero predictor.
+
+Two kinds of evidence. A *linear-Gaussian perfectly-demodulated reference
+RMSE* (:func:`fiber_reference`) and direct checks on simulated shots
+(:func:`classical_static_check`, :func:`rescale_probe`).
 
 ``fiber_results.json``'s Fisher matrix models the fiber path as a constant
 drift *rate* u over the shot (one nuisance) and the coupling as |kappa| = 1,
 and its velocity is one constant offset v per shot. The simulator instead
 random-walks p(t) per sample, fades |kappa(t)|, and drifts a per-color speckle
 phase arg(kappa_c(t)), while the network must return v(t) per sample. This
-module bounds that per-sample task: each channel is read as a
+module scores that per-sample task: each channel is read as a
 displacement-equivalent phase track (genie demodulation: fringe order known,
 detector noise mapped to phase through the Fisher information), the tracks are
 differenced to velocity units, and the per-frequency multichannel Wiener
-(LMMSE) posterior of v gives the RMSE. Every component is stationary Gaussian
-with its PSD estimated from the simulator, so it is the best *linear*
-estimator; nonlinear unwrapping errors only add to it, and the nominal arm's
-network-vs-bound gap calibrates how much.
+(LMMSE) posterior of v gives the RMSE.
+
+It is a reference, not a bound in either direction:
+
+- perfect demodulation (fringe order known) is optimistic;
+- linear, stationary, Gaussian estimation is pessimistic for non-Gaussian
+  speckle and the non-stationary chirp drive, and the velocity prior is the
+  simulator's own (white dp/dt against the 1 Hz-1 kHz drive band), so the
+  arm-to-arm separations rest on that prior;
+- fading enters only through the shot-averaged |kappa|^2, so it is blind to
+  in-shot fades and cycle slips by construction (and to P_perp, hence
+  fiber-pbs equals fiber).
+
+Arm comparisons are posterior-MSE ratios to the free-space reference, not
+Fisher-information ratios.
 """
 
 import dataclasses
@@ -24,7 +39,12 @@ import numpy as np
 import torch
 
 from smi.data.frozen import load_or_create
-from smi.experiments.evaluate import CheckpointEstimator, evaluate
+from smi.experiments.evaluate import (
+    DISPLACEMENT_LIMIT_MARGIN,
+    CheckpointEstimator,
+    InverseFitEstimator,
+    evaluate,
+)
 from smi.experiments.grids import GRIDS
 from smi.experiments.runner import expand_grid, trained_checkpoint
 from smi.theory.bounds import phase_factor
@@ -36,7 +56,7 @@ _CPU = torch.device('cpu')
 
 @dataclass(frozen=True)
 class Knockouts:
-    """Which fiber impairments the bound keeps (each True keeps the effect)."""
+    """Which fiber impairments the reference keeps (each True keeps the effect)."""
 
     fading: bool
     speckle: bool
@@ -82,10 +102,12 @@ def wiener_rmse(
     return np.sqrt(post.clip(min=0).mean(-1))
 
 
-def fiber_bound(
+def fiber_reference(
     cfg: SimConfig, knock: Knockouts, n_shots: int, seed: int
 ) -> dict[str, float]:
-    """Linear-Gaussian velocity RMSE bound of ``cfg`` with ``knock`` applied.
+    """Linear-Gaussian perfectly-demodulated reference RMSE of ``cfg``.
+
+    Caveats in the module docstring: neither an upper nor a lower bound.
 
     Detector noise enters each channel as white displacement noise of variance
     (lambda / 4 pi)^2 sigma^2 / <V^2 |kappa|^2> / phase_factor(C, alpha) per
@@ -187,6 +209,85 @@ def drift_free_probe(
         out[name] = float(((pred - batch.velocity) ** 2).mean(-1).sqrt().mean())
     out['zero_predictor'] = float(batch.velocity.pow(2).mean(-1).sqrt().mean())
     return out
+
+
+def static_fiber(cfg: SimConfig) -> SimConfig:
+    """``cfg`` with its fiber frozen: no path drift and no speckle drift."""
+    assert cfg.fiber is not None
+    fib = dataclasses.replace(
+        cfg.fiber, path_drift_um_per_sqrt_s=0.0, drift_rad_per_sqrt_s=0.0
+    )
+    return dataclasses.replace(cfg, fiber=fib)
+
+
+def channel_stats(
+    cfg: SimConfig, n_shots: int, seed: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pooled per-channel mean and std ``[C]`` of signals drawn from ``cfg``."""
+    gen = torch.Generator().manual_seed(seed)
+    sig = simulate_batch(cfg, n_shots, _CPU, gen).signals
+    return sig.mean((0, 2)), sig.std((0, 2))
+
+
+def rescale_to(
+    signals: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
+) -> torch.Tensor:
+    """Per shot and channel, standardize then map onto ``mean`` / ``std`` ``[C]``.
+
+    Undoes a shot's overall coupling |kappa| (which scales its fringe std) so
+    every shot presents the training distribution's per-channel level.
+    """
+    mu = signals.mean(-1, keepdim=True)
+    sd = signals.std(-1, keepdim=True).clamp_min(1e-12)
+    return (signals - mu) / sd * std[:, None] + mean[:, None]
+
+
+def _rmse(pred: torch.Tensor, true: torch.Tensor) -> float:
+    return float(((pred - true) ** 2).mean(-1).sqrt().mean())
+
+
+def classical_static_check(cfg: SimConfig, n_shots: int, seed: int) -> dict[str, float]:
+    """Inverse-fit (Viterbi) velocity RMSE on ``cfg``'s shots, vs zero predictor.
+
+    ``inverse_fit`` normalizes each channel's fringe amplitude itself, so a
+    static fiber's fixed |kappa| does not hurt it; a score well under the zero
+    predictor means the shots carry the velocity.
+    """
+    gen = torch.Generator().manual_seed(seed)
+    batch = simulate_batch(cfg, n_shots, _CPU, gen)
+    disp = batch.displacement.double()
+    excursion = (disp - disp.mean(-1, keepdim=True)).abs().max()
+    est = InverseFitEstimator(
+        cfg.sample_rate, float(excursion) * DISPLACEMENT_LIMIT_MARGIN
+    )
+    pred = est.predict_velocity(batch.signals, cfg.wavelengths_um)
+    return {
+        'inverse_fit': _rmse(pred, batch.velocity),
+        'zero_predictor': _rmse(torch.zeros_like(batch.velocity), batch.velocity),
+    }
+
+
+def rescale_probe(
+    checkpoint: Path,
+    cfg: SimConfig,
+    stats: tuple[torch.Tensor, torch.Tensor],
+    n_shots: int,
+    seed: int,
+    device: str,
+) -> dict[str, float]:
+    """Score ``checkpoint`` on ``cfg``'s shots raw and rescaled onto ``stats``."""
+    est = CheckpointEstimator(checkpoint, device)
+    gen = torch.Generator().manual_seed(seed)
+    batch = simulate_batch(cfg, n_shots, _CPU, gen)
+    scaled = rescale_to(batch.signals, *stats)
+    return {
+        'raw': _rmse(
+            est.predict_velocity(batch.signals, cfg.wavelengths_um), batch.velocity
+        ),
+        'rescaled': _rmse(
+            est.predict_velocity(scaled, cfg.wavelengths_um), batch.velocity
+        ),
+    }
 
 
 def per_shot_table(

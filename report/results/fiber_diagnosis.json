@@ -51,148 +51,274 @@
       "zero_predictor": 0.4574872851371765
     }
   },
-  "bounds": {
+  "reference_name": "linear-Gaussian perfectly-demodulated reference RMSE",
+  "reference_caveats": [
+    "Not a bound in either direction: perfect demodulation (fringe order known) is optimistic.",
+    "Linear-stationary-Gaussian estimation is pessimistic for non-Gaussian speckle and the non-stationary chirp; arm separations rest on the simulator's white dp/dt prior against the 1 Hz-1 kHz drive band.",
+    "Fading enters only via the shot-averaged |kappa|^2: blind to in-shot fades and cycle slips, and to P_perp (so fiber-pbs equals fiber)."
+  ],
+  "reference_rmse": {
     "nominal": {
       "fading=True_speckle=True_path=True": {
         "rmse": 0.03455170895414363,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 1.0
       }
     },
     "fiber": {
       "fading=True_speckle=True_path=True": {
         "rmse": 0.08424250499075928,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.16821957093527942
       },
       "fading=True_speckle=True_path=False": {
         "rmse": 0.035844572322478424,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.9291637532071285
       },
       "fading=True_speckle=False_path=True": {
         "rmse": 0.08393098842063623,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.16947060905731728
       },
       "fading=True_speckle=False_path=False": {
         "rmse": 0.03455438815635759,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.9998449344068956
       },
       "fading=False_speckle=True_path=True": {
         "rmse": 0.08424216630072555,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.16822092356922
       },
       "fading=False_speckle=True_path=False": {
         "rmse": 0.0358421112823928,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.9292913566137088
       },
       "fading=False_speckle=False_path=True": {
         "rmse": 0.08393064591435562,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.169471992219946
       },
       "fading=False_speckle=False_path=False": {
         "rmse": 0.03455170895414363,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 1.0
       }
     },
     "fiber-4color": {
       "fading=True_speckle=True_path=True": {
         "rmse": 0.08368680112209745,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.17046103871061025
       },
       "fading=True_speckle=True_path=False": {
         "rmse": 0.03342981375775453,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 1.0682456952409722
       },
       "fading=True_speckle=False_path=True": {
         "rmse": 0.08338611274432255,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.17169261228704447
       },
       "fading=True_speckle=False_path=False": {
         "rmse": 0.03214153339344962,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 1.1555956050678444
       },
       "fading=False_speckle=True_path=True": {
         "rmse": 0.08368644885664973,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.17046247377354626
       },
       "fading=False_speckle=True_path=False": {
         "rmse": 0.03342682649000728,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 1.0684366364004156
       },
       "fading=False_speckle=False_path=True": {
         "rmse": 0.08338575489546367,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.17169408592333393
       },
       "fading=False_speckle=False_path=False": {
         "rmse": 0.03213826502911624,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 1.1558306581739168
       }
     },
     "fiber-monitor": {
       "fading=True_speckle=True_path=True": {
         "rmse": 0.06369989279030305,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.294212867458935
       },
       "fading=True_speckle=True_path=False": {
         "rmse": 0.03586449912631079,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.9281315279915011
       },
       "fading=True_speckle=False_path=True": {
         "rmse": 0.061646603362774326,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.31413820682659926
       },
       "fading=True_speckle=False_path=False": {
         "rmse": 0.034554952763041005,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.9998122609708028
       },
       "fading=False_speckle=True_path=True": {
         "rmse": 0.06369757145025053,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.2942343119360919
       },
       "fading=False_speckle=True_path=False": {
         "rmse": 0.03586153177927864,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.9282851300347665
       },
       "fading=False_speckle=False_path=True": {
         "rmse": 0.0616439638968056,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.31416510888822435
       },
       "fading=False_speckle=False_path=False": {
         "rmse": 0.034551708954143626,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 1.0000000000000004
       }
     },
     "fiber-pbs": {
       "fading=True_speckle=True_path=True": {
         "rmse": 0.08424250499075928,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.16821957093527942
       },
       "fading=True_speckle=True_path=False": {
         "rmse": 0.035844572322478424,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.9291637532071285
       },
       "fading=True_speckle=False_path=True": {
         "rmse": 0.08393098842063623,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.16947060905731728
       },
       "fading=True_speckle=False_path=False": {
         "rmse": 0.03455438815635759,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.9998449344068956
       },
       "fading=False_speckle=True_path=True": {
         "rmse": 0.08424216630072555,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.16822092356922
       },
       "fading=False_speckle=True_path=False": {
         "rmse": 0.0358421112823928,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.9292913566137088
       },
       "fading=False_speckle=False_path=True": {
         "rmse": 0.08393064591435562,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 0.169471992219946
       },
       "fading=False_speckle=False_path=False": {
         "rmse": 0.03455170895414363,
-        "zero_predictor": 0.45748725119801215
+        "zero_predictor": 0.45748725119801215,
+        "mse_ratio_to_free_space": 1.0
       }
+    }
+  },
+  "rescale": "per shot and channel: subtract the shot mean, divide by the shot std, multiply by the pooled per-channel std and add the pooled mean of the network training sim (seed 7 draw)",
+  "check_a_inverse_fit_static": {
+    "nominal": {
+      "inverse_fit": 1.2485848665237427,
+      "zero_predictor": 0.4574872851371765
+    },
+    "fiber": {
+      "inverse_fit": 1.2828501462936401,
+      "zero_predictor": 0.4574872851371765
+    },
+    "fiber-4color": {
+      "inverse_fit": 1.6236684322357178,
+      "zero_predictor": 0.4574872851371765
+    }
+  },
+  "check_b_static_rescaled": {
+    "fiber": {
+      "fiber-trained:tcan-44k__ch635-675-515__fiber__seed0": {
+        "raw": 0.4253721833229065,
+        "rescaled": 0.4232712388038635
+      },
+      "nominal-trained:tcan-44k__ch635-675-515__nominal__seed0": {
+        "raw": 0.4454539716243744,
+        "rescaled": 0.4976792633533478
+      },
+      "fiber-trained:unettransformer-offline-44k__ch635-675-515__fiber__seed0": {
+        "raw": 0.45757579803466797,
+        "rescaled": 0.45756402611732483
+      },
+      "nominal-trained:unettransformer-offline-44k__ch635-675-515__nominal__seed0": {
+        "raw": 0.4412991404533386,
+        "rescaled": 0.4523574709892273
+      }
+    },
+    "fiber-4color": {
+      "fiber-trained:tcan-44k__ch635-675-515-785__fiber-4color__seed0": {
+        "raw": 0.4160693883895874,
+        "rescaled": 0.4252845048904419
+      },
+      "nominal-trained:tcan-44k__ch635-675-515-785__nominal__seed0": {
+        "raw": 0.44983962178230286,
+        "rescaled": 0.5414804816246033
+      },
+      "fiber-trained:unettransformer-offline-44k__ch635-675-515-785__fiber-4color__seed0": {
+        "raw": 0.4567340016365051,
+        "rescaled": 0.45710092782974243
+      },
+      "nominal-trained:unettransformer-offline-44k__ch635-675-515-785__nominal__seed0": {
+        "raw": 0.45849281549453735,
+        "rescaled": 0.4698597490787506
+      }
+    }
+  },
+  "remedy_as_trained_rescaled": {
+    "tcan-44k__ch635-675-515__fiber__seed0": {
+      "raw": 0.43869516253471375,
+      "rescaled": 0.43645256757736206
+    },
+    "unettransformer-offline-44k__ch635-675-515__fiber__seed0": {
+      "raw": 0.45755505561828613,
+      "rescaled": 0.457550972700119
+    },
+    "tcan-44k__ch635-675-515-785__fiber-4color__seed0": {
+      "raw": 0.426414430141449,
+      "rescaled": 0.4318394660949707
+    },
+    "unettransformer-offline-44k__ch635-675-515-785__fiber-4color__seed0": {
+      "raw": 0.4573633670806885,
+      "rescaled": 0.4570391774177551
+    },
+    "tcan-44k__ch635-675-515-785__fiber-monitor__seed0": {
+      "raw": 0.44155067205429077,
+      "rescaled": 0.4470561146736145
+    },
+    "unettransformer-offline-44k__ch635-675-515-785__fiber-monitor__seed0": {
+      "raw": 0.457520991563797,
+      "rescaled": 0.45752230286598206
+    },
+    "tcan-44k__ch635-675-515__fiber-pbs__seed0": {
+      "raw": 0.4374719560146332,
+      "rescaled": 0.4368472695350647
+    },
+    "unettransformer-offline-44k__ch635-675-515__fiber-pbs__seed0": {
+      "raw": 0.4575403034687042,
+      "rescaled": 0.4575418531894684
     }
   }
 }
