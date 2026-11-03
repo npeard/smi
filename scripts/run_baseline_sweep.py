@@ -50,7 +50,7 @@ from smi.estimators.tabular import (
     SupportsPredict,
     fit_lightgbm,
     fit_ridge,
-    predict_windows,
+    predict_trace,
     windowize,
 )
 from smi.experiments.results_artifact import RunRecord, write_results
@@ -436,43 +436,11 @@ def _collect_shots(
 def _tabular_predictions(
     model: SupportsPredict, signals: list[np.ndarray], length: int
 ) -> torch.Tensor:
-    """Predict a full-length velocity trace per shot from window predictions.
-
-    Each window yields one value at its centre; the trace is reconstructed by
-    assigning that value to every position the window covers and averaging
-    overlaps, which is what the windowed torch models do internally. The stride
-    here is :data:`TABULAR_EVAL_STRIDE` (1) rather than the fit stride, so the
-    reconstruction is dense and the reported RMSE carries no discretization
-    floor of its own.
-
-    Args:
-        model: Fitted ridge or booster.
-        signals: Per-shot [channels, length] arrays.
-        length: Signal length.
-
-    Returns:
-        [shots, length] predicted velocity in um/ms.
-    """
-    out = np.zeros((len(signals), length), dtype=np.float32)
-    starts = np.arange(0, length - TABULAR_WINDOW + 1, TABULAR_EVAL_STRIDE)
-    for row, sig in enumerate(signals):
-        x, _ = windowize(
-            sig, np.zeros(length, dtype=np.float32), TABULAR_WINDOW, TABULAR_EVAL_STRIDE
-        )
-        values = predict_windows(model, x)
-        accum = np.zeros(length, dtype=np.float64)
-        counts = np.zeros(length, dtype=np.float64)
-        for start, value in zip(starts, values, strict=True):
-            accum[start : start + TABULAR_WINDOW] += value
-            counts[start : start + TABULAR_WINDOW] += 1.0
-        # The tail beyond the last complete window is never covered; hold the
-        # last prediction there rather than leaving a zero that would flatter
-        # or punish the model arbitrarily.
-        covered = counts > 0
-        out[row, covered] = (accum[covered] / counts[covered]).astype(np.float32)
-        if not covered.all():
-            out[row, ~covered] = out[row, covered][-1]
-    return torch.from_numpy(out)
+    """[shots, length] predicted velocity (um/ms); see ``predict_trace``."""
+    assert TABULAR_EVAL_STRIDE == 1, 'predict_trace reconstructs at stride 1'
+    out = np.stack([predict_trace(model, sig, TABULAR_WINDOW) for sig in signals])
+    assert out.shape[1] == length
+    return torch.from_numpy(out.astype(np.float32))
 
 
 def run_tabular(

@@ -140,7 +140,7 @@ def cell_key(
     return f'{family}__{subset_label(wavelengths_um)}__{sim_name}__{tail}'
 
 
-def _build_sims(
+def build_sims(
     entry: Sim, wavelengths_um: tuple[float, ...]
 ) -> list[tuple[str, SimConfig, tuple[str, object] | None]]:
     """Expand one ``sims`` entry (and its sweep) for a channel subset.
@@ -197,7 +197,7 @@ def expand_grid(grid: Grid) -> list[Cell]:
             else entry.sign_invariant
         )
         for wavelengths in grid.channel_subsets:
-            for sim_name, sim, sweep in _build_sims(entry, wavelengths):
+            for sim_name, sim, sweep in build_sims(entry, wavelengths):
                 if grid.oracle:
                     cells.append(
                         Cell(

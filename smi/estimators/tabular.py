@@ -32,10 +32,12 @@ class SupportsPredict(Protocol):
     """Anything with a scikit-learn-style ``predict``.
 
     Both a fitted ``Ridge`` and a LightGBM ``Booster`` satisfy this, which is
-    all :func:`predict_windows` needs of them.
+    all :func:`predict_windows` needs of them. The return is ``object``
+    because LightGBM's stubs admit sparse outputs; ``predict_windows``
+    converts whatever comes back with ``np.asarray``.
     """
 
-    def predict(self, x: np.ndarray) -> np.ndarray: ...
+    def predict(self, x: np.ndarray, /) -> object: ...
 
 
 def windowize(
@@ -158,3 +160,30 @@ def predict_windows(model: SupportsPredict, x: np.ndarray) -> np.ndarray:
         [n_samples] predictions.
     """
     return np.asarray(model.predict(x)).ravel()
+
+
+def predict_trace(
+    model: SupportsPredict, signals: np.ndarray, window: int
+) -> np.ndarray:
+    """Predict a full-length trace for one shot from stride-1 window predictions.
+
+    Each window's value is spread over every sample it covers and overlaps are
+    averaged, which is what the windowed torch models do internally. Stride 1
+    so the trace carries no piecewise-constant discretization floor of its own.
+
+    Args:
+        model: A fitted ``Ridge`` or LightGBM ``Booster``.
+        signals: [channels, length] input samples.
+        window: The window the model was fit on.
+
+    Returns:
+        [length] float64 prediction.
+    """
+    length = signals.shape[1]
+    x, _ = windowize(signals, np.zeros(length), window, 1)
+    kernel = np.ones(window)
+    # Full convolution of the per-start values with a box of the window's
+    # length is the per-sample sum over the windows covering it.
+    accum = np.convolve(predict_windows(model, x), kernel)
+    counts = np.convolve(np.ones(len(x)), kernel)
+    return accum / counts
