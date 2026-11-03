@@ -31,7 +31,6 @@ import matplotlib
 
 matplotlib.use('Agg')
 
-import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -39,9 +38,9 @@ from matplotlib.typing import RcKeyType
 from scipy import signal
 
 from smi.core.acquisition import STEMLAB_125_14
-from smi.core.paths import DATA_DIR, RESULTS_DIR
+from smi.core.paths import RESULTS_DIR
 from smi.data.frozen import RIG_WAVELENGTHS_UM
-from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, read_sample_rate
+from smi.data.schema import PD_WAVELENGTHS_UM
 from smi.experiments.grids import GRIDS
 from smi.experiments.results_artifact import RunRecord, read_results
 from smi.experiments.runner import (
@@ -59,9 +58,6 @@ from smi.theory.forward import (
     simulate_batch,
 )
 
-FREE_SPACE_H5 = DATA_DIR / 'free-space-synchro_10k.h5'
-MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
-
 # Baseline results, written by smi.experiments.baselines and committed. Figures
 # read this rather than recomputing: method 2's Viterbi decode is ~20 minutes
 # per acquisition on a GPU, which is not work a document build should be
@@ -70,7 +66,7 @@ MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
 # method 2 that makes regeneration expensive.)
 RESULTS_JSON = RESULTS_DIR / 'baseline_results.json'
 
-# Experiment-runner records behind synthetic.typ's learned-model results.
+# Experiment-runner records behind report.typ's synthetic learned-model results.
 SYNTHETIC_RESULTS_JSON = RESULTS_DIR / 'synthetic_results.json'
 
 # The same lasers as the synthetic simulator spells them, for figures that
@@ -86,8 +82,8 @@ def c_sim(c: float) -> str:
     return f'smi-a3-feedback_c={c}'
 
 
-# The sign-collapse controls of synthetic.typ sections 1.1 (the exit check's
-# signed Michelson run) and 2A (alpha = 0 at both schedules). These are the
+# The sign-collapse controls of report.typ (the exit check's signed Michelson
+# run, and alpha = 0 at both schedules). These are the
 # only records without zero_predictor_monitor (written before the min_epochs
 # grace) that patience stopped inside the grace, at epoch 11 on the
 # zero-output plateau. The report quotes exactly that collapse, so they are
@@ -181,7 +177,7 @@ def synthetic_records() -> dict[str, RunRecord]:
 def synthetic_cell(records: dict[str, RunRecord], family: str, sim: str) -> RunRecord:
     """The seed-0, three-channel record of ``family`` on ``sim``.
 
-    Every synthetic.typ figure reads three-channel seed-0 cells; a missing one
+    Every synthetic figure of report.typ reads three-channel seed-0 cells; a missing one
     raises here, naming the key, rather than plotting a gap.
     """
     return records[cell_key(family, SYNTHETIC_WAVELENGTHS_UM, sim, 0)]
@@ -418,7 +414,6 @@ def mismatch_spectra(noise_free: bool) -> MismatchSpectra:
 # Photodiode channels, in the order the dataset feeds them to the model, with
 # the laser wavelength each one detects (microns).
 PD_CHANNELS: tuple[tuple[str, float], ...] = tuple(PD_WAVELENGTHS_UM.items())
-VOLTAGE_CHANNEL = DRIVE_KEY
 
 # The two acquisitions, as (key in baseline_results.json, axis label). Shared
 # so that adding a third cannot leave one figure silently showing two.
@@ -672,38 +667,6 @@ def save(fig: plt.Figure, output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, metadata={'CreationDate': None})
     plt.close(fig)
-
-
-def read_shot(
-    h5_path: Path, channel: str, index: int, decimate: int = 1
-) -> tuple[np.ndarray, float]:
-    """Read one shot from one channel of an acquisition file.
-
-    A single channel of these files is 0.66 GB, so read exactly one row -- never
-    the whole dataset.
-
-    Args:
-        h5_path: Path to the acquisition HDF5 file.
-        channel: Dataset name, e.g. ``RP1_CH1``.
-        index: Row (shot) index.
-        decimate: Keep every ``decimate``-th sample of the returned trace.
-
-    Returns:
-        Tuple of (trace, sample_rate). ``sample_rate`` is the rate of the
-        returned trace, i.e. already divided by ``decimate``.
-    """
-    with h5py.File(h5_path, 'r') as f:
-        trace = np.asarray(f[channel][index, :], dtype=np.float64)
-        sample_rate = read_sample_rate(f.attrs)
-    if decimate > 1:
-        trace = trace[::decimate]
-        sample_rate /= decimate
-    return trace, sample_rate
-
-
-def time_axis(n: int, sample_rate: float) -> np.ndarray:
-    """Time axis in milliseconds for ``n`` samples at ``sample_rate`` Hz."""
-    return np.arange(n) / sample_rate * 1e3
 
 
 def panel_label(ax: plt.Axes, text: str) -> None:

@@ -396,7 +396,6 @@ report = { cmd = "snakemake --cores all --scheduler greedy", cwd = "report" }
 report-dry = { cmd = "snakemake --cores all --scheduler greedy -n", cwd = "report" }
 report-clean = { cmd = "snakemake --cores 1 clean", cwd = "report" }
 report-only = { cmd = "snakemake --cores all --scheduler greedy build/report.pdf", cwd = "report" }
-report-synthetic = { cmd = "snakemake --cores all --scheduler greedy build/synthetic.pdf", cwd = "report" }
 
 # ty >= 0.0.81 reports invalid-mutable-override on every nn.Module.forward
 # override, because torch types `forward` as a mutable Callable attribute.

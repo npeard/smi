@@ -29,25 +29,21 @@ FIGDIR = f"{BUILD}/figures"
 # changes.
 DOCUMENT_FIGURES = {
     "report": [
-        "baseline_summary",
-        "baseline_amplitude_trend",
-        "baseline_shot_traces",
-        "freespace_vs_fiber",
-        "model_comparison",
-    ],
-    "synthetic": [
         "exit_check",
         "sign_information",
-        "feedback_curve",
-        "noise_ladder",
         "fisher_phase",
         "velocity_bounds",
         "spectral_mismatch",
-        "q1_binned",
-        "leave_one_out",
         "q1_subsets",
+        "q1_binned",
         "model_families",
         "displacement_rmse",
+        "feedback_curve",
+        "noise_ladder",
+        "leave_one_out",
+        "baseline_summary",
+        "model_comparison",
+        "baseline_amplitude_trend",
     ],
 }
 
@@ -133,7 +129,7 @@ wildcard_constraints:
 # Numbers a document quotes in its prose, computed by a script and read by the
 # document at compile time, so the prose cannot drift from the library that
 # produces the figures.
-DOCUMENT_VALUES = {"synthetic": [f"{BUILD}/synthetic_values.json"]}
+DOCUMENT_VALUES = {"report": [f"{BUILD}/synthetic_values.json"]}
 
 
 def figure_pdfs(document):
@@ -160,7 +156,7 @@ rule figure:
 
 
 rule synthetic_values:
-    """Compute the values synthetic.typ quotes in its text and table."""
+    """Compute the values report.typ quotes in its synthetic text and tables."""
     input:
         script="figures/synthetic_values.py",
         common="figures/_figcommon.py",

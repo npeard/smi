@@ -1,6 +1,6 @@
 """Q1's binned test: velocity error against |v| and fringe-extremum distance.
 
-Section 1 of synthetic.typ predicts that one channel loses its information at
+The analytic foundation of report.typ predicts that one channel loses its information at
 its fringe extrema and three channels do not, so the error should rise toward
 an extremum for one channel and stay flat for three. The runner's records bin
 only by the pre-feedback phase of the shortest channel, and the checkpoints

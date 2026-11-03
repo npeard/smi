@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Numbers that synthetic.typ quotes in prose and in its sign-evidence table.
+"""Numbers that report.typ quotes in its synthetic prose and tables.
 
 The document reads this JSON at compile time, so a change to
 smi.theory.bounds (or to the results artifacts) rebuilds the quoted values
