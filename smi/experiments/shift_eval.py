@@ -37,6 +37,11 @@ Analytic predictions, per knob (``eps`` is the relative shift):
   moves with ``value`` by the within-distribution spread of error over phase
   configuration, which the nominal score does not show (several per-shot SEs
   in the recorded sweep, not a no-op).
+* ``phase_random`` (value: an integer index ``i``): the shared-phase path with
+  offsets ``(0, u_1, ..., u_{K-1})``, ``u`` uniform on [0, 2 pi) from
+  ``random_offsets(i, K)``. Scored over many indices, the mean should match
+  the nominal score (the training distribution is their average) while the
+  spread across configurations exceeds the per-shot SE.
 * ``feedback_c``: C changes the fringe shape (the SMI sawtooth asymmetry that
   carries the direction), not its rate, so no closed-form scale error exists.
   The prediction is only qualitative: the minimum at the trained C = 0.2,
@@ -53,6 +58,7 @@ import math
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 from torch import Tensor
 
 from smi.data.frozen import load_or_create
@@ -63,13 +69,18 @@ from smi.experiments.runner import Cell, expand_grid
 from smi.theory.forward import SimConfig
 
 Knob = Literal[
-    'feedback_c', 'wavelength_scale', 'wavelength_independent', 'phase_offset'
+    'feedback_c',
+    'wavelength_scale',
+    'wavelength_independent',
+    'phase_offset',
+    'phase_random',
 ]
 KNOBS: tuple[Knob, ...] = (
     'feedback_c',
     'wavelength_scale',
     'wavelength_independent',
     'phase_offset',
+    'phase_random',
 )
 
 #: Per-channel signs and sizes of the ``wavelength_independent`` shift.
@@ -77,6 +88,12 @@ WAVELENGTH_PATTERN = (1.0, -1.0, 0.5)
 
 # The noise-free SMI sim of q3_s1_families; the shifts perturb it.
 NOMINAL_SIM = 'smi-a3'
+
+
+def random_offsets(index: int, n_ch: int) -> tuple[float, ...]:
+    """Offsets ``(0, u_1, ...)`` of ``phase_random`` configuration ``index``."""
+    rest = np.random.default_rng(index).uniform(0, 2 * math.pi, n_ch - 1)
+    return (0.0, *map(float, rest))
 
 
 def shifted_config(cfg: SimConfig, knob: Knob, value: float) -> SimConfig:
@@ -95,7 +112,11 @@ def shifted_config(cfg: SimConfig, knob: Knob, value: float) -> SimConfig:
                 for w, p in zip(cfg.wavelengths_um, WAVELENGTH_PATTERN, strict=False)
             ),
         )
-    offsets = tuple(k * value for k in range(len(cfg.wavelengths_um)))
+    n_ch = len(cfg.wavelengths_um)
+    if knob == 'phase_random':
+        offsets = random_offsets(int(value), n_ch)
+    else:
+        offsets = tuple(k * value for k in range(n_ch))
     return dataclasses.replace(cfg, channel_phase_offsets_rad=offsets)
 
 
