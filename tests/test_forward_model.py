@@ -304,8 +304,7 @@ def test_cached_simulation_is_bitwise_the_uncached_one(device):
     cfg = dataclasses.replace(
         _noise_free(feedback_c=0.3, alpha=3.0), snr_db=20.0, pd_bandwidth_hz=50e3
     )
-    for cache in (forward.drive, forward._lowpass_kernel, forward._wavelengths_tensor):
-        cache.cache_clear()
+    forward.clear_caches()
     cold, warm = (
         simulate_batch(
             cfg, 4, torch.device(device), torch.Generator(device).manual_seed(3)

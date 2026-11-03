@@ -665,6 +665,12 @@ def drive(
     )
 
 
+def clear_caches() -> None:
+    """Empty simulate_batch's memo caches, so the next batch builds afresh."""
+    for cache in (drive, _lowpass_kernel, _wavelengths_tensor):
+        cache.cache_clear()
+
+
 def channel_phases(
     offsets: tuple[float, ...] | None,
     shape: tuple[int, int],
