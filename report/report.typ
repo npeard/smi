@@ -659,6 +659,35 @@ Whatever makes the fiber path harder for a
 learned model is not visible in the baseline. The band-limiting below is real
 in the raw data; it is not costing the baseline anything measurable.
 
+== Multimode fiber model <sec-fiber-model>
+
+Q3 runs the simulator through a model of multimode fiber (`smi/theory/fiber.py`). // math-ok: question label
+The fiber carries $N$ spatial modes in two polarizations. The laser launches
+into one mode, and its cavity couples back only to that mode. One-way
+transmission is $T(t, lambda) = e^(i 2 pi p(t) n(lambda) \/ lambda) U(t, lambda)$:
+a common optical-path drift $p(t)$, the same for every mode and color, times a
+speckle unitary $U = e^(i H)$ whose Hermitian generator random-walks. The model
+rests on three assumptions.
+
+1. Reciprocity. Traversed backwards in the same basis, the fiber is $T^T$, so
+   after an ideal distal mirror the returned field is $r = T^T T e_0$. The
+   feedback coupling is its projection on the launch mode,
+   $kappa = (T^T T)_(00)$.
+2. $|kappa| <= 1$ scales the return amplitude, so it multiplies both $C$ and
+   the fringe visibility; $arg kappa$ adds a per-color speckle phase $psi_k$
+   to the round trip.
+3. A polarizing beamsplitter after the fiber sends every orthogonal mode to
+   one large-area photodiode, which reads
+   $P_perp = sum_m |r_(N + m)|^2$.
+
+With $n(lambda) \/ n_"ref" = 1 + D (lambda - 1 mu"m")$, channel $k$ sees the
+round-trip phase
+$
+  theta_k (t) = (4 pi) / lambda_k (d(t) + n p(t)) + psi_k (t)
+$ <eq-fiber-phase>
+up to the dispersion term. Generators of different colors are correlated over
+a Gaussian width in wavelength, so colors far apart see independent speckle.
+
 == Predictions for the real data <sec-real-predictions>
 
 // Published real-data numbers, defined once:
@@ -796,7 +825,9 @@ to seed.
     Velocity information adds over channels. $J$: profiled per-sample
     velocity information, in $10^7 ("um/ms")^(-2)$, of the first $N$ colors of
     the list, mean over seeds. Bound ratio: $sqrt(J_1 \/ J_N)$ at $C = 0.2$, the CRB on velocity
-    relative to 635 nm alone.
+    relative to 635 nm alone. Each row slices one shot draw per seed to its
+    first $N$ channels; the R1 grid instead scores each $N$ on its own frozen
+    test set, from a shared seed.
   ],
 ) <tab-q1-count>
 
@@ -955,7 +986,9 @@ offset error.
     Quadrature offsets, not colors, carry the sign at $C = 0$. Colors: the
     first $N$ of 635, 674.8, 515 nm with independent phases. Array: $N$ times
     635 nm sharing one phase, offsets quadrature-spread or zero. $J$ as in
-    @tab-q1-count; same detector, 30 dB, $alpha = 3$.
+    @tab-q1-count; same detector, 30 dB, $alpha = 3$. Each arm has its own
+    shots from a shared seed, and in the R2 grid its own frozen test set: the
+    arms differ in channel set and offsets, so one set cannot serve them.
   ],
 ) <tab-q1-colors>
 
@@ -979,7 +1012,32 @@ colors', or if collapsing its offsets to zero leaves its sign error unchanged.
 
 === Analytic
 
-_Status: no per-model prediction; the bounds of @sec-crb are the floor._
+Noise-free, the floor is zero. As $sigma -> 0$ the information of
+@eq-info-avg diverges and both bounds of @sec-crb vanish, so any error on the
+noise-free cells of @fig-families is a model limit, not an information limit.
+A number needs a noise level. At the nominal #val("an_snr_nominal") dB, with
+three channels and $V tilde U(0.5, 1)$, the causal and offline bounds are
+#val("an_c02_causal_bound") and #val("an_c02_offline_bound") $mu$m/ms at
+$C = 0.2$, and #val("an_mich_causal_bound") and #val("an_mich_offline_bound")
+on Michelson, where they are local and compare with the sign-invariant score.
+The best noise-free causal network sits #val("an_c02_causal_factor") times
+above the 30 dB causal bound at $C = 0.2$ and #val("an_mich_causal_factor")
+times above it on Michelson. The best offline network sits
+#val("an_c02_offline_factor") and #val("an_mich_offline_factor") times above
+the offline bound. Put the other way, the best causal network at $C = 0.2$
+($#val("an_c02_causal_net")$ $mu$m/ms) scores what the causal bound allows at
+#val("an_c02_causal_snr") dB, and the best Michelson one at
+#val("an_mich_causal_snr") dB.
+
+Prediction: every trained family sits above the bound at matched noise. Those
+factors are lower bounds on the matched-noise factor, because the noise-free
+bound is below the 30 dB one. A factor near 2 would put an estimator at the
+information limit. That is the margin within which an extended Kalman filter
+given the true phases meets the causal bound (`tests/test_bounds.py`). A
+factor well above 2 at matched noise marks a model limit. The bounds describe
+a simpler model than the simulator (@sec-crb), so a network below them would
+point at what they leave out, such as the drive-line structure, not at an
+error in the network.
 
 === Synthetic
 
@@ -1206,7 +1264,28 @@ only SCNN and the MLP, so for the other four families it is an extrapolation.
 
 ==== Analytic
 
-_Status: the prediction is @sec-sign and #ref(<sec-feedback>)._
+Whether the sign can be read at all is @sec-sign and #ref(<sec-feedback>).
+How much the error should fall with $C$ follows from @sec-crb. Per sample,
+feedback enters the information only through $Phi(C, alpha)$ of
+@eq-phase-factor. Expanding it, $Phi - 1 \/ 2 = (C^2 \/ 4)(1 - cos(2 beta) \/ 2)
++ O(C^4)$, so the gain starts quadratically in $C$. Over the sweep of
+@fig-feedback at $alpha = 3$, the information relative to Michelson, $2 Phi$,
+rises from #val("an_info_c_lo") at $C = #val("an_c_lo")$ to #val("an_info_c_hi")
+at $C = #val("q3_c_top")$. The 30 dB causal bound falls by only
+#val("an_bound_gain_c_hi") times over that range, close to the fourth root of
+the information ratio (@fig-bounds). At $alpha = 0$, $2 Phi = 2 \/ (1 + s)$
+still rises, to #val("an_info_c_hi_a0") at $C = #val("q3_c_top")$, and the
+bound falls #val("an_bound_gain_c_hi_a0") times. But the sign evidence there is
+zero (@sec-feedback), so a signed estimator gains nothing from it.
+
+Prediction for the shape: if information per sample set the error, the
+network's $C$ curve would barely move up to $C = 0.2$, where the bound has
+fallen #val("an_bound_gain_c02") times, then fall at most #val("an_bound_gain_c_hi") times by $C = #val("q3_c_top")$.
+Any larger fall measures the network closing its distance to the bound, not a
+gain in information. That distance is #val("an_mich_causal_factor") on
+Michelson and #val("an_c02_causal_factor") at $C = 0.2$ (@sec-q2-floor). The
+measured curve falls #val("q3_gain_top") times (@fig-feedback), so on this
+reading most of its fall is the model, not the physics.
 
 ==== Synthetic
 
@@ -1293,7 +1372,31 @@ below 0.5, a sixth of the nominal 3, counts as consistent with 0.
 
 === Analytic
 
-_Status: no prediction beyond the bounds of #ref(<sec-crb>)._
+The bounds of @sec-crb represent two of the six knobs. White noise enters
+@eq-info-avg as $1 \/ sigma^2$: 10 dB less SNR divides the information by 10
+and raises the causal bound at $C = 0.2$ #val("an_snr_10db_ratio") times,
+about $10^(1\/4)$. Visibility enters through $E[V^2]$: the nominal
+$U(0.5, 1)$ removes #val("an_vis_info_pct")% of the unit-visibility
+information and raises the causal bound #val("an_vis_ratio") times. Amplitude
+drift, contrast drift and DC offset are absent from the bounds.
+
+Phase drift is absent too, and it cannot be added as a change of parameter,
+because it is a nuisance process. Channel $k$ sees the phase
+$4 pi d \/ lambda_k + phi_k (t)$. Per sample that is $K$ phases and $K + 1$
+unknowns, so for any $K$ the likelihood cannot separate $d$ from the drifts.
+Only the priors separate them: the random walk of each $phi_k$ against the
+smooth drive prior on $d$. Extra channels with independent drifts average the
+drift down; they do not remove it. The bounds module takes $phi_k$ as known.
+A bound with drift would need the $phi_k$ as $K$ extra random-walk states in
+@eq-prior, which the module does not have, so we give no number for it.
+
+Predicted ranking at the nominal point: phase drift first, because it alone
+adds an unknown confounded with $d$, where the others rescale the information.
+SNR second, since the step from noise-free to 30 dB takes the information from
+unbounded to finite. Visibility third, at #val("an_vis_ratio") times on the
+bound. Amplitude drift, contrast drift and DC offset last: they rescale or
+offset the fringe without a confounded phase. That last placement is argued,
+not computed. The comparison with the noise ladder waits for R4.
 
 === Synthetic
 
@@ -2435,19 +2538,156 @@ a separate and still-open question.
 
 == Q3.1: a fiber-only monitor color <sec-q3-monitor> // math-ok: question label
 
-_Status: not run in any tier._
+=== Analytic
+
+Without a monitor and without dispersion, the fiber hides $d$ completely.
+In @eq-fiber-phase, $D = 0$ makes $n$ the same for every color, so $d$ and
+$n p$ enter every channel only through their sum. Adding $delta$ to $d$ and
+removing $delta \/ n$ from $p$ leaves every signal unchanged. Over
+#val("fb_shots") shots, the Fisher matrix (@sec-fisher) is singular to float
+precision: information relative to free space
+#val("fb_info_d0").mantissa $times 10^(#val("fb_info_d0").exponent)$, condition
+number #val("fb_cond_d0").mantissa $times 10^(#val("fb_cond_d0").exponent)$.
+The degeneracy holds sample by sample, so a random-walk $p(t)$ cannot lift it;
+only the priors on $d$ and $p$ can. Dispersion lifts it as $D^2$. The relative
+information is #val("fb_info_dlo").mantissa
+$times 10^(#val("fb_info_dlo").exponent)$ at $D = 10^(-3)$ $mu"m"^(-1)$ and
+#val("fb_info_dhi").mantissa $times 10^(#val("fb_info_dhi").exponent)$ at
+$D = 0.1$ $mu"m"^(-1)$, a log-log slope of #val("fb_disp_slope").
+
+A dichroic at the distal face returns a monitor color before the target, so
+that channel sees $n p$ alone. If the signal channels measure the sum
+$d + n p$ with information $S$ and the monitor measures $n p$ with
+information $M$, then $d$ is their difference, with variance $1 \/ S + 1 \/ M$.
+The recovered fraction of the free-space information is therefore
+$
+  S_"fiber" / S = M / (S + M) .
+$ <eq-monitor-fraction>
+For one monitor at #val("fb_mon_um") nm this predicts #val("fb_mon1_pred"),
+and the Fisher matrix gives #val("fb_mon1"). For three monitors
+(#val("fb_mon3_um") nm) it predicts #val("fb_mon3_pred") against
+#val("fb_mon3"). Both are fading-free upper bounds, at $|kappa| = 1$, with a
+ramp-rate path drift. The model assumes the reciprocity and mode coupling of
+@sec-fiber-model.
+
+=== Synthetic
+
+_Status: the q3_fiber grid is queued; no cell has run._
+
+=== Real data
+
+_Status: not run; needs new hardware, a distal dichroic and a monitor laser._
+The committed prediction: through fiber, adding the monitor color lowers a
+trained estimator's velocity error, toward but not below the free-space error
+scaled by @eq-monitor-fraction. It is falsified if adding the monitor leaves the
+fiber error unchanged at matched training.
 
 == Q3.2: the orthogonal-polarization channel <sec-q3-polarization> // math-ok: question label
 
-_Status: not run in any tier._
+=== Analytic
+
+$P_perp$ is a fade indicator. The fiber is lossless, so
+$|kappa|^2 <= 1 - P_perp$, with equality only at $N = 1$, where
+$"corr"(P_perp, |kappa|^2) = #val("fb_corr_n1")$ over #val("fb_draws")
+draws. For more modes the bound loosens. For $N >= 8$,
+$"corr" sqrt(N)$ lies between $-#val("fb_corr_sqrt_lo")$ and
+$-#val("fb_corr_sqrt_hi")$ and $R^2 N$ between #val("fb_r2n_lo") and
+#val("fb_r2n_hi"): the correlation falls as $1 \/ sqrt(N)$ and $R^2$ as
+$1 \/ N$. At $N = 8$ the correlation is $#val("fb_corr_n8")$ and
+$R^2 = #val("fb_r2_n8")$. The mean coupling follows the coherent-backscatter
+value of the circular orthogonal ensemble, $E|kappa|^2 = 2 \/ (2N + 1)$:
+#val("fb_k2_n8") in the model at $N = 8$ against #val("fb_coe_n8"). At
+$N = 1$ the model gives #val("fb_k2_n1") against $2 \/ 3$, because its
+wrapped eigenphases lack the ensemble's level repulsion. Since $|kappa|$
+scales $C$ and the visibility (@sec-fiber-model), $P_perp$ tells an estimator
+how deep the fringes have faded. The prediction: it helps most at few modes,
+and its share of the fade variance falls as $1 \/ N$.
+
+=== Synthetic
+
+_Status: the q3_fiber grid is queued; no cell has run._
+
+=== Real data
+
+_Status: not run; needs new hardware, a polarizing beamsplitter and a
+photodiode at the fiber output._ The committed prediction: across shots,
+$P_perp$ anticorrelates with the squared fringe depth, with magnitude near
+#val("fb_corr_sqrt_lo")$\/ sqrt(N)$ for the fiber's mode count, which is not
+measured. It is
+falsified if $P_perp$ is uncorrelated with the fringe depth.
 
 == Q3.3: flow-matching denoising <sec-q3-denoise> // math-ok: question label
 
-_Status: not run in any tier._
+=== Analytic
+
+The fiber operating point has $N = #val("r8_modes")$ modes, speckle drift
+#val("r8_speckle_drift") rad/$sqrt("s")$, path drift
+$sigma_p = #val("r8_path_drift")$ $mu$m/$sqrt("s")$, no monitor and $D = 0$.
+Here the degeneracy of @sec-q3-monitor has a definite size. Over one
+#val("r8_shot_ms") ms shot, $p(t)$ wanders #val("r8_path_shot_um") $mu$m rms,
+more than a fringe: half-wavelengths are #val("r8_half_lam_lo") to
+#val("r8_half_lam_hi") $mu$m. Its sample-to-sample increment, read as a
+velocity, is #val("r8_path_velocity") $mu$m/ms rms. That increment is white,
+and it separates from the drive only as far as the two priors' spectra
+differ. How much that narrows the posterior is not derived; the flow fit
+measures it.
+
+A denoiser maps fiber signals $y_f$ to an estimate $hat(y)_0$ of the
+free-space signals $y_0$, and a free-space regressor $g$ maps that to
+velocity. The chain is a function of
+$y_f$. Among all functions of $y_f$ the posterior mean minimizes mean-squared
+error, so
+$
+  "MSE"(g(hat(y)_0 (y_f))) >= "MSE"(E[v | y_f]) ,
+$ <eq-bayes-bound>
+and the same bound holds for a regressor trained on $y_f$ directly. It does
+not order the two pipelines, since both can fall short of $E[v | y_f]$. Which
+is better is empirical. The chain has two handicaps. The posterior mean of
+$y_0$ averages over the confounded $delta(t)$, which blurs the fringes, so the
+free-space regressor sees off-distribution input. A single posterior sample
+keeps sharp fringes but carries an arbitrary $delta(t)$.
+
+The prediction: on raw fiber traces, denoise-then-regress does not beat a
+regressor trained on fiber; a tie is its best case. A clear win would mean the
+fiber-trained regressor sits far from the Bayes estimator, and its capacity,
+budget and test-set isolation would need checking before the win is read as a
+property of the fiber. What the denoiser can add instead is a calibrated
+spread over $y_0$.
+
+=== Synthetic
+
+_Status: the R8 flow runs are queued; none has run._
 
 == Q3.4: the shape of the fiber posterior <sec-q3-posterior> // math-ok: question label
 
-_Status: not run in any tier._
+=== Analytic
+
+Modes of the posterior follow the symmetries of the likelihood. The null
+direction $delta(t)$ of @sec-q3-monitor is a continuum, and the priors along
+it, a random walk for $p$ and a smooth drive for $d$, are unimodal. The fiber
+should therefore broaden the posterior over $v(t)$ smoothly along that
+direction, by up to the #val("r8_path_velocity") $mu$m/ms increment scale,
+without adding discrete modes. The one discrete symmetry is the sign map of
+@sec-sign, which the fiber preserves, because $psi_k$ and $p$ have symmetric
+priors under negation. Feedback breaks it with evidence that grows as $C^2$
+(@sec-feedback). The fiber lowers the fringe depth by $|kappa|$, with
+$E|kappa|^2 approx #val("r8_coe")$ at $N = #val("r8_modes")$
+(@sec-q3-polarization), which lowers that evidence. So at a fixed $C$, fiber
+shots should be bimodal, $v$ against $-v$, more often than free-space shots.
+
+The fiber flows use a global-context backbone, with attention over every
+bottleneck token of a shot and a receptive field longer than the shot. Path
+drift and the sign pair are shot-global, and a local field would draw
+marginals coherent only within its window. The prediction: the fraction of
+multimodal posteriors per time sample rises in fiber only through the sign
+pair, with no excess beyond it; per-sample spread rises; 90% bands stay
+calibrated. More than two modes at many time samples, or modes local in time,
+would falsify it and point at fringe-order ambiguity under fading, which this
+analysis does not predict.
+
+=== Synthetic
+
+_Status: the R8 flow runs are queued; none has run._
 
 == Real-data context: free space versus multimode fiber <sec-q3-real>
 
@@ -2466,11 +2706,11 @@ That spectral difference does not translate into a baseline difference
 comparison at this level should not be cited as evidence either way about the
 fiber gap.
 
-The program makes no prediction about the fiber penalty. It has no model of
-mode scrambling, which is Q3 and outside P0 to P3, so the published fiber // math-ok: question and stage labels
-over free-space ratios of 2.28 for the TCN and 2.02 for Barland
-(@sec-learned-gap) have no synthetic counterpart. Every prediction above
-is for free space.
+The program makes no prediction about the size of the fiber penalty. The
+fiber model of @sec-fiber-model has not yet run in any grid, so the published
+fiber over free-space ratios of 2.28 for the TCN and 2.02 for Barland
+(@sec-learned-gap) have no synthetic counterpart. Every prediction outside
+this chapter is for free space.
 
 = Q4: Sagnac accelerometer <sec-q4> // math-ok: question label
 
@@ -2507,8 +2747,9 @@ proportional to $integral.cont g_(0 i) d x^i \/ g_(00)$
 $g_(0 i) = 0$. That step to a null result is our own, argued and not tested. A proof mass of
 resonance $omega_0$ and quality $Q$ makes $Delta phi$ follow jerk below
 resonance and acceleration, with gain $kappa tau Q \/ omega_0$, only near
-it. Off-center strain of the coil itself acts as a distributed proof mass by
-the same mechanism.
+it. We argue that off-center strain of the coil itself acts as a distributed
+proof mass by the same mechanism; that is argued, not tested, and we have no
+measurement or source for its size.
 
 With feedback $C_0$ at full reflection, both feedback and modulation depth
 scale with $r$:
