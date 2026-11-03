@@ -108,7 +108,7 @@ def test_gaussian_posterior_moments():
     for _ in range(3000):
         x = torch.randn(512, 1, 1)
         y = x + noise_var**0.5 * torch.randn_like(x)
-        loss = flow.loss(x, y)
+        loss = flow.loss(x, y, None)
         opt.zero_grad()
         loss.backward()
         opt.step()
@@ -153,6 +153,34 @@ def test_lit_module_shapes(task):
     x_channels = n_channels if task == 'denoise' else 1
     assert draws.shape == (3, 2, x_channels, 128)
     assert draws.dtype == torch.float32
+
+
+def test_validation_loss_is_identical_across_passes(monkeypatch: pytest.MonkeyPatch):
+    """Two validation passes on one module draw the same batches, x_0 and t.
+
+    The global RNG moves between them, as training would move it, so only a
+    fixed validation generator keeps the monitored loss noise-free.
+    """
+    cfg = model_config(DENOISE)
+    syn = cfg.synthetic_config
+    assert syn is not None
+    module = FlowLitModule(
+        cfg.model_config,
+        cfg.training_config,
+        steps_per_epoch=1,
+        sim=syn['sim'],
+        task='posterior',
+        n_time_features=syn['flow']['n_time_features'],
+        train_crop_length=128,
+    ).eval()
+    logged: list[float] = []
+    monkeypatch.setattr(module, 'log', lambda _k, v, **_: logged.append(v.item()))
+    with torch.no_grad():
+        for _ in range(2):
+            module.on_validation_epoch_start()
+            module.validation_step(torch.arange(2), 0)
+            torch.rand(10)
+    assert logged[0] == logged[1]
 
 
 def test_ensemble_members_share_the_training_budget():

@@ -57,10 +57,25 @@ class FlowMatching(nn.Module):
         emb = emb[:, :, None].expand(-1, -1, x_t.shape[-1])
         return self.velocity(torch.cat([x_t, cond, emb], dim=1))
 
-    def loss(self, x1: Tensor, cond: Tensor) -> Tensor:
-        """Mean squared error of the field against x_1 - x_0 at t ~ U(0, 1)."""
-        x0 = torch.randn_like(x1)
-        t = torch.rand(x1.shape[0], device=x1.device)
+    def loss(
+        self, x1: Tensor, cond: Tensor, generator: torch.Generator | None
+    ) -> Tensor:
+        """Mean squared error of the field against x_1 - x_0 at t ~ U(0, 1).
+
+        Args:
+            x1: ``[B, x_channels, L]`` targets.
+            cond: ``[B, cond_channels, L]`` conditioning signals.
+            generator: Generator for x_0 and t, on ``x1``'s device, or None
+                for the global RNG. Validation passes a fixed one: x_0 and t
+                are the loss's own noise, and drawing them from the global
+                stream would make the best-checkpoint pick follow it.
+        """
+        x0 = torch.randn(
+            x1.shape, generator=generator, device=x1.device, dtype=x1.dtype
+        )
+        t = torch.rand(
+            x1.shape[0], generator=generator, device=x1.device, dtype=x1.dtype
+        )
         tb = t[:, None, None]
         x_t = (1 - tb) * x0 + tb * x1
         return functional.mse_loss(self.field(x_t, t, cond), x1 - x0)

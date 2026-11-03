@@ -143,7 +143,7 @@ class FlowLitModule(lightning.LightningModule):
         # generator it can rewind; the global stream stays seeded per run.
         seed = int(torch.randint(2**62, (1,)).item())
         generator = torch.Generator(self.device).manual_seed(seed)
-        loss = self.flow.loss(*self._batch(len(batch), generator))
+        loss = self.flow.loss(*self._batch(len(batch), generator), None)
         self.log('train/flow_loss', loss, on_epoch=True)
         return loss
 
@@ -155,7 +155,7 @@ class FlowLitModule(lightning.LightningModule):
             (len(batch), self.train_crop_length, self.device),
             lambda: self._batch(len(batch), generator),
         )
-        self.log('val/flow_loss', self.flow.loss(x1, cond), on_epoch=True)
+        self.log('val/flow_loss', self.flow.loss(x1, cond, generator), on_epoch=True)
 
     @override
     def on_validation_epoch_start(self) -> None:
