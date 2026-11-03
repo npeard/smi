@@ -19,7 +19,10 @@ import torch
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement
 from smi.core.paths import REPO_ROOT
+from smi.data import frozen
 from smi.data.datasets import select_pd_keys
+from smi.data.frozen import PERP_SUFFIX, pd_keys, write_frozen_set
+from smi.data.schema import DISPLACEMENT_KEY, VELOCITY_KEY
 from smi.experiments import grid as grid_module
 from smi.experiments import runner as experiments
 from smi.experiments.evaluate import load_lit_module
@@ -38,8 +41,7 @@ from smi.experiments.runner import (
 from smi.learning import configs, synthetic_lit_module
 from smi.learning.configs import MODEL_CONFIGS, model_config
 from smi.learning.lit_module import LitModule
-from smi.learning.models.factory import create_model
-from smi.learning.training_interface import SIGNED_RMSE_KEY
+from smi.learning.training_interface import SIGNED_RMSE_KEY, TrainingInterface
 from smi.theory.forward import SimConfig, simulate_batch
 from tests._helpers import script_log
 
@@ -702,29 +704,117 @@ def _q3_fiber_grid():
     return GRIDS['q3_fiber']
 
 
-def test_q3_fiber_grid_expands_to_two_families_by_four_arms():
+def _q3_fiber_arm(name):
+    return next(c.sim for c in expand_grid(_q3_fiber_grid()) if c.sim_name == name)
+
+
+ARM_CHANNELS = {
+    'nominal': 3,
+    'fiber': 3,
+    'fiber-4color': 4,
+    'fiber-monitor': 4,
+    'fiber-pbs': 6,
+}
+
+
+def test_q3_fiber_grid_expands_to_two_families_by_five_arms():
     cells = expand_grid(_q3_fiber_grid())
-    assert len(cells) == 2 * 4
-    channels = {c.sim_name: c.sim.n_signal_channels for c in cells}
-    assert channels == {'nominal': 3, 'fiber': 3, 'fiber-monitor': 4, 'fiber-pbs': 6}
-    monitor = next(c for c in cells if c.sim_name == 'fiber-monitor')
-    assert monitor.wavelengths_um == (0.635, 0.6748, 0.515, 0.785)
-    assert monitor.key.split('__')[1] == 'ch635-675-515-785'
+    assert len(cells) == 2 * 5
+    assert {c.sim_name for c in cells} == set(ARM_CHANNELS)
+    four = (0.635, 0.6748, 0.515, 0.785)
+    for arm in ('fiber-monitor', 'fiber-4color'):
+        cell = next(c for c in cells if c.sim_name == arm)
+        assert cell.wavelengths_um == four
+        assert cell.key.split('__')[1] == 'ch635-675-515-785'
+    monitor, control = (
+        next(c.sim.fiber for c in cells if c.sim_name == a)
+        for a in ('fiber-monitor', 'fiber-4color')
+    )
+    # The control routes the monitor's color through the target instead.
+    assert monitor.monitor_wavelengths_um == (0.785,)
+    assert control.monitor_wavelengths_um == ()
     # One frozen test set per arm: every arm is a distinct sim.
-    assert len({c.sim.hash() for c in cells}) == 4
+    assert len({c.sim.hash() for c in cells}) == 5
 
 
 def test_q3_fiber_families_take_each_arms_input_channels():
     grid = _q3_fiber_grid()
     for cell in expand_grid(grid):
-        hp = {**training_config(cell, grid).model_config}
-        hp['in_channels'] = cell.sim.n_signal_channels
-        model = create_model(hp).eval()
-        batch = simulate_batch(cell.sim, 1, torch.device('cpu'), torch.Generator())
-        x = batch.signals[..., :4096]
-        assert x.shape[1] == cell.sim.n_signal_channels
+        # The runner's own path: TrainingInterface derives in_channels.
+        interface = TrainingInterface(config=training_config(cell, grid))
+        module = interface.create_lightning_module()
+        n_ch = ARM_CHANNELS[cell.sim_name]
+        assert module.hparams.model_hparams['in_channels'] == n_ch, cell.key
+        x = torch.zeros(1, n_ch, 4096)
         with torch.no_grad():
-            assert model(x).shape[-1] == 4096, cell.key
+            assert module.model.eval()(x).shape[-1] == 4096, cell.key
+
+
+def test_fiber_pbs_sim_emits_a_perp_row_per_color():
+    sim = _q3_fiber_arm('fiber-pbs')
+    assert len(sim.wavelengths_um) == 3
+    batch = simulate_batch(sim, 1, torch.device('cpu'), torch.Generator())
+    assert batch.signals.shape[1] == 6
+
+
+def test_fiber_arms_share_their_test_trajectories(tmp_path):
+    """Every arm's frozen set holds the same motion, so arms compare paired."""
+    grid = _q3_fiber_grid()
+    sims = {c.sim_name: c.sim for c in expand_grid(grid)}
+    seed = grid.test_set.seed
+    motion = {}
+    for arm, sim in sims.items():
+        path = write_frozen_set(sim, seed, 2, tmp_path / f'{arm}.h5')
+        with h5py.File(path, 'r') as f:
+            motion[arm] = (f[VELOCITY_KEY][:], f[DISPLACEMENT_KEY][:])
+    v0, x0 = motion['nominal']
+    for arm, (v, x) in motion.items():
+        np.testing.assert_array_equal(v, v0, err_msg=arm)
+        np.testing.assert_array_equal(x, x0, err_msg=arm)
+
+
+def test_fiber_pbs_frozen_set_stores_perp_rows_in_signal_order(tmp_path):
+    sim = _q3_fiber_arm('fiber-pbs')
+    path = write_frozen_set(sim, 7, 2, tmp_path / 'pbs.h5')
+    # small_chunks patches the chunk size; the writer draws one chunk per call.
+    batch = simulate_batch(
+        sim, frozen.CHUNK_SHOTS, torch.device('cpu'), torch.Generator().manual_seed(7)
+    )
+    keys = pd_keys(sim.wavelengths_um)
+    with h5py.File(path, 'r') as f:
+        for i, k in enumerate(keys):
+            np.testing.assert_array_equal(f[k][:], batch.signals[:2, i].numpy())
+            np.testing.assert_array_equal(
+                f[k + PERP_SUFFIX][:], batch.signals[:2, len(keys) + i].numpy()
+            )
+        # evaluate reads the coherent keys, then each color's P_perp after them.
+        read = select_pd_keys(f, sim.wavelengths_um)
+        read += [k + PERP_SUFFIX for k in read]
+    assert read == keys + [k + PERP_SUFFIX for k in keys]
+
+
+@pytest.mark.parametrize(
+    'name',
+    [
+        'q1_r1_count',
+        'q1_r2_colors',
+        'q1_r2_colors_n3',
+        'q2_r4_noise',
+        'q1_r1_seeds',
+        'q1_r1_pairs',
+    ],
+)
+def test_cells_take_their_grids_channel_subset(name):
+    # The runner takes a cell's wavelengths from its sim; without an override
+    # adding channels, that must still be the grid subset the cell expanded on.
+    grid = GRIDS[name]
+    cells = expand_grid(grid)
+    assert cells
+    subsets = set(grid.channel_subsets)
+    for cell in cells:
+        assert cell.wavelengths_um in subsets, cell.key
+    per_subset = {s: sum(c.wavelengths_um == s for c in cells) for s in subsets}
+    assert len(set(per_subset.values())) == 1, per_subset
 
 
 @pytest.mark.parametrize('arm', ['fiber-monitor', 'fiber-pbs'])
