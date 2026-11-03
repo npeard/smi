@@ -249,6 +249,12 @@ class SimConfig:
     channel_phase_offsets_rad: tuple[float, ...] | None = None
     fiber: FiberConfig | None = None
 
+    @property
+    def n_signal_channels(self) -> int:
+        """Rows of ``SimBatch.signals``: a fiber PBS adds one P_perp per color."""
+        pbs = self.fiber is not None and self.fiber.pbs_channel
+        return len(self.wavelengths_um) * (2 if pbs else 1)
+
     def _coerce(self) -> None:
         # YAML gives lists and ints; the frozen config's hash must not depend on
         # the spelling (json writes 1 vs 1.0), so coerce to tuples of floats.

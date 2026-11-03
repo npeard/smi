@@ -39,6 +39,8 @@ RIG_WAVELENGTHS_UM = (0.635, 0.6748, 0.515)
 # A config's rig wavelengths are matched to this tolerance: the simulator
 # configs spell the 675 nm laser 0.6748 while smi.data.schema records 0.675.
 RIG_WAVELENGTH_TOL_UM = 1e-3
+# A fiber PBS's P_perp channel of photodiode key k is stored as k + this.
+PERP_SUFFIX = '_perp'
 
 DEFAULT_ROOT = FROZEN_DIR
 
@@ -76,6 +78,8 @@ def write_frozen_set(cfg: SimConfig, seed: int, n_shots: int, path: Path) -> Pat
     # pid-suffixed so concurrent creators never share a temp file.
     tmp = path.with_name(f'{path.name}.{os.getpid()}.part')
     keys = pd_keys(cfg.wavelengths_um)
+    if cfg.n_signal_channels > len(keys):
+        keys += [k + PERP_SUFFIX for k in keys]
     generator = torch.Generator().manual_seed(seed)
     cpu = torch.device('cpu')
 

@@ -38,8 +38,9 @@ from smi.experiments.runner import (
 from smi.learning import configs, synthetic_lit_module
 from smi.learning.configs import MODEL_CONFIGS, model_config
 from smi.learning.lit_module import LitModule
+from smi.learning.models.factory import create_model
 from smi.learning.training_interface import SIGNED_RMSE_KEY
-from smi.theory.forward import SimConfig
+from smi.theory.forward import SimConfig, simulate_batch
 from tests._helpers import script_log
 
 TINY = 'tiny-tcn'
@@ -695,3 +696,41 @@ def test_q2_r4_noise_runs_each_knob_at_its_nominal_value():
     for field, values in swept.items():
         stressed = (stressed_values[field],) if field in stressed_values else ()
         assert values == (getattr(nominal, field), *stressed), field
+
+
+def _q3_fiber_grid():
+    return GRIDS['q3_fiber']
+
+
+def test_q3_fiber_grid_expands_to_two_families_by_four_arms():
+    cells = expand_grid(_q3_fiber_grid())
+    assert len(cells) == 2 * 4
+    channels = {c.sim_name: c.sim.n_signal_channels for c in cells}
+    assert channels == {'nominal': 3, 'fiber': 3, 'fiber-monitor': 4, 'fiber-pbs': 6}
+    monitor = next(c for c in cells if c.sim_name == 'fiber-monitor')
+    assert monitor.wavelengths_um == (0.635, 0.6748, 0.515, 0.785)
+    assert monitor.key.split('__')[1] == 'ch635-675-515-785'
+    # One frozen test set per arm: every arm is a distinct sim.
+    assert len({c.sim.hash() for c in cells}) == 4
+
+
+def test_q3_fiber_families_take_each_arms_input_channels():
+    grid = _q3_fiber_grid()
+    for cell in expand_grid(grid):
+        hp = {**training_config(cell, grid).model_config}
+        hp['in_channels'] = cell.sim.n_signal_channels
+        model = create_model(hp).eval()
+        batch = simulate_batch(cell.sim, 1, torch.device('cpu'), torch.Generator())
+        x = batch.signals[..., :4096]
+        assert x.shape[1] == cell.sim.n_signal_channels
+        with torch.no_grad():
+            assert model(x).shape[-1] == 4096, cell.key
+
+
+@pytest.mark.parametrize('arm', ['fiber-monitor', 'fiber-pbs'])
+def test_fiber_arm_trains_and_scores_end_to_end(tmp_path, arm):
+    (sim,) = [s for s in _q3_fiber_grid().sims if s.name == arm]
+    grid = _grid(seeds=(0,), sims=(sim,))
+    assert _run(grid, tmp_path) == 1
+    (record,) = read_results(tmp_path / 'results.json')
+    assert math.isfinite(record.metrics['velocity_rmse']['mean'])

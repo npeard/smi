@@ -196,8 +196,11 @@ def expand_grid(grid: Grid) -> list[Cell]:
             if entry.sign_invariant is None
             else entry.sign_invariant
         )
-        for wavelengths in grid.channel_subsets:
-            for sim_name, sim, sweep in build_sims(entry, wavelengths):
+        for subset in grid.channel_subsets:
+            for sim_name, sim, sweep in build_sims(entry, subset):
+                # An override may add channels (a fiber monitor color); the
+                # cell trains and is scored on the sim's own.
+                wavelengths = sim.wavelengths_um
                 if grid.oracle:
                     cells.append(
                         Cell(
