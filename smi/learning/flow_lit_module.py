@@ -37,7 +37,7 @@ from smi.learning.synthetic_lit_module import (
     HeldOutReplay,
     random_crop,
 )
-from smi.theory.forward import SimConfig, simulate_batch
+from smi.theory.forward import SimConfig, detect, simulate_batch, simulate_optics
 
 TASKS = ('denoise', 'posterior')
 
@@ -47,9 +47,10 @@ def paired_batch(
 ) -> tuple[Tensor, Tensor]:
     """``(x1, cond)`` for ``task``, simulated on ``generator``'s device.
 
-    ``denoise`` simulates the shot twice from the same generator state, once
-    with ``cfg.fiber`` and once without; the generator ends where the fiber
-    run left it.
+    ``denoise`` runs the optics twice from the same generator state, once with
+    ``cfg.fiber`` and once without, then gives both the same post-fiber draws
+    (phase/contrast/amplitude drift, DC offset, noise): the halves differ by
+    the fiber alone. The generator ends where the fiber run left it.
     """
     if task not in TASKS:
         raise ValueError(f'task must be one of {TASKS}, not {task!r}')
@@ -59,13 +60,18 @@ def paired_batch(
         return batch.velocity[:, None], batch.signals
     if cfg.fiber is None:
         raise ValueError('denoise needs a fiber in the sim config')
+    if cfg.fiber.pbs_channel:
+        raise ValueError('denoise needs matching channels; a PBS fiber adds C')
     state = generator.get_state()
-    free = simulate_batch(
+    free = simulate_optics(
         dataclasses.replace(cfg, fiber=None), batch_size, device, generator
     )
     generator.set_state(state)
-    fiber = simulate_batch(cfg, batch_size, device, generator)
-    return free.signals, fiber.signals
+    fiber = simulate_optics(cfg, batch_size, device, generator)
+    detector_state = generator.get_state()
+    x1 = detect(cfg, free, device, generator).signals
+    generator.set_state(detector_state)
+    return x1, detect(cfg, fiber, device, generator).signals
 
 
 class FlowLitModule(lightning.LightningModule):

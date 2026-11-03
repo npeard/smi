@@ -54,8 +54,9 @@ class UNetTransformerConfig:
             past-only attention.
         out_channels: Output channels; more than one only for the flow
             matching velocity field (``smi.learning.flow``), which emits one
-            per sampled channel. Defaulted, unlike the rest, so the regression
-            entries' resolved dicts and hence their run fingerprints stay put.
+            per sampled channel. Defaulted, unlike the rest, only so the
+            existing config dicts, which omit it, still construct; run
+            fingerprints hash those dicts, not this dataclass.
     """
 
     sequence_length: int

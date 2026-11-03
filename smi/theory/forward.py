@@ -741,6 +741,25 @@ def _through_fiber(
     return phase + kappa.angle(), visibility * coupling, feedback_c, perp
 
 
+@dataclass
+class Optics:
+    """The optical half of a shot, before any post-fiber draw.
+
+    ``simulate_optics`` draws motion, phi_k, visibility and the fiber; every
+    later draw is :func:`detect`'s, so a free-space and a fiber run of one seed
+    can share their detector draws (``paired_batch`` in
+    ``smi.learning.flow_lit_module``).
+    """
+
+    voltage: torch.Tensor  # [B, L]
+    velocity: torch.Tensor  # [B, L]
+    displacement: torch.Tensor  # [B, L]
+    phase: torch.Tensor  # [B, C, L] rad
+    visibility: torch.Tensor  # [B, C, 1]
+    feedback_c: float | torch.Tensor
+    perp: list[torch.Tensor]  # fiber PBS P_perp channels, [B, C, L] each
+
+
 def simulate_batch(
     cfg: SimConfig,
     batch_size: int,
@@ -767,6 +786,17 @@ def simulate_batch(
             the result to ``device``.
     """
     sim_device = generator.device if generator is not None else device
+    optics = simulate_optics(cfg, batch_size, sim_device, generator)
+    return detect(cfg, optics, device, generator)
+
+
+def simulate_optics(
+    cfg: SimConfig,
+    batch_size: int,
+    sim_device: torch.device | str,
+    generator: torch.Generator | None,
+) -> Optics:
+    """The draws of :func:`simulate_batch` up to and including the fiber."""
     waveform, coil = drive(cfg.acquisition, cfg.start_freq_hz, cfg.end_freq_hz)
     if waveform.acq_sample_rate != cfg.sample_rate:
         raise ValueError(
@@ -782,9 +812,7 @@ def simulate_batch(
         sim_device,
         generator,
     )
-    n_ch, length = len(cfg.wavelengths_um), displacement.shape[-1]
-    full = (batch_size, n_ch, length)
-
+    n_ch = len(cfg.wavelengths_um)
     lam = _wavelengths_tensor(
         cfg.wavelengths_um, torch.device(sim_device), torch.get_default_dtype()
     )
@@ -802,6 +830,20 @@ def simulate_batch(
     phase, visibility, feedback_c, perp = _through_fiber(
         cfg, phase, phi_k, visibility, sim_device, generator
     )
+    return Optics(voltage, velocity, displacement, phase, visibility, feedback_c, perp)
+
+
+def detect(
+    cfg: SimConfig,
+    optics: Optics,
+    device: torch.device,
+    generator: torch.Generator | None,
+) -> SimBatch:
+    """The post-fiber draws of :func:`simulate_batch` and the detector chain."""
+    phase, visibility = optics.phase, optics.visibility
+    sim_device = phase.device
+    full = tuple(phase.shape)
+    length = full[-1]
     if cfg.phase_drift_rad_per_sqrt_s > 0:
         sigma = cfg.phase_drift_rad_per_sqrt_s / math.sqrt(cfg.sample_rate)
         phase = phase + sigma * _walk(full, sim_device, generator)
@@ -811,10 +853,10 @@ def simulate_batch(
         rel = cfg.contrast_drift_rel / math.sqrt(length)
         walk = _walk(full, sim_device, generator)
         visibility = (visibility * (1 + rel * walk)).clamp(0.0, 1.0)
-    intensity = 1 + visibility * fringe(phase, feedback_c, cfg.alpha)
+    intensity = 1 + visibility * fringe(phase, optics.feedback_c, cfg.alpha)
     # A PBS PD reads P_perp (signal = intensity - 1 = P_perp); it then shares
     # the detector chain below with the coherent channels.
-    intensity = torch.cat([intensity, *(1 + p for p in perp)], 1)
+    intensity = torch.cat([intensity, *(1 + p for p in optics.perp)], 1)
     full = tuple(intensity.shape)
     if cfg.amplitude_drift_rel > 0:
         rel = cfg.amplitude_drift_rel / math.sqrt(length)
@@ -839,9 +881,9 @@ def simulate_batch(
 
     return SimBatch(
         signals=signals.to(device),
-        voltage=voltage.to(device),
-        velocity=velocity.to(device),
-        displacement=displacement.to(device),
+        voltage=optics.voltage.to(device),
+        velocity=optics.velocity.to(device),
+        displacement=optics.displacement.to(device),
         optical_phase=phase.to(device),
     )
 

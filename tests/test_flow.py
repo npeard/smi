@@ -6,6 +6,8 @@ import pytest
 import torch
 from torch import nn
 
+from smi.experiments.grids.q3_fiber import GRID as Q3_FIBER
+from smi.experiments.runner import expand_grid
 from smi.learning.configs import model_config
 from smi.learning.flow import FlowMatching
 from smi.learning.flow_lit_module import FlowLitModule, paired_batch
@@ -30,10 +32,50 @@ def test_fiber_pair_shares_trajectory():
     assert torch.equal(free.velocity, fiber.velocity)
     assert torch.equal(free.displacement, fiber.displacement)
     assert not torch.allclose(free.signals, fiber.signals)
-    # paired_batch is that pair: x1 the free-space signals, cond the fiber's.
-    x1, cond = paired_batch(cfg, 'denoise', 2, torch.Generator().manual_seed(7))
-    assert torch.equal(x1, free.signals)
+    # paired_batch's fiber half is that fiber run.
+    _, cond = paired_batch(cfg, 'denoise', 2, torch.Generator().manual_seed(7))
     assert torch.equal(cond, fiber.signals)
+
+
+def test_pair_shares_post_fiber_draws():
+    """Additive DC offset and noise are the same realization in both halves.
+
+    Both are added after the fiber, so each half minus its noise-free twin is
+    exactly the shared offset plus noise; separate draws would differ.
+    """
+    clean = dataclasses.replace(
+        _fiber_sim(),
+        snr_db=None,
+        dc_offset_range=(0.0, 0.0),
+        amplitude_drift_rel=0.0,
+        phase_drift_rad_per_sqrt_s=0.0,
+        contrast_drift_rel=0.0,
+        pd_bandwidth_hz=None,
+        adc_bits=None,
+    )
+    noisy = dataclasses.replace(clean, snr_db=20.0, dc_offset_range=(-0.1, 0.1))
+    x1, cond = paired_batch(noisy, 'denoise', 2, torch.Generator().manual_seed(3))
+    x1_0, cond_0 = paired_batch(clean, 'denoise', 2, torch.Generator().manual_seed(3))
+    assert not torch.allclose(x1, x1_0)
+    torch.testing.assert_close(x1 - x1_0, cond - cond_0)
+
+
+@pytest.mark.parametrize(
+    ('name', 'arm'),
+    [
+        (DENOISE, 'fiber'),
+        ('flow/posterior-free-unettransformer-global-44k', 'nominal'),
+        ('flow/posterior-fiber-unettransformer-global-44k', 'fiber'),
+    ],
+)
+def test_flow_sims_are_q3_fiber_arms(name, arm):
+    """Each flow trains on the sim of the q3_fiber arm it is scored on."""
+    syn = model_config(name).synthetic_config
+    assert syn is not None
+    (cell,) = [
+        c for c in expand_grid(Q3_FIBER) if c.family == 'tcan-44k' and c.sim_name == arm
+    ]
+    assert SimConfig.from_dict(syn['sim']).hash() == cell.sim.hash()
 
 
 def _pointwise(in_channels: int) -> nn.Module:

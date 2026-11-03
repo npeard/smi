@@ -24,12 +24,16 @@ Three groups:
 """
 
 import copy
+import dataclasses
 import difflib
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
+from smi.core.acquisition import STEMLAB_125_14
 from smi.learning.training_interface import TrainingConfig
+from smi.theory.fiber import FiberConfig
+from smi.theory.forward import SimConfig
 
 SEQUENCE_LENGTH = 16384
 # Must exceed the receptive field with margin (test_matched_configs.MARGIN).
@@ -624,38 +628,64 @@ _LEGACY: dict[str, TrainingConfig] = {
 
 # R8 operating point (the R7 plan's Task-3 grid point): N = 8 modes, speckle
 # drift 3 rad/sqrt(s), path drift 2.8 um/sqrt(s), no monitor.
-R8_FIBER = {
-    'n_modes': 8,
-    'drift_rad_per_sqrt_s': 3.0,
-    'path_drift_um_per_sqrt_s': 2.8,
-    'dispersion_per_um': 0.0,
-    'spectral_corr_width_um': 0.01,
-    'monitor_wavelengths_um': [],
-    'pbs_channel': False,
-}
+R8_FIBER = FiberConfig(
+    n_modes=8,
+    drift_rad_per_sqrt_s=3.0,
+    path_drift_um_per_sqrt_s=2.8,
+    dispersion_per_um=0.0,
+    spectral_corr_width_um=0.01,
+    monitor_wavelengths_um=(),
+    pbs_channel=False,
+)
 
 
-def _flow(task: str) -> TrainingConfig:
-    """Flow-matching entry (``FlowLitModule``) on the unettransformer-offline-44k
-    backbone; offline because a posterior over a trace may use both sides of
-    each sample. ``in_channels`` / ``out_channels`` are placeholders the module
-    sets from the task.
+def _flow(
+    task: str, model: dict[str, Any], fiber: FiberConfig | None, crop: int | None
+) -> TrainingConfig:
+    """Flow-matching entry (``FlowLitModule``) on an offline UNetTransformer.
+
+    Offline because a posterior over a trace may use both sides of each sample.
+    The sim is the q3_fiber grid's nominal rig (its ``nominal`` or ``fiber``
+    arm, pinned in tests/test_flow.py), so the flows are scored on that grid's
+    frozen sets against its TCANs. ``in_channels`` / ``out_channels`` are
+    placeholders the module sets from the task.
     """
-    config = _matched(
-        {**_unet_transformer([16, 28, 40], 80, 3, causal=False), 'out_channels': 1},
-        MATCHED_CROP,
-    )
+    config = _matched({**model, 'out_channels': 1}, crop)
     assert config.synthetic_config is not None
-    config.synthetic_config['sim']['fiber'] = dict(R8_FIBER)
+    sim = SimConfig.nominal(STEMLAB_125_14, (0.635, 0.6748, 0.515), 0.2, 3.0)
+    config.synthetic_config['sim'] = dataclasses.asdict(
+        dataclasses.replace(sim, fiber=fiber)
+    )
     config.synthetic_config['flow'] = {'task': task, 'n_time_features': 8}
+    # Flow loss is noisy and has no zero-predictor plateau: a fixed budget,
+    # best checkpoint by val/flow_loss (scripts/flow.py).
+    config.training_config['max_epochs'] = FLOW_EPOCHS[task]
     return config
 
 
+#: Epochs per task, sized to the ~8 h R8 budget (scripts/flow.py docstring).
+FLOW_EPOCHS = {'denoise': 60, 'posterior': 40}
+_LOCAL = _unet_transformer([16, 28, 40], 80, 3, causal=False)
+# Global context for Q3.4: the shot-global quantities (path drift, the +/-v
+# sign pair) need joint samples coherent over the whole shot, which the 85-sample
+# local field cannot give. Pool 16 puts a 16384-sample shot on 64 bottleneck
+# tokens and span 64 lets every token attend all of them (field 66,867), at
+# 45.7k parameters, inside the 44k +/-10% band; trained on full shots so that
+# span is exercised.
+_GLOBAL = {**_unet_transformer([16, 28, 40], 80, 64, causal=False), 'pool': 16}
+
 _FLOW: dict[str, TrainingConfig] = {
     # Q3.3: fiber signals -> the paired free-space signals.
-    'flow/denoise-unettransformer-offline-44k': _flow('denoise'),
-    # Q3.4: fiber signals -> velocity trajectory.
-    'flow/posterior-unettransformer-offline-44k': _flow('posterior'),
+    'flow/denoise-unettransformer-offline-44k': _flow(
+        'denoise', _LOCAL, R8_FIBER, MATCHED_CROP
+    ),
+    # Q3.4: signals -> velocity trajectory, free space and fiber.
+    'flow/posterior-free-unettransformer-global-44k': _flow(
+        'posterior', _GLOBAL, None, None
+    ),
+    'flow/posterior-fiber-unettransformer-global-44k': _flow(
+        'posterior', _GLOBAL, R8_FIBER, None
+    ),
 }
 
 _DISPLACEMENT_STEMS = (
