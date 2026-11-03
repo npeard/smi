@@ -12,6 +12,7 @@ from smi.core.acquisition import STEMLAB_125_14
 from smi.data import frozen
 from smi.data.datasets import VelocityDataset
 from smi.data.frozen import frozen_set_path, load_or_create, pd_keys, write_frozen_set
+from smi.theory.fiber import FiberConfig
 from smi.theory.forward import NOMINAL_DRIVE_GAIN, SIMULATOR_VERSION, SimConfig
 from tests._sims import SAMPLE_RATE, WAVELENGTHS_UM
 
@@ -84,6 +85,7 @@ def test_hash_changes_with_any_field(tmp_path):
         'adc_bits': 10,
         'adc_full_scale': 3.0,
         'channel_phase_offsets_rad': (0.0, 1.0, 2.0),
+        'fiber': FiberConfig(4, 3.0, 2.8, 0.0, 0.01, None, False),
     }
     # `acquisition` is deliberately unhashed (see SimConfig.hash).
     hashed = {f.name for f in dataclasses.fields(SimConfig)} - {'acquisition'}
