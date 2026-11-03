@@ -6,6 +6,8 @@ artifact reports: velocity RMSE in um/ms and displacement RMSE in um,
 summarized per shot with the same six keys ``baseline_results.json`` uses.
 """
 
+import math
+
 import numpy as np
 import torch
 
@@ -168,3 +170,46 @@ def summarize_per_shot(values: np.ndarray) -> dict[str, float]:
         'min': float(np.min(values)),
         'max': float(np.max(values)),
     }
+
+
+def band_coverage(draws: torch.Tensor, truth: torch.Tensor, level: float) -> float:
+    """Fraction of ``truth`` inside the central ``level`` band of ``draws``.
+
+    Args:
+        draws: ``[S, ...]`` samples of the predictive distribution.
+        truth: ``[...]``, the realized values.
+        level: Band probability, e.g. 0.9 for the 5-95% quantiles.
+    """
+    tail = (1 - level) / 2
+    q = torch.quantile(draws, torch.tensor([tail, 1 - tail], dtype=draws.dtype), dim=0)
+    return float(((truth >= q[0]) & (truth <= q[1])).double().mean())
+
+
+def crps_samples(draws: torch.Tensor, truth: torch.Tensor) -> torch.Tensor:
+    """Sample CRPS, ``E|X - y| - E|X - X'| / 2``, elementwise over ``truth``.
+
+    The pair term uses the sorted-sample identity
+    ``sum_ij |x_i - x_j| = 2 sum_i (2 i - S + 1) x_(i)`` (0-based), which is
+    O(S log S) rather than O(S^2) memory.
+    """
+    s = draws.shape[0]
+    spread = (draws - truth).abs().mean(dim=0)
+    ordered = draws.sort(dim=0).values
+    weight = (2 * torch.arange(s, dtype=draws.dtype) - s + 1).reshape(
+        -1, *([1] * truth.dim())
+    )
+    pair = 2 * (weight * ordered).sum(dim=0) / s**2
+    return spread - pair / 2
+
+
+def crps_gaussian(
+    mean: torch.Tensor, std: torch.Tensor, truth: torch.Tensor
+) -> torch.Tensor:
+    """Closed-form CRPS of ``N(mean, std^2)`` at ``truth``."""
+    z = (truth - mean) / std
+    normal = torch.distributions.Normal(0.0, 1.0)
+    return std * (
+        z * (2 * normal.cdf(z) - 1)
+        + 2 * normal.log_prob(z).exp()
+        - 1 / math.sqrt(math.pi)
+    )
