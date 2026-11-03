@@ -13,6 +13,7 @@ For everything else, see:
 
 - **`README.md`** -- project intro, quickstart, install.
 - **`docs/data-storage-evaluation.md`** -- why HDF5, and the alternatives measured.
+- **`QUESTIONS.md`** -- the research questions the report answers.
 - **`TASKS.md`** -- the live task list this project works from.
 
 ## Core development principles
