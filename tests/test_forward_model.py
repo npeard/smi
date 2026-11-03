@@ -498,10 +498,7 @@ _GOLDEN = {
 def test_simulate_batch_golden_values(path: str):
     """Fixed-seed signals on each config path match the pre-split simulator."""
     total, head = _GOLDEN[path]
-    # Not _simulate: its float64 guard trips inside the fiber model (a
-    # float64 constant there), which this test is not about.
-    gen = torch.Generator().manual_seed(11)
-    signals = simulate_batch(_golden_sim(path), 2, CPU, gen).signals
+    signals = _simulate(_golden_sim(path), seed=11, batch=2).signals
     assert signals.double().sum().item() == pytest.approx(total, rel=1e-5)
     got = signals[0, :, ::5461].flatten()[:4].tolist()
     assert got == pytest.approx(head, abs=1e-3)

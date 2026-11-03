@@ -41,6 +41,7 @@ Physics, and the assumptions the Q3.1/Q3.2 analyses rest on:
 import math
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 
 # Element std of the initial generator: eigenvalues spread over ~2 pi sqrt(M),
@@ -129,13 +130,15 @@ def _gue(
 def spectral_mixing(wavelengths_um: tuple[float, ...], width_um: float) -> torch.Tensor:
     """Cholesky factor [C, C] of the Gaussian spectral correlation matrix.
 
-    Computed in float64 (CPU, setup only) and returned float32; a small
-    ridge keeps near-identical colors positive definite.
+    Computed in NumPy float64 (setup only) and returned float32: the 1e-9
+    ridge that keeps near-identical colors positive definite is below float32
+    resolution next to the unit diagonal, and torch float64 would break the
+    no-float64 rule of the torch path (MPS has none).
     """
-    lam = torch.tensor(wavelengths_um, dtype=torch.float64)
-    corr = torch.exp(-0.5 * ((lam[:, None] - lam[None, :]) / width_um) ** 2)
-    corr = corr + 1e-9 * torch.eye(len(lam), dtype=torch.float64)
-    return torch.linalg.cholesky(corr).to(torch.float32)
+    lam = np.asarray(wavelengths_um, dtype=np.float64)
+    corr = np.exp(-0.5 * ((lam[:, None] - lam[None, :]) / width_um) ** 2)
+    corr = corr + 1e-9 * np.eye(len(lam))
+    return torch.from_numpy(np.linalg.cholesky(corr).astype(np.float32))
 
 
 def round_trip(t: torch.Tensor) -> torch.Tensor:
