@@ -72,6 +72,14 @@ class _TrainedChannels:
     def __init__(self, inner: CheckpointEstimator, scale: float) -> None:
         self.inner = inner
         self.scale = scale
+        # The record describes the checkpoint itself.
+        self.name = inner.name
+        self.model_type = inner.model_type
+        self.causal = inner.causal
+        self.receptive_field = inner.receptive_field
+        self.total_params = inner.total_params
+        self.device = inner.device
+        self.config = inner.config
 
     def predict_velocity(
         self, signals: Tensor, wavelengths_um: tuple[float, ...]
