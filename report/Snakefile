@@ -81,6 +81,8 @@ RESULTS = [
     # scripts/channel_analytics.py over smi.theory.
     str(RESULTS_DIR / "sagnac_results.json"),
     str(RESULTS_DIR / "channel_analytics.json"),
+    # Section Q3.1 and Q3.2: scripts/fiber_analytics.py over smi.theory.fiber.
+    str(RESULTS_DIR / "fiber_results.json"),
 ]
 
 # The library modules the figures compute from or read records through, so a

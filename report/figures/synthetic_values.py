@@ -20,6 +20,7 @@ Usage: python synthetic_values.py --output build/synthetic_values.json
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import itertools
 import json
 import math
@@ -88,7 +89,7 @@ from smi.data.frozen import DEFAULT_ROOT, load_or_create
 from smi.experiments.grids import GRIDS
 from smi.experiments.results_artifact import RunRecord
 from smi.experiments.runner import ORACLE_FAMILY, cell_key, expand_grid
-from smi.learning.configs import MODEL_CONFIGS
+from smi.learning.configs import MODEL_CONFIGS, R8_FIBER
 from smi.learning.models.factory import create_model
 from smi.learning.models.sliding_window import SlidingWindowModel
 from smi.learning.synthetic_lit_module import VAL_SEED
@@ -1555,6 +1556,162 @@ def shift_values(prior: bounds.StateSpace) -> dict[str, str]:
     return out
 
 
+def _bounds_at(
+    prior: bounds.StateSpace, cfg: SimConfig, **change: Any
+) -> tuple[float, float]:
+    """``velocity_bounds`` of ``cfg`` with ``change`` applied."""
+    return velocity_bounds(prior, dataclasses.replace(cfg, **change))
+
+
+def _equivalent_snr(
+    prior: bounds.StateSpace, cfg: SimConfig, rmse: float, which: int
+) -> float:
+    """The SNR (dB) at which bound ``which`` (0 causal, 1 offline) equals ``rmse``.
+
+    Bisection: both bounds fall monotonically with SNR, since J-bar scales as
+    1 / sigma^2 (eq-info-avg).
+    """
+    lo, hi = -80.0, 120.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if _bounds_at(prior, cfg, snr_db=mid)[which] > rmse:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def q2_analytic_values(
+    records: dict[str, RunRecord], prior: bounds.StateSpace
+) -> dict[str, str]:
+    """The Q2.1, Q2.1.1 and Q2.2 analytic tiers, from smi.theory.bounds."""
+    out: dict[str, str] = {}
+    sims = {'michelson': 0.0, 'smi-a3': NOMINAL_C}
+    for sim, c in sims.items():
+        cfg = SimConfig.nominal(
+            STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, c, NOMINAL_ALPHA
+        )
+        causal, offline = velocity_bounds(prior, cfg)
+        tag = 'mich' if c == 0 else 'c02'
+        for which, (name, families, bound) in enumerate(
+            (('causal', Q2_CAUSAL, causal), ('offline', Q2_OFFLINE, offline))
+        ):
+            best = min(
+                mean_metric(r, Q2_SIMS[sim])
+                for stem, _ in families
+                if (r := q2_record(records, stem, sim)) is not None and r.converged
+            )
+            out[f'an_{tag}_{name}_bound'] = sig(bound, 2)
+            out[f'an_{tag}_{name}_net'] = sig(best, 2)
+            out[f'an_{tag}_{name}_factor'] = f'{best / bound:.0f}'
+            out[f'an_{tag}_{name}_snr'] = (
+                f'{_equivalent_snr(prior, cfg, best, which):.0f}'
+            )
+
+    # Q2.1.1: the C sweep of q3_s0c_ceiling at alpha = 3, and alpha = 0.
+    def causal_at(c: float, alpha: float) -> float:
+        cfg = SimConfig.nominal(STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, c, alpha)
+        return velocity_bounds(prior, cfg)[0]
+
+    c_lo, c_hi = Q3_FEEDBACK_C[0], Q3_FEEDBACK_C[-1]
+    base = causal_at(0.0, NOMINAL_ALPHA)
+    out |= {
+        'an_info_c_lo': sig(2 * bounds.phase_factor(c_lo, NOMINAL_ALPHA), 3),
+        'an_info_c_hi': sig(2 * bounds.phase_factor(c_hi, NOMINAL_ALPHA), 3),
+        'an_info_c_hi_a0': sig(2 * bounds.phase_factor(c_hi, 0.0), 3),
+        'an_c_lo': f'{c_lo:g}',
+        'an_bound_gain_c02': sig(base / causal_at(NOMINAL_C, NOMINAL_ALPHA), 3),
+        'an_bound_gain_c_hi': sig(base / causal_at(c_hi, NOMINAL_ALPHA), 3),
+        'an_bound_gain_c_hi_a0': sig(base / causal_at(c_hi, 0.0), 3),
+    }
+
+    # Q2.2: what each representable knob does to the causal bound at C = 0.2.
+    cfg = SimConfig.nominal(
+        STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, NOMINAL_C, NOMINAL_ALPHA
+    )
+    at30 = _bounds_at(prior, cfg, snr_db=30.0)[0]
+    lo, hi = cfg.visibility_range
+    out |= {
+        'an_snr_10db_ratio': sig(_bounds_at(prior, cfg, snr_db=20.0)[0] / at30, 3),
+        'an_vis_info_pct': f'{100 * (1 - (lo * lo + lo * hi + hi * hi) / 3):.0f}',
+        'an_vis_ratio': sig(
+            at30 / _bounds_at(prior, cfg, visibility_range=(1.0, 1.0))[0], 3
+        ),
+        'an_snr_nominal': f'{cfg.snr_db:.0f}',
+    }
+    return out
+
+
+def fiber_values() -> dict[str, Any]:
+    """Q3.1 and Q3.2 analytic values, from scripts/fiber_analytics.py's JSON."""
+    data = json.loads((RESULTS_DIR / 'fiber_results.json').read_text('utf-8'))
+    rows = data['q3_1']['rows']
+
+    def arm(name: str, dispersion: float) -> dict[str, Any]:
+        return next(
+            r for r in rows if r['arm'] == name and r['dispersion_per_um'] == dispersion
+        )
+
+    none0 = arm('fiber_no_monitor', 0.0)
+    d_lo, d_hi = arm('fiber_no_monitor', 0.001), arm('fiber_no_monitor', 0.1)
+    mon1, mon3 = (
+        arm('fiber_dichroic_monitor', 0.0),
+        arm('fiber_dichroic_monitor_x3', 0.0),
+    )
+    pol = {r['n_modes']: r for r in data['q3_2']['rows']}
+    big = [r for n, r in pol.items() if n >= 8]
+    return {
+        'fb_cond_d0': sci(none0['cond']),
+        'fb_info_d0': sci(none0['info_rel_free_space']),
+        'fb_info_dlo': sci(d_lo['info_rel_free_space']),
+        'fb_info_dhi': sci(d_hi['info_rel_free_space']),
+        # info ~ D^2: the slope of log info against log D over two decades.
+        'fb_disp_slope': sig(math.log10(d_hi['info'] / d_lo['info']) / 2, 3),
+        'fb_mon1': sig(mon1['info_rel_free_space'], 2),
+        'fb_mon1_pred': sig(mon1['predicted_rel_free_space'], 2),
+        'fb_mon3': sig(mon3['info_rel_free_space'], 2),
+        'fb_mon3_pred': sig(mon3['predicted_rel_free_space'], 2),
+        'fb_mon_um': f'{1000 * data["q3_1"]["monitor_um"]:.0f}',
+        'fb_mon3_um': ', '.join(
+            f'{1000 * w:.0f}' for w in data['q3_1']['monitors_x3_um']
+        ),
+        'fb_shots': str(data['q3_1']['n_shots']),
+        'fb_corr_n1': sig(pol[1]['corr'], 3),
+        'fb_corr_sqrt_lo': sig(min(-r['corr_times_sqrt_n'] for r in big), 2),
+        'fb_corr_sqrt_hi': sig(max(-r['corr_times_sqrt_n'] for r in big), 2),
+        'fb_r2n_lo': sig(min(r['r2'] * r['n_modes'] for r in big), 2),
+        'fb_r2n_hi': sig(max(r['r2'] * r['n_modes'] for r in big), 2),
+        'fb_k2_n8': sig(pol[8]['mean_kappa2'], 2),
+        'fb_coe_n8': sig(pol[8]['coe_mean_kappa2'], 2),
+        'fb_k2_n1': sig(pol[1]['mean_kappa2'], 2),
+        'fb_draws': str(data['q3_2']['n_draws']),
+        'fb_corr_n8': sig(pol[8]['corr'], 2),
+        'fb_r2_n8': sig(pol[8]['r2'], 2),
+        **r8_values(data['drift']['shot_s']),
+    }
+
+
+def r8_values(shot_s: float) -> dict[str, str]:
+    """Q3.3 and Q3.4 analytic values: arithmetic on the R8 fiber operating point."""
+    fiber = R8_FIBER
+    rate = SimConfig.nominal(
+        STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, NOMINAL_C, NOMINAL_ALPHA
+    ).sample_rate
+    sigma_p = fiber.path_drift_um_per_sqrt_s
+    return {
+        'r8_modes': str(fiber.n_modes),
+        'r8_speckle_drift': f'{fiber.drift_rad_per_sqrt_s:g}',
+        'r8_path_drift': f'{sigma_p:g}',
+        'r8_shot_ms': sig(1000 * shot_s, 3),
+        'r8_path_shot_um': sig(sigma_p * math.sqrt(shot_s), 2),
+        # A white random-walk increment over one sample, read as a velocity.
+        'r8_path_velocity': sig(sigma_p * math.sqrt(rate) / 1000, 2),
+        'r8_half_lam_lo': sig(min(SYNTHETIC_WAVELENGTHS_UM) / 2, 2),
+        'r8_half_lam_hi': sig(max(SYNTHETIC_WAVELENGTHS_UM) / 2, 2),
+        'r8_coe': sig(2 / (2 * fiber.n_modes + 1), 2),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--output', type=Path, required=True)
@@ -1627,6 +1784,8 @@ def main() -> None:
         **sagnac_values(),
         **channel_values(),
         **shift_values(prior),
+        **q2_analytic_values(records, prior),
+        **fiber_values(),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(values, indent=1) + '\n', encoding='utf-8')
