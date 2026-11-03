@@ -174,6 +174,39 @@ def synthetic_records() -> dict[str, RunRecord]:
     return {r.cell_key: r for r in records if r.cell_key is not None}
 
 
+SHIFT_RESULTS_JSON = RESULTS_DIR / 'shift_results.json'
+# The two smi-a3 families shift_eval scores (scripts/shift_eval.py BEST_TWO).
+SHIFT_FAMILIES = ('tcan-44k-T90', 'unettransformer-offline-44k-T90')
+SHIFT_DEFAULT_TEST_SEED = 1000
+
+
+@dataclass(frozen=True)
+class ShiftScore:
+    """One shifted-test-set score: mean per-shot velocity RMSE and its SE.
+
+    The SE is IQR / 1.349 / sqrt(n): the record keeps quartiles, not the
+    per-shot std, and IQR / 1.349 is the std of a normal law.
+    """
+
+    rmse: float
+    se: float
+
+
+def shift_scores() -> dict[tuple[str, str, float, int], ShiftScore]:
+    """Keyed (family, knob, value, test seed), from sim_name ``knob=value[@testS]``."""
+    out = {}
+    for r in read_results(SHIFT_RESULTS_JSON):
+        tag, _, seed = r.sim_name.partition('@test')
+        knob, _, value = tag.partition('=')
+        family = r.cell_key.split('__')[0]
+        m = r.metrics['velocity_rmse']
+        n = int(r.dataset.rsplit('_n', 1)[1])
+        se = (m['p75'] - m['p25']) / 1.349 / math.sqrt(n)
+        key = (family, knob, float(value), int(seed or SHIFT_DEFAULT_TEST_SEED))
+        out[key] = ShiftScore(m['mean'], se)
+    return out
+
+
 def synthetic_cell(records: dict[str, RunRecord], family: str, sim: str) -> RunRecord:
     """The seed-0, three-channel record of ``family`` on ``sim``.
 

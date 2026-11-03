@@ -44,6 +44,8 @@ DOCUMENT_FIGURES = {
         "baseline_summary",
         "model_comparison",
         "baseline_amplitude_trend",
+        "shift_generalization",
+        "sagnac_fisher",
     ],
 }
 
@@ -73,6 +75,12 @@ RESULTS = [
     str(RESULTS_DIR / "synthetic_results.json"),
     # Per-sample binned errors of section Q1, from smi.experiments.q1_binned.
     str(RESULTS_DIR / "q1_binned_errors.json"),
+    # Section Q2.3: nominal checkpoints on shifted test sets (shift_eval).
+    str(RESULTS_DIR / "shift_results.json"),
+    # Section Q4 and the Q1 analytic tiers: scripts/sagnac_table.py and
+    # scripts/channel_analytics.py over smi.theory.
+    str(RESULTS_DIR / "sagnac_results.json"),
+    str(RESULTS_DIR / "channel_analytics.json"),
 ]
 
 # The library modules the figures compute from or read records through, so a

@@ -58,9 +58,12 @@ from _figcommon import (
     Q3_FEEDBACK_C,
     RESULTS_DIR,
     S1D_FAMILIES,
+    SHIFT_DEFAULT_TEST_SEED,
+    SHIFT_FAMILIES,
     STALL_TOLERANCE,
     SYNTHETIC_WAVELENGTHS_UM,
     LadderRow,
+    ShiftScore,
     c_sim,
     displacement_pending,
     matched_length_cells,
@@ -71,6 +74,7 @@ from _figcommon import (
     oracle_cell,
     q2_record,
     s1d_record,
+    shift_scores,
     synthetic_cell,
     synthetic_records,
     velocity_bounds,
@@ -1309,6 +1313,163 @@ def prediction_values(records: dict[str, RunRecord], zero: float) -> dict[str, s
     }
 
 
+def sagnac_values() -> dict[str, Any]:
+    """Q4 gains quoted in the prose, from scripts/sagnac_table.py's JSON."""
+    rows = json.loads((RESULTS_DIR / 'sagnac_results.json').read_text())['table']
+
+    def row(alpha: float, c0: float) -> dict[str, Any]:
+        return next(r for r in rows if r['alpha'] == alpha and r['c0'] == c0)
+
+    out = {}
+    for c0, tag in ((0.99, 'c099'), (1.3, 'c13')):
+        r = row(3.0, c0)
+        out |= {
+            f'sagnac_{tag}_ceff': f'{r["c_eff"]:.2f}',
+            f'sagnac_{tag}_avg': f'{r["avg"]:.2f}',
+            f'sagnac_{tag}_best': f'{r["best"]:.2f}',
+            f'sagnac_{tag}_smi': f'{r["smi_phase_gain"]:.2f}',
+        }
+    out['sagnac_c13_swing'] = f'{row(3.0, 1.3)["swing_rad"]:.2f}'
+    # The table of the Q4 section: one row per C_0, cells "avg / best" per alpha.
+    alphas = sorted({r['alpha'] for r in rows})
+    out['sagnac_table_alpha'] = [f'{a:g}' for a in alphas]
+    out['sagnac_table'] = [
+        {
+            'c0': f'{r["c0"]:g} ({r["c_eff"]:.2f})',
+            'cells': [
+                f'{row(a, r["c0"])["avg"]:.2f} / {row(a, r["c0"])["best"]:.2f}'
+                for a in alphas
+            ],
+        }
+        for r in rows
+        if r['alpha'] == alphas[0]
+    ]
+    return out
+
+
+def channel_values() -> dict[str, Any]:
+    """Q1.1 and Q1.2 analytic values, from scripts/channel_analytics.py's JSON."""
+    data = json.loads((RESULTS_DIR / 'channel_analytics.json').read_text())
+    count = data['q1_count']
+    rows = data['q1_colors']['rows']
+
+    def arm(c: float, n: int, name: str) -> dict[str, Any]:
+        return next(
+            r for r in rows if r['feedback_c'] == c and r['n'] == n and r['arm'] == name
+        )
+
+    dev = max(
+        abs(r['info'] / r['sum_singles'] - 1) for rs in count.values() for r in rs
+    )
+    c02 = count['0.2']
+    out = {
+        'ch_fisher_shots': str(data['fisher_shots']),
+        'ch_sign_shots': str(data['sign_shots']),
+        'ch_additive_dev_pct': f'{100 * dev:.0f}',
+        # Bound ~ 1 / sqrt(info): six channels over the best-known one.
+        'ch_bound_ratio_n6': f'{(c02[-1]["info"] / c02[0]["info"]) ** -0.5:.2f}',
+        'ch_bound_ratio_n3': f'{(c02[2]["info"] / c02[0]["info"]) ** -0.5:.2f}',
+        'ch_info_jump_405_pct': f'{100 * (c02[5]["info"] / c02[4]["info"] - 1):.0f}',
+        'ch_info_jump_785_pct': f'{100 * (c02[3]["info"] / c02[2]["info"] - 1):.0f}',
+        'ch_count_table': [
+            {
+                'n': str(r0['n']),
+                'lam': f'{r0["wavelengths_um"][-1] * 1e3:.1f}',
+                'info02': f'{r0["info"] / 1e7:.2f}',
+                'info0': f'{r1["info"] / 1e7:.2f}',
+                'bound02': f'{(r0["info"] / c02[0]["info"]) ** -0.5:.2f}',
+            }
+            for r0, r1 in zip(c02, count['0'], strict=True)
+        ],
+        'ch_colors_table': [
+            {
+                'c': f'{r["feedback_c"]:g}',
+                'n': str(r['n']),
+                'arm': r['arm'],
+                'info': f'{r["info"] / 1e7:.2f}',
+                'sign': (
+                    '0'
+                    if r['sign_nats_per_shot'] < 1
+                    else f'{r["sign_nats_per_shot"]:.2g}'
+                ),
+            }
+            for r in rows
+        ],
+    }
+    for n in (2, 3):
+        col = arm(0.2, n, 'colors')['info']
+        arrays = [arm(0.2, n, a)['info'] for a in ('array_quadrature', 'array_zero')]
+        out[f'ch_colors_vs_array_n{n}_pct'] = (
+            f'{100 * (col / max(arrays) - 1):+.0f} to '
+            f'{100 * (col / min(arrays) - 1):+.0f}'
+        )
+    quad = arm(0.0, 3, 'array_quadrature')['sign_nats_per_shot']
+    out['ch_sign_quad_n3_c0'] = sci(quad)
+    out['ch_sign_ratio_n3'] = (
+        f'{quad / arm(0.2, 3, "colors")["sign_nats_per_shot"]:.0f}'
+    )
+    return out
+
+
+def shift_values(prior: bounds.StateSpace) -> dict[str, str]:
+    """Q2.3 values from shift_results.json; SEs as in ``ShiftScore``."""
+    scores = shift_scores()
+    v_rms = prior.empirical_velocity_var**0.5
+    out: dict[str, str] = {'shift_v_rms': sig(v_rms, 2)}
+    tags = {'tcan-44k-T90': 'tcan', 'unettransformer-offline-44k-T90': 'unet'}
+    for family in SHIFT_FAMILIES:
+        t = tags[family]
+
+        def at(
+            knob: str,
+            value: float,
+            seed: int = SHIFT_DEFAULT_TEST_SEED,
+            family: str = family,
+        ) -> ShiftScore:
+            return scores[(family, knob, value, seed)]
+
+        nominal = at('feedback_c', 0.2)
+        c_sweep = {
+            k[2]: v for k, v in scores.items() if k[:2] == (family, 'feedback_c')
+        }
+        best_c = min(c_sweep, key=lambda c: c_sweep[c].rmse)
+        eps_max = 0.01
+        predicted = math.sqrt(
+            nominal.rmse**2 + (eps_max / (1 + eps_max)) ** 2 * v_rms**2
+        )
+        wave = [
+            (scores[k].rmse - nominal.rmse) / nominal.se
+            for k in scores
+            if k[0] == family
+            and k[1] in ('wavelength_scale', 'wavelength_independent')
+            and k[3] == SHIFT_DEFAULT_TEST_SEED
+        ]
+        second = at('wavelength_independent', 0.0, 2000)
+        zero = at('phase_offset', 0.0, 2000)
+        phase_dev = [
+            (scores[k].rmse - nominal.rmse) / nominal.se
+            for k in scores
+            if k[:2] == (family, 'phase_offset') and k[3] == SHIFT_DEFAULT_TEST_SEED
+        ]
+        out |= {
+            f'shift_{t}_nominal': sig(nominal.rmse, 3),
+            f'shift_{t}_se': sig(nominal.se, 1),
+            f'shift_{t}_best_c': f'{best_c:g}',
+            f'shift_{t}_c005_ratio': f'{c_sweep[0.05].rmse / nominal.rmse:.1f}',
+            f'shift_{t}_c05_ratio': f'{c_sweep[0.5].rmse / nominal.rmse:.1f}',
+            f'shift_{t}_eps_cross': f'{nominal.rmse / v_rms:.2f}',
+            f'shift_{t}_eps_pred_pct': f'{100 * (predicted / nominal.rmse - 1):.1f}',
+            f'shift_{t}_wave_max_se': f'{max(abs(w) for w in wave):.1f}',
+            f'shift_{t}_nominal2': sig(second.rmse, 3),
+            f'shift_{t}_zero2': sig(zero.rmse, 3),
+            f'shift_{t}_zero2_ratio': f'{zero.rmse / second.rmse:.2f}',
+            f'shift_{t}_zero2_se': f'{(zero.rmse - second.rmse) / second.se:.0f}',
+            f'shift_{t}_phase_lo_se': f'{min(phase_dev):.0f}',
+            f'shift_{t}_phase_hi_se': f'{max(phase_dev):.0f}',
+        }
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--output', type=Path, required=True)
@@ -1378,6 +1539,9 @@ def main() -> None:
         **methods_values(records, shot_length(records)),
         **displacement_values(records),
         **s1d_values(records),
+        **sagnac_values(),
+        **channel_values(),
+        **shift_values(prior),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(values, indent=1) + '\n', encoding='utf-8')

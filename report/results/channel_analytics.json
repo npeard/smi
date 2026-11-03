@@ -1,0 +1,227 @@
+{
+ "snr_db": 30.0,
+ "alpha": 3.0,
+ "fisher_shots": 16,
+ "sign_shots": 8,
+ "seed": 0,
+ "q1_count": {
+  "0.2": [
+   {
+    "n": 1,
+    "wavelengths_um": [
+     0.635
+    ],
+    "info": 36615951.60446642,
+    "sum_singles": 36615951.60446642
+   },
+   {
+    "n": 2,
+    "wavelengths_um": [
+     0.635,
+     0.6748
+    ],
+    "info": 71436284.34841168,
+    "sum_singles": 69072750.14760908
+   },
+   {
+    "n": 3,
+    "wavelengths_um": [
+     0.635,
+     0.6748,
+     0.515
+    ],
+    "info": 127978700.98305452,
+    "sum_singles": 126803654.18961877
+   },
+   {
+    "n": 4,
+    "wavelengths_um": [
+     0.635,
+     0.6748,
+     0.515,
+     0.785
+    ],
+    "info": 151913984.499103,
+    "sum_singles": 150754925.493795
+   },
+   {
+    "n": 5,
+    "wavelengths_um": [
+     0.635,
+     0.6748,
+     0.515,
+     0.785,
+     0.85
+    ],
+    "info": 177613974.70107898,
+    "sum_singles": 171279596.62683037
+   },
+   {
+    "n": 6,
+    "wavelengths_um": [
+     0.635,
+     0.6748,
+     0.515,
+     0.785,
+     0.85,
+     0.405
+    ],
+    "info": 268914015.17199606,
+    "sum_singles": 264303328.44695556
+   }
+  ],
+  "0": [
+   {
+    "n": 1,
+    "wavelengths_um": [
+     0.635
+    ],
+    "info": 37334553.8833043,
+    "sum_singles": 37334553.8833043
+   },
+   {
+    "n": 2,
+    "wavelengths_um": [
+     0.635,
+     0.6748
+    ],
+    "info": 67912399.81076255,
+    "sum_singles": 70330644.09410343
+   },
+   {
+    "n": 3,
+    "wavelengths_um": [
+     0.635,
+     0.6748,
+     0.515
+    ],
+    "info": 125513396.87392554,
+    "sum_singles": 128160278.14211056
+   },
+   {
+    "n": 4,
+    "wavelengths_um": [
+     0.635,
+     0.6748,
+     0.515,
+     0.785
+    ],
+    "info": 147136386.10226893,
+    "sum_singles": 152346077.85794416
+   },
+   {
+    "n": 5,
+    "wavelengths_um": [
+     0.635,
+     0.6748,
+     0.515,
+     0.785,
+     0.85
+    ],
+    "info": 169555210.10271874,
+    "sum_singles": 173291005.33868235
+   },
+   {
+    "n": 6,
+    "wavelengths_um": [
+     0.635,
+     0.6748,
+     0.515,
+     0.785,
+     0.85,
+     0.405
+    ],
+    "info": 259741293.92269626,
+    "sum_singles": 263944979.2826739
+   }
+  ]
+ },
+ "q1_colors": {
+  "rows": [
+   {
+    "feedback_c": 0.2,
+    "n": 2,
+    "arm": "colors",
+    "info": 71436284.34841168,
+    "sign_nats_per_shot": 455503.46686932025
+   },
+   {
+    "feedback_c": 0.2,
+    "n": 2,
+    "arm": "array_quadrature",
+    "info": 73577755.02607478,
+    "sign_nats_per_shot": 6481245.6669550715
+   },
+   {
+    "feedback_c": 0.2,
+    "n": 2,
+    "arm": "array_zero",
+    "info": 73231903.20893244,
+    "sign_nats_per_shot": 485461.2817744945
+   },
+   {
+    "feedback_c": 0.2,
+    "n": 3,
+    "arm": "colors",
+    "info": 127978700.98305452,
+    "sign_nats_per_shot": 718115.1943552108
+   },
+   {
+    "feedback_c": 0.2,
+    "n": 3,
+    "arm": "array_quadrature",
+    "info": 111512807.16309847,
+    "sign_nats_per_shot": 13404299.946988333
+   },
+   {
+    "feedback_c": 0.2,
+    "n": 3,
+    "arm": "array_zero",
+    "info": 109847854.81339762,
+    "sign_nats_per_shot": 728191.9226617418
+   },
+   {
+    "feedback_c": 0.0,
+    "n": 2,
+    "arm": "colors",
+    "info": 67912399.81076255,
+    "sign_nats_per_shot": 4.092726157978177e-09
+   },
+   {
+    "feedback_c": 0.0,
+    "n": 2,
+    "arm": "array_quadrature",
+    "info": 73488741.25274277,
+    "sign_nats_per_shot": 6190973.240566316
+   },
+   {
+    "feedback_c": 0.0,
+    "n": 2,
+    "arm": "array_zero",
+    "info": 74669107.76660798,
+    "sign_nats_per_shot": 2.9558577807620168e-09
+   },
+   {
+    "feedback_c": 0.0,
+    "n": 3,
+    "arm": "colors",
+    "info": 125513396.87392554,
+    "sign_nats_per_shot": 1.4921397450962104e-09
+   },
+   {
+    "feedback_c": 0.0,
+    "n": 3,
+    "arm": "array_quadrature",
+    "info": 110233111.87911372,
+    "sign_nats_per_shot": 13205924.237528946
+   },
+   {
+    "feedback_c": 0.0,
+    "n": 3,
+    "arm": "array_zero",
+    "info": 112003661.6499118,
+    "sign_nats_per_shot": 4.433786671143025e-09
+   }
+  ]
+ }
+}

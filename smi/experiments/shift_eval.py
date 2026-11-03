@@ -31,8 +31,12 @@ Analytic predictions, per knob (``eps`` is the relative shift):
   per-channel offset added to it leaves the test distribution unchanged: that
   knob is a no-op by construction. What can be set is the shared-phase path
   (one uniform phase plus offsets ``k * value`` on channel ``k``), whose joint
-  phases lie inside the support the model was trained on; the prediction is
-  the nominal RMSE within sampling noise, at any value. One point checks it.
+  phases lie inside the support the model was trained on. The nominal score
+  averages the error over inter-channel phase configurations; a pinned
+  configuration samples one slice of that average. The prediction: the error
+  moves with ``value`` by the within-distribution spread of error over phase
+  configuration, which the nominal score does not show (several per-shot SEs
+  in the recorded sweep, not a no-op).
 * ``feedback_c``: C changes the fringe shape (the SMI sawtooth asymmetry that
   carries the direction), not its rate, so no closed-form scale error exists.
   The prediction is only qualitative: the minimum at the trained C = 0.2,

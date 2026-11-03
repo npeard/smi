@@ -761,9 +761,40 @@ the real runs at the same two seeds.
 
 === Analytic
 
-_Status: not run; the multi-channel Fisher matrix is pending._
+Channels with independent phases add information, so the velocity bound falls
+as $1 \/ sqrt(sum_k J_k)$ and short wavelengths dominate it
+(@tab-q1-count). The reason is structural: with one unknown phase per
+channel the Fisher matrix of $(v, phi_1, ..., phi_N)$ is block-arrowhead, so
+the profiled velocity information is the sum of the per-channel profiled
+values, each weighted by $lambda_k^(-2)$ as in @eq-fisher. The table is
+`bounds.fisher_matrix`, profiled over the phases, on the noise-free detector
+at 30 dB SNR, $alpha = 3$, #val("ch_fisher_shots") shots. The full sets match
+the sum of their single channels to #val("ch_additive_dev_pct")%, the
+Monte-Carlo spread of the shot draw. Adding 405 nm as the sixth channel raises
+the information by #val("ch_info_jump_405_pct")%; adding 785 nm as the fourth,
+by #val("ch_info_jump_785_pct")%. Feedback at $C = 0.2$ changes each entry by
+a few percent, within that spread.
+
+#figure(
+  table(
+    columns: 5,
+    align: (center, center, right, right, right),
+    table.header([$N$], [added $lambda$ (nm)], [$J$, $C = 0.2$], [$J$, $C = 0$], [bound ratio]),
+    ..val("ch_count_table").map(r => (
+      [#r.n], [#r.lam], [#r.info02], [#r.info0], [#r.bound02],
+    )).flatten(),
+  ),
+  caption: [
+    Velocity information adds over channels. $J$: profiled per-sample
+    velocity information, in $10^7 ("um/ms")^(-2)$, of the first $N$ colors of
+    the list. Bound ratio: $sqrt(J_1 \/ J_N)$ at $C = 0.2$, the CRB on velocity
+    relative to 635 nm alone.
+  ],
+) <tab-q1-count>
 
 === Synthetic
+
+_Status: the R1 channel-count grid is running; the text below predates it._
 
 #assert(val("q1_multi_beats_single"), message: "a multi-channel set no longer beats the best single channel at C = 0.2 by more than the seed range")
 #assert(val("q1_515_best"), message: "515 nm is no longer the best single channel at C = 0.2 for both families")
@@ -880,11 +911,43 @@ read the sign.
 
 === Analytic
 
-_Status: not run._
+A one-color array with quadrature offsets reads the sign without feedback;
+distinct colors do not, and local precision barely separates the two
+(@tab-q1-colors). We compare $N$ colors (independent phases) against $N$
+copies of 635 nm sharing one unknown phase, with known offsets $0, pi \/ 2$
+for $N = 2$ and $2 pi k \/ 3$ for $N = 3$, or all zero. Local Fisher
+information follows $sum_k lambda_k^(-2)$: colors give
+#val("ch_colors_vs_array_n3_pct")% for $N = 3$, where 515 nm enters, and
+#val("ch_colors_vs_array_n2_pct")% for $N = 2$. The sign evidence of
+@eq-sign-info separates them. At $C = 0$ it is zero for colors and for
+zero offsets, as the Michelson symmetry of @sec-sign requires, while the
+quadrature array carries
+$#val("ch_sign_quad_n3_c0").mantissa times 10^(#val("ch_sign_quad_n3_c0").exponent)$
+nats per shot at $N = 3$. That is #val("ch_sign_ratio_n3") times what
+feedback alone gives the three colors at $C = 0.2$. The sign evidence is the
+fixed-trajectory upper bound of `bounds.sign_information`, over
+#val("ch_sign_shots") shots.
+
+#figure(
+  table(
+    columns: 5,
+    align: (center, center, left, right, right),
+    table.header([$C$], [$N$], [configuration], [$J$], [sign (nats/shot)]),
+    ..val("ch_colors_table").map(r => (
+      [#r.c], [#r.n], [#r.arm.replace("_", " ")], [#r.info], [#r.sign],
+    )).flatten(),
+  ),
+  caption: [
+    Quadrature offsets, not colors, carry the sign at $C = 0$. Colors: the
+    first $N$ of 635, 674.8, 515 nm with independent phases. Array: $N$ times
+    635 nm sharing one phase, offsets quadrature-spread or zero. $J$ as in
+    @tab-q1-count; same detector, 30 dB, $alpha = 3$.
+  ],
+) <tab-q1-colors>
 
 === Synthetic
 
-_Status: not run._
+_Status: the R2 colors-against-array grid is running._
 
 === Real data
 
@@ -1312,15 +1375,78 @@ less than $s$.
 
 === Analytic
 
-_Status: not run._
+A wavelength shift common to all channels is exactly a velocity rescale. In
+@eq-michelson the phase $4 pi d \/ (s lambda_k)$ at scaled wavelength
+$s lambda_k$, $s = 1 + epsilon$, equals the phase of trajectory $d \/ s$ at
+the trained wavelengths. No estimator can tell the two apart, so a model right
+at nominal returns $v \/ s$ and scores
+$
+  "RMSE"(epsilon) approx sqrt("RMSE"_0^2 + (epsilon \/ (1 + epsilon))^2 v_"rms"^2) .
+$ <eq-shift-scale>
+With $v_"rms" = #val("shift_v_rms")$ $mu$m/ms from the motion prior, the
+scale term overtakes the nominal error only at
+$|epsilon| approx #val("shift_tcan_eps_cross")$. Feedback $C$ changes the
+fringe shape of @eq-excess, not its rate, so we predict only a minimum at the
+trained $C = 0.2$, steepest toward $C -> 0$, where the asymmetry that carries
+the sign vanishes. Training draws an independent uniform phase per channel and
+shot, so a fixed shared-phase configuration lies inside the training support.
+We first predicted it a no-op; the synthetic tier replaces that prediction.
 
 === Synthetic
 
-_Status: not run._
+We score the nominal-trained TCAN and UNet-Transformer, unchanged, on frozen
+64-shot test sets shifted in one knob (@fig-shift). Each error is the mean
+per-shot velocity RMSE. Its SE, IQR $\/ 1.349 \/ sqrt(64)$, is
+#val("shift_tcan_se") $mu$m/ms for the TCAN (nominal
+#val("shift_tcan_nominal")) and #val("shift_unet_se") for the UNet-Transformer
+(#val("shift_unet_nominal")).
+
+Feedback is the knob that matters. Both errors are lowest at
+$C = #val("shift_tcan_best_c")$, within an SE of the trained 0.2, and rise
+#val("shift_tcan_c005_ratio") and #val("shift_unet_c005_ratio") times at
+$C = 0.05$ against #val("shift_tcan_c05_ratio") and
+#val("shift_unet_c05_ratio") times at $C = 0.5$, as predicted.
+
+Wavelength shifts up to $|epsilon| = 10^(-2)$ cost nothing measurable, for a
+common scale or for the per-channel pattern $(+1, -1, +0.5) epsilon$. Every
+point lies within #val("shift_unet_wave_max_se") SE of nominal. @eq-shift-scale
+predicts #val("shift_tcan_eps_pred_pct")% at $10^(-2)$, below one SE, so the
+sweep confirms it without resolving it. The independent pattern, which no
+common scale absorbs, costs no more than the common one.
+
+The phase-offset prediction failed. With channel $k$ at offset $k$ times a
+step, the TCAN error spans #val("shift_tcan_phase_lo_se") to
+#val("shift_tcan_phase_hi_se") SE about nominal over the steps. A second test
+draw reproduces it: at zero step the TCAN scores #val("shift_tcan_zero2")
+against #val("shift_tcan_nominal2") on that draw, #val("shift_tcan_zero2_ratio")
+times and #val("shift_tcan_zero2_se") SE worse; the UNet-Transformer is
+#val("shift_unet_zero2_ratio") times worse. Since the configuration lies
+inside the training support, this is not an out-of-distribution failure. The
+nominal score averages the error over inter-channel phase configurations, and
+a pinned configuration samples one slice of that average. The replaced
+prediction: the error depends on the inter-channel phase configuration with a
+spread of several SE, and equal phases are among the worst for the TCAN.
+
+#fig(
+  "shift_generalization",
+  caption: [
+    Feedback and the inter-channel phase configuration move the error;
+    wavelength does not. (a) Test feedback $C$; dotted, trained $C$.
+    (b) Common (filled) and per-channel (open) wavelength shift; dashed,
+    @eq-shift-scale. (c) Shared phase, channel $k$ offset by $k$ steps, on two
+    test draws; lines, each draw's nominal score. Bars: per-shot SE.
+  ],
+) <fig-shift>
 
 === Real data
 
-_Status: not run, blinded._
+_Status: blinded; no shifted real acquisition exists._ The committed
+prediction: a frozen model degrades with a change of feedback strength
+(realignment) by the synthetic factors above, and not with a diode
+temperature change, which @eq-shift-scale bounds at about
+$|epsilon| v_"rms"$. It is falsified if a temperature-only change of order
+$Delta lambda \/ lambda = 10^(-3)$ raises the real error by more than the
+seed range, or a realignment that changes $C$ leaves it unchanged.
 
 == Real data: the analytic baseline and learned models <sec-q2-real>
 
@@ -2301,6 +2427,88 @@ is for free space.
 
 = Q4: Sagnac accelerometer <sec-q4> // math-ok: question label
 
-_Status: analytic only; not yet derived._
+Q4 asks whether a Sagnac loop read by self-mixing would give a common-path, // math-ok: question label
+fiber-noise-insensitive accelerometer. It would not: the loop returns the
+nonreciprocal phase in the amplitude, and the reciprocal fiber phase comes
+back as $phi_0$. Code: `smi/theory/sagnac.py`, tests `tests/test_sagnac.py`.
+
+=== Analytic
+
+A 2x2 coupler of power split $rho$ closed on a loop returns to the laser
+$
+  E_r = 2 i sqrt(rho (1 - rho)) cos(Delta phi \/ 2) e^(i Sigma \/ 2), quad
+  Sigma = phi_"CW" + phi_"CCW", quad Delta phi = phi_"CW" - phi_"CCW"
+$ <eq-loop-mirror>
+for any $rho$ @mortimore1988loop, because each beam takes one bar and one
+cross pass. The test sums the two beam fields and checks the transmitted port
+for $rho in {0.3, 0.5, 0.9}$. The nonreciprocal phase sets only the
+reflectivity $c = cos(Delta phi \/ 2)$. Self-mixing reads the round-trip
+phase of the return @lang1980feedback @taimre2015tutorial, which contains
+$Sigma \/ 2$ and the lead fiber in full. Reciprocal fiber noise therefore
+enters $phi_0$ of @eq-excess. A conventional Sagnac readout at the second
+coupler port is insensitive to it; the self-mixing readout is not, which
+overturns the premise of Q4. // math-ok: question label
+
+The output encodes the velocity of an element placed off the loop midpoint,
+not the acceleration of the loop. An element with phase $kappa x(t)$, crossed
+by the two beams $tau$ apart, gives $Delta phi = kappa tau v$ at the midpoint
+time, exactly for quadratic $x(t)$. Rotation is nonreciprocal @post1967sagnac.
+Uniform linear acceleration of a rigid loop is not: the Sagnac delay is
+proportional to $integral.cont g_(0 i) d x^i \/ g_(00)$
+@rizzi2004rotating @tartaglia1998sagnac, and the Rindler metric has
+$g_(0 i) = 0$. That step to a null result is our own. A proof mass of
+resonance $omega_0$ and quality $Q$ makes $Delta phi$ follow jerk below
+resonance and acceleration, with gain $kappa tau Q \/ omega_0$, only near
+it. Off-center strain of the coil itself acts as a distributed proof mass by
+the same mechanism.
+
+With feedback $C_0$ at full reflection, both feedback and modulation depth
+scale with $c$:
+$
+  phi_F = phi_0 - C_0 c sin(phi_F + beta), quad y = m c cos phi_F + n .
+$ <eq-sagnac-signal>
+A bias $Delta phi_b = pi \/ 2$ is needed, since $partial c \/ partial Delta phi$
+vanishes at 0. $C_0 > 1$ is allowed because $C_"eff" = C_0 c$, but
+$C_0 cos(Delta phi \/ 2) < 1$ must hold over the whole swing, or the laser
+turns multistable @lang1980feedback. At $C_0 = 1.3$ that leaves
+$plus.minus #val("sagnac_c13_swing")$ rad. With $phi_0$ known and $g = partial Delta phi \/ partial a$, the
+acceleration Fisher information has the form of @eq-fisher with prefactor
+$m g sin(Delta phi_b \/ 2) \/ (2 sigma)$ and $F'$ replaced by
+$partial (y \/ m) \/ partial c$, from implicit differentiation of
+@eq-sagnac-signal.
+
+Feedback raises that information little unless $phi_0$ is held at its best
+value (@fig-sagnac, @tab-sagnac). At the rig's $alpha = 3$ and
+$C_0 = 0.99$ ($C_"eff" = #val("sagnac_c099_ceff")$) the gain is
+#val("sagnac_c099_avg") phase-averaged and #val("sagnac_c099_best") at the
+best phase. The averaged gain is below the conventional phase readout's
+$2 Phi = #val("sagnac_c099_smi")$ at the same $C$ (@eq-phase-factor), because
+$Delta phi$ enters the amplitude, not the phase. The best-phase value is a
+genie bound: holding $phi_0$ there is the fiber-phase stabilization the
+premise hoped to avoid. Sign needs no feedback asymmetry; the bias makes the
+response signed.
+
+#figure(
+  table(
+    columns: 4,
+    table.header([$C_0$ ($C_"eff"$)], ..val("sagnac_table_alpha").map(a => [$alpha = #a$])),
+    ..val("sagnac_table").map(r => ([#r.c0], ..r.cells.map(c => [#c]))).flatten(),
+  ),
+  caption: [
+    Feedback gains, phase-averaged / best phase, bias $pi \/ 2$. Rows with
+    $C_0 > 1$ hold only for a bounded swing.
+  ],
+) <tab-sagnac>
+
+#fig(
+  "sagnac_fisher",
+  width: 62%,
+  caption: [
+    Only a held best phase buys a large feedback gain, and it diverges as
+    $C_"eff" -> 1$. Acceleration Fisher at $C_0$ over $C_0 = 0$, bias
+    $pi \/ 2$: best phase $phi_0$ (solid), phase-averaged (dashed).
+  ],
+) <fig-sagnac>
+
 
 #bibliography("refs.bib")
