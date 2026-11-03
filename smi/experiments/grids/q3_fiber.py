@@ -31,18 +31,12 @@ import dataclasses
 
 from smi.experiments.grid import RIG_WAVELENGTHS_UM, Sim
 from smi.experiments.grids.q2_r4_noise import GRID as R4
+from smi.learning.configs import R8_FIBER
 from smi.theory.fiber import FiberConfig
 
 MONITOR_UM = 0.785
-FIBER = FiberConfig(
-    n_modes=8,
-    drift_rad_per_sqrt_s=3.0,
-    path_drift_um_per_sqrt_s=2.8,
-    dispersion_per_um=0.0,
-    spectral_corr_width_um=0.01,
-    monitor_wavelengths_um=(),
-    pbs_channel=False,
-)
+# Defined once with the R8 flows, which train on this grid's fiber arm.
+FIBER = R8_FIBER
 
 # Both 4-channel arms add the same color, so they differ only in its path.
 _FOUR_COLORS = (*RIG_WAVELENGTHS_UM, MONITOR_UM)

@@ -626,8 +626,10 @@ _LEGACY: dict[str, TrainingConfig] = {
     ),
 }
 
-# R8 operating point (the R7 plan's Task-3 grid point): N = 8 modes, speckle
-# drift 3 rad/sqrt(s), path drift 2.8 um/sqrt(s), no monitor.
+# The R7 fiber operating point (the plan's Task-3 grid point): N = 8 modes,
+# speckle drift 3 rad/sqrt(s), path drift 2.8 um/sqrt(s), no monitor. The
+# q3_fiber grid's arms and the R8 flows share this one definition; configs
+# cannot import the grid (learning sits below experiments).
 R8_FIBER = FiberConfig(
     n_modes=8,
     drift_rad_per_sqrt_s=3.0,
