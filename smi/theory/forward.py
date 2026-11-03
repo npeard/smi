@@ -19,6 +19,7 @@ from smi.core.acquisition import (
     parse_acquisition,
 )
 from smi.theory.coil_driver import CoilDriver
+from smi.theory.fiber import FiberConfig, simulate_fiber
 from smi.theory.waveform import Waveform
 
 # Scale of the drive voltage relative to the rig's pre-compensated waveform
@@ -220,6 +221,11 @@ class SimConfig:
             hence the shared phase. The only defaulted field, and left out of
             ``hash()`` when None, so configs and recorded hashes written
             before it existed stay valid.
+        fiber: None (default): free space, output bitwise unchanged. Set: a
+            multimode fiber (``smi.theory.fiber``) between lasers and
+            target; per sample, |kappa| scales C and the visibility,
+            arg(kappa) adds to the phase. Left out of ``hash()`` when None,
+            like ``channel_phase_offsets_rad``.
     """
 
     acquisition: AcquisitionConfig
@@ -241,6 +247,7 @@ class SimConfig:
     adc_bits: int | None
     adc_full_scale: float
     channel_phase_offsets_rad: tuple[float, ...] | None = None
+    fiber: FiberConfig | None = None
 
     def _coerce(self) -> None:
         # YAML gives lists and ints; the frozen config's hash must not depend on
@@ -285,6 +292,9 @@ class SimConfig:
                 f'need one offset per channel: {len(offsets)} offsets for '
                 f'{len(self.wavelengths_um)} wavelengths'
             )
+        monitor = None if self.fiber is None else self.fiber.monitor_wavelength_um
+        if monitor is not None and monitor not in self.wavelengths_um:
+            raise ValueError(f'monitor_wavelength_um {monitor} is not a channel')
         dc_lo, dc_hi = self.dc_offset_range
         if dc_lo > dc_hi:
             raise ValueError(f'dc_offset_range must satisfy lo <= hi: {dc_lo, dc_hi}')
@@ -327,8 +337,9 @@ class SimConfig:
         out = asdict(self)
         del out['acquisition']
         # Added after hashes were recorded; dropping the unset value keeps them.
-        if out['channel_phase_offsets_rad'] is None:
-            del out['channel_phase_offsets_rad']
+        for name in ('channel_phase_offsets_rad', 'fiber'):
+            if out[name] is None:
+                del out[name]
         return out
 
     def hash(self) -> str:
@@ -343,7 +354,10 @@ class SimConfig:
         ``AcquisitionConfig``.
         """
         acquisition = parse_acquisition(fields['acquisition'])
-        return cls(**{**fields, 'acquisition': acquisition})
+        out = {**fields, 'acquisition': acquisition}
+        if isinstance(out.get('fiber'), Mapping):
+            out['fiber'] = FiberConfig(**out['fiber'])
+        return cls(**out)
 
     @classmethod
     def nominal(
@@ -482,7 +496,9 @@ class SimConfig:
 class SimBatch:
     """One simulated batch, all float32 on the requested device."""
 
-    signals: torch.Tensor  # [B, C, L] detector output, not normalized
+    # [B, C, L] detector output, not normalized; [B, 2C, L] with a fiber PBS
+    # channel (the C P_perp channels follow the C coherent ones).
+    signals: torch.Tensor
     voltage: torch.Tensor  # [B, L] drive voltage
     velocity: torch.Tensor  # [B, L] um/ms
     displacement: torch.Tensor  # [B, L] um
@@ -500,7 +516,7 @@ def _check_feedback(feedback_c: float) -> None:
 
 
 def smi_excess_phase(
-    phase: torch.Tensor, feedback_c: float, alpha: float
+    phase: torch.Tensor, feedback_c: float | torch.Tensor, alpha: float
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Solve the weak-feedback excess phase equation by bracketed Newton.
 
@@ -512,14 +528,19 @@ def smi_excess_phase(
     root sits exactly ON -C at psi = pi/2 + C (and on +C at psi = 3 pi/2 - C), where a
     strict [-C, C] bracket rejects every Newton step and degrades to bisection.
 
+    A tensor C (broadcastable to ``phase``) is a per-sample feedback
+    strength, as a fiber's fading coupling gives; the caller bounds it by a
+    checked scalar C.
+
     Returns:
         ``(delta, psi)``, so the residual is ``delta + C sin(psi + delta)``.
     """
-    _check_feedback(feedback_c)
+    if not isinstance(feedback_c, torch.Tensor):
+        _check_feedback(feedback_c)
     psi = torch.remainder(phase + math.atan(alpha), 2 * math.pi)
     delta = -feedback_c * torch.sin(psi)
-    lo = torch.full_like(psi, -2 * feedback_c)
-    hi = torch.full_like(psi, 2 * feedback_c)
+    lo = torch.zeros_like(psi) - 2 * feedback_c
+    hi = torch.zeros_like(psi) + 2 * feedback_c
     for _ in range(SMI_NEWTON_ITERATIONS):
         h = delta + feedback_c * torch.sin(psi + delta)
         lo = torch.where(h < 0, delta, lo)
@@ -529,7 +550,9 @@ def smi_excess_phase(
     return delta, psi
 
 
-def fringe(phase: torch.Tensor, feedback_c: float, alpha: float) -> torch.Tensor:
+def fringe(
+    phase: torch.Tensor, feedback_c: float | torch.Tensor, alpha: float
+) -> torch.Tensor:
     """Fringe shape cos(phi_F): Michelson for C = 0, weak-feedback SMI above.
 
     Sign convention: displacement d increasing (v > 0) increases the phase.
@@ -539,7 +562,7 @@ def fringe(phase: torch.Tensor, feedback_c: float, alpha: float) -> torch.Tensor
     low point is narrowed and the peak broadened, which carries no direction, so
     direction is observable only for C > 0 AND alpha != 0.
     """
-    if feedback_c == 0.0:
+    if not isinstance(feedback_c, torch.Tensor) and feedback_c == 0.0:
         return torch.cos(phase)
     delta, _ = smi_excess_phase(phase, feedback_c, alpha)
     return torch.cos(phase + delta)
@@ -656,6 +679,44 @@ def channel_phases(
     return 2 * math.pi * draw + shift
 
 
+def _through_fiber(
+    cfg: SimConfig,
+    phase: torch.Tensor,
+    phi_k: torch.Tensor,
+    visibility: torch.Tensor,
+    sim_device: torch.device | str,
+    generator: torch.Generator | None,
+) -> tuple[torch.Tensor, torch.Tensor, float | torch.Tensor, list[torch.Tensor]]:
+    """Apply ``cfg.fiber`` to the free-space phase: (phase, visibility, C, perp).
+
+    |kappa| is the return-field amplitude, so it scales both C and the
+    modulation depth; arg(kappa) adds to the phase. The monitor color keeps
+    phi_k and the fiber phase only (the dichroic returns it before the
+    target). ``perp`` holds the [B, C, L] P_perp channels with
+    ``pbs_channel``, else nothing. No fiber: inputs back, nothing drawn.
+    """
+    fib = cfg.fiber
+    if fib is None:
+        return phase, visibility, cfg.feedback_c, []
+    batch, _, length = phase.shape
+    # Complex linalg (matrix_exp) is not relied on under MPS: draw on CPU.
+    fiber_device = torch.device(sim_device)
+    if fiber_device.type == 'mps':
+        fiber_device = torch.device('cpu')
+    draw = simulate_fiber(
+        fib, cfg.wavelengths_um, batch, length, cfg.sample_rate, fiber_device, generator
+    )
+    if fib.monitor_wavelength_um is not None:
+        k = cfg.wavelengths_um.index(fib.monitor_wavelength_um)
+        phase = phase.clone()
+        phase[:, k] = phi_k[:, k]
+    kappa = draw.kappa.to(phase.device)
+    coupling = kappa.abs()
+    feedback_c = cfg.feedback_c * coupling if cfg.feedback_c > 0 else 0.0
+    perp = [draw.p_perp.to(phase.device)] if fib.pbs_channel else []
+    return phase + kappa.angle(), visibility * coupling, feedback_c, perp
+
+
 def simulate_batch(
     cfg: SimConfig,
     batch_size: int,
@@ -714,6 +775,9 @@ def simulate_batch(
     u = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
     visibility = lo + (hi - lo) * u
     phase = 4 * math.pi * displacement[:, None] / lam + phi_k
+    phase, visibility, feedback_c, perp = _through_fiber(
+        cfg, phase, phi_k, visibility, sim_device, generator
+    )
     if cfg.phase_drift_rad_per_sqrt_s > 0:
         sigma = cfg.phase_drift_rad_per_sqrt_s / math.sqrt(cfg.sample_rate)
         phase = phase + sigma * _walk(full, sim_device, generator)
@@ -723,13 +787,17 @@ def simulate_batch(
         rel = cfg.contrast_drift_rel / math.sqrt(length)
         walk = _walk(full, sim_device, generator)
         visibility = (visibility * (1 + rel * walk)).clamp(0.0, 1.0)
-    intensity = 1 + visibility * fringe(phase, cfg.feedback_c, cfg.alpha)
+    intensity = 1 + visibility * fringe(phase, feedback_c, cfg.alpha)
+    # A PBS PD reads P_perp (signal = intensity - 1 = P_perp); it then shares
+    # the detector chain below with the coherent channels.
+    intensity = torch.cat([intensity, *(1 + p for p in perp)], 1)
+    full = tuple(intensity.shape)
     if cfg.amplitude_drift_rel > 0:
         rel = cfg.amplitude_drift_rel / math.sqrt(length)
         intensity = intensity * (1 + rel * _walk(full, sim_device, generator))
     if cfg.dc_offset_range != (0.0, 0.0):
         dc_lo, dc_hi = cfg.dc_offset_range
-        dc = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
+        dc = torch.rand(full[0], full[1], 1, device=sim_device, generator=generator)
         intensity = intensity + dc_lo + (dc_hi - dc_lo) * dc
     if cfg.pd_bandwidth_hz is not None:
         intensity = pd_lowpass(intensity, cfg.pd_bandwidth_hz, cfg.sample_rate)
