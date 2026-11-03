@@ -78,7 +78,7 @@ Carried-over cleanup:
 ## 3. Then: resume the research program
 
 Report follow-ups, from the PI's round-2 review:
-- [ ] **PI review of the regenerated report** (`report/build/synthetic.pdf`).
+- [ ] **PI review of the regenerated report** (`report/build/report.pdf`).
 - [ ] **Extra seeds where the figures-only reader judged an answer only
   suggestive.**
   - A4: seeds 1-2 of TCN and TCAN at C = 0.2, about 80 min, to settle "TCAN
