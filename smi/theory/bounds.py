@@ -145,7 +145,16 @@ def ideal_shots(cfg: SimConfig, n_shots: int, seed: int) -> IdealShots:
     vis = lo + (hi - lo) * torch.rand(n_shots, k, generator=gen, dtype=_F64)
     lam = torch.tensor(cfg.wavelengths_um, dtype=_F64).view(1, -1, 1)
     d = displacement.to(_F64)
-    return IdealShots(d, velocity.to(_F64), 4 * math.pi * d[:, None] / lam + phase, vis)
+    target = (4 * math.pi * d[:, None] / lam) * _sees_target(cfg)
+    return IdealShots(d, velocity.to(_F64), target + phase, vis)
+
+
+def _sees_target(cfg: SimConfig) -> torch.Tensor:
+    """[1, K, 1] mask: 0 for a dichroic monitor channel (fiber only), else 1."""
+    mask = torch.ones(1, len(cfg.wavelengths_um), 1, dtype=_F64)
+    if cfg.fiber is not None and cfg.fiber.monitor_wavelength_um is not None:
+        mask[0, cfg.wavelengths_um.index(cfg.fiber.monitor_wavelength_um)] = 0.0
+    return mask
 
 
 def fisher_matrix(cfg: SimConfig, n_shots: int, seed: int) -> np.ndarray:
@@ -173,6 +182,13 @@ def fisher_from_shots(cfg: SimConfig, shots: IdealShots) -> np.ndarray:
       g_phi0 = V_k F'_kn on every channel. The offsets now matter: they
       change where each channel's fringe slope vanishes and how the
       channels' phi_0 information correlates with v (R2).
+    With ``cfg.fiber`` set, a last nuisance column is the fiber path drift
+    rate u (um/ms of one-way optical path, a ramp like v): g_u = V_k F'_kn
+    t_n ``fiber_phase_scale(lambda_k)``, on every channel, since every color
+    crosses the fiber (Q3.1). A dichroic monitor channel has g_v = 0. With
+    zero dispersion g_u equals the summed g_v of the target channels, so
+    without a monitor J is exactly singular. The fiber coupling |kappa| is
+    taken as known and unit (genie), so these are fading-free bounds.
     The velocity entry scales as T^2 with shot length T, so compare at fixed
     length. Local (CRB) only: global sign and fringe-order ambiguities are
     ``sign_information``'s.
@@ -190,10 +206,13 @@ def fisher_from_shots(cfg: SimConfig, shots: IdealShots) -> np.ndarray:
         phase_jac = torch.eye(n_ch, dtype=_F64)[None, :, None]
     else:
         phase_jac = torch.ones(1, n_ch, 1, 1, dtype=_F64)
-    grads = torch.cat(
-        [(slope * (4 * math.pi / lam) * t_ms)[..., None], slope[..., None] * phase_jac],
-        -1,
-    )
+    g_v = slope * (4 * math.pi / lam) * t_ms * _sees_target(cfg)
+    columns = [g_v[..., None], slope[..., None] * phase_jac]
+    if cfg.fiber is not None:
+        scale = [cfg.fiber.fiber_phase_scale(x) for x in cfg.wavelengths_um]
+        g_u = slope * torch.tensor(scale, dtype=_F64).view(1, -1, 1) * t_ms
+        columns.append(g_u[..., None])
+    grads = torch.cat(columns, -1)
     flat = grads.reshape(-1, grads.shape[-1])
     return (flat.T @ flat).numpy() / (n_shots * length * sigma**2)
 
