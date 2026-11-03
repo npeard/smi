@@ -13,7 +13,7 @@ shot per channel from that shot's own fringe rate, so the measure means the
 same thing in every excursion bin -- and pools the variances into one R^2.
 
 Three series per panel, because a windowed R^2 on its own is not evidence: a
-short window can fit anything, so the scrambled-theta control -- the same W,
+short window can fit anything, so the scrambled-displacement control -- the same W,
 the same window count and the same three parameters, with the displacement
 taken from a different shot -- is what turns the windowed curve into a
 measurement. Matching W between fit and control is not a detail: comparing a

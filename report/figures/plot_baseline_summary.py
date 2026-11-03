@@ -74,7 +74,7 @@ def main() -> None:
     # Three numbers per channel, because the windowed R^2 alone credits the
     # fit with its own flexibility and the global one holds amplitude and
     # phase fixed for 33.6 ms. Bars are the windowed refit; the tick below
-    # each bar is the scrambled-theta control it has to clear, and the hollow
+    # each bar is the scrambled-displacement control it has to clear, and the hollow
     # marker is the global single-window fit. The bar above its control tick
     # is the claim; neither the bar nor the marker is one on its own.
     ax = axes[0]

@@ -437,6 +437,34 @@ $alpha = 0$ they compare only with a sign-invariant error.
 
 = Methods <sec-methods>
 
+== Notation <sec-notation>
+
+One symbol per quantity, throughout. Where the code names a quantity
+differently, the code name is given.
+
+#align(center, table(
+  columns: 3,
+  align: (left, center, left),
+  stroke: 0.5pt + rgb("#d0d0d0"),
+  table.header([quantity], [symbol], [code or record name]),
+  [optical round-trip phase], [$theta$], [--],
+  [fit parameters], [$theta.alt$], [--],
+  [channel (color) count], [$K$], [keys `r1_*_n<K>`, `ch_*_n<K>`],
+  [samples per shot], [$L$], [`n_samples_per_shot`],
+  [shots in a set], [$N$], [`n_shots`, `n_shots_method2`],
+  [fiber modes per polarization], [$M$], [`n_modes`; keys `fb_*_n<M>`],
+  [fiber feedback coupling], [$kappa$], [`kappa`; keys `fb_k2_*`],
+  [fiber dispersion], [$D$], [`dispersion_per_um`],
+  [per-laser phase drift], [$sigma_phi$], [`phase_drift_rad_per_sqrt_s`],
+  [fiber path drift], [$sigma_p$], [`path_drift_um_per_sqrt_s`],
+  [process noise covariance], [$Q$], [--],
+  [Sagnac coupler power split], [$rho_c$], [--],
+  [Sagnac loop amplitude reflectivity], [$rho_r$], [`c` in `sagnac.py`],
+  [Sagnac element phase per displacement], [$eta$], [`kappa` in `sagnac.py`],
+  [Sagnac modulation depth], [$a_0$], [`amp`],
+  [proof-mass quality factor], [$Q_m$], [--],
+))
+
 == Data, training and evaluation <sec-methods-synthetic>
 
 Every learned result below compares cells that differ in one factor: the
@@ -544,25 +572,26 @@ $1 \/ f^2$ and puts #val("spec_x_low_pct")% of its power below 100 Hz, against
 
 == Likelihood versus fit <sec-likelihood>
 
-Write one shot's samples as $y_n$ and the model's prediction as
-$f_n (theta)$, with $theta$ the parameters being fit. Take the residuals to be
+Write one shot's $L$ samples as $y_n$ and the model's prediction as
+$f_n (theta.alt)$, with $theta.alt$ the parameters being fit ($theta$ stays
+the optical phase). Take the residuals to be
 independent Gaussians of fixed variance $sigma^2$ -- the standard assumption,
 and the one under which "likelihood" is even defined here. The likelihood of
 the shot is then
 
-$ L(theta) = product_(n=1)^N 1 / sqrt(2 pi sigma^2)
-  exp(- (y_n - f_n (theta))^2 / (2 sigma^2)), $
+$ p(bold(y) | theta.alt) = product_(n=1)^L 1 / sqrt(2 pi sigma^2)
+  exp(- (y_n - f_n (theta.alt))^2 / (2 sigma^2)), $
 
 and its negative logarithm is
 
-$ - ln L(theta) = 1 / (2 sigma^2) sum_(n=1)^N (y_n - f_n (theta))^2
-  + N / 2 ln(2 pi sigma^2). $
+$ - ln p(bold(y) | theta.alt) = 1 / (2 sigma^2) sum_(n=1)^L (y_n - f_n (theta.alt))^2
+  + L / 2 ln(2 pi sigma^2). $
 
-The second term does not contain $theta$ or the data, and $1 \/ 2 sigma^2$ is
+The second term does not contain $theta.alt$ or the data, and $1 \/ 2 sigma^2$ is
 a positive constant. So the negative log-likelihood is the summed squared
 residual up to an additive constant and a positive scale, neither of which
 can change an ordering. Maximizing the likelihood over
-$theta$ and minimizing MSE over $theta$ return the same $theta$; ranking shots
+$theta.alt$ and minimizing MSE over $theta.alt$ return the same $theta.alt$; ranking shots
 by likelihood and ranking them by MSE produce the same ranking.
 
 #takeaway[
@@ -574,7 +603,7 @@ by likelihood and ranking them by MSE produce the same ranking.
 ]
 
 The equivalence hides $sigma^2$, and it also hides the choice of *what
-$theta$ is*. Treating the noise as fixed and known is what makes MSE and
+$theta.alt$ is*. Treating the noise as fixed and known is what makes MSE and
 likelihood interchangeable. Deciding how many parameters the fit gets, and
 over how long a stretch of the record, is a separate decision that the
 equivalence says nothing about. It is also the decision that moves the numbers
@@ -619,7 +648,7 @@ artifact. Where a number is instead taken at a fixed $W$, the text says so.
 
 A shorter window fits more of anything, so a windowed $R^2$ reported alone is
 not a measurement. Every windowed number below therefore appears with a
-*scrambled-theta control*: the same $W$, the same window count and the same
+*scrambled-displacement control*: the same $W$, the same window count and the same
 three parameters per window, but with the displacement taken from a different
 shot. Matching $W$ between the fit and its control is what makes the pair a
 comparison -- a fit with more fitting freedom than its control would be
@@ -657,7 +686,7 @@ a third to more than half of the windowed value (@sec-r-method1).
 == Multimode fiber model <sec-fiber-model>
 
 Q3 runs the simulator through a model of multimode fiber (`smi/theory/fiber.py`). // math-ok: question label
-The fiber carries $N$ spatial modes in two polarizations. The laser launches
+The fiber carries $M$ spatial modes in two polarizations. The laser launches
 into one mode, and its cavity couples back only to that mode. One-way
 transmission is $T(t, lambda) = e^(i 2 pi p(t) n(lambda) \/ lambda) U(t, lambda)$:
 a common optical-path drift $p(t)$, the same for every mode and color, times a
@@ -673,7 +702,7 @@ rests on three assumptions.
    to the round trip.
 3. A polarizing beamsplitter after the fiber sends every orthogonal mode to
    one large-area photodiode, which reads
-   $P_perp = sum_m |r_(N + m)|^2$.
+   $P_perp = sum_(j=1)^M |r_(M + j)|^2$.
 
 With $n(lambda) \/ n_"ref" = 1 + D (lambda - 1 mu"m")$, channel $k$ sees the
 round-trip phase
@@ -794,7 +823,7 @@ values, each weighted by $lambda_k^(-2)$ as in @eq-fisher. The table is
 `bounds.fisher_from_shots`, profiled over the phases, on the noise-free
 detector at 30 dB SNR, $alpha = 3$, #val("ch_fisher_shots") shots, averaged
 over #val("ch_count_seeds") seeds. Each seed draws one set of trajectories and
-phases for all six colors and reuses it for every $N$ and both $C$, so each set
+phases for all six colors and reuses it for every $K$ and both $C$, so each set
 equals the sum of its single channels exactly and the feedback column is a
 paired comparison. Adding 405 nm as the sixth channel raises the information
 by #val("ch_info_jump_405_pct")%; adding 785 nm as the fourth, by
@@ -811,17 +840,17 @@ to seed.
   table(
     columns: 5,
     align: (center, center, right, right, right),
-    table.header([$N$], [added $lambda$ (nm)], [$J$, $C = 0.2$], [$J$, $C = 0$], [bound ratio]),
+    table.header([$K$], [added $lambda$ (nm)], [$J$, $C = 0.2$], [$J$, $C = 0$], [bound ratio]),
     ..val("ch_count_table").map(r => (
       [#r.n], [#r.lam], [#r.info02], [#r.info0], [#r.bound02],
     )).flatten(),
   ),
   caption: [
     Velocity information adds over channels. $J$: profiled per-sample
-    velocity information, in $10^7 (mu"m/ms")^(-2)$, of the first $N$ colors of
+    velocity information, in $10^7 (mu"m/ms")^(-2)$, of the first $K$ colors of
     the list, mean over seeds. Bound ratio: $sqrt(J_1 \/ J_N)$ at $C = 0.2$, the CRB on velocity
     relative to 635 nm alone. Each row slices one shot draw per seed to its
-    first $N$ channels; the R1 grid instead scores each $N$ on its own frozen
+    first $K$ channels; the R1 grid instead scores each $K$ on its own frozen
     test set, from a shared seed.
   ],
 ) <tab-q1-count>
@@ -838,20 +867,20 @@ Noise-free, TCAN's error falls with channel count about as the bound does,
 and at the nominal point it keeps falling up to six colors; the offline
 UNetTransformer shows no gain that its seeds resolve (@fig-q1-count,
 @tab-q1-r1). The R1 grid trains the best causal and the best offline family
-of @sec-q2-floor, TCAN and UNetTransformer, on the first $N$ colors of
+of @sec-q2-floor, TCAN and UNetTransformer, on the first $K$ colors of
 @tab-q1-count, at $C = 0.2$, $alpha = 3$, both noise-free and at the nominal
-point. Each cell has one seed; $N = 1$ and $N = 3$ have three. All test sets
+point. Each cell has one seed; $K = 1$ and $K = 3$ have three. All test sets
 share one motion draw, on which predicting zero scores #val("r1_zero").
 
 Noise-free, TCAN's six-color error is #val("r1_tcan_nf_n6") times its 635 nm
-error, and the bound ratio is #val("r1_bound_n6"). From $N = 3$ on, the
+error, and the bound ratio is #val("r1_bound_n6"). From $K = 3$ on, the
 cumulative ratio stays within 25% of the bound's. Step by step the match is
 looser (@tab-q1-r1). The 785 and 405 nm steps match the bound's
 (#val("r1_table").at(3).tcan_nf_step% against #val("r1_table").at(3).bstep%,
 #val("r1_table").at(5).tcan_nf_step% against #val("r1_table").at(5).bstep%).
 The 850 nm step, #val("r1_table").at(4).tcan_nf_step% against
 #val("r1_table").at(4).bstep%, is about the #val("r1_tcan_nf_spread3")% seed
-range at $N = 3$. The first two steps depart in opposite directions. Adding
+range at $K = 3$. The first two steps depart in opposite directions. Adding
 674.8 nm brings the error to #val("r1_tcan_nf_n2") times the single-channel
 value, where the bound ratio is only #val("r1_bound_n2"), and adding 515 nm
 then gains #val("r1_table").at(2).tcan_nf_step% against the bound's
@@ -861,21 +890,21 @@ pair does would give this pattern. These runs cannot say whether it does.
 
 At the nominal point TCAN's error falls with every added color. Three colors
 bring it #val("r1_tcan_nom_gain_n3") times below 635 nm alone, with seed ranges
-of #val("r1_tcan_nom_spread1")% at $N = 1$ and #val("r1_tcan_nom_spread3")% at
-$N = 3$. Going from three to six colors cuts another
+of #val("r1_tcan_nom_spread1")% at $K = 1$ and #val("r1_tcan_nom_spread3")% at
+$K = 3$. Going from three to six colors cuts another
 #val("r1_tcan_nom_cut_36")%. The six-color ratio, #val("r1_tcan_nom_n6"), stays
 above the bound's #val("r1_bound_n6"). The bound leaves out phase drift, the
 knob that dominates the nominal error (@sec-q2-noise), and that omission would
 produce such a gap, but nothing here tests it.
 
 UNetTransformer's curve cannot be ranked. Noise-free, its seeds span
-#val("r1_unet_nf_spread1")% at $N = 1$ and #val("r1_unet_nf_spread3")% at
-$N = 3$, more than any step. At the nominal point every $N$ scores between
+#val("r1_unet_nf_spread1")% at $K = 1$ and #val("r1_unet_nf_spread3")% at
+$K = 3$, more than any step. At the nominal point every $K$ scores between
 #val("r1_unet_nom_oz_lo") and #val("r1_unet_nom_oz_hi") of the zero predictor,
 level to within that spread. The offline model has learned at the nominal
 point, but extra colors buy it nothing.
 
-At this resolution, which pair makes $N = 2$ does not matter. Noise-free,
+At this resolution, which pair makes $K = 2$ does not matter. Noise-free,
 TCAN's three pairs score #val("r1_pairs_tcan_nf").join(", ") (635 + 674.8,
 635 + 515, 674.8 + 515 nm), a #val("r1_pairs_tcan_nf_spread")% spread against
 a per-cell shot SE of at most #val("r1_pairs_tcan_nf_se"). At the nominal point
@@ -892,11 +921,11 @@ test shots, because the records keep quartiles, not per-shot errors.
     Noise-free, TCAN's error falls about as the velocity bound does as colors
     are added; at the nominal point it falls more slowly, and UNetTransformer
     does not resolve a gain at either point. Test velocity RMSE against the
-    number $N$ of colors, $C = 0.2$, $alpha = 3$: (a) noise-free, (b) the
-    nominal point. Lines: seed means; dots: seeds 0 to 2 at $N = 1, 3$;
+    number $K$ of colors, $C = 0.2$, $alpha = 3$: (a) noise-free, (b) the
+    nominal point. Lines: seed means; dots: seeds 0 to 2 at $K = 1, 3$;
     open markers: the other two-color pairs; stars: 635 nm arrays with
     quadrature offsets (@sec-q1-colors). Dotted: the bound ratio of
-    @tab-q1-count, scaled to TCAN at $N = 1$.
+    @tab-q1-count, scaled to TCAN at $K = 1$.
   ],
 ) <fig-q1-count>
 
@@ -905,7 +934,7 @@ test shots, because the records keep quartiles, not per-shot errors.
     columns: 9,
     align: (center, center, right, right, right, right, right, right, right),
     table.header(
-      [$N$], [$lambda$ (nm)], [bound], [step (%)],
+      [$K$], [$lambda$ (nm)], [bound], [step (%)],
       [TCAN nf], [step (%)], [TCAN nom], [step (%)], [UNetT nf],
     ),
     ..val("r1_table").map(r => (
@@ -914,10 +943,10 @@ test shots, because the records keep quartiles, not per-shot errors.
     )).flatten(),
   ),
   caption: [
-    From $N = 3$ on, TCAN's noise-free error ratio stays within 25% of the
+    From $K = 3$ on, TCAN's noise-free error ratio stays within 25% of the
     bound ratio, though single steps do not. Test velocity RMSE ($mu$m/ms), seed
     mean where seeds exist; nf: noise-free; nom: the nominal point; step:
-    change from $N - 1$. Bound: the CRB ratio of @tab-q1-count, with its
+    change from $K - 1$. Bound: the CRB ratio of @tab-q1-count, with its
     step.
   ],
 ) <tab-q1-r1>
@@ -1032,7 +1061,7 @@ R1 adds a prediction against 635 nm alone, on the rig's three colors. TCAN's
 three-channel error should be between #val("r1_table").at(2).tcan_nf_ratio
 (noise-free) and #val("r1_table").at(2).tcan_nom_ratio (nominal) of its 635 nm
 error. It is falsified if the ratio is above 1 minus the
-#val("r1_tcan_nom_spread3")% nominal seed range at $N = 3$, that is, if the
+#val("r1_tcan_nom_spread3")% nominal seed range at $K = 3$, that is, if the
 real data resolve no three-channel gain over 635 nm.
 
 Predictions 5 and 7 rest on thinner evidence. 515 nm leads in the
@@ -1050,17 +1079,17 @@ read the sign.
 
 A one-color array with quadrature offsets reads the sign without feedback;
 distinct colors do not, and local precision barely separates the two
-(@tab-q1-colors). We compare $N$ colors (independent phases) against $N$
+(@tab-q1-colors). We compare $K$ colors (independent phases) against $K$
 copies of 635 nm sharing one unknown phase, with known offsets $0, pi \/ 2$
-for $N = 2$ and $2 pi k \/ 3$ for $N = 3$, or all zero. Local Fisher
+for $K = 2$ and $2 pi k \/ 3$ for $K = 3$, or all zero. Local Fisher
 information follows $sum_k lambda_k^(-2)$: colors give
-#val("ch_colors_vs_array_n3_pct")% for $N = 3$, where 515 nm enters, and
-#val("ch_colors_vs_array_n2_pct")% for $N = 2$. The sign evidence of
+#val("ch_colors_vs_array_n3_pct")% for $K = 3$, where 515 nm enters, and
+#val("ch_colors_vs_array_n2_pct")% for $K = 2$. The sign evidence of
 @eq-sign-info separates them. At $C = 0$ it is zero for colors and for
 zero offsets, as the Michelson symmetry of @sec-sign requires, while the
 quadrature array carries
 $#val("ch_sign_quad_n3_c0").mantissa times 10^(#val("ch_sign_quad_n3_c0").exponent)$
-nats per shot at $N = 3$. That is #val("ch_sign_ratio_n3") times what
+nats per shot at $K = 3$. That is #val("ch_sign_ratio_n3") times what
 feedback alone gives the three colors at $C = 0.2$. This does not contradict
 the $C^2$ leading order of @eq-sign-info, which holds for independent
 channels, each fitting its own mirror phase. Sharing one phase with known
@@ -1075,14 +1104,14 @@ offset error.
   table(
     columns: 5,
     align: (center, center, left, right, right),
-    table.header([$C$], [$N$], [configuration], [$J$], [sign (nats/shot)]),
+    table.header([$C$], [$K$], [configuration], [$J$], [sign (nats/shot)]),
     ..val("ch_colors_table").map(r => (
       [#r.c], [#r.n], [#r.arm.replace("_", " ")], [#r.info], [#r.sign],
     )).flatten(),
   ),
   caption: [
     Quadrature offsets, not colors, carry the sign at $C = 0$. Colors: the
-    first $N$ of 635, 674.8, 515 nm with independent phases. Array: $N$ times
+    first $K$ of 635, 674.8, 515 nm with independent phases. Array: $K$ times
     635 nm sharing one phase, offsets quadrature-spread or zero. $J$ as in
     @tab-q1-count; same detector, 30 dB, $alpha = 3$. Each arm has its own
     shots from a shared seed, and in the R2 grid its own frozen test set: the
@@ -1099,21 +1128,21 @@ offset error.
 Noise-free, the one-color quadrature array beats distinct colors by
 #val("r2_nf_ratio_lo") to #val("r2_nf_ratio_hi") times, while at the nominal
 point the two are level (@tab-q1-r2, stars in @fig-q1-count). The R2 grids
-train the R1 families on $N$ copies of 635 nm that share one mirror phase,
-with known offsets $0, pi \/ 2$ ($N = 2$) or $2 pi k \/ 3$ ($N = 3$). The
-color arm is R1's cells at the same $N$. Every arm has its own frozen test
+train the R1 families on $K$ copies of 635 nm that share one mirror phase,
+with known offsets $0, pi \/ 2$ ($K = 2$) or $2 pi k \/ 3$ ($K = 3$). The
+color arm is R1's cells at the same $K$. Every arm has its own frozen test
 set, because channel set and offsets differ between arms. All of those sets
 score the same under the zero predictor, so they share the motion draw but
 not the noise or the phases.
 
 The analytic tier predicted part of this. Local precision barely separates
-the arms, and for $N = 3$ it gives the colors #val("ch_colors_vs_array_n3_pct")%
+the arms, and for $K = 3$ it gives the colors #val("ch_colors_vs_array_n3_pct")%
 (@tab-q1-colors); the sign evidence favours the array strongly at low $C$.
 The noise-free gap is larger than local precision allows, an array error near
 #val("r2_table").at(0).tcan_arr $mu$m/ms against #val("r2_table").at(0).tcan_col
-for TCAN at $N = 2$. That makes local precision the wrong predictor here. We
+for TCAN at $K = 2$. That makes local precision the wrong predictor here. We
 have not tested whether the sign evidence or the shared phase, which leaves
-one unknown phase where the colors have $N$, carries the gain. At the nominal
+one unknown phase where the colors have $K$, carries the gain. At the nominal
 point the array and the colors differ by less than two combined shot SEs in
 all four comparisons (#val("r2_nom_ratio_lo") to #val("r2_nom_ratio_hi")),
 so the nominal knobs wipe out the array's advantage. Which knob does it is
@@ -1124,7 +1153,7 @@ also untested.
     columns: 8,
     align: (center, left, right, right, right, right, right, right),
     table.header(
-      [$N$], [sim], [TCAN array], [TCAN colors], [ratio], [UNetT array],
+      [$K$], [sim], [TCAN array], [TCAN colors], [ratio], [UNetT array],
       [UNetT colors], [ratio],
     ),
     ..val("r2_table").map(r => (
@@ -1511,7 +1540,7 @@ it already resolved the sign in RMSE.
 
 The calibration returns nearest-grid point estimates with no uncertainty, so
 prediction 2's bars carry its round-trip error (`tests/test_calibrate_sim.py`).
-At $D = 58$ $"rad s"^(-1\/2)$ and $C = 0.2$ it under-reads $C$ by up to 32%,
+At $sigma_phi = 58$ $"rad s"^(-1\/2)$ and $C = 0.2$ it under-reads $C$ by up to 32%,
 so the falsifier sits at $C < 0.03$. Its bias at $C = 0.05$ is untested, and
 a reading between 0.03 and 0.05 neither confirms nor falsifies. An $alpha$
 below 0.5, a sixth of the nominal 3, counts as consistent with 0.
@@ -1706,10 +1735,10 @@ Prediction 4 needs a per-laser phase monitor or a more stable acquisition,
 neither of which exists, so it is directional only. The
 #val("loo_e60_cut")% cut at equal length is its ceiling, and a rig less
 drift-limited than nominal should gain less. The calibration reports drift as
-$D$ in $"rad s"^(-1\/2)$, and `rad_per_sqrt_s_to_fringes` in `forward.py`
+$sigma_phi$ in $"rad s"^(-1\/2)$, and `rad_per_sqrt_s_to_fringes` in `forward.py`
 converts it to fringes per shot. Its nominal of #val("noise_phase_fringes")
-fringes is $D = #val("noise_phase_rad")$ $"rad s"^(-1\/2)$. Prediction 4 is
-falsified if new hardware reads $D$ below that and the TCN's error falls by
+fringes is $sigma_phi = #val("noise_phase_rad")$ $"rad s"^(-1\/2)$. Prediction 4 is
+falsified if new hardware reads $sigma_phi$ below that and the TCN's error falls by
 less than $s$.
 
 == Q2.3: generalization across alignment <sec-q2-alignment> // math-ok: question label
@@ -1837,7 +1866,8 @@ have no real-data measurement of their own.
     *Middle:* method 2's displacement error beside the RMS of the
     displacement it is trying to recover, N = 200. *Right:* the same error
     normalized by that RMS; the dashed line is the error a predictor that
-    always outputs zero would achieve.
+    always outputs zero would achieve. Bars are medians over shots with
+    interquartile whiskers; the tables below quote mean RMSEs (@sec-read).
   ],
 )
 
@@ -1937,7 +1967,7 @@ mismatch, and this data cannot separate the two.
 
 Method 1 is handed the true displacement, so what it fails to explain is the
 model's own disagreement with the measurement rather than any inverse's error.
-The measurement is the *gap*: the windowed $R^2$ minus the scrambled-theta
+The measurement is the *gap*: the windowed $R^2$ minus the scrambled-displacement
 control run at the same $W$. That difference is what the model earns over its
 own fitting flexibility. It is the column to read, because the windowed column
 alone credits the model with whatever a short window can fit for free, and
@@ -2060,7 +2090,7 @@ to them on average, so @fig-traces tabulates the fit on three shots.
     Method 1 on three free-space shots, the ones nearest the 10th, 50th and
     95th percentile of displacement peak-to-peak over the N = 1000 shots of
     the table above: windowed $R^2$ at the fringe-matched $W$ with its
-    scrambled-theta control, and the shared gain $g$ of the joint fit. Values
+    scrambled-displacement control, and the shared gain $g$ of the joint fit. Values
     are those quoted in the text; -- where it quotes none. The trace figure
     they come from needs the raw acquisition files and is not built here.
   ],
@@ -2124,7 +2154,7 @@ that room, each measured against its own control:
   vary as a low-order polynomial in $t$ within each window, instead of
   stepping discontinuously at every window edge.
 
-Both add fitting freedom, so both are scored against a scrambled-theta control
+Both add fitting freedom, so both are scored against a scrambled-displacement control
 recomputed *under that same freedom*. A fit with more parameters compared
 against a control with fewer measures the parameters: on the comparison below,
 scoring both variants against the fixed window's own control would have made
@@ -2148,7 +2178,7 @@ loser, which is the reverse of what a matched control shows.
   ),
   caption: [
     The three variants on the high-excursion shot (365), free-space 635 nm,
-    each with its own scrambled-theta control at its own window length and
+    each with its own scrambled-displacement control at its own window length and
     parameter count. The gap is the only column that compares across rows.
   ],
 )
@@ -2210,7 +2240,7 @@ the baseline nothing measurable.
     Method-1 median $R^2$ binned by the drive's peak-to-peak displacement
     excursion, per channel and per acquisition, N = 1000 shots each. The
     dotted line is the global fit, the solid line the windowed refit at a
-    fringe-matched $W$, the dashed line the scrambled-theta control at that
+    fringe-matched $W$, the dashed line the scrambled-displacement control at that
     same $W$, and the shaded band the gap between the last two. Because $W$
     tracks each shot's fringe rate it shortens as excursion grows: each panel
     states the median and interquartile range of the $W$ its own numbers came
@@ -2351,7 +2381,7 @@ that killed them, so the next reader finds evidence rather than a claim.
 - *A missing DC term.* The fit includes a constant, globally and per window,
   so a per-record or per-window offset is already absorbed.
 - *The $4 pi d \/ lambda$ phase factor and the resonator parameters.* A wrong
-  factor of two in the phase, or a mis-set $f_0$ or $Q$, would appear in the
+  factor of two in the phase, or a mis-set $f_0$ or $Q_m$, would appear in the
   gain sweep as a peak at a different gain or as no peak at all. The sweep
   peaks sharply within 13% of the live gain in every channel, and the
   wavelength-independence of the best gain is what a mechanical displacement
@@ -2765,7 +2795,7 @@ on five arms at the nominal point, $C = 0.2$, $alpha = 3$, one seed: free
 space; the fiber alone; the fiber with a 785 nm monitor at the distal
 dichroic; a control that sends the same 785 nm color to the target as a
 fourth channel; and the fiber with a $P_perp$ channel per color (@sec-q3-polarization).
-The fiber has $N = 8$ modes, no dispersion and the path and speckle drifts
+The fiber has $M = 8$ modes, no dispersion and the path and speckle drifts
 of @sec-fiber-model. All arms draw the same motion shot for shot, and the
 zero predictor scores #val("r7_zero") on every one. Errors of arm
 differences below are paired SEs over those shared shots.
@@ -2852,21 +2882,21 @@ learns through the fiber (@sec-q3-monitor).
 === Analytic
 
 $P_perp$ is a fade indicator. The fiber is lossless, so
-$|kappa|^2 <= 1 - P_perp$, with equality only at $N = 1$, where
+$|kappa|^2 <= 1 - P_perp$, with equality only at $M = 1$, where
 $"corr"(P_perp, |kappa|^2) = #val("fb_corr_n1")$ over #val("fb_draws")
-draws. For more modes the bound loosens. For $N >= 8$,
-$"corr" sqrt(N)$ lies between $-#val("fb_corr_sqrt_lo")$ and
-$-#val("fb_corr_sqrt_hi")$ and $R^2 N$ between #val("fb_r2n_lo") and
-#val("fb_r2n_hi"): the correlation falls as $1 \/ sqrt(N)$ and $R^2$ as
-$1 \/ N$. At $N = 8$ the correlation is $#val("fb_corr_n8")$ and
+draws. For more modes the bound loosens. For $M >= 8$,
+$"corr" sqrt(M)$ lies between $-#val("fb_corr_sqrt_lo")$ and
+$-#val("fb_corr_sqrt_hi")$ and $R^2 M$ between #val("fb_r2n_lo") and
+#val("fb_r2n_hi"): the correlation falls as $1 \/ sqrt(M)$ and $R^2$ as
+$1 \/ M$. At $M = 8$ the correlation is $#val("fb_corr_n8")$ and
 $R^2 = #val("fb_r2_n8")$. The mean coupling follows the coherent-backscatter
-value of the circular orthogonal ensemble, $E|kappa|^2 = 2 \/ (2N + 1)$:
-#val("fb_k2_n8") in the model at $N = 8$ against #val("fb_coe_n8"). At
-$N = 1$ the model gives #val("fb_k2_n1") against $2 \/ 3$, because its
+value of the circular orthogonal ensemble, $E|kappa|^2 = 2 \/ (2M + 1)$:
+#val("fb_k2_n8") in the model at $M = 8$ against #val("fb_coe_n8"). At
+$M = 1$ the model gives #val("fb_k2_n1") against $2 \/ 3$, because its
 wrapped eigenphases lack the ensemble's level repulsion. Since $|kappa|$
 scales $C$ and the visibility (@sec-fiber-model), $P_perp$ tells an estimator
 how deep the fringes have faded. The prediction: it helps most at few modes,
-and its share of the fade variance falls as $1 \/ N$.
+and its share of the fade variance falls as $1 \/ M$.
 
 === Synthetic
 
@@ -2877,7 +2907,7 @@ The $P_perp$ arm shows no effect, because no fiber arm learns
 resolved and negligible beside the zero predictor's #val("r7_zero"). On a
 static fiber the $P_perp$ checkpoints stay at the zero predictor like the
 rest, so the failure is in training (@sec-q3-monitor). The analytic
-prediction, $R^2 = #val("fb_r2_n8")$ of the fade variance at $N = 8$, is a
+prediction, $R^2 = #val("fb_r2_n8")$ of the fade variance at $M = 8$, is a
 property of the input, and its value to a network can be measured only once
 a network learns through the fiber.
 
@@ -2886,7 +2916,7 @@ a network learns through the fiber.
 _Status: not run; needs new hardware, a polarizing beamsplitter and a
 photodiode at the fiber output._ The committed prediction: across shots,
 $P_perp$ anticorrelates with the squared fringe depth, with magnitude near
-#val("fb_corr_sqrt_lo")$\/ sqrt(N)$ for the fiber's mode count, which is not
+#val("fb_corr_sqrt_lo")$\/ sqrt(M)$ for the fiber's mode count, which is not
 measured. It is
 falsified if $P_perp$ is uncorrelated with the fringe depth.
 
@@ -2894,7 +2924,7 @@ falsified if $P_perp$ is uncorrelated with the fringe depth.
 
 === Analytic
 
-The fiber operating point has $N = #val("r8_modes")$ modes, speckle drift
+The fiber operating point has $M = #val("r8_modes")$ modes, speckle drift
 #val("r8_speckle_drift") rad/$sqrt("s")$, path drift
 $sigma_p = #val("r8_path_drift")$ $mu$m/$sqrt("s")$, no monitor and $D = 0$.
 Here the degeneracy of @sec-q3-monitor has a definite size. Over one
@@ -2970,7 +3000,7 @@ without adding discrete modes. The one discrete symmetry is the sign map of
 @sec-sign, which the fiber preserves, because $psi_k$ and $p$ have symmetric
 priors under negation. Feedback breaks it with evidence that grows as $C^2$
 (@sec-feedback). The fiber lowers the fringe depth by $|kappa|$, with
-$E|kappa|^2 approx #val("r8_coe")$ at $N = #val("r8_modes")$
+$E|kappa|^2 approx #val("r8_coe")$ at $M = #val("r8_modes")$
 (@sec-q3-polarization), which lowers that evidence. So at a fixed $C$, fiber
 shots should be bimodal, $v$ against $-v$, more often than free-space shots.
 
@@ -3051,47 +3081,47 @@ not model. Code: `smi/theory/sagnac.py`, tests `tests/test_sagnac.py`.
 
 === Analytic
 
-A 2x2 coupler of power split $rho$ closed on a loop returns to the laser
+A 2x2 coupler of power split $rho_c$ closed on a loop returns to the laser
 $
-  E_r = 2 i sqrt(rho (1 - rho)) cos(Delta phi \/ 2) e^(i Sigma \/ 2), quad
+  E_r = 2 i sqrt(rho_c (1 - rho_c)) cos(Delta phi \/ 2) e^(i Sigma \/ 2), quad
   Sigma = phi_"CW" + phi_"CCW", quad Delta phi = phi_"CW" - phi_"CCW"
 $ <eq-loop-mirror>
-for any $rho$ @mortimore1988loop, because each beam takes one bar and one
+for any $rho_c$ @mortimore1988loop, because each beam takes one bar and one
 cross pass. The test sums the two beam fields and checks the transmitted port
-for $rho in {0.3, 0.5, 0.9}$. The nonreciprocal phase sets only the
-amplitude reflectivity $r = cos(Delta phi \/ 2)$. Self-mixing reads the round-trip
+for $rho_c in {0.3, 0.5, 0.9}$. The nonreciprocal phase sets only the
+amplitude reflectivity $rho_r = cos(Delta phi \/ 2)$. Self-mixing reads the round-trip
 phase of the return @lang1980feedback @taimre2015tutorial, which contains
 $Sigma \/ 2$ and the lead fiber in full. Reciprocal fiber noise therefore
 enters $phi_0$. A conventional Sagnac readout at the second
 coupler port is insensitive to it; the self-mixing readout is not.
 
 The output encodes the velocity of an element placed off the loop midpoint,
-not the acceleration of the loop. An element with phase $kappa x(t)$, crossed
-by the two beams $tau$ apart, gives $Delta phi = kappa tau v$ at the midpoint
+not the acceleration of the loop. An element with phase $eta x(t)$, crossed
+by the two beams $tau$ apart, gives $Delta phi = eta tau v$ at the midpoint
 time, exactly for quadratic $x(t)$. Rotation is nonreciprocal @post1967sagnac.
 Uniform linear acceleration of a rigid loop is not: the Sagnac delay is
 proportional to $integral.cont g_(0 i) d x^i \/ g_(00)$
 @rizzi2004rotating @tartaglia1998sagnac, and the Rindler metric has
 $g_(0 i) = 0$. That step to a null result is our own, argued and not tested. A proof mass of
-resonance $omega_0$ and quality $Q$ makes $Delta phi$ follow jerk below
-resonance and acceleration, with gain $kappa tau Q \/ omega_0$, only near
+resonance $omega_0$ and quality factor $Q_m$ makes $Delta phi$ follow jerk below
+resonance and acceleration, with gain $eta tau Q_m \/ omega_0$, only near
 it. We argue that off-center strain of the coil itself acts as a distributed
 proof mass by the same mechanism; that is argued, not tested, and we have no
 measurement or source for its size.
 
 With feedback $C_0$ at full reflection, both feedback and modulation depth
-scale with $r$:
+scale with $rho_r$:
 $
-  phi_F = phi_0 - C_0 r sin(phi_F + beta), quad y = m r cos phi_F + n .
+  phi_F = phi_0 - C_0 rho_r sin(phi_F + beta), quad y = a_0 rho_r cos phi_F + n .
 $ <eq-sagnac-signal>
-A bias $Delta phi_b = pi \/ 2$ is needed, since $partial r \/ partial Delta phi$
-vanishes at 0. $C_0 > 1$ is allowed because $C_"eff" = C_0 r$, but
+A bias $Delta phi_b = pi \/ 2$ is needed, since $partial rho_r \/ partial Delta phi$
+vanishes at 0. $C_0 > 1$ is allowed because $C_"eff" = C_0 rho_r$, but
 $C_0 cos(Delta phi \/ 2) < 1$ must hold over the whole swing, or the laser
 turns multistable @lang1980feedback. At $C_0 = 1.3$ that leaves
 $plus.minus #val("sagnac_c13_swing")$ rad. With $phi_0$ known and $g = partial Delta phi \/ partial a$, the
 acceleration Fisher information has the form of @eq-fisher with prefactor
-$m g sin(Delta phi_b \/ 2) \/ (2 sigma)$ and $F'$ replaced by
-$partial (y \/ m) \/ partial r$, from implicit differentiation of
+$a_0 g sin(Delta phi_b \/ 2) \/ (2 sigma)$ and $F'$ replaced by
+$partial (y \/ a_0) \/ partial rho_r$, from implicit differentiation of
 @eq-sagnac-signal. We call its ratio at $C_0$ to its value at $C_0 = 0$, at
 the same bias and modulation depth, the feedback gain.
 
@@ -3112,7 +3142,7 @@ The averaged gain is larger at $alpha = 0$ than at $alpha = 3$, though the
 best-phase gain at $alpha = 0$ is exactly 1. Over a uniform $phi_0$ the
 feedback phase $phi_F$ dwells with density proportional to
 $1 + C cos(phi_F + beta)$, longest near $phi_F = -beta$. At $alpha = 0$ that
-is $phi_F = 0$, where the slope $partial (y \/ m) \/ partial r$ peaks; at
+is $phi_F = 0$, where the slope $partial (y \/ a_0) \/ partial rho_r$ peaks; at
 $alpha = 3$ it is $phi_F = -arctan 3$, where the slope is small. Weighting
 $phi_F$ uniformly instead reverses the order and returns $2 Phi$ for both.
 
@@ -3131,7 +3161,7 @@ $phi_F$ uniformly instead reverses the order and returns $2 Phi$ for both.
     Feedback gains, phase-averaged / best phase, bias $pi \/ 2$, against the
     conventional SMI phase readout at the same $C_"eff"$. Swing: for
     $C_0 > 1$, the largest $|Delta phi - Delta phi_b|$ keeping
-    $C_0 r < 1$; blank rows are unbounded.
+    $C_0 rho_r < 1$; blank rows are unbounded.
   ],
 ) <tab-sagnac>
 

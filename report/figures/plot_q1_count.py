@@ -2,11 +2,11 @@
 """Q1.1 and Q1.2: test velocity RMSE against channel count.
 
 One panel per sim (noise-free, nominal), one line per family over the first N
-of q1_r1_count's colors. Small dots are the q1_r1_seeds reruns at N = 1, 3;
-open markers at N = 2 the other two-color pairs (q1_r1_pairs); stars the
+of q1_r1_count's colors. Small dots are the q1_r1_seeds reruns at K = 1, 3;
+open markers at K = 2 the other two-color pairs (q1_r1_pairs); stars the
 one-color quadrature arrays of q1_r2_colors(_n3). The dotted line is the
 profiled velocity CRB's ratio sqrt(J_1 / J_N) (channel_analytics.json) scaled
-to TCAN's N = 1 seed mean, so a line parallel to it gains what the bound gains.
+to TCAN's K = 1 seed mean, so a line parallel to it gains what the bound gains.
 """
 
 from __future__ import annotations
@@ -96,7 +96,7 @@ def main() -> None:
         ax.set_xticks(
             ns, [f'{n}\n{R1_COLORS_UM[n - 1] * 1e3:.0f}' for n in ns], fontsize=8
         )
-        ax.set_xlabel('channels N (added color, nm)')
+        ax.set_xlabel('channels K (added color, nm)')
         ax.set_title(title, fontsize=9)
         panel_label(ax, label)
     axes[0].set_ylabel(r'test velocity RMSE ($\mu$m/ms)')
