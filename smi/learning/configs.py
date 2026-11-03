@@ -660,12 +660,12 @@ def _flow(
     )
     config.synthetic_config['flow'] = {'task': task, 'n_time_features': 8}
     # Flow loss is noisy and has no zero-predictor plateau: a fixed budget,
-    # best checkpoint by val/flow_loss (scripts/flow.py).
+    # best checkpoint by val/flow_loss (smi.experiments.flow_runner).
     config.training_config['max_epochs'] = FLOW_EPOCHS[task]
     return config
 
 
-#: Epochs per task, sized to the ~8 h R8 budget (scripts/flow.py docstring).
+#: Epochs per task, sized to the ~8 h R8 budget (flow_runner docstring).
 FLOW_EPOCHS = {'denoise': 60, 'posterior': 40}
 _LOCAL = _unet_transformer([16, 28, 40], 80, 3, causal=False)
 # Global context for Q3.4: the shot-global quantities (path drift, the +/-v
