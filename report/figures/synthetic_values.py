@@ -31,6 +31,7 @@ from typing import Any
 
 import h5py
 import numpy as np
+from scipy.stats import spearmanr
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -1330,16 +1331,20 @@ def sagnac_values() -> dict[str, Any]:
             f'sagnac_{tag}_smi': f'{r["smi_phase_gain"]:.2f}',
         }
     out['sagnac_c13_swing'] = f'{row(3.0, 1.3)["swing_rad"]:.2f}'
+    out['sagnac_c099_smi_c0'] = f'{row(3.0, 0.99)["smi_phase_gain_c0"]:.1f}'
     # The table of the Q4 section: one row per C_0, cells "avg / best" per alpha.
     alphas = sorted({r['alpha'] for r in rows})
     out['sagnac_table_alpha'] = [f'{a:g}' for a in alphas]
     out['sagnac_table'] = [
         {
             'c0': f'{r["c0"]:g} ({r["c_eff"]:.2f})',
+            # Rows above C_0 = 1 hold only within this swing of the bias.
+            'swing': '' if r['swing_rad'] is None else f'{r["swing_rad"]:.2f}',
             'cells': [
                 f'{row(a, r["c0"])["avg"]:.2f} / {row(a, r["c0"])["best"]:.2f}'
                 for a in alphas
             ],
+            'smi': f'{row(3.0, r["c0"])["smi_phase_gain"]:.2f}',
         }
         for r in rows
         if r['alpha'] == alphas[0]
@@ -1358,28 +1363,50 @@ def channel_values() -> dict[str, Any]:
             r for r in rows if r['feedback_c'] == c and r['n'] == n and r['arm'] == name
         )
 
+    seeds = [count[str(k)] for k in data['count_seeds']]
+    n_max = len(seeds[0]['0.2'])
+
+    def mean_info(c: str, i: int) -> float:
+        return float(np.mean([sd[c][i]['info'] for sd in seeds]))
+
     dev = max(
-        abs(r['info'] / r['sum_singles'] - 1) for rs in count.values() for r in rs
+        abs(r['info'] / r['sum_singles'] - 1)
+        for sd in seeds
+        for rs in sd.values()
+        for r in rs
     )
-    c02 = count['0.2']
+    # Paired C = 0.2 over C = 0 ratios: same draws, so only C differs.
+    ratios = np.array(
+        [
+            [sd['0.2'][i]['info'] / sd['0'][i]['info'] for i in range(n_max)]
+            for sd in seeds
+        ]
+    )
+    pf = count['phase_factor']
+    info02 = [mean_info('0.2', i) for i in range(n_max)]
     out = {
         'ch_fisher_shots': str(data['fisher_shots']),
         'ch_sign_shots': str(data['sign_shots']),
-        'ch_additive_dev_pct': f'{100 * dev:.0f}',
-        # Bound ~ 1 / sqrt(info): six channels over the best-known one.
-        'ch_bound_ratio_n6': f'{(c02[-1]["info"] / c02[0]["info"]) ** -0.5:.2f}',
-        'ch_bound_ratio_n3': f'{(c02[2]["info"] / c02[0]["info"]) ** -0.5:.2f}',
-        'ch_info_jump_405_pct': f'{100 * (c02[5]["info"] / c02[4]["info"] - 1):.0f}',
-        'ch_info_jump_785_pct': f'{100 * (c02[3]["info"] / c02[2]["info"] - 1):.0f}',
+        'ch_count_seeds': str(len(seeds)),
+        'ch_additive_exact': dev < 1e-9,
+        'ch_fb_pred_pct': f'{100 * (pf["0.2"] / pf["0"] - 1):.1f}',
+        'ch_fb_meas_pct': f'{100 * (ratios.mean() - 1):.1f}',
+        # Seed-to-seed spread of one table entry's ratio.
+        'ch_fb_spread_pct': f'{100 * ratios.std(ddof=1, axis=0).mean():.1f}',
+        'ch_fb_se_pct': f'{100 * ratios.mean(1).std(ddof=1) / len(seeds) ** 0.5:.1f}',
+        'ch_bound_ratio_n6': f'{(info02[-1] / info02[0]) ** -0.5:.2f}',
+        'ch_bound_ratio_n3': f'{(info02[2] / info02[0]) ** -0.5:.2f}',
+        'ch_info_jump_405_pct': f'{100 * (info02[5] / info02[4] - 1):.0f}',
+        'ch_info_jump_785_pct': f'{100 * (info02[3] / info02[2] - 1):.0f}',
         'ch_count_table': [
             {
-                'n': str(r0['n']),
-                'lam': f'{r0["wavelengths_um"][-1] * 1e3:.1f}',
-                'info02': f'{r0["info"] / 1e7:.2f}',
-                'info0': f'{r1["info"] / 1e7:.2f}',
-                'bound02': f'{(r0["info"] / c02[0]["info"]) ** -0.5:.2f}',
+                'n': str(i + 1),
+                'lam': f'{seeds[0]["0.2"][i]["wavelengths_um"][-1] * 1e3:.1f}',
+                'info02': f'{info02[i] / 1e7:.2f}',
+                'info0': f'{mean_info("0", i) / 1e7:.2f}',
+                'bound02': f'{(info02[i] / info02[0]) ** -0.5:.2f}',
             }
-            for r0, r1 in zip(c02, count['0'], strict=True)
+            for i in range(n_max)
         ],
         'ch_colors_table': [
             {
@@ -1411,11 +1438,32 @@ def channel_values() -> dict[str, Any]:
     return out
 
 
+SHIFT_FALSIFY_TEMP_PCT = 10
+SHIFT_FALSIFY_REALIGN_PCT = 20
+
+
 def shift_values(prior: bounds.StateSpace) -> dict[str, str]:
     """Q2.3 values from shift_results.json; SEs as in ``ShiftScore``."""
     scores = shift_scores()
     v_rms = prior.empirical_velocity_var**0.5
     out: dict[str, str] = {'shift_v_rms': sig(v_rms, 2)}
+    # Test (a): shared-phase local information at the scored configurations.
+    phase = json.loads((RESULTS_DIR / 'channel_analytics.json').read_text())['q2_phase']
+    info = {r['tag']: r['info'] / phase['nominal_independent'] for r in phase['rows']}
+    sign = {r['tag']: r['sign_nats_per_shot'] for r in phase['rows']}
+    out |= {
+        'shift_info_lo_pct': f'{100 * (min(info.values()) - 1):+.0f}',
+        'shift_info_hi_pct': f'{100 * (max(info.values()) - 1):+.0f}',
+        'shift_info_zero_pct': f'{100 * (info["phase_offset=0"] - 1):+.0f}',
+        'shift_sign_zero_ratio': (
+            f'{sign["phase_offset=0"] / phase["nominal_sign_nats_per_shot"]:.2f}'
+        ),
+        'shift_sign_max_ratio': (
+            f'{max(sign.values()) / phase["nominal_sign_nats_per_shot"]:.0f}'
+        ),
+        'shift_n_random': str(sum(t.startswith('phase_random') for t in info)),
+    }
+    rho_max = 0.0
     tags = {'tcan-44k-T90': 'tcan', 'unettransformer-offline-44k-T90': 'unet'}
     for family in SHIFT_FAMILIES:
         t = tags[family]
@@ -1451,7 +1499,37 @@ def shift_values(prior: bounds.StateSpace) -> dict[str, str]:
             for k in scores
             if k[:2] == (family, 'phase_offset') and k[3] == SHIFT_DEFAULT_TEST_SEED
         ]
+        rand_tags = sorted(
+            (k for k in info if k.startswith('phase_random')),
+            key=lambda k: int(k.partition('=')[2]),
+        )
+        rand = [at('phase_random', float(k.partition('=')[2])) for k in rand_tags]
+        err = np.array([r.rmse for r in rand])
+        mean_se = float(np.mean([r.se for r in rand]))
+        for feature in (info, sign):
+            rho = spearmanr([feature[k] for k in rand_tags], err).statistic
+            rho_max = max(rho_max, abs(float(rho)))
+        zero1 = at('phase_offset', 0.0)
         out |= {
+            f'shift_{t}_rand_mean': sig(float(err.mean()), 3),
+            f'shift_{t}_rand_mean_se': sig(float(err.std(ddof=1)) / len(err) ** 0.5, 1),
+            f'shift_{t}_rand_spread_se': f'{err.std(ddof=1) / mean_se:.1f}',
+            f'shift_{t}_rand_min': sig(float(err.min()), 3),
+            f'shift_{t}_rand_max': sig(float(err.max()), 3),
+            f'shift_{t}_zero1': sig(zero1.rmse, 3),
+            f'shift_{t}_zero1_ratio': f'{zero1.rmse / nominal.rmse:.1f}',
+            f'shift_{t}_best_c_se': (
+                f'{abs(c_sweep[best_c].rmse - nominal.rmse) / nominal.se:.1f}'
+            ),
+            f'shift_{t}_eps_pred_se': (
+                f'{(predicted - nominal.rmse) / nominal.se:.1f}'
+            ),
+            f'shift_{t}_phase3_pct': (
+                f'{100 * (1 - at("phase_offset", 3.0).rmse / nominal.rmse):.0f}'
+            ),
+            f'shift_{t}_phase2_pct': (
+                f'{100 * (1 - at("phase_offset", 2.0).rmse / nominal.rmse):.0f}'
+            ),
             f'shift_{t}_nominal': sig(nominal.rmse, 3),
             f'shift_{t}_se': sig(nominal.se, 1),
             f'shift_{t}_best_c': f'{best_c:g}',
@@ -1467,6 +1545,13 @@ def shift_values(prior: bounds.StateSpace) -> dict[str, str]:
             f'shift_{t}_phase_lo_se': f'{min(phase_dev):.0f}',
             f'shift_{t}_phase_hi_se': f'{max(phase_dev):.0f}',
         }
+    out['shift_rho_max'] = f'{rho_max:.1f}'
+    # Q2.3 real-data falsifier thresholds, in percent of the frozen model's
+    # real error: a temperature-only change above the first falsifies the
+    # scale prediction; a realignment that halves C below the second
+    # falsifies the feedback one (the synthetic factor at C = 0.1 is >2).
+    out['shift_falsify_temp_pct'] = str(SHIFT_FALSIFY_TEMP_PCT)
+    out['shift_falsify_realign_pct'] = str(SHIFT_FALSIFY_REALIGN_PCT)
     return out
 
 

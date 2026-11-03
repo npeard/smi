@@ -3,7 +3,10 @@
 
 (a) feedback C; (b) wavelength shift, common scale and per-channel
 independent, against the common-scale prediction; (c) shared-phase offset,
-on two test draws, against the nominal score of each draw. Error bars are the
+on two test draws (the second nudged right so the markers do not overlap),
+against the nominal score of each draw, with the spread of the random
+shared-phase configurations shaded. The pi/3 step sits on the 1 rad one and is
+left to the text. Error bars are the
 per-shot SE of ``_figcommon.shift_scores``. Reads shift_results.json.
 """
 
@@ -90,10 +93,23 @@ def main() -> None:
             ls='--',
         )
 
-        for seed, marker in ((SHIFT_DEFAULT_TEST_SEED, 'o'), (SECOND_TEST_SEED, 's')):
+        x, y, _ = series(family, 'phase_random')
+        axes[2].axhspan(
+            y.mean() - y.std(ddof=1),
+            y.mean() + y.std(ddof=1),
+            color=color,
+            alpha=0.15,
+            lw=0,
+        )
+        for seed, marker, dx in (
+            (SHIFT_DEFAULT_TEST_SEED, 'o', 0.0),
+            (SECOND_TEST_SEED, 's', 0.12),
+        ):
             x, y, se = series(family, 'phase_offset', seed)
+            keep = ~np.isclose(x, math.pi / 3, atol=1e-3)
+            x, y, se = x[keep], y[keep], se[keep]
             axes[2].errorbar(
-                x,
+                x + dx,
                 y,
                 se,
                 color=color,
@@ -126,6 +142,9 @@ def main() -> None:
     axes[2].plot([], [], 'ko', ms=3, ls='none', label='test seed 1000')
     axes[2].plot([], [], 'ks', ms=3, mfc='none', ls='none', label='test seed 2000')
     axes[2].plot([], [], 'k-', lw=0.8, label='nominal, per seed')
+    axes[2].fill_between(
+        [], [], color='k', alpha=0.15, lw=0, label='random configs, +/-1 sd'
+    )
     axes[2].legend(fontsize=6, loc='upper right')
     for ax, tag in zip(axes, 'abc', strict=True):
         ax.set_title(f'({tag})', loc='left', fontsize=9)
