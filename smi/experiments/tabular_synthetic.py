@@ -10,8 +10,11 @@ are named ``ridge-w<window>`` and ``lightgbm-w<window>``; cell keys follow
 
 The target is the signed velocity (um/ms), as the grids train their networks
 (``sign_invariant=False``); evaluate reports the sign-invariant variant beside
-it as it does for every cell. A sim whose loss is sign-invariant is refused:
-neither fit has a sign-invariant loss, so it would be a different task.
+it as it does for every cell. On a sim whose network loss is sign-invariant
+(Michelson, where the fringes do not fix the direction) neither fit has such a
+loss, so they still fit the signed target and the record's config says
+``sign_invariant_loss: False``; read ``velocity_rmse_sign_invariant`` there,
+and expect a sign-blind fit to be handicapped against the networks.
 
 Sizing, chosen so one sim's fits take about a minute on CPU rather than hours:
 window 91 (the Barland receptive field, as the real-data tabular baselines in
@@ -155,8 +158,7 @@ def run_tabular(
         The records appended this call (recorded cells are skipped).
 
     Raises:
-        ValueError: If ``train_seed`` is the test seed, or a sim's loss is
-            sign-invariant.
+        ValueError: If ``train_seed`` is the test seed.
     """
     g = grid(grid_name)
     test = g.test_set
@@ -166,15 +168,6 @@ def run_tabular(
     with runner_lock(lock_path):
         done = {r.cell_key for r in read_results(out)} if Path(out).exists() else set()
         for entry in g.sims:
-            sign_invariant = (
-                g.sign_invariant
-                if entry.sign_invariant is None
-                else entry.sign_invariant
-            )
-            if sign_invariant:
-                raise ValueError(
-                    f'sim {entry.name!r} is sign-invariant; the tabular fits are not'
-                )
             for wavelengths in g.channel_subsets:
                 for sim_name, sim, _sweep in build_sims(entry, wavelengths):
                     keys = {
@@ -196,6 +189,7 @@ def run_tabular(
                             'window': window,
                             'train_stride': TRAIN_STRIDE,
                             'n_train_shots': n_train_shots,
+                            'sign_invariant_loss': False,
                             **hparams,
                         }
                         est = TabularEstimator(
