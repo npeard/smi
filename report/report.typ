@@ -575,7 +575,7 @@ $1 \/ f^2$ and puts #val("spec_x_low_pct")% of its power below 100 Hz, against
 Write one shot's $L$ samples as $y_n$ and the model's prediction as
 $f_n (theta.alt)$, with $theta.alt$ the parameters being fit ($theta$ stays
 the optical phase). Take the residuals to be
-independent Gaussians of fixed variance $sigma^2$ -- the standard assumption,
+independent Gaussians of fixed variance $sigma^2$: the standard assumption,
 and the one under which "likelihood" is even defined here. The likelihood of
 the shot is then
 
@@ -624,7 +624,7 @@ by their median unless stated otherwise.
 Displacement is known from the drive voltage, so the interference signal it
 predicts is known up to an amplitude and phase. Both enter linearly once the
 cosine is expanded into its cosine and sine components, so the fit is a
-three-parameter least-squares solve -- cosine, sine, constant -- with a closed
+three-parameter least-squares solve (cosine, sine, constant) with a closed
 form. No optimizer, no initial guess, no convergence to check, and a global
 optimum by construction.
 
@@ -651,7 +651,7 @@ not a measurement. Every windowed number below therefore appears with a
 *scrambled-displacement control*: the same $W$, the same window count and the same
 three parameters per window, but with the displacement taken from a different
 shot. Matching $W$ between the fit and its control is what makes the pair a
-comparison -- a fit with more fitting freedom than its control would be
+comparison; a fit with more fitting freedom than its control would be
 scored on the freedom. The control is how much $R^2$ the fit buys from that
 flexibility, and what the model earns is the gap between the two.
 
@@ -2015,7 +2015,7 @@ and phase are held constant differs, and on these shots that interval is worth
 
 A shorter window fits more of anything. Three free parameters per window,
 enough windows, and a cosine at the wrong phase will still track a photodiode
-trace some of the way -- which is why the windowed column read alone would
+trace some of the way. That is why the windowed column read alone would
 credit the model with 0.28 to 0.34 of $R^2$ it did not earn. Those are the
 control values, measured by running the identical fit against a displacement
 that belongs to a different shot. On free-space 515 nm that is more than half
@@ -2036,7 +2036,7 @@ $W = 16384$ through 0.19-0.25 at $W = 1024$ to 0.56-0.71 at $W = 256$, while
 the real fit rises more slowly over the same range. At $W = 256$ the control is
 about two thirds of the real fit: a number quoted from there is mostly fitting
 capacity, and must never be read as agreement. That is the lower clip. At the
-upper clip the opposite failure appears -- four windows in a record leave the
+upper clip the opposite failure appears: four windows in a record leave the
 within-shot phase drift the windowing exists to absorb largely unabsorbed, and
 both curves fall toward zero together. The clip brackets the range where the
 gap is worth reading. These window-sweep numbers are recorded in
@@ -2130,7 +2130,7 @@ whole-window amplitude runs low precisely where they do not stay in step. A
 gain correction cannot fix that, because there is no gain error to fix.
 
 The sharp flat-topped fringe peaks are a property of the fringe shape at high
-fringe rate, not detector clipping -- only 1 shot in 400 reaches the channel
+fringe rate, not detector clipping: only 1 shot in 400 reaches the channel
 maximum, and the fraction of samples near a shot's extremes does not grow with
 excursion.
 
@@ -2185,7 +2185,7 @@ loser, which is the reverse of what a matched control shows.
 
 The envelope has the highest raw $R^2$ and is the weaker variant anyway. Its
 control rises almost as fast as it does, which is what a freedom that fits
-anything looks like, and on the low-excursion shot the effect is stark: the
+anything looks like, and on the low-excursion shot the effect is large: the
 envelope's $R^2$ goes from 0.927 to 0.964 while its control goes from 0.547 to
 0.838, so the gap *falls* from 0.380 to 0.125. Most of what the envelope adds
 is capacity, not agreement. It also does nothing about the phase error, since
@@ -2204,7 +2204,7 @@ The improvement is not uniform. On the low-excursion shot the rule asks for
 $W = 4096$, the clip's upper bound, and four windows in a record is few enough
 that the phase drift the windowing exists to absorb starts coming back: $R^2$
 there is 0.794 against the fixed window's 0.927. The control falls much
-further over the same change, 0.547 to 0.111, so the gap still widens -- but
+further over the same change, 0.547 to 0.111, so the gap still widens, but
 the raw $R^2$ at the top of the clip is the one place where a shorter fixed
 window scores higher, and reading those two numbers without their controls
 would invert the conclusion.
@@ -2319,7 +2319,7 @@ x-axis locates nothing. These six numbers are therefore the sweep's own
 measure and are not comparable to the fringe-matched tables of @sec-r-method1;
 what they establish is the *size* of the gain's effect, and that is the claim
 being made. Second, the best gain is *not* consistent between the two
-acquisitions -- 16.50 against 15.50 at 635 nm, 16.25 against 15.75 at 674.8 nm,
+acquisitions: 16.50 against 15.50 at 635 nm, 16.25 against 15.75 at 674.8 nm,
 16.00 against 15.25 at 515 nm, a disagreement of 3.2 to 6.5%. Drive-to-
 displacement gain is a property of the speaker, not of the optical path, so a
 scalar `k` that lands in two different places on two acquisitions is absorbing
@@ -2342,7 +2342,7 @@ noise. The doubt in the comment was warranted.
 Even with the gain fixed, the largest excursions are fit worse than the
 smallest. The evidence that this residual is not a scale error is that giving
 each shot its *own* optimal gain does not remove it. Fitting one gain per shot
-at N = 1000 -- strictly more freedom than any global recalibration can have --
+at N = 1000, strictly more freedom than any global recalibration can have,
 leaves the free-space above-3 $mu$m bin at median $R^2$ 0.143 (635 nm), 0.094
 (674.8 nm) and 0.052 (515 nm). The best single global gain does no better there:
 0.122, 0.076 and 0.020. A scale error would be absorbed entirely by a per-shot
@@ -2356,9 +2356,9 @@ between 29.5 and 32.5, about twice the live value, and 334 pick a gain above
 25 altogether. Free-space 515 nm does the same in 125 shots. Those fits inflate
 that channel's per-shot median $R^2$ of 0.336, so it should not be read as
 evidence that the fiber 674.8 nm channel is fit better than its global 0.166
-suggests. The median gains themselves are unaffected -- 15.75 with an
+suggests. The median gains themselves are unaffected (15.75 with an
 interquartile range from 15.50 to 30.50 on that channel, against a clean
-15.25-15.50 on the others -- but the quartile spread is the tell.
+15.25-15.50 on the others), but the wide quartile spread on that channel shows the aliases.
 
 ==== What this section rules out
 
