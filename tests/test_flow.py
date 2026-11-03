@@ -10,7 +10,8 @@ import torch
 from torch import nn
 
 from smi.experiments import flow_eval
-from smi.experiments.flow_eval import _cell, _grid, _training
+from smi.experiments.flow_eval import arm_cell, training_identity
+from smi.experiments.grids import grid as get_grid
 from smi.experiments.grids.q3_fiber import GRID as Q3_FIBER
 from smi.experiments.runner import expand_grid
 from smi.learning import flow_lit_module
@@ -227,17 +228,17 @@ def test_checkpoint_restores_stats_without_refitting(tmp_path, monkeypatch):
 
 def test_ensemble_members_share_the_training_budget():
     """q1_channels trains its nominal TCAN-44k on another budget: not a member."""
-    ref = _cell(Q3_FIBER, 'nominal')
-    want = _training(ref, Q3_FIBER)
+    ref = arm_cell(Q3_FIBER, 'nominal')
+    want = training_identity(ref, Q3_FIBER)
     for name, same in (('q1_r1_seeds', True), ('q1_channels', False)):
-        grid = _grid(name)
+        grid = get_grid(name)
         cells = [
             c
             for c in expand_grid(grid)
             if c.family == 'tcan-44k' and c.sim.hash() == ref.sim.hash()
         ]
         assert cells
-        assert all((_training(c, grid) == want) is same for c in cells)
+        assert all((training_identity(c, grid) == want) is same for c in cells)
 
 
 def test_denoised_estimator_nests_draw_counts(monkeypatch: pytest.MonkeyPatch):

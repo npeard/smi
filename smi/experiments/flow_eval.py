@@ -20,8 +20,6 @@ is in the R8 plan; it is not restated here.
 
 import dataclasses
 import hashlib
-import importlib
-import pkgutil
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -322,7 +320,7 @@ def ensemble_scores(
     }
 
 
-def _training(cell: Cell, grid: Grid) -> dict[str, Any]:
+def training_identity(cell: Cell, grid: Grid) -> dict[str, Any]:
     """What ``cell`` trained, test set excluded: seed-independent by design."""
     blocks = cell_fingerprint(cell, grid, training_config(cell, grid))
     return {k: v for k, v in blocks['fingerprint_blocks'].items() if k != 'test_set'}
@@ -337,25 +335,25 @@ def tcan_cells(reference: Cell, reference_grid: Grid, runs_dir: Path) -> list[Me
     sim) matches the reference's count, so the ensemble's spread is seed
     variation and not a mix of training budgets.
     """
-    want = _training(reference, reference_grid)
+    want = training_identity(reference, reference_grid)
     found: dict[int, Member] = {}
-    for info in sorted(pkgutil.iter_modules(grids.__path__), key=lambda m: m.name):
-        grid = _grid(info.name)
+    for name, grid in grids.GRIDS.items():
         for cell in expand_grid(grid):
-            ckpt = runs_dir / info.name / f'{cell.key}.ckpt'
+            ckpt = runs_dir / name / f'{cell.key}.ckpt'
             if (
                 cell.family == FAMILY
                 and cell.seed is not None
                 and cell.seed not in found
                 and cell.sim.hash() == reference.sim.hash()
                 and ckpt.exists()
-                and _training(cell, grid) == want
+                and training_identity(cell, grid) == want
             ):
-                found[cell.seed] = Member(info.name, cell.key, cell.seed, ckpt)
+                found[cell.seed] = Member(name, cell.key, cell.seed, ckpt)
     return [found[s] for s in sorted(found)]
 
 
-def _cell(grid: Grid, sim_name: str) -> Cell:
+def arm_cell(grid: Grid, sim_name: str) -> Cell:
+    """The grid's one ``FAMILY`` cell on sim ``sim_name``."""
     (cell,) = [
         c for c in expand_grid(grid) if c.family == FAMILY and c.sim_name == sim_name
     ]
@@ -364,10 +362,6 @@ def _cell(grid: Grid, sim_name: str) -> Cell:
 
 def _rmse(record: Any) -> dict[str, float]:
     return record.metrics['velocity_rmse']
-
-
-def _grid(name: str) -> Grid:
-    return importlib.import_module(f'{grids.__name__}.{name}').GRID
 
 
 def score_denoise(
@@ -379,10 +373,10 @@ def score_denoise(
     device: str,
 ) -> dict[str, Any]:
     """Q3.3 on the grid's ``fiber`` frozen set; RMSEs in um/ms."""
-    grid = _grid(grid_name)
+    grid = grids.grid(grid_name)
     grid_runs = runs_dir / grid_name
     test = grid.test_set
-    nominal, fiber = _cell(grid, 'nominal'), _cell(grid, 'fiber')
+    nominal, fiber = arm_cell(grid, 'nominal'), arm_cell(grid, 'fiber')
     if flow.sim_config.hash() != fiber.sim.hash():
         raise ValueError('the denoiser was not trained on the fiber arm sim')
     fiber_set = load_or_create(fiber.sim, test.seed, test.n_shots, frozen_root)
@@ -454,9 +448,9 @@ def score_posterior(
     device: str,
 ) -> dict[str, Any]:
     """Q3.4 for one arm (``nominal`` or ``fiber``) of the grid."""
-    grid = _grid(grid_name)
+    grid = grids.grid(grid_name)
     test = grid.test_set
-    cell = _cell(grid, sim_name)
+    cell = arm_cell(grid, sim_name)
     if flow.sim_config.hash() != cell.sim.hash():
         raise ValueError(f'the posterior was not trained on the {sim_name} sim')
     dataset = load_or_create(cell.sim, test.seed, test.n_shots, frozen_root)
