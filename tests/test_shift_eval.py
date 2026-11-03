@@ -60,3 +60,9 @@ def test_independent_shift_scales_each_channel_by_its_own_factor():
         a / b for a, b in zip(cfg.wavelengths_um, NOMINAL.wavelengths_um, strict=True)
     ]
     assert ratios == pytest.approx([1 + 1e-3 * p for p in WAVELENGTH_PATTERN])
+
+
+def test_independent_shift_rejects_other_channel_counts():
+    two = dataclasses.replace(NOMINAL, wavelengths_um=NOMINAL.wavelengths_um[:2])
+    with pytest.raises(ValueError, match='needs 3 channels'):
+        shifted_config(two, 'wavelength_independent', 1e-3)

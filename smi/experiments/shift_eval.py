@@ -97,7 +97,17 @@ def random_offsets(index: int, n_ch: int) -> tuple[float, ...]:
 
 
 def shifted_config(cfg: SimConfig, knob: Knob, value: float) -> SimConfig:
-    """``cfg`` with one knob set; the identity knob value returns ``cfg``."""
+    """``cfg`` with one knob set.
+
+    ``feedback_c`` at the trained C, ``wavelength_scale`` 1 and
+    ``wavelength_independent`` 0 return ``cfg``. The phase knobs have no
+    identity value: any value, ``phase_offset`` 0 included, sets
+    ``channel_phase_offsets_rad`` and so switches to the shared-phase path.
+
+    Raises:
+        ValueError: For ``wavelength_independent`` on a sim whose channel
+            count is not that of ``WAVELENGTH_PATTERN``.
+    """
     if knob == 'feedback_c':
         return dataclasses.replace(cfg, feedback_c=value)
     if knob == 'wavelength_scale':
@@ -105,11 +115,16 @@ def shifted_config(cfg: SimConfig, knob: Knob, value: float) -> SimConfig:
             cfg, wavelengths_um=tuple(w * value for w in cfg.wavelengths_um)
         )
     if knob == 'wavelength_independent':
+        if len(cfg.wavelengths_um) != len(WAVELENGTH_PATTERN):
+            raise ValueError(
+                f'wavelength_independent needs {len(WAVELENGTH_PATTERN)} channels, '
+                f'not {len(cfg.wavelengths_um)}'
+            )
         return dataclasses.replace(
             cfg,
             wavelengths_um=tuple(
                 w * (1 + value * p)
-                for w, p in zip(cfg.wavelengths_um, WAVELENGTH_PATTERN, strict=False)
+                for w, p in zip(cfg.wavelengths_um, WAVELENGTH_PATTERN, strict=True)
             ),
         )
     n_ch = len(cfg.wavelengths_um)
