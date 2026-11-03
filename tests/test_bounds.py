@@ -11,6 +11,7 @@ import torch
 from smi.core.acquisition import STEMLAB_125_14
 from smi.data.frozen import RIG_WAVELENGTHS_UM
 from smi.theory import bounds
+from smi.theory.fiber import FiberConfig
 from smi.theory.forward import SimConfig, fringe, noise_std, smi_excess_phase
 
 
@@ -442,3 +443,36 @@ def test_sign_information_shared_phase_quadrature_at_michelson():
 
     assert sign((0.0, 0.0, 0.0)) < 1e-6
     assert sign(tuple(2 * math.pi * k / 3 for k in range(3))) > 1e3
+
+
+def _fiber_cfg(wavelengths_um, monitor, dispersion):
+    fib = FiberConfig(
+        n_modes=4,
+        drift_rad_per_sqrt_s=0.0,
+        path_drift_um_per_sqrt_s=0.0,
+        dispersion_per_um=dispersion,
+        spectral_corr_width_um=0.01,
+        monitor_wavelengths_um=monitor,
+        pbs_channel=False,
+    )
+    return dataclasses.replace(_cfg(wavelengths_um, 0.2, 3.0), fiber=fib)
+
+
+def test_fiber_fisher_extends_free_space_block():
+    """Fiber on, no monitor: the (v, phases) block is today's matrix."""
+    lam = (0.635, 0.6748, 0.515)
+    free = bounds.fisher_matrix(_cfg(lam, 0.2, 3.0), n_shots=2, seed=0)
+    j = bounds.fisher_matrix(_fiber_cfg(lam, (), 0.0), n_shots=2, seed=0)
+    assert j.shape == (5, 5)
+    np.testing.assert_array_equal(j[:4, :4], free)
+
+
+def test_fiber_phase_is_collinear_without_a_dichroic_monitor():
+    """Q3.1: 1/lambda fiber phase makes J singular for colors through the
+    target; a dichroic monitor color lifts the degeneracy.
+    """
+    lam = (0.635, 0.6748, 0.515)
+    through = bounds.fisher_matrix(_fiber_cfg(lam, (), 0.0), n_shots=2, seed=0)
+    monitor = bounds.fisher_matrix(_fiber_cfg(lam, (0.515,), 0.0), n_shots=2, seed=0)
+    assert np.linalg.cond(through) > 1e12
+    assert np.linalg.cond(monitor) < 1e8
