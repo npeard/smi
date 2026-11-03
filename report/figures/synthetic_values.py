@@ -136,6 +136,41 @@ def real_tcn_rmse() -> float:
     return sum(runs) / len(runs)
 
 
+def real_values() -> dict[str, str]:
+    """The intro's real-data takeaways, from the committed real-data records."""
+    learned = json.loads((RESULTS_DIR / 'learned_results.json').read_text('utf-8'))
+    baseline = json.loads((RESULTS_DIR / 'baseline_results.json').read_text('utf-8'))
+
+    def mean_vel(dataset: str) -> dict[tuple[str, int], float]:
+        groups: dict[tuple[str, int], list[float]] = {}
+        for run in learned['datasets'][dataset]:
+            key = (run['model_type'], run['total_params'])
+            groups.setdefault(key, []).append(
+                run['metrics']['velocity_rmse_um_per_ms']['mean']
+            )
+        return {k: sum(v) / len(v) for k, v in groups.items()}
+
+    fs, mmf = mean_vel('free-space'), mean_vel('mmfiber')
+    ratio = {k: mmf[k] / fs[k] for k in fs}
+    tabular = ('Ridge', 'LightGBM')
+    neural = sorted((k for k in fs if k[0] not in tabular), key=lambda k: fs[k])[:4]
+    ridge = next(k for k in fs if k[0] == 'Ridge')
+    m2 = {d: baseline['datasets'][d]['method2'] for d in ('free-space', 'mmfiber')}
+    decode = (
+        m2['mmfiber']['velocity_rmse_um_per_ms']['mean']
+        / m2['free-space']['velocity_rmse_um_per_ms']['mean']
+    )
+    return {
+        'real_ridge_params': str(ridge[1]),
+        'real_ridge_ratio': f'{ratio[ridge]:.2f}',
+        'real_decode_ratio': f'{decode:.2f}',
+        'real_decode_shots': str(baseline['config']['n_shots_method2']),
+        'real_decode_nrmse': sig(m2['free-space']['velocity_nrmse']['median'], 3),
+        'real_top4_ratio_lo': f'{min(ratio[k] for k in neural):.1f}',
+        'real_top4_ratio_hi': f'{max(ratio[k] for k in neural):.1f}',
+    }
+
+
 def pct(x: float) -> str:
     """``x`` as a whole-number percentage."""
     return f'{100 * x:.0f}'
@@ -1329,6 +1364,7 @@ def main() -> None:
         ),
         'real_tcn_rmse': sig(real, 4),
         'real_gap': f'{real / causal_k3:.0f}',
+        **real_values(),
         **exit_check_values(records),
         **q3_values(records, zero),
         **noise_values(records, prior),

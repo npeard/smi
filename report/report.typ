@@ -64,62 +64,66 @@ plain two-beam interferometer does not observe.
 
 The established instrument for the same measurement is the laser Doppler
 vibrometer, a two-beam interferometer that recovers direction with a
-frequency-shifted reference @rothberg2017ldv. SMI trades that optical
-reference for a nonlinear signal model, so estimation moves from the optics
-into the decoder. Our rig shines three lasers, at 635, 674.8 and 515 nm, onto
+frequency-shifted reference @rothberg2017ldv. Our rig shines three lasers, at 635, 674.8 and 515 nm, onto
 one mirror. The task is to recover the mirror's velocity from the three
 photodiode channels, causally and accurately enough to run against live
 hardware.
 
 Learned decoders are the current alternative to fitting the signal model.
 Barland and Gustave trained a convolutional network on single-channel
-self-mixing fringes @barland2021cnn, and Matha et al. extended it to three
-channels @matha2023multichannel. Both were
-trained and scored on their own rig. A network's error is uninterpretable
-without a non-learning comparator scored on the same shots in the same unit,
-so this report scores learned and classical estimators side by side.
+self-mixing fringes @barland2021cnn. Matha et al. extended it to three
+channels and showed the sensor keeps tracking when some channels lose signal
+entirely @matha2023multichannel, the nearest prior work to Q1. Both were
+developed on the authors' own rigs, with no non-learning comparator scored on
+the same shots, so this report scores learned and classical estimators side
+by side.
 
-Deployment adds a multimode fiber between laser and target. Mode coupling and
-modal dispersion in the fiber scramble the phase, coupling and polarization
-of the returning light into a shot-dependent speckle @ploschner2015chaos. An
-estimator trained in free space then sees fringes it was never shown.
+Deployment adds a multimode fiber between laser and target. Mode coupling in
+the fiber scrambles the transmitted field into speckle @ploschner2015chaos.
+We infer that the light fed back to the laser is scrambled too, shot by shot,
+so an estimator trained in free space sees fringes it was never shown.
 
 Four questions organize the work, as listed in `QUESTIONS.md`: whether extra
 channels help (Q1), which estimator is most accurate and robust (Q2), how to
 recover motion through multimode fiber (Q3), and whether a Sagnac self-mixing
 accelerometer gains from the nonlinearity (Q4). Each question is answered
 analytically, then on simulated data, where the true motion is known, then on
-the real acquisitions. The synthetic program fixes its predictions for the
+the real acquisitions; Q4 stops at the analytic tier. The synthetic program fixes its predictions for the
 real data before reading them. Questions without results carry a one-line
 status in place. The answers so far:
 
 #takeaway[
-  + *Q1.1, channels: a second wavelength helps only without noise.*
+  + *Q1.1, channel count: a second wavelength helps only without noise.*
     Noise-free it cuts the error #val("q1_gain_tcn") to #val("q1_gain_tcan")
     times below the best single channel, and on Michelson one channel alone
     recovers nothing. At the nominal point the gain is at most
     #val("q1_s4_gain_max_pct")% (@fig-q1-subsets).
-  + *Q2.1, estimators: only with feedback does the architecture matter.*
+  + *Q2.1, accuracy floor: only with feedback does the architecture matter.*
     There TCAN is best on velocity, #val("q2_tcan_gain") times below the TCN
     in one seed, while the LSTMs and the offline neural operator do not
     train, even when retargeted to displacement (@fig-families).
-  + *Q2.1.1, feedback: weak optical feedback makes the direction of motion
+  + *Q2.1.1, self-mixing nonlinearity: weak optical feedback makes the direction of motion
     observable.* Without it, as in a plain Michelson interferometer, a network
     trained on signed velocity predicts zero (@fig-exit-check). With it the
     error falls steadily with feedback strength, to #val("q3_gain_top") times
     below the Michelson error up to sign (@fig-feedback).
-  + *Q2.2, imperfections: at the nominal operating point, per-laser phase
+  + *Q2.2, noise robustness: at the nominal operating point, per-laser phase
     drift dominates.* At the nominal point every simulated imperfection, or
     knob, sits at its assumed rig value. Removing drift there cuts the error
     #val("loo_e60_cut")% at equal training length, while no electronics knob
     moves it more than #val("loo_pdbw_cut")% (@fig-noise, @fig-loo).
-  + *Q2, real data: every learned model clears the analytic baseline.* The
-    multi-wavelength Michelson decode scores no better than predicting zero,
-    and even a 274-coefficient ridge regression beats it; the port of the
-    Barland network @barland2021cnn is best on both acquisitions (@fig-models).
-  + *Q3, real data: every learned model degrades behind fiber and the
-    analytic decode does not*, by 0.89 to 2.59 times, ordered against the
-    free-space ranking.
+  + *Q2, estimators, real data: every learned model clears the analytic
+    baseline.* The multi-wavelength Michelson decode's median velocity NRMSE
+    is #val("real_decode_nrmse"), above the 1 that predicting zero scores, and
+    even a #val("real_ridge_params")-coefficient ridge regression beats it;
+    the port of the Barland network @barland2021cnn is best on both
+    acquisitions (@fig-models).
+  + *Q3, multimode fiber, real data: every neural model degrades behind
+    fiber.* The four best free-space networks lose
+    #val("real_top4_ratio_lo") to #val("real_top4_ratio_hi") times. The decode
+    holds at #val("real_decode_ratio") times, one ratio over
+    #val("real_decode_shots") shots, and ridge improves to
+    #val("real_ridge_ratio") (@sec-learned-gap).
 ]
 
 = Analytic foundation <sec-foundation>
@@ -1555,13 +1559,7 @@ time, which keeps one window's accumulated phase error comparable across
 shots.
 
 Every tabulated channel clears its control on all three shots, and the margin
-narrows as excursion grows (@fig-traces). The trace figure behind the table,
-when last built, showed why: at 0.29 um all three channels followed the single
-slow fringe, and at 1.51 um the 635 nm and 675 nm fits found all three fringes
-in 1.5 ms. At 3.74 um the 635 nm fit tracked the fringes but missed the
-tallest peaks. The 515 nm fit, which crosses the most fringes per micron,
-followed only the envelope there, which is the 515 nm weakness of the
-method-1 table.
+narrows as excursion grows (@fig-traces).
 
 The joint-fit gains of @fig-traces bracket the 1.10 to 1.13 that an
 independent gain sweep finds by refitting each channel separately over a grid.
@@ -1920,7 +1918,11 @@ reports only the winners cannot be used to decide what to try next.
   [analytic], [--], [--], [no], [0.5611], [0.5647], [0.5051], [0.4833],
 ))
 
-FS is free space, MMF multimode fiber. The analytic row is method 2 of
+FS is free space, MMF multimode fiber. For ridge the params column counts
+coefficients and for LightGBM boosted trees (200 trees of 31 leaves, the 6,200
+leaves the synthetic records count). Their field is the 91-sample window;
+stride-1 reconstruction averages overlapping windows, so each output depends
+on the 181-sample two-sided span that @tab-tabular-synthetic quotes. The analytic row is method 2 of
 @sec-method2, the same decode the dashed line in @fig-models marks; the means
 are quoted here because the learned rows are means, where the table of @sec-r-method2
 quotes medians of the same decode.
