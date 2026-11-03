@@ -68,4 +68,32 @@ def test_zero_feedback_is_linear_interferometer():
     for c in (0.0, 1e-7):
         got = sagnac.fisher_acceleration(phi0, bias, gain, amp, sigma, c, 3.0)
         torch.testing.assert_close(got, linear, rtol=1e-5, atol=1e-9)
-    assert sagnac.feedback_gain(1e-7, 3.0, bias) == pytest.approx(1.0, rel=1e-5)
+    assert sagnac.feedback_gains(1e-7, 3.0, bias) == pytest.approx((1.0, 1.0), rel=1e-5)
+
+
+@pytest.mark.parametrize('rho', [0.5, 0.3, 0.9])
+def test_coupler_return_is_amplitude_only(rho):
+    """Coupler-matrix loop: the port back to the laser depends on dphi only via
+    cos(dphi / 2); the transmitted port's phase does depend on dphi (rho != 1/2).
+    """
+    t, k = math.sqrt(1 - rho), math.sqrt(rho)
+    coupler = torch.tensor([[t, 1j * k], [1j * k, t]], dtype=torch.complex128)
+    sigma = 0.8
+    dphi = torch.linspace(-3.0, 3.0, 41, dtype=_F64)
+    phi_cw, phi_ccw = (sigma + dphi) / 2, (sigma - dphi) / 2
+    out = coupler[:, 0]  # laser into port 1
+    back = torch.stack(
+        [out[1] * torch.exp(1j * phi_ccw), out[0] * torch.exp(1j * phi_cw)]
+    )
+    reflected, transmitted = coupler.to(back.dtype) @ back
+    expected = 2j * t * k * sagnac.loop_reflection(dphi) * math.e ** (0.5j * sigma)
+    torch.testing.assert_close(reflected, expected.to(reflected.dtype))
+    if rho != 0.5:
+        phase = torch.angle(transmitted * math.e ** (-0.5j * sigma))
+        assert phase.max() - phase.min() > 0.1
+
+
+def test_gain_table_value():
+    """Pinned report value: alpha = 3, C_0 = 0.99, pi/2 bias."""
+    avg, best = sagnac.feedback_gains(0.99, 3.0, math.pi / 2)
+    assert (avg, best) == pytest.approx((1.191, 1.865), abs=2e-3)
