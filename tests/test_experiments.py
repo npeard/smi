@@ -28,6 +28,7 @@ from smi.experiments import runner as experiments
 from smi.experiments.evaluate import load_lit_module
 from smi.experiments.grid import EvalSet, Family, Grid, Sim, Synthetic
 from smi.experiments.grids import GRIDS
+from smi.experiments.grids.q2_r4_noise import STRESSED
 from smi.experiments.results_artifact import read_results
 from smi.experiments.runner import (
     RunnerLockedError,
@@ -694,9 +695,8 @@ def test_q2_r4_noise_runs_each_knob_at_its_nominal_value():
     swept = {s.sweep[0]: s.sweep[1] for s in grid.sims if s.sweep is not None}
     # The ladder's ADC rung fixes its own full scale; 14 bits is the board's.
     assert swept.pop('adc_bits') == (nominal.adc_bits,) == (14,)
-    stressed_values = {'phase_drift_rad_per_sqrt_s': 116.0723093699996, 'snr_db': 20.0}
     for field, values in swept.items():
-        stressed = (stressed_values[field],) if field in stressed_values else ()
+        stressed = (STRESSED[field],) if field in STRESSED else ()
         assert values == (getattr(nominal, field), *stressed), field
 
 
