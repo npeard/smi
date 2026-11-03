@@ -24,8 +24,7 @@ from pathlib import Path
 
 from smi.core.acquisition import STEMLAB_125_14
 from smi.core.paths import RESULTS_DIR
-from smi.experiments.analytics import channels, offsets_quadrature
-from smi.experiments.shift_eval import random_offsets
+from smi.experiments.analytics import channels
 from smi.theory.bounds import (
     IdealShots,
     fisher_from_shots,
@@ -36,6 +35,7 @@ from smi.theory.bounds import (
     sign_information,
 )
 from smi.theory.forward import SimConfig
+from smi.theory.offsets import offsets_quadrature, random_offsets
 
 COLORS_UM = (0.635, 0.6748, 0.515, 0.785, 0.850, 0.405)
 SNR_DB = 30.0

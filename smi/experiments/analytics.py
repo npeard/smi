@@ -4,21 +4,9 @@ scripts/channel_analytics.py and scripts/fiber_analytics.py assemble the
 tables; the rules here are the ones a grid or a test must agree with.
 """
 
-import math
-
 import numpy as np
 
 from smi.theory.bounds import IdealShots
-
-
-def offsets_quadrature(n: int) -> tuple[float, ...]:
-    """Known static offsets of an ``n``-copy one-color array.
-
-    2 pi k / N, except N = 2, where that gives (0, pi) -- the first channel
-    negated under a cosine, no new information -- so N = 2 takes (0, pi/2).
-    """
-    step = math.pi / 2 if n == 2 else 2 * math.pi / n
-    return tuple(step * k for k in range(n))
 
 
 def channels(shots: IdealShots, idx: list[int]) -> IdealShots:

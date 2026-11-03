@@ -13,9 +13,9 @@ Run: pixi run experiments q1_r2_colors
 
 import dataclasses
 
-from smi.experiments.analytics import offsets_quadrature
 from smi.experiments.grid import Grid
 from smi.experiments.grids.q1_r1_count import GRID as COUNT
+from smi.theory.offsets import offsets_quadrature
 
 
 def one_color(n: int) -> Grid:

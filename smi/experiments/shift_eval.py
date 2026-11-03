@@ -58,7 +58,6 @@ import math
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-import numpy as np
 from torch import Tensor
 
 from smi.data.frozen import load_or_create
@@ -67,6 +66,7 @@ from smi.experiments.grids import grid as get_grid
 from smi.experiments.results_artifact import RunRecord, append_results
 from smi.experiments.runner import Cell, expand_grid, trained_checkpoint
 from smi.theory.forward import SimConfig
+from smi.theory.offsets import random_offsets
 
 Knob = Literal[
     'feedback_c',
@@ -85,12 +85,6 @@ WAVELENGTH_PATTERN = (1.0, -1.0, 0.5)
 GRID = 'q3_s1_families'
 NOMINAL_SIM = 'smi-a3'
 FAMILIES = ('tcan-44k-T90', 'unettransformer-offline-44k-T90')
-
-
-def random_offsets(index: int, n_ch: int) -> tuple[float, ...]:
-    """Offsets ``(0, u_1, ...)`` of ``phase_random`` configuration ``index``."""
-    rest = np.random.default_rng(index).uniform(0, 2 * math.pi, n_ch - 1)
-    return (0.0, *map(float, rest))
 
 
 def shifted_config(cfg: SimConfig, knob: Knob, value: float) -> SimConfig:
