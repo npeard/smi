@@ -38,20 +38,26 @@ def select_pd_keys(f: h5py.File, wavelengths_um: tuple[float, ...]) -> list[str]
     """Photodiode keys for the requested wavelengths, in the requested order.
 
     Matching is by wavelength (to ``RIG_WAVELENGTH_TOL_UM``), not by position:
-    a model trained on a channel subset must see exactly those channels.
+    a model trained on a channel subset must see exactly those channels. A
+    one-color array repeats a wavelength, so each request takes the first
+    matching channel not already taken, in file order: repeats map onto the
+    file's repeated channels positionally, and unique wavelengths behave as
+    an exact match.
 
     Raises:
-        ValueError: If a wavelength matches no channel of the file.
+        ValueError: If a wavelength matches no remaining channel, or a unique
+            wavelength matches more than one.
     """
     channels = file_pd_channels(f)
-    keys = []
+    keys: list[str] = []
     for wavelength in wavelengths_um:
         matches = [
             k
             for k, w in channels.items()
-            if abs(w - wavelength) <= RIG_WAVELENGTH_TOL_UM
+            if abs(w - wavelength) <= RIG_WAVELENGTH_TOL_UM and k not in keys
         ]
-        if len(matches) != 1:
+        repeated = wavelengths_um.count(wavelength) > 1
+        if not matches or (len(matches) > 1 and not repeated):
             raise ValueError(
                 f'{wavelength} um matches {matches} among file channels {channels}'
             )

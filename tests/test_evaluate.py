@@ -23,12 +23,14 @@ from smi.experiments.evaluate import (
     load_lit_module,
     migrate_legacy_hparams,
 )
+from smi.experiments.grids.q1_r2_colors_n3 import GRID as Q1_R2_N3
 from smi.experiments.results_artifact import (
     RunRecord,
     append_results,
     read_results,
     write_results,
 )
+from smi.experiments.runner import expand_grid
 from smi.learning import synthetic_lit_module
 from smi.learning.synthetic_lit_module import SyntheticLitModule
 from smi.theory.forward import SIMULATOR_VERSION
@@ -368,6 +370,17 @@ def test_rig_wavelength_spelling_resolves_to_stored_channel(tmp_path):
         assert select_pd_keys(f, (0.6748,)) == select_pd_keys(f, (0.675,))
         with pytest.raises(ValueError, match='matches'):
             select_pd_keys(f, (0.5,))
+
+
+def test_one_color_array_keys_resolve_positionally(tmp_path):
+    cfg = expand_grid(Q1_R2_N3)[0].sim
+    assert cfg.wavelengths_um == (0.635, 0.635, 0.635)
+    path = write_frozen_set(cfg, 1000, 2, tmp_path / 'one_color.h5')
+    with h5py.File(path, 'r') as f:
+        assert select_pd_keys(f, cfg.wavelengths_um) == ['PD_0', 'PD_1', 'PD_2']
+        # A unique request must still not match a repeated channel ambiguously.
+        with pytest.raises(ValueError, match='matches'):
+            select_pd_keys(f, (0.635,))
 
 
 def test_unknown_wavelength_raises_through_evaluate(tmp_path):
