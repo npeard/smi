@@ -38,6 +38,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from smi.core.metrics import per_shot_rmse
 from smi.data.frozen import load_or_create
 from smi.experiments.evaluate import (
     DISPLACEMENT_LIMIT_MARGIN,
@@ -206,8 +207,8 @@ def drift_free_probe(
         gen = torch.Generator().manual_seed(seed)
         batch = simulate_batch(sim, n_shots, _CPU, gen)
         pred = est.predict_velocity(batch.signals, sim.wavelengths_um)
-        out[name] = float(((pred - batch.velocity) ** 2).mean(-1).sqrt().mean())
-    out['zero_predictor'] = float(batch.velocity.pow(2).mean(-1).sqrt().mean())
+        out[name] = _rmse(pred, batch.velocity)
+    out['zero_predictor'] = _rmse(torch.zeros_like(batch.velocity), batch.velocity)
     return out
 
 
@@ -243,7 +244,8 @@ def rescale_to(
 
 
 def _rmse(pred: torch.Tensor, true: torch.Tensor) -> float:
-    return float(((pred - true) ** 2).mean(-1).sqrt().mean())
+    """Mean over shots of the per-shot RMSE, as the records score."""
+    return float(per_shot_rmse(pred, true).mean())
 
 
 def classical_static_check(cfg: SimConfig, n_shots: int, seed: int) -> dict[str, float]:
