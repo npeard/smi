@@ -123,6 +123,16 @@ status in place. The answers so far:
     even a #val("real_ridge_params")-coefficient ridge regression beats it;
     the port of the Barland network @barland2021cnn is best on both
     acquisitions (@fig-models).
+  + *Q3.1 and Q3.2, fiber monitor and $P_perp$: no network learns through
+    the simulated fiber, a training failure.* A linear-Gaussian reference
+    keeps #val("dg_ratio_fiber") of the free-space MSE without a monitor and
+    #val("dg_ratio_monitor") with one, yet every fiber arm scores
+    #val("r7_fiber_oz_lo") to #val("r7_fiber_oz_hi") of the zero predictor,
+    and stays there on a static fiber (@sec-q3-monitor).
+  + *Q3.3 and Q3.4, flow matching: not answered; the flows did not learn the
+    sign.* Their posteriors are sign-symmetric on every shot, so the
+    free-space posterior mean scores #val("fl_post_fs") against TCAN's
+    #val("fl_tcan_fs") (@sec-q3-posterior).
   + *Q3, multimode fiber, real data: every neural model degrades behind
     fiber.* The four best free-space networks lose
     #val("real_top4_ratio_lo") to #val("real_top4_ratio_hi") times. The decode
@@ -2765,16 +2775,44 @@ a separate and still-open question.
 
 === Analytic
 
-Without a monitor and without dispersion, the fiber hides $d$ completely.
-In @eq-fiber-phase, $D = 0$ makes $n$ the same for every color, so $d$ and
-$n p$ enter every channel only through their sum. Adding $delta$ to $d$ and
-removing $delta \/ n$ from $p$ leaves every signal unchanged. Over
-#val("fb_shots") shots, the Fisher matrix (@sec-fisher) is singular to float
-precision: information relative to free space
+With a common path drift and no dispersion, the fiber confounds $d$ with the
+drift. In @eq-fiber-phase, $D = 0$ makes $n$ the same for every color, so $d$
+and $n p$ enter every channel only through their sum. Adding $delta$ to $d$
+and removing $delta \/ n$ from $p$ leaves every signal unchanged. The
+likelihood alone cannot separate the two; only their priors can, and only as
+far as their spectra differ.
+
+In the simulator they differ widely. The path drift is a random walk, with
+$dot(p)$ white, while the drive puts its power between 1 Hz and 1 kHz. A
+linear-Gaussian reference with perfect demodulation estimates $d$ from the
+sum against those two spectra. Over #val("dg_shots") shots its velocity RMSE
+is #val("dg_ref_fiber") um/ms through the fiber against #val("dg_ref_fs") in
+free space. The free-space MSE is #val("dg_ratio_fiber") of the fiber MSE
+without a monitor and #val("dg_ratio_monitor") with the dichroic monitor
+below. With the path term removed the ratio is #val("dg_ratio_nopath"), so
+the path drift accounts for nearly all of the loss.
+
+The reference has five limits.
++ It bounds the error in neither direction. Knowing the fringe order is
+  optimistic; linear-Gaussian estimation is pessimistic for non-Gaussian
+  speckle and the non-stationary chirp.
++ Fading enters only through the shot-averaged $|kappa|^2$, so the reference
+  cannot see in-shot fades or cycle slips.
++ The separation rests entirely on the two prior spectra. The thermal and
+  mechanical drift of a real fiber is concentrated at low frequency, would
+  overlap the drive band, and would push the ratio toward the shared-band
+  case below.
++ It ignores $P_perp$, so the $P_perp$ arm scores the same as the fiber
+  alone, #val("dg_ratio_pbs").
++ The path term is common to all colors only because $D = 0$.
+
+When drift and target share one band, the degeneracy is exact. The
+constant-parameter model, with $d$ and $p$ one unknown each per shot, is that
+case. Over #val("fb_shots") shots its Fisher matrix (@sec-fisher) is singular
+to float precision: information relative to free space
 #val("fb_info_d0").mantissa $times 10^(#val("fb_info_d0").exponent)$, condition
 number #val("fb_cond_d0").mantissa $times 10^(#val("fb_cond_d0").exponent)$.
-The degeneracy holds sample by sample, so a random-walk $p(t)$ cannot lift it;
-only the priors on $d$ and $p$ can. Dispersion lifts it as $D^2$. The relative
+Dispersion lifts it as $D^2$. The relative
 information is #val("fb_info_dlo").mantissa
 $times 10^(#val("fb_info_dlo").exponent)$ at $D = 10^(-3)$ $mu"m"^(-1)$ and
 #val("fb_info_dhi").mantissa $times 10^(#val("fb_info_dhi").exponent)$ at
@@ -2784,16 +2822,16 @@ A dichroic at the distal face returns a monitor color before the target, so
 that channel sees $n p$ alone. If the signal channels measure the sum
 $d + n p$ with information $S$ and the monitor measures $n p$ with
 information $M$, then $d$ is their difference, with variance $1 \/ S + 1 \/ M$.
-The recovered fraction of the free-space information is therefore
+In the shared-band case the recovered fraction of the free-space information
+is therefore
 $
   S_"fiber" / S = M / (S + M) .
 $ <eq-monitor-fraction>
 For one monitor at #val("fb_mon_um") nm this predicts #val("fb_mon1_pred"),
 and the Fisher matrix gives #val("fb_mon1"). For three monitors
 (#val("fb_mon3_um") nm) it predicts #val("fb_mon3_pred") against
-#val("fb_mon3"). Both are fading-free upper bounds, at $|kappa| = 1$, with a
-ramp-rate path drift. The model assumes the reciprocity and mode coupling of
-@sec-fiber-model.
+#val("fb_mon3"). Both hold at $|kappa| = 1$ and assume the reciprocity and
+mode coupling of @sec-fiber-model.
 
 === Synthetic
 
@@ -2803,7 +2841,7 @@ ramp-rate path drift. The model assumes the reciprocity and mode coupling of
 #assert(val("r7_tcan_all_converged"), message: "a TCAN fiber arm no longer converges")
 
 At this operating point no network learns through the fiber in any arm, so
-the monitor benefit the analytic tier predicts does not show up (@fig-q3-fiber,
+the monitor benefit the reference predicts does not show up (@fig-q3-fiber,
 @tab-q3-fiber). The q3_fiber grid trains TCAN and UNetTransformer (offline)
 on five arms at the nominal point, $C = 0.2$, $alpha = 3$, one seed: free
 space; the fiber alone; the fiber with a 785 nm monitor at the distal
@@ -2811,31 +2849,46 @@ dichroic; a control that sends the same 785 nm color to the target as a
 fourth channel; and the fiber with a $P_perp$ channel per color (@sec-q3-polarization).
 The fiber has $N = 8$ modes, no dispersion and the path and speckle drifts
 of @sec-fiber-model. All arms draw the same motion shot for shot, and the
-zero predictor scores #val("r7_zero") on every one.
+zero predictor scores #val("r7_zero") on every one. Errors of arm
+differences below are paired SEs over those shared shots.
 
-The fiber costs TCAN #val("r7_tcan_cost") um/ms over free space, against a
-combined shot SE of #val("r7_tcan_cost_se"). That combination treats the two
-cells as independent, so it bounds the paired SE from above. Every fiber arm
-of either family then scores between #val("r7_fiber_oz_lo") and
-#val("r7_fiber_oz_hi") of the zero predictor. The differences between arms
-are therefore not rankings. The monitor arm minus the four-color control is
+The fiber costs TCAN #val("r7_tcan_cost") $plus.minus$
+#val("r7_tcan_cost_se") um/ms over free space. Every fiber arm of either
+family then scores between #val("r7_fiber_oz_lo") and #val("r7_fiber_oz_hi")
+of the zero predictor. The paired SEs resolve the differences between fiber
+arms, but each is about a hundredth of a um/ms against the zero predictor's
+#val("r7_zero"): the monitor arm minus the four-color control is
 #val("r7_tcan_monitor") $plus.minus$ #val("r7_tcan_monitor_se"), and the
 control minus the fiber alone #val("r7_tcan_fourth") $plus.minus$
-#val("r7_tcan_fourth_se"). The analytic tier predicts the monitor restores
-about #val("fb_mon1") of the free-space information; none of it is realized.
+#val("r7_tcan_fourth_se"). Among networks that sit at the zero predictor,
+such differences do not rank the information in the arms. The reference
+raises the free-space MSE fraction from #val("dg_ratio_fiber") to
+#val("dg_ratio_monitor") with the monitor; none of that gain appears.
 
-Three causes are candidates, and none has been tested. First, training may
-fail at this operating point. UNetTransformer converged in no fiber arm, and
-it stopped after #val("r7_table").at(1).unet_ep epochs in each. TCAN converged in every arm, at the zero
-predictor. Second, fading. The mean coupling $|kappa|^2$ is
-#val("fb_k2_n8") at $N = 8$ (@sec-q3-polarization), which lowers the effective
-feedback and visibility, and the fading-free bound behind
-@eq-monitor-fraction ignores it. Third, the degeneracy itself. The path drift
-confounds $d$ sample by sample, and a network may not learn the monitor
-subtraction that @eq-monitor-fraction assumes. Among the other R-grid
-cells, only UNetTransformer and PatchTransformer at the stressed drift rung
-and LightGBM throughout come near the zero predictor (@sec-q2-noise); every
-R1 cell scores at most #val("r1_unet_nom_oz_hi") of it.
+The evidence points to a training failure, not an information limit. A
+probe on #val("dg_shots") fresh shots re-scores each fiber checkpoint with
+the path drift removed and on a static fiber, with path and speckle drift
+both off. On the static fiber TCAN scores #val("dg_tcan_static") and
+UNetTransformer #val("dg_unet_static"), against a zero predictor of
+#val("dg_zero") on that draw; across every arm and both families the static
+score is #val("dg_static_oz_lo") to #val("dg_static_oz_hi") of it. Removing
+the drift the analytic tier blames leaves the networks at the zero
+predictor. UNetTransformer converged in no fiber arm, stopping after
+#val("r7_table").at(1).unet_ep epochs in each; TCAN converged in every arm,
+at the zero predictor. A mismatch in visibility or normalization is ruled
+out: rescaling each shot and channel to the training simulation's pooled mean
+and std leaves the static-fiber TCAN at #val("dg_tcan_rescaled"), and every
+as-trained checkpoint at #val("dg_rescaled_oz_lo") to
+#val("dg_rescaled_oz_hi") of the zero predictor.
+
+Whether the information survives even a static fiber is untested. The
+classical inverse decode (@sec-method2) was meant to calibrate that check,
+but it fails on nominal free-space shots, at #val("dg_inverse_nominal")
+against the zero predictor's #val("dg_zero"), so it cannot. Among the other
+R-grid cells, only UNetTransformer and PatchTransformer at the stressed
+drift rung and LightGBM throughout come near the zero predictor
+(@sec-q2-noise); every R1 cell scores at most #val("r1_unet_nom_oz_hi") of
+it.
 
 #fig(
   "q3_fiber",
@@ -2869,11 +2922,12 @@ R1 cell scores at most #val("r1_unet_nom_oz_hi") of it.
 
 _Status: not run; needs new hardware, a distal dichroic and a monitor laser._
 The committed prediction: through fiber, adding the monitor color lowers a
-trained estimator's velocity error, toward but not below the free-space error
-scaled by @eq-monitor-fraction. It is falsified if adding the monitor leaves the
-fiber error unchanged at matched training. This prediction now rests on the analytic tier
-alone, because in simulation no arm learns through the fiber
-(@sec-q3-monitor).
+trained estimator's velocity error. Its size depends on how far the real
+path drift overlaps the drive band, which is not measured: with full overlap
+it is the shared-band fraction of @eq-monitor-fraction. It is falsified if
+adding the monitor leaves the fiber error unchanged at matched training. The
+prediction rests on the analytic tier alone, because in simulation no arm
+learns through the fiber (@sec-q3-monitor).
 
 == Q3.2: the orthogonal-polarization channel <sec-q3-polarization> // math-ok: question label
 
@@ -2900,12 +2954,14 @@ and its share of the fade variance falls as $1 \/ N$.
 
 The $P_perp$ arm shows no effect, because no fiber arm learns
 (@sec-q3-monitor). Against the fiber alone, TCAN's $P_perp$ arm scores
-#val("r7_tcan_pbs") $plus.minus$ #val("r7_tcan_pbs_se") um/ms
-(@tab-q3-fiber), while UNetTransformer did not converge in either. The
-analytic prediction, $R^2 = #val("fb_r2_n8")$ of the fade variance at
-$N = 8$, is a property of the input, and its value to a network can be
-measured only once a network learns through the fiber. The arm tests
-nothing until then.
+#val("r7_tcan_pbs") $plus.minus$ #val("r7_tcan_pbs_se") um/ms, paired
+(@tab-q3-fiber), and UNetTransformer converged in neither. The difference is
+resolved and negligible beside the zero predictor's #val("r7_zero"). On a
+static fiber the $P_perp$ checkpoints stay at the zero predictor like the
+rest, so the failure is in training (@sec-q3-monitor). The analytic
+prediction, $R^2 = #val("fb_r2_n8")$ of the fade variance at $N = 8$, is a
+property of the input, and its value to a network can be measured only once
+a network learns through the fiber.
 
 === Real data
 
@@ -2929,8 +2985,9 @@ more than a fringe: half-wavelengths are #val("r8_half_lam_lo") to
 #val("r8_half_lam_hi") $mu$m. Its sample-to-sample increment, read as a
 velocity, is #val("r8_path_velocity") $mu$m/ms rms. That increment is white,
 and it separates from the drive only as far as the two priors' spectra
-differ. How much that narrows the posterior is not derived; the flow fit
-measures it.
+differ. The linear-Gaussian reference of @sec-q3-monitor puts the
+free-space MSE fraction at #val("dg_ratio_fiber") for these spectra; the flow
+fit was to measure the separation without the linear-Gaussian assumption.
 
 A denoiser maps fiber signals $y_f$ to an estimate $hat(y)_0$ of the
 free-space signals $y_0$, and a free-space regressor $g$ maps that to
@@ -2956,7 +3013,31 @@ spread over $y_0$.
 
 === Synthetic
 
-_Status: the R8 flow runs are queued; none has run._
+#assert(not val("fl_den_draws_plateau"), message: "the denoise draw count has now plateaued")
+#assert(val("fl_den_steps_plateau"), message: "the denoise step count no longer plateaus")
+
+Over #val("fl_shots") fiber test shots, the free-space TCAN scores
+#val("fl_den_chain") um/ms on the flow's denoised fiber traces. On raw fiber
+traces the fiber-trained TCAN scores #val("fl_den_fiber") and the
+free-space TCAN #val("fl_den_free_raw"); on free-space traces the free-space
+TCAN scores #val("fl_den_free_fs"). The chain does not beat a fiber-trained
+regressor, as predicted, but that regressor sits at the zero predictor
+(@sec-q3-monitor), so the comparison tests nothing. Doubling the draws per
+shot from #val("fl_den_draws_half") to #val("fl_den_draws") moved the chain's
+score #val("fl_den_draws_change")%, above the #val("fl_plateau_rtol")%
+plateau tolerance; doubling the integration steps moved it
+#val("fl_den_steps_change")%. The step count has converged and the draw
+count has not. The posterior flows of @sec-q3-posterior did not learn the
+sign, and the denoiser shares their backbone. Q3.3 is not answered by this
+run.
+
+=== Real data
+
+_Status: not run; needs paired free-space and fiber recordings of the same
+motion, a new acquisition._ The committed prediction: a free-space regressor
+on denoised fiber traces does not beat a regressor trained on fiber traces.
+It is falsified if the chain's velocity error is clearly lower at matched
+training.
 
 == Q3.4: the shape of the fiber posterior <sec-q3-posterior> // math-ok: question label
 
@@ -2987,7 +3068,35 @@ analysis does not predict.
 
 === Synthetic
 
-_Status: the R8 flow runs are queued; none has run._
+#assert(val("fl_sign_split_all"), message: "a flow posterior now resolves the sign on some shot")
+
+The posterior flows did not learn the sign. On free space, the posterior
+mean has a velocity RMSE of #val("fl_post_fs") um/ms, near the zero
+predictor's #val("r7_zero"), against TCAN's #val("fl_tcan_fs") and a
+#val("fl_ens_seeds")-seed TCAN deep ensemble's #val("fl_ens_fs"). Its
+#val("fl_band")% bands cover #val("fl_cov_fs") of the truth, against the
+ensemble's #val("fl_cov_ens"), and its CRPS is #val("fl_crps_fs") um/ms
+against #val("fl_crps_ens"). Through fiber it scores the same: posterior
+mean #val("fl_post_fiber"), coverage #val("fl_cov_fiber"), CRPS
+#val("fl_crps_fiber"). On every shot of both arms at least
+#val("fl_sign_split_min")% of the draws are the global sign flip of the
+first, so the posterior is sign-symmetric and its mean collapses toward
+zero. TCAN resolves the sign from the feedback asymmetry (@sec-feedback); the
+flow does not, and its wider bands buy coverage with that error.
+
+Per time sample the marginals are unimodal: the multimodal fraction is
+#val("fl_multi_fs") in free space and #val("fl_multi_fiber") through fiber.
+That matches the predicted continuous broadening, but the sign mode is
+lumped into each marginal rather than split from it, so the prediction is
+untested. Q3.4 is not answered by this run.
+
+=== Real data
+
+_Status: not run; needs paired free-space and fiber recordings of the same
+motion, a new acquisition._ The committed prediction: through fiber, the
+posterior over $v(t)$ widens smoothly, with no modes beyond the sign pair.
+It is falsified by more than two modes at many time samples, or by modes
+local in time.
 
 == Real-data context: free space versus multimode fiber <sec-q3-real>
 
@@ -3007,9 +3116,10 @@ comparison at this level should not be cited as evidence either way about the
 fiber gap.
 
 The program makes no prediction about the size of the fiber penalty. The
-fiber model of @sec-fiber-model has not yet run in any grid, so the published
-fiber over free-space ratios of 2.28 for the TCN and 2.02 for Barland
-(@sec-learned-gap) have no synthetic counterpart. Every prediction outside
+fiber model of @sec-fiber-model has run in the q3_fiber grid, but no network
+learned through it (@sec-q3-monitor), so the published fiber over free-space
+ratios of 2.28 for the TCN and 2.02 for Barland (@sec-learned-gap) have no
+synthetic counterpart. Every prediction outside
 this chapter is for free space.
 
 = Q4: Sagnac accelerometer <sec-q4> // math-ok: question label
