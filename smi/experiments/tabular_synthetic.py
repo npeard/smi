@@ -22,10 +22,11 @@ and expect a sign-blind fit to be handicapped against the networks.
 Sizing, chosen so one sim's fits take about a minute on CPU rather than hours:
 window 91 (the Barland receptive field, as the real-data tabular baselines in
 ``scripts/run_baseline_sweep.py`` use, so the two tables share a task),
-training stride 64 and 512 training shots, a 130k x 273 design matrix. On real
-data 200 -> 800 shots moved LightGBM 6% and ridge not at all, so 512 is past
-the point where the fit is data-starved, and a noise-free sim is no harder to
-cover than a noisy one. Traces are reconstructed at stride 1
+training stride ``FIT_STRIDE`` and 512 training shots, a 130k x 273 design
+matrix. On real data 200 -> 800 shots moved LightGBM 6% and ridge not at
+all, so 512 is past the point where the fit is data-starved, and a
+noise-free sim is no harder to cover than a noisy one. Traces are
+reconstructed at stride 1
 (:func:`~smi.estimators.tabular.predict_trace`), so a prediction depends on
 ``2 * window - 1`` = 181 samples centred on it, which is the recorded
 ``receptive_field``; the ends are averaged over fewer windows, not padded.
@@ -121,7 +122,7 @@ def _param_count(model: SupportsPredict) -> int:
 def training_windows(
     sim: SimConfig, n_shots: int, seed: int, window: int
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Design matrix of ``n_shots`` fresh shots: ``(x, y)`` at stride 64."""
+    """Design matrix of ``n_shots`` fresh shots, ``(x, y)``, at ``FIT_STRIDE``."""
     generator = torch.Generator().manual_seed(seed)
     xs, ys = [], []
     for start in range(0, n_shots, SIM_CHUNK_SHOTS):
