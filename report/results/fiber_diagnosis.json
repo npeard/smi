@@ -1,0 +1,198 @@
+{
+  "n_shots": 32,
+  "seed": 1000,
+  "probes": {
+    "tcan-44k__ch635-675-515__fiber__seed0": {
+      "as_trained": 0.43869516253471375,
+      "no_path_drift": 0.42789483070373535,
+      "static_fiber": 0.4253721833229065,
+      "zero_predictor": 0.4574872851371765
+    },
+    "unettransformer-offline-44k__ch635-675-515__fiber__seed0": {
+      "as_trained": 0.45755505561828613,
+      "no_path_drift": 0.45760634541511536,
+      "static_fiber": 0.45757579803466797,
+      "zero_predictor": 0.4574872851371765
+    },
+    "tcan-44k__ch635-675-515-785__fiber-4color__seed0": {
+      "as_trained": 0.426414430141449,
+      "no_path_drift": 0.4173354208469391,
+      "static_fiber": 0.4160693883895874,
+      "zero_predictor": 0.4574872851371765
+    },
+    "unettransformer-offline-44k__ch635-675-515-785__fiber-4color__seed0": {
+      "as_trained": 0.4573633670806885,
+      "no_path_drift": 0.4570315182209015,
+      "static_fiber": 0.4567340016365051,
+      "zero_predictor": 0.4574872851371765
+    },
+    "tcan-44k__ch635-675-515-785__fiber-monitor__seed0": {
+      "as_trained": 0.44155067205429077,
+      "no_path_drift": 0.4328807592391968,
+      "static_fiber": 0.4349615275859833,
+      "zero_predictor": 0.4574872851371765
+    },
+    "unettransformer-offline-44k__ch635-675-515-785__fiber-monitor__seed0": {
+      "as_trained": 0.457520991563797,
+      "no_path_drift": 0.4575214982032776,
+      "static_fiber": 0.4575268626213074,
+      "zero_predictor": 0.4574872851371765
+    },
+    "tcan-44k__ch635-675-515__fiber-pbs__seed0": {
+      "as_trained": 0.4374719560146332,
+      "no_path_drift": 0.4283094108104706,
+      "static_fiber": 0.42467784881591797,
+      "zero_predictor": 0.4574872851371765
+    },
+    "unettransformer-offline-44k__ch635-675-515__fiber-pbs__seed0": {
+      "as_trained": 0.4575403034687042,
+      "no_path_drift": 0.457522988319397,
+      "static_fiber": 0.45760345458984375,
+      "zero_predictor": 0.4574872851371765
+    }
+  },
+  "bounds": {
+    "nominal": {
+      "fading=True_speckle=True_path=True": {
+        "rmse": 0.03455170895414363,
+        "zero_predictor": 0.45748725119801215
+      }
+    },
+    "fiber": {
+      "fading=True_speckle=True_path=True": {
+        "rmse": 0.08424250499075928,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=True_path=False": {
+        "rmse": 0.035844572322478424,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=False_path=True": {
+        "rmse": 0.08393098842063623,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=False_path=False": {
+        "rmse": 0.03455438815635759,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=True_path=True": {
+        "rmse": 0.08424216630072555,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=True_path=False": {
+        "rmse": 0.0358421112823928,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=False_path=True": {
+        "rmse": 0.08393064591435562,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=False_path=False": {
+        "rmse": 0.03455170895414363,
+        "zero_predictor": 0.45748725119801215
+      }
+    },
+    "fiber-4color": {
+      "fading=True_speckle=True_path=True": {
+        "rmse": 0.08368680112209745,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=True_path=False": {
+        "rmse": 0.03342981375775453,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=False_path=True": {
+        "rmse": 0.08338611274432255,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=False_path=False": {
+        "rmse": 0.03214153339344962,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=True_path=True": {
+        "rmse": 0.08368644885664973,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=True_path=False": {
+        "rmse": 0.03342682649000728,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=False_path=True": {
+        "rmse": 0.08338575489546367,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=False_path=False": {
+        "rmse": 0.03213826502911624,
+        "zero_predictor": 0.45748725119801215
+      }
+    },
+    "fiber-monitor": {
+      "fading=True_speckle=True_path=True": {
+        "rmse": 0.06369989279030305,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=True_path=False": {
+        "rmse": 0.03586449912631079,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=False_path=True": {
+        "rmse": 0.061646603362774326,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=False_path=False": {
+        "rmse": 0.034554952763041005,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=True_path=True": {
+        "rmse": 0.06369757145025053,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=True_path=False": {
+        "rmse": 0.03586153177927864,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=False_path=True": {
+        "rmse": 0.0616439638968056,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=False_path=False": {
+        "rmse": 0.034551708954143626,
+        "zero_predictor": 0.45748725119801215
+      }
+    },
+    "fiber-pbs": {
+      "fading=True_speckle=True_path=True": {
+        "rmse": 0.08424250499075928,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=True_path=False": {
+        "rmse": 0.035844572322478424,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=False_path=True": {
+        "rmse": 0.08393098842063623,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=True_speckle=False_path=False": {
+        "rmse": 0.03455438815635759,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=True_path=True": {
+        "rmse": 0.08424216630072555,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=True_path=False": {
+        "rmse": 0.0358421112823928,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=False_path=True": {
+        "rmse": 0.08393064591435562,
+        "zero_predictor": 0.45748725119801215
+      },
+      "fading=False_speckle=False_path=False": {
+        "rmse": 0.03455170895414363,
+        "zero_predictor": 0.45748725119801215
+      }
+    }
+  }
+}
