@@ -427,3 +427,18 @@ def test_fisher_matrix_matches_finite_difference():
     grads = torch.stack([g_v, g_p], -1).reshape(-1, 2).numpy()
     fd = grads.T @ grads / (grads.shape[0] * sigma**2)
     np.testing.assert_allclose(j, fd, rtol=1e-2)
+
+
+def test_sign_information_shared_phase_quadrature_at_michelson():
+    """C = 0: a one-color array with known 2 pi k / 3 offsets on one shared
+    phase resolves direction (quadrature); zero offsets cannot.
+    """
+
+    def sign(offsets):
+        cfg = dataclasses.replace(
+            _cfg((0.635,) * 3, 0.0, 3.0), channel_phase_offsets_rad=offsets
+        )
+        return bounds.sign_information(cfg, 2, 0)
+
+    assert sign((0.0, 0.0, 0.0)) < 1e-6
+    assert sign(tuple(2 * math.pi * k / 3 for k in range(3))) > 1e3

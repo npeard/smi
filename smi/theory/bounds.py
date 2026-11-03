@@ -250,32 +250,68 @@ def sign_information(cfg: SimConfig, n_shots: int, seed: int) -> float:
     per-channel warps differ (they depend on each channel's phi_F and
     lambda), so no common trajectory mirrors all channels: the evidence is
     real but smaller than this fixed-trajectory value.
+
+    With ``channel_phase_offsets_rad`` set the channels share one phase, so
+    the mirror fits ONE phi' with the offsets known. Then even C = 0 carries
+    sign evidence when the offsets differ: cos(-x + phi' + o_k) matches
+    cos(x + phi_0 + o_k) only if phi' = -phi_0 - 2 o_k for every k at once
+    (quadrature detection); equal offsets reduce to the Michelson zero.
     """
     sigma = _check_noise(cfg)
     shots = ideal_shots(cfg, n_shots, seed)
     c, alpha = cfg.feedback_c, cfg.alpha
-    grid = torch.arange(_SIGN_PHASE_GRID, dtype=_F64) * (2 * math.pi / _SIGN_PHASE_GRID)
+    n_ch = len(cfg.wavelengths_um)
+    lam = torch.tensor(cfg.wavelengths_um, dtype=_F64).view(1, -1, 1)
+    target = shots.visibility[..., None] * fringe(shots.theta, c, alpha)
+    mirror = -4 * math.pi * shots.displacement[:, None] / lam
+    offsets = cfg.channel_phase_offsets_rad
+    if offsets is None:
+        # Independent paths: each channel's mirror phase is fitted on its own.
+        groups = [[k] for k in range(n_ch)]
+        known = torch.zeros(n_ch, dtype=_F64)
+    else:
+        # Shared target: one mirror phase for all channels, offsets known.
+        groups = [list(range(n_ch))]
+        known = torch.tensor(offsets, dtype=_F64)
     total = 0.0
     for b in range(n_shots):
-        for k, lam in enumerate(cfg.wavelengths_um):
-            target = shots.visibility[b, k] * fringe(shots.theta[b, k], c, alpha)
-            mirror = -4 * math.pi * shots.displacement[b] / lam
-
-            coarse = _mirror_mismatch(target, mirror, grid, c, alpha)
-            best = float(grid[int(coarse.argmin())])
-            step = 2 * math.pi / _SIGN_PHASE_GRID
-            fine = scipy.optimize.minimize_scalar(
-                lambda p, t=target, m=mirror: float(
-                    _mirror_mismatch(t, m, p, c, alpha)[0]
-                ),
-                bounds=(best - step, best + step),
-                method='bounded',
-                options={'xatol': 1e-10},
+        for group in groups:
+            residual = _best_mirror(
+                [target[b, k] for k in group],
+                [mirror[b, k] + known[k] for k in group],
+                c,
+                alpha,
             )
-            total += max(min(float(fine.fun), float(coarse.min())), 0.0) / (
-                2 * sigma**2
-            )
+            total += residual / (2 * sigma**2)
     return total / n_shots
+
+
+def _best_mirror(
+    targets: list[torch.Tensor],
+    mirrors: list[torch.Tensor],
+    feedback_c: float,
+    alpha: float,
+) -> float:
+    """Least residual energy over one phase phi' shared by the channels given."""
+
+    def mismatch(phi: torch.Tensor | float) -> torch.Tensor:
+        parts = [
+            _mirror_mismatch(t, m, phi, feedback_c, alpha)
+            for t, m in zip(targets, mirrors, strict=True)
+        ]
+        return torch.stack(parts).sum(0)
+
+    grid = torch.arange(_SIGN_PHASE_GRID, dtype=_F64) * (2 * math.pi / _SIGN_PHASE_GRID)
+    coarse = mismatch(grid)
+    best = float(grid[int(coarse.argmin())])
+    step = 2 * math.pi / _SIGN_PHASE_GRID
+    fine = scipy.optimize.minimize_scalar(
+        lambda p: float(mismatch(p)[0]),
+        bounds=(best - step, best + step),
+        method='bounded',
+        options={'xatol': 1e-10},
+    )
+    return max(min(float(fine.fun), float(coarse.min())), 0.0)
 
 
 @dataclass
