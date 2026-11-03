@@ -238,6 +238,7 @@ def real_values() -> dict[str, str]:
         'rd_over_ridge_fs': f'{vel["decode", "fs"] / vel["ridge", "fs"]:.2f}',
         'rd_over_barland_fs': f'{vel["decode", "fs"] / vel["barland", "fs"]:.1f}',
         'rl_scnn_over_tcn_pct_fs': lower_pct('scnn44', 'tcn44', 'fs'),
+        'rl_barland_over_scnn_pct_fs': lower_pct('barland', 'scnn44', 'fs'),
         'rl_barland_over_tcn_pct_fs': lower_pct('barland', 'tcn44', 'fs'),
         'rl_barland_over_tcn_pct_mmf': lower_pct('barland', 'tcn44', 'mmf'),
         'rl_field_cut_pct': lower_pct('tcn19', 'tcn36', 'fs'),

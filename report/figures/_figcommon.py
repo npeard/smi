@@ -75,6 +75,12 @@ SYNTHETIC_RESULTS_JSON = RESULTS_DIR / 'synthetic_results.json'
 # compute from smi.theory.
 SYNTHETIC_WAVELENGTHS_UM = RIG_WAVELENGTHS_UM
 
+
+def rig_nm(wavelength_um: float) -> str:
+    """The rig laser nearest ``wavelength_um``, in nm; baseline records round 674.8."""
+    return f'{min(RIG_WAVELENGTHS_UM, key=lambda w: abs(w - wavelength_um)) * 1e3:g}'
+
+
 # The feedback values the Q3 grids sweep at alpha = 3.
 Q3_FEEDBACK_C = (0.05, 0.1, 0.2, 0.4, 0.7, 0.9)
 

@@ -560,17 +560,16 @@ $ - ln L(theta) = 1 / (2 sigma^2) sum_(n=1)^N (y_n - f_n (theta))^2
 
 The second term does not contain $theta$ or the data, and $1 \/ 2 sigma^2$ is
 a positive constant. So the negative log-likelihood is the summed squared
-residual up to an additive constant and a positive scale -- which is to say,
-up to nothing that can change an ordering. Maximizing the likelihood over
+residual up to an additive constant and a positive scale, neither of which
+can change an ordering. Maximizing the likelihood over
 $theta$ and minimizing MSE over $theta$ return the same $theta$; ranking shots
 by likelihood and ranking them by MSE produce the same ranking.
 
 #takeaway[
-  *Recommendation: fit each shot in closed form and report MSE.* The two
-  options in the original question are not two options. The fit is where the
-  work is, MSE is what it leaves behind, and the likelihood reading comes free
-  with it -- so take the route that has a closed form and no convergence to
-  check. Per-shot MSE is reported throughout this document as an RMSE, and as
+  *Recommendation: fit each shot in closed form and report MSE.* Likelihood
+  and MSE are one criterion here, not two. The fit is where the work is; MSE
+  is what it leaves behind, and the likelihood reading comes with it, so take
+  the route that has a closed form and no convergence to check. Per-shot MSE is reported throughout this document as an RMSE, and as
   an $R^2$ where a scale-free version is more readable.
 ]
 
@@ -629,11 +628,11 @@ flexibility, and what the model earns is the gap between the two.
 
 === Method 2: multi-wavelength inverse <sec-method2>
 
-The actual baseline. Given only the three photodiode signals, resolve fringe
-ambiguity using the wavelength diversity across 635, 675 and 515 nm, decode
+Method 2 is the classical baseline. Given only the three photodiode signals, resolve fringe
+ambiguity using the wavelength diversity across 635, 674.8 and 515 nm, decode
 displacement on a 1601-point grid, then differentiate for velocity. Scored on
-the same quantity the network predicts, in physical units: velocity in um/ms
-and displacement in um, which is what the repository stores and what the
+the same quantity the network predicts, in physical units: velocity in $mu$m/ms
+and displacement in $mu$m, which is what the repository stores and what the
 training loss is computed in.
 
 The overall sign of the displacement is not scored, because under the
@@ -819,7 +818,7 @@ to seed.
   ),
   caption: [
     Velocity information adds over channels. $J$: profiled per-sample
-    velocity information, in $10^7 ("um/ms")^(-2)$, of the first $N$ colors of
+    velocity information, in $10^7 (mu"m/ms")^(-2)$, of the first $N$ colors of
     the list, mean over seeds. Bound ratio: $sqrt(J_1 \/ J_N)$ at $C = 0.2$, the CRB on velocity
     relative to 635 nm alone. Each row slices one shot draw per seed to its
     first $N$ channels; the R1 grid instead scores each $N$ on its own frozen
@@ -916,7 +915,7 @@ test shots, because the records keep quartiles, not per-shot errors.
   ),
   caption: [
     From $N = 3$ on, TCAN's noise-free error ratio stays within 25% of the
-    bound ratio, though single steps do not. Test velocity RMSE (um/ms), seed
+    bound ratio, though single steps do not. Test velocity RMSE ($mu$m/ms), seed
     mean where seeds exist; nf: noise-free; nom: the nominal point; step:
     change from $N - 1$. Bound: the CRB ratio of @tab-q1-count, with its
     step.
@@ -1111,7 +1110,7 @@ The analytic tier predicted part of this. Local precision barely separates
 the arms, and for $N = 3$ it gives the colors #val("ch_colors_vs_array_n3_pct")%
 (@tab-q1-colors); the sign evidence favours the array strongly at low $C$.
 The noise-free gap is larger than local precision allows, an array error near
-#val("r2_table").at(0).tcan_arr um/ms against #val("r2_table").at(0).tcan_col
+#val("r2_table").at(0).tcan_arr $mu$m/ms against #val("r2_table").at(0).tcan_col
 for TCAN at $N = 2$. That makes local precision the wrong predictor here. We
 have not tested whether the sign evidence or the shared phase, which leaves
 one unknown phase where the colors have $N$, carries the gain. At the nominal
@@ -1135,7 +1134,7 @@ also untested.
   ),
   caption: [
     Noise-free the quadrature array is an order of magnitude ahead; at the
-    nominal point it is level with the colors. Test velocity RMSE (um/ms),
+    nominal point it is level with the colors. Test velocity RMSE ($mu$m/ms),
     seed 0, $C = 0.2$, $alpha = 3$; ratio: colors over array. Each arm has
     its own test set, with the same motion draw in all of them.
   ],
@@ -1389,9 +1388,10 @@ shots, seed-disjoint from the frozen test sets the networks score on.
 
 === Real data
 
-The Q2 predictions claim orderings only, because the synthetic family ranks // math-ok: question label
-already transferred imperfectly once. On the real data Barland beats SCNN by
-15% (@sec-learned-table), where the synthetic cells tie them
+_Status: measured on both acquisitions in @sec-q2-real; the predictions
+below are scored at unblinding._ The Q2 predictions claim orderings only, because the synthetic family ranks // math-ok: question label
+transfer imperfectly to the real data: there Barland beats SCNN by
+#val("rl_barland_over_scnn_pct_fs")% (@sec-learned-table), where the synthetic cells tie them
 (@fig-families). TCAN's #val("q2_tcan_gain")-fold gain over the TCN was
 measured noise-free; under noise, the Q1 multi-channel gain shrank from // math-ok: question label
 #val("q1_gain_tcn") to #val("q1_s4_30_gain_pct")%, so prediction 8 runs from
@@ -1613,7 +1613,7 @@ Drift alone raises the error over the cheapest knob, the ADC, by
 for UNetTransformer and #val("r4_patch_phase_cost") times for
 PatchTransformer. For TCAN, visibility over white noise is
 #val("r4_table").at(2).at("tcan-44k") against
-#val("r4_table").at(1).at("tcan-44k") um/ms, several shot SEs apart and
+#val("r4_table").at(1).at("tcan-44k") $mu$m/ms, several shot SEs apart and
 beyond the #val("r1_tcan_nf_spread3")% noise-free seed range of R1.
 UNetTransformer does rank white noise above visibility, but its visibility
 and DC-offset rows trained into a third cycle, so their low errors partly
@@ -1649,7 +1649,7 @@ PatchTransformer and #val("r4_unet_nominal") for UNetTransformer.
   ),
   caption: [
     Phase drift costs the most for every neural network; visibility outranks
-    white noise for TCAN and PatchTransformer. Test velocity RMSE (um/ms) with one
+    white noise for TCAN and PatchTransformer. Test velocity RMSE ($mu$m/ms) with one
     knob at its nominal value and the rest noise-free, then the two stressed
     rungs and the nominal point, $C = 0.2$, $alpha = 3$, one seed. TCN: the
     noise ladder's nominal-value cell (@fig-noise), at the 30-epoch budget.
@@ -1673,7 +1673,9 @@ leave-one-out cover three channels at $C = 0.2$ only.
 
 === Real data
 
-The same ratio puts the rig well below the synthetic nominal point. Over the
+_Status: predictions only; no acquisition varies the noise on purpose. The
+rig's measured errors are in #ref(<sec-q2-real>)._ The same ratio puts the rig well
+below the synthetic nominal point. Over the
 zero predictor, the 30-epoch ladder cells of @sec-q2-noise score
 #val("pred_base_ratio") noise-free, #val("pred_nominal_ratio") at the
 nominal point, #val("pred_no_drift_ratio") with phase drift removed and
@@ -1956,10 +1958,10 @@ coil-driver gain:
     [median $W$],
   ),
   [free space], [635 nm], [0.171], [0.726], [0.309], [*0.42*], [1042],
-  [free space], [675 nm], [0.176], [0.628], [0.328], [*0.30*], [1108],
+  [free space], [674.8 nm], [0.176], [0.628], [0.328], [*0.30*], [1108],
   [free space], [515 nm], [0.080], [0.503], [0.290], [*0.21*], [846],
   [mm fiber], [635 nm], [0.479], [0.872], [0.335], [*0.54*], [1028],
-  [mm fiber], [675 nm], [0.166], [0.557], [0.283], [*0.27*], [1092],
+  [mm fiber], [674.8 nm], [0.166], [0.557], [0.283], [*0.27*], [1092],
   [mm fiber], [515 nm], [0.303], [0.781], [0.314], [*0.47*], [834],
 ))
 
@@ -1999,7 +2001,7 @@ two would mix agreement with fitting capacity in unknown proportion.
 
 $W$ spans about two fringes, clipped to $[256, 4096]$ samples, and both bounds
 are set by what the control does rather than by preference. Measured on the
-free-space above-3 um cohort, the control climbs from 0.006-0.010 at
+free-space above-3 $mu$m cohort, the control climbs from 0.006-0.010 at
 $W = 16384$ through 0.19-0.25 at $W = 1024$ to 0.56-0.71 at $W = 256$, while
 the real fit rises more slowly over the same range. At $W = 256$ the control is
 about two thirds of the real fit: a number quoted from there is mostly fitting
@@ -2021,7 +2023,7 @@ fringes per micron of the three wavelengths, which is the ordering to expect if
 the residual is a phase effect; this document has no measurement that pins that
 down.
 
-*The mm-fiber 675 nm channel is the one to read carefully elsewhere.* Nothing
+*The mm-fiber 674.8 nm channel is the one to read carefully elsewhere.* Nothing
 in the table above is affected, because both columns there use the known
 displacement. But where a gain is fit per shot, that channel
 picks a gain near twice the true one in 249 of 1000 shots, which re-aligns the
@@ -2044,9 +2046,9 @@ to them on average, so @fig-traces tabulates the fit on three shots.
     stroke: 0.5pt + rgb("#d0d0d0"),
     table.header(
       [shot],
-      [peak-to-peak (um)],
+      [peak-to-peak ($mu$m)],
       [635 nm $R^2$ (control)],
-      [675 nm $R^2$ (control)],
+      [674.8 nm $R^2$ (control)],
       [515 nm $R^2$ (control)],
       [joint $g$],
     ),
@@ -2105,7 +2107,7 @@ excursion.
 Three shots out of a thousand cannot establish a trend, and none is claimed
 here. What these shots
 settle is the narrower question the medians leave open: at low and medium
-excursion, on 635 nm and 675 nm, the windowed fit follows individual fringes
+excursion, on 635 nm and 674.8 nm, the windowed fit follows individual fringes
 rather than only their general shape.
 
 ==== Why the fringe-matched window and not a smooth envelope
@@ -2212,7 +2214,7 @@ the baseline nothing measurable.
     same $W$, and the shaded band the gap between the last two. Because $W$
     tracks each shot's fringe rate it shortens as excursion grows: each panel
     states the median and interquartile range of the $W$ its own numbers came
-    from. The global fit collapses toward zero above 2 um in all six panels;
+    from. The global fit collapses toward zero above 2 $mu$m in all six panels;
     the windowed fit does not.
   ],
 )
@@ -2224,7 +2226,7 @@ subsections take them in the order they matter.
 ==== The interval the fit holds its parameters over
 
 The global curve falls from 0.453-0.730 in the smallest bin to
-0.014-0.047 above 3 um, and does so in all six channel/acquisition
+0.014-0.047 above 3 $mu$m, and does so in all six channel/acquisition
 combinations. The windowed curve over the same shots stays at 0.510-0.867 in
 that top bin, against controls of 0.365-0.400. Nothing about the model or the
 displacement differs between those two curves; only the interval over which
@@ -2235,7 +2237,7 @@ are the two quantities the global fit holds constant. Within-shot drift of 1
 to 2.7 fringes has been measured on this data and is recorded in
 `smi/estimators/phase_fit.py`; that magnitude lives there rather than in the
 results artifacts, so this document cites it and does not tabulate it. For
-scale, at the median true velocity RMS of 0.373 and 0.377 um/ms a
+scale, at the median true velocity RMS of 0.373 and 0.377 $mu$m/ms a
 1024-sample window sweeps 2.3 to 3.1 fringes depending on wavelength, and the
 whole 33.6 ms record sweeps 33 times as many. A single phase cannot describe a
 record whose fringe phase wanders by a fringe or more, and a single amplitude
@@ -2263,10 +2265,10 @@ and the peak is not at the live value:
     [global $R^2$, live -> best],
   ),
   [free space], [635 nm], [16.50], [+13.4%], [0.162 -> 0.462],
-  [free space], [675 nm], [16.25], [+11.7%], [0.171 -> 0.346],
+  [free space], [674.8 nm], [16.25], [+11.7%], [0.171 -> 0.346],
   [free space], [515 nm], [16.00], [+9.9%], [0.077 -> 0.176],
   [mm fiber], [635 nm], [15.50], [+6.5%], [0.468 -> 0.613],
-  [mm fiber], [675 nm], [15.75], [+8.2%], [0.160 -> 0.230],
+  [mm fiber], [674.8 nm], [15.75], [+8.2%], [0.160 -> 0.230],
   [mm fiber], [515 nm], [15.25], [+4.8%], [0.291 -> 0.396],
 ))
 
@@ -2287,7 +2289,7 @@ x-axis locates nothing. These six numbers are therefore the sweep's own
 measure and are not comparable to the fringe-matched tables of @sec-r-method1;
 what they establish is the *size* of the gain's effect, and that is the claim
 being made. Second, the best gain is *not* consistent between the two
-acquisitions -- 16.50 against 15.50 at 635 nm, 16.25 against 15.75 at 675 nm,
+acquisitions -- 16.50 against 15.50 at 635 nm, 16.25 against 15.75 at 674.8 nm,
 16.00 against 15.25 at 515 nm, a disagreement of 3.2 to 6.5%. Drive-to-
 displacement gain is a property of the speaker, not of the optical path, so a
 scalar `k` that lands in two different places on two acquisitions is absorbing
@@ -2311,19 +2313,19 @@ Even with the gain fixed, the largest excursions are fit worse than the
 smallest. The evidence that this residual is not a scale error is that giving
 each shot its *own* optimal gain does not remove it. Fitting one gain per shot
 at N = 1000 -- strictly more freedom than any global recalibration can have --
-leaves the free-space above-3 um bin at median $R^2$ 0.143 (635 nm), 0.094
-(675 nm) and 0.052 (515 nm). The best single global gain does no better there:
+leaves the free-space above-3 $mu$m bin at median $R^2$ 0.143 (635 nm), 0.094
+(674.8 nm) and 0.052 (515 nm). The best single global gain does no better there:
 0.122, 0.076 and 0.020. A scale error would be absorbed entirely by a per-shot
 gain; this is not.
 
 The per-shot fits also come with a warning about how to read them. Each shot's
 gain is chosen by its own best $R^2$, and at some excursions a gain of roughly
 twice the true one re-aligns the fringe pattern by a whole fringe order and
-scores well. On the 675 nm fiber channel, 249 of 1000 shots pick a gain
+scores well. On the 674.8 nm fiber channel, 249 of 1000 shots pick a gain
 between 29.5 and 32.5, about twice the live value, and 334 pick a gain above
 25 altogether. Free-space 515 nm does the same in 125 shots. Those fits inflate
 that channel's per-shot median $R^2$ of 0.336, so it should not be read as
-evidence that the fiber 675 nm channel is fit better than its global 0.166
+evidence that the fiber 674.8 nm channel is fit better than its global 0.166
 suggests. The median gains themselves are unaffected -- 15.75 with an
 interquartile range from 15.50 to 30.50 on that channel, against a clean
 15.25-15.50 on the others -- but the quartile spread is the tell.
@@ -2343,7 +2345,7 @@ that killed them, so the next reader finds evidence rather than a claim.
   not from where the argmax lands, because an argmax at an endpoint is what a
   monotonic curve returns whether or not there is a delay.
 - *Aliasing of the fringe rate.* Peak fringe rate at the live gain runs
-  9.9 kHz (675 nm free space) to 13.6 kHz (515 nm fiber) against a Nyquist
+  9.9 kHz (674.8 nm free space) to 13.6 kHz (515 nm fiber) against a Nyquist
   frequency of 244 kHz, i.e. 18 to 25 times headroom. The fringes are
   comfortably sampled.
 - *A missing DC term.* The fit includes a constant, globally and per window,
@@ -2364,8 +2366,8 @@ this problem, and both are the starting point for the learned models here.
 reports a Pearson correlation of 0.90 between the recovered and the true
 displacement, at 57,153 parameters. @matha2023multichannel extends the
 approach to three channels at 207,905 parameters, reporting a correlation of
-0.96 and a velocity RMSE of 0.13 um/ms; its best single channel reaches 0.97
-and 0.11 um/ms.
+0.96 and a velocity RMSE of 0.13 $mu$m/ms; its best single channel reaches 0.97
+and 0.11 $mu$m/ms.
 
 `smi/learning/models/barland_cnn.py` is a port of the 2021 architecture. At
 one input channel it comes to 57,153 trainable parameters, an exact match
@@ -2702,7 +2704,7 @@ In the simulator they differ widely. The path drift is a random walk, with
 $dot(p)$ white, while the drive puts its power between 1 Hz and 1 kHz. A
 linear-Gaussian reference with perfect demodulation estimates $d$ from the
 sum against those two spectra. Over #val("dg_shots") shots its velocity RMSE
-is #val("dg_ref_fiber") um/ms through the fiber against #val("dg_ref_fs") in
+is #val("dg_ref_fiber") $mu$m/ms through the fiber against #val("dg_ref_fs") in
 free space. The free-space MSE is #val("dg_ratio_fiber") of the fiber MSE
 without a monitor and #val("dg_ratio_monitor") with the dichroic monitor
 below. With the path term removed the ratio is #val("dg_ratio_nopath"), so
@@ -2769,10 +2771,10 @@ zero predictor scores #val("r7_zero") on every one. Errors of arm
 differences below are paired SEs over those shared shots.
 
 The fiber costs TCAN #val("r7_tcan_cost") $plus.minus$
-#val("r7_tcan_cost_se") um/ms over free space. Every fiber arm of either
+#val("r7_tcan_cost_se") $mu$m/ms over free space. Every fiber arm of either
 family then scores between #val("r7_fiber_oz_lo") and #val("r7_fiber_oz_hi")
 of the zero predictor. The paired SEs resolve the differences between fiber
-arms, but each is about a hundredth of a um/ms against the zero predictor's
+arms, but each is about a hundredth of a $mu$m/ms against the zero predictor's
 #val("r7_zero"): the monitor arm minus the four-color control is
 #val("r7_tcan_monitor") $plus.minus$ #val("r7_tcan_monitor_se"), and the
 control minus the fiber alone #val("r7_tcan_fourth") $plus.minus$
@@ -2828,7 +2830,7 @@ it.
     )).flatten(),
   ),
   caption: [
-    Every fiber arm scores at the zero predictor. Test velocity RMSE (um/ms),
+    Every fiber arm scores at the zero predictor. Test velocity RMSE ($mu$m/ms),
     its ratio to the zero predictor, TCAN's epochs, and whether
     UNetTransformer converged (TCAN converged in every arm).
   ],
@@ -2870,7 +2872,7 @@ and its share of the fade variance falls as $1 \/ N$.
 
 The $P_perp$ arm shows no effect, because no fiber arm learns
 (@sec-q3-monitor). Against the fiber alone, TCAN's $P_perp$ arm scores
-#val("r7_tcan_pbs") $plus.minus$ #val("r7_tcan_pbs_se") um/ms, paired
+#val("r7_tcan_pbs") $plus.minus$ #val("r7_tcan_pbs_se") $mu$m/ms, paired
 (@tab-q3-fiber), and UNetTransformer converged in neither. The difference is
 resolved and negligible beside the zero predictor's #val("r7_zero"). On a
 static fiber the $P_perp$ checkpoints stay at the zero predictor like the
@@ -2933,7 +2935,7 @@ spread over $y_0$.
 #assert(val("fl_den_steps_plateau"), message: "the denoise step count no longer plateaus")
 
 Over #val("fl_shots") fiber test shots, the free-space TCAN scores
-#val("fl_den_chain") um/ms on the flow's denoised fiber traces. On raw fiber
+#val("fl_den_chain") $mu$m/ms on the flow's denoised fiber traces. On raw fiber
 traces the fiber-trained TCAN scores #val("fl_den_fiber") and the
 free-space TCAN #val("fl_den_free_raw"); on free-space traces the free-space
 TCAN scores #val("fl_den_free_fs"). The chain does not beat a fiber-trained
@@ -2952,8 +2954,8 @@ run.
 _Status: not run; needs paired free-space and fiber recordings of the same
 motion, a new acquisition._ The committed prediction: a free-space regressor
 on denoised fiber traces does not beat a regressor trained on fiber traces.
-It is falsified if the chain's velocity error is clearly lower at matched
-training.
+It is falsified if, at matched training, the chain's velocity error is lower
+by more than $s$, the two-seed range of @tab-real-predictions.
 
 == Q3.4: the shape of the fiber posterior <sec-q3-posterior> // math-ok: question label
 
@@ -2987,11 +2989,11 @@ analysis does not predict.
 #assert(val("fl_sign_split_all"), message: "a flow posterior now resolves the sign on some shot")
 
 The posterior flows did not learn the sign. On free space, the posterior
-mean has a velocity RMSE of #val("fl_post_fs") um/ms, near the zero
+mean has a velocity RMSE of #val("fl_post_fs") $mu$m/ms, near the zero
 predictor's #val("r7_zero"), against TCAN's #val("fl_tcan_fs") and a
 #val("fl_ens_seeds")-seed TCAN deep ensemble's #val("fl_ens_fs"). Its
 #val("fl_band")% bands cover #val("fl_cov_fs") of the truth, against the
-ensemble's #val("fl_cov_ens"), and its CRPS is #val("fl_crps_fs") um/ms
+ensemble's #val("fl_cov_ens"), and its CRPS is #val("fl_crps_fs") $mu$m/ms
 against #val("fl_crps_ens"). Through fiber it scores the same: posterior
 mean #val("fl_post_fiber"), coverage #val("fl_cov_fiber"), CRPS
 #val("fl_crps_fiber"). On every shot of both arms at least
@@ -3027,23 +3029,23 @@ _Status: the 635 nm mean amplitude spectrum behind this comparison needs the
 raw acquisition files and is not shown in this build._
 
 That spectral difference does not translate into a baseline difference
-(@sec-read). Both acquisitions are limited by the same things, and a
-comparison at this level should not be cited as evidence either way about the
+(@sec-baseline-fiber), so the baseline is not evidence either way about the
 fiber gap.
 
 The program makes no prediction about the size of the fiber penalty. The
 fiber model of @sec-fiber-model has run in the q3_fiber grid, but no network
 learned through it (@sec-q3-monitor), so the published fiber over free-space
-ratios of 2.28 for the TCN and 2.02 for Barland (@sec-learned-gap) have no
-synthetic counterpart. Every prediction outside
-this chapter is for free space.
+ratios of #val("rl_tcn44_ratio") for the TCN and #val("rl_barland_ratio")
+for Barland (@sec-learned-gap) have no synthetic counterpart. Every
+prediction outside this section is for free space.
 
 = Q4: Sagnac accelerometer <sec-q4> // math-ok: question label
 
 Q4 asks whether a Sagnac loop read by self-mixing would give a common-path, // math-ok: question label
-fiber-noise-insensitive accelerometer. Its readout is not insensitive to
+fiber-noise-insensitive accelerometer. Its readout is sensitive to
 reciprocal fiber phase: the loop returns the nonreciprocal phase in the
-amplitude, and the reciprocal fiber phase comes back as $phi_0$. Whether that
+amplitude, and the reciprocal fiber phase in the round-trip phase $phi_0$,
+which takes the place of $theta$ in @eq-excess. Whether that
 drift matters depends on its bandwidth against the signal band, which we do
 not model. Code: `smi/theory/sagnac.py`, tests `tests/test_sagnac.py`.
 
@@ -3060,7 +3062,7 @@ for $rho in {0.3, 0.5, 0.9}$. The nonreciprocal phase sets only the
 amplitude reflectivity $r = cos(Delta phi \/ 2)$. Self-mixing reads the round-trip
 phase of the return @lang1980feedback @taimre2015tutorial, which contains
 $Sigma \/ 2$ and the lead fiber in full. Reciprocal fiber noise therefore
-enters $phi_0$ of @eq-excess. A conventional Sagnac readout at the second
+enters $phi_0$. A conventional Sagnac readout at the second
 coupler port is insensitive to it; the self-mixing readout is not.
 
 The output encodes the velocity of an element placed off the loop midpoint,

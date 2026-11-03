@@ -39,6 +39,7 @@ from _figcommon import (
     PD_CHANNELS,
     RESULTS_JSON,
     parse_args,
+    rig_nm,
     save,
 )
 
@@ -94,7 +95,7 @@ def main() -> None:
             _medians('r_squared_windowed'),
             width=width,
             color=color,
-            label=f'{wavelength_um * 1e3:.0f} nm',
+            label=f'{rig_nm(wavelength_um)} nm',
         )
         ax.scatter(
             positions,
@@ -169,7 +170,7 @@ def main() -> None:
     )
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
-    ax.set_ylabel('displacement (um)')
+    ax.set_ylabel(r'displacement ($\mu$m)')
     ax.set_title('Method 2: error vs signal')
     ax.set_ylim(0, 0.92)
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12), frameon=False)

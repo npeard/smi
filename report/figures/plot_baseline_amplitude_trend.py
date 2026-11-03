@@ -47,6 +47,7 @@ from _figcommon import (
     PD_CHANNELS,
     RESULTS_JSON,
     parse_args,
+    rig_nm,
     save,
 )
 
@@ -155,7 +156,7 @@ def main() -> None:
             ax.set_ylim(0, 1.0)
             ax.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
             if row == 0:
-                ax.set_title(f'{wavelength_um * 1e3:.0f} nm')
+                ax.set_title(f'{rig_nm(wavelength_um)} nm')
             if col == 0:
                 ax.set_ylabel(f'{title}\nmedian $R^2$')
             # A fringe-matched W differs per shot, so the panel has to say
@@ -180,7 +181,7 @@ def main() -> None:
             if row == len(BASELINE_DATASETS) - 1:
                 ax.set_xticks(x)
                 ax.set_xticklabels([BIN_LABELS[b] for b in bin_keys])
-                ax.set_xlabel('drive peak-to-peak (um)')
+                ax.set_xlabel(r'drive peak-to-peak ($\mu$m)')
 
     # Bin populations, once rather than per panel: they are identical across
     # channels of one acquisition (the same shots are fit in all three) and
