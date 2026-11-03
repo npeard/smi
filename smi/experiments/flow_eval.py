@@ -40,14 +40,15 @@ from smi.core.metrics import (
 )
 from smi.data.datasets import select_pd_keys
 from smi.data.frozen import load_or_create
-from smi.data.schema import VELOCITY_KEY
+from smi.data.schema import VELOCITY_KEY, read_shots
 from smi.experiments import grids
 from smi.experiments.evaluate import CheckpointEstimator, evaluate
-from smi.experiments.grid import Grid
+from smi.experiments.grid import EvalSet, Grid
 from smi.experiments.runner import (
     Cell,
     cell_fingerprint,
     expand_grid,
+    trained_cells,
     trained_checkpoint,
     training_config,
 )
@@ -255,17 +256,16 @@ class PosteriorEstimator:
         return draws.mean(dim=0)
 
 
-def _velocity(dataset: Path, n_shots: int) -> Tensor:
-    with h5py.File(dataset, 'r') as f:
-        return torch.from_numpy(np.asarray(f[VELOCITY_KEY][:n_shots], np.float32))
-
-
-def _signals(dataset: Path, wavelengths_um: tuple[float, ...], n_shots: int) -> Tensor:
+def _read(
+    dataset: Path, wavelengths_um: tuple[float, ...], n_shots: int
+) -> tuple[Tensor, Tensor]:
+    """``[B, C, L]`` signals and ``[B, L]`` stored velocity of a frozen set."""
     with h5py.File(dataset, 'r') as f:
         keys = select_pd_keys(f, wavelengths_um)
-        return torch.from_numpy(
-            np.stack([np.asarray(f[k][:n_shots], np.float32) for k in keys], axis=1)
-        )
+    arrays, _ = read_shots(dataset, [*keys, VELOCITY_KEY], stop=n_shots)
+    signals = np.stack([np.asarray(arrays[k], np.float32) for k in keys], axis=1)
+    velocity = np.asarray(arrays[VELOCITY_KEY], np.float32)
+    return torch.from_numpy(signals), torch.from_numpy(velocity)
 
 
 def band_scores(draws: Tensor, truth: Tensor) -> dict[str, Any]:
@@ -304,8 +304,7 @@ def ensemble_scores(
     n_shots: int,
 ) -> dict[str, Any]:
     """Deep-ensemble baseline: Gaussian predictive from the members' spread."""
-    signals = _signals(dataset, wavelengths_um, n_shots)
-    truth = _velocity(dataset, n_shots)
+    signals, truth = _read(dataset, wavelengths_um, n_shots)
     preds = torch.stack(
         [
             torch.cat(
@@ -328,8 +327,12 @@ def ensemble_scores(
 
 def training_identity(cell: Cell, grid: Grid) -> dict[str, Any]:
     """What ``cell`` trained, test set excluded: seed-independent by design."""
-    blocks = cell_fingerprint(cell, grid, training_config(cell, grid))
-    return {k: v for k, v in blocks['fingerprint_blocks'].items() if k != 'test_set'}
+    return _training_identity(cell_fingerprint(cell, grid, training_config(cell, grid)))
+
+
+def _training_identity(fingerprint: dict[str, Any]) -> dict[str, Any]:
+    blocks = fingerprint['fingerprint_blocks']
+    return {k: v for k, v in blocks.items() if k != 'test_set'}
 
 
 def tcan_cells(reference: Cell, reference_grid: Grid, runs_dir: Path) -> list[Member]:
@@ -343,18 +346,17 @@ def tcan_cells(reference: Cell, reference_grid: Grid, runs_dir: Path) -> list[Me
     """
     want = training_identity(reference, reference_grid)
     found: dict[int, Member] = {}
-    for name, grid in grids.GRIDS.items():
-        for cell in expand_grid(grid):
-            ckpt = runs_dir / name / f'{cell.key}.ckpt'
-            if (
-                cell.family == FAMILY
-                and cell.seed is not None
-                and cell.seed not in found
-                and cell.sim.hash() == reference.sim.hash()
-                and ckpt.exists()
-                and training_identity(cell, grid) == want
-            ):
-                found[cell.seed] = Member(name, cell.key, cell.seed, ckpt)
+    for name, cell, fingerprint in trained_cells():
+        ckpt = runs_dir / name / f'{cell.key}.ckpt'
+        if (
+            cell.family == FAMILY
+            and cell.seed is not None
+            and cell.seed not in found
+            and cell.sim.hash() == reference.sim.hash()
+            and ckpt.exists()
+            and _training_identity(fingerprint) == want
+        ):
+            found[cell.seed] = Member(name, cell.key, cell.seed, ckpt)
     return [found[s] for s in sorted(found)]
 
 
@@ -366,8 +368,56 @@ def arm_cell(grid: Grid, sim_name: str) -> Cell:
     return cell
 
 
-def _rmse(record: Any) -> dict[str, float]:
-    return record.metrics['velocity_rmse']
+def _velocity_rmse(
+    est: Any, dataset: Path, wavelengths_um: tuple[float, ...], n_shots: int
+) -> dict[str, float]:
+    """``est``'s velocity RMSE summary, scored as the grid's records are."""
+    result = evaluate(
+        est, dataset, wavelengths_um, n_shots=n_shots, converged=True, train_seed=0
+    )
+    return result.record.metrics['velocity_rmse']
+
+
+def _arm_setup(
+    flow: FlowLitModule, grid_name: str, sim_name: str, frozen_root: Path, role: str
+) -> tuple[EvalSet, Cell, Path]:
+    """The grid's test set, its ``sim_name`` arm cell and that arm's frozen set.
+
+    Raises:
+        ValueError: If ``flow`` was not trained on the arm's sim.
+    """
+    grid = grids.grid(grid_name)
+    test = grid.test_set
+    cell = arm_cell(grid, sim_name)
+    if flow.sim_config.hash() != cell.sim.hash():
+        raise ValueError(f'the {role} was not trained on the {sim_name} sim')
+    return test, cell, load_or_create(cell.sim, test.seed, test.n_shots, frozen_root)
+
+
+def _moved(a: dict[str, float], b: dict[str, float]) -> float:
+    """Relative change of the mean RMSE from ``b`` to ``a``."""
+    return abs(a['mean'] - b['mean']) / b['mean']
+
+
+def _sampling_check(
+    by_draws: dict[int, dict[str, float]], long: Sampling, long_rmse: dict[str, float]
+) -> dict[str, Any]:
+    """Whether the posterior-mean RMSE has plateaued in draws and in steps."""
+    draws_moved = _moved(by_draws[DENOISE_DRAWS[-2]], by_draws[DENOISE_DRAWS[-1]])
+    steps_moved = _moved(by_draws[STEP_CHECK_DRAWS], long_rmse)
+    return {
+        'velocity_rmse_by_draws': {str(n): r for n, r in by_draws.items()},
+        'step_check': {
+            'n_samples': STEP_CHECK_DRAWS,
+            'n_steps': long.n_steps,
+            'velocity_rmse': long_rmse,
+        },
+        'draws_rel_change': draws_moved,
+        'steps_rel_change': steps_moved,
+        'plateau_rtol': PLATEAU_RTOL,
+        'draws_plateau': draws_moved < PLATEAU_RTOL,
+        'steps_plateau': steps_moved < PLATEAU_RTOL,
+    }
 
 
 def score_denoise(
@@ -379,12 +429,10 @@ def score_denoise(
     device: str,
 ) -> dict[str, Any]:
     """Q3.3 on the grid's ``fiber`` frozen set; RMSEs in um/ms."""
-    grid = grids.grid(grid_name)
-    test = grid.test_set
-    nominal, fiber = arm_cell(grid, 'nominal'), arm_cell(grid, 'fiber')
-    if flow.sim_config.hash() != fiber.sim.hash():
-        raise ValueError('the denoiser was not trained on the fiber arm sim')
-    fiber_set = load_or_create(fiber.sim, test.seed, test.n_shots, frozen_root)
+    test, fiber, fiber_set = _arm_setup(
+        flow, grid_name, 'fiber', frozen_root, 'denoiser'
+    )
+    nominal = arm_cell(grids.grid(grid_name), 'nominal')
     free_set = load_or_create(nominal.sim, test.seed, test.n_shots, frozen_root)
     free_tcan = CheckpointEstimator(
         trained_checkpoint(nominal, grid_name, runs_dir), device
@@ -395,14 +443,14 @@ def score_denoise(
     wl = fiber.wavelengths_um
 
     def run(est: Any, dataset: Path) -> dict[str, float]:
-        return _rmse(evaluate(est, dataset, wl, test.n_shots, True, 0).record)
+        return _velocity_rmse(est, dataset, wl, test.n_shots)
 
     def denoised(
         s: Sampling,
         n_mean: int,
         prefixes: tuple[int, ...],
         cache: dict[str, dict[int, Tensor]],
-    ) -> Any:
+    ) -> dict[str, float]:
         est = DenoisedEstimator(flow, free_tcan, s, n_mean, prefixes, cache)
         return run(est, fiber_set)
 
@@ -414,28 +462,10 @@ def score_denoise(
         sampling, n_samples=STEP_CHECK_DRAWS, n_steps=2 * sampling.n_steps
     )
     long_rmse = denoised(long, STEP_CHECK_DRAWS, (STEP_CHECK_DRAWS,), {})
-
-    def moved(a: dict[str, float], b: dict[str, float]) -> float:
-        return abs(a['mean'] - b['mean']) / b['mean']
-
-    draws_moved = moved(by_draws[DENOISE_DRAWS[-2]], by_draws[DENOISE_DRAWS[-1]])
-    steps_moved = moved(by_draws[STEP_CHECK_DRAWS], long_rmse)
     return {
         'test_set': {**dataclasses.asdict(test), 'dataset': fiber_set.stem},
         'sampling': dataclasses.asdict(sampling),
-        'sampling_check': {
-            'velocity_rmse_by_draws': {str(n): r for n, r in by_draws.items()},
-            'step_check': {
-                'n_samples': STEP_CHECK_DRAWS,
-                'n_steps': long.n_steps,
-                'velocity_rmse': long_rmse,
-            },
-            'draws_rel_change': draws_moved,
-            'steps_rel_change': steps_moved,
-            'plateau_rtol': PLATEAU_RTOL,
-            'draws_plateau': draws_moved < PLATEAU_RTOL,
-            'steps_plateau': steps_moved < PLATEAU_RTOL,
-        },
+        'sampling_check': _sampling_check(by_draws, long, long_rmse),
         'velocity_rmse': {
             # The largest draw count: the plateau value when draws_plateau.
             'free_tcan_on_denoised_fiber': by_draws[DENOISE_DRAWS[-1]],
@@ -457,49 +487,39 @@ def score_posterior(
     device: str,
 ) -> dict[str, Any]:
     """Q3.4 for one arm (``nominal`` or ``fiber``) of the grid."""
-    grid = grids.grid(grid_name)
-    test = grid.test_set
-    cell = arm_cell(grid, sim_name)
-    if flow.sim_config.hash() != cell.sim.hash():
-        raise ValueError(f'the posterior was not trained on the {sim_name} sim')
-    dataset = load_or_create(cell.sim, test.seed, test.n_shots, frozen_root)
+    test, cell, dataset = _arm_setup(
+        flow, grid_name, sim_name, frozen_root, 'posterior'
+    )
     wl = cell.wavelengths_um
     est = PosteriorEstimator(flow, sampling, f'flow-posterior:{sim_name}')
-    record = evaluate(est, dataset, wl, test.n_shots, True, 0).record
+    mean_rmse = _velocity_rmse(est, dataset, wl, test.n_shots)
+    _, truth = _read(dataset, wl, test.n_shots)
+    regressor = trained_checkpoint(cell, grid_name, runs_dir)
     out: dict[str, Any] = {
         'test_set': {**dataclasses.asdict(test), 'dataset': dataset.stem},
         'sampling': dataclasses.asdict(sampling),
-        'posterior_mean_velocity_rmse': _rmse(record),
-        **band_scores(torch.cat(est.draws, dim=1), _velocity(dataset, test.n_shots)),
-    }
-    members = tcan_cells(cell, grid, runs_dir)
-    regressor = trained_checkpoint(cell, grid_name, runs_dir)
-    out['best_regressor'] = {
-        'cell': cell.key,
-        'velocity_rmse': _rmse(
-            evaluate(
-                CheckpointEstimator(regressor, device),
-                dataset,
-                wl,
-                test.n_shots,
-                True,
-                0,
-            ).record
-        ),
-    }
-    out['deep_ensemble'] = (
-        {
-            **ensemble_scores(
-                [CheckpointEstimator(m.checkpoint, device) for m in members],
-                dataset,
-                wl,
-                test.n_shots,
+        'posterior_mean_velocity_rmse': mean_rmse,
+        **band_scores(torch.cat(est.draws, dim=1), truth),
+        'best_regressor': {
+            'cell': cell.key,
+            'velocity_rmse': _velocity_rmse(
+                CheckpointEstimator(regressor, device), dataset, wl, test.n_shots
             ),
-            'members': [
-                {'grid': m.grid, 'cell': m.cell, 'seed': m.seed} for m in members
-            ],
-        }
-        if len(members) >= ENSEMBLE_MIN
-        else f'unavailable: {len(members)} TCAN-44k seed(s) trained as {cell.key}'
-    )
+        },
+    }
+    members = tcan_cells(cell, grids.grid(grid_name), runs_dir)
+    if len(members) < ENSEMBLE_MIN:
+        out['deep_ensemble'] = (
+            f'unavailable: {len(members)} TCAN-44k seed(s) trained as {cell.key}'
+        )
+        return out
+    out['deep_ensemble'] = {
+        **ensemble_scores(
+            [CheckpointEstimator(m.checkpoint, device) for m in members],
+            dataset,
+            wl,
+            test.n_shots,
+        ),
+        'members': [{'grid': m.grid, 'cell': m.cell, 'seed': m.seed} for m in members],
+    }
     return out
