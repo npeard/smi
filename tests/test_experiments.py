@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 import torch
 
+from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement
 from smi.core.paths import REPO_ROOT
 from smi.data.datasets import select_pd_keys
@@ -38,6 +39,7 @@ from smi.learning import configs, synthetic_lit_module
 from smi.learning.configs import MODEL_CONFIGS, model_config
 from smi.learning.lit_module import LitModule
 from smi.learning.training_interface import SIGNED_RMSE_KEY
+from smi.theory.forward import SimConfig
 from tests._helpers import script_log
 
 TINY = 'tiny-tcn'
@@ -660,16 +662,36 @@ def test_r1_r2_r4_grids_expand_to_their_planned_cells():
     seeds = expand_grid(GRIDS['q1_r1_seeds'])
     assert len(seeds) == 2 * 2 * 2 * 2
     assert {len(c.wavelengths_um) for c in seeds} == {1, 3}
-    # R2: one color repeated N times, offsets 2 pi k / N, one shared phase.
+    # R1 pairs: the two rig pairs q1_r1_count's N = 2 cell leaves out.
+    pairs = expand_grid(GRIDS['q1_r1_pairs'])
+    assert len(pairs) == 2 * 2 * 2
+    assert {c.wavelengths_um for c in pairs} == {(0.635, 0.515), (0.6748, 0.515)}
+    # R2: one color repeated N times; quadrature at N = 2, three-phase at N = 3.
     for name, n in (('q1_r2_colors', 2), ('q1_r2_colors_n3', 3)):
         cells = expand_grid(GRIDS[name])
         assert len(cells) == 2 * 2
         for c in cells:
             assert c.wavelengths_um == (0.635,) * n
             assert c.sim.channel_phase_offsets_rad == pytest.approx(
-                tuple(2 * math.pi * k / n for k in range(n))
+                (0.0, math.pi / 2)
+                if n == 2
+                else (0.0, 2 * math.pi / 3, 4 * math.pi / 3)
             )
-    # R4: 3 families x (8 knobs at their nominal value + the nominal point).
+    # R4: 3 families x (7 knobs at nominal + 2 stressed rungs + nominal point).
     noise = expand_grid(GRIDS['q2_r4_noise'])
-    assert len(noise) == 3 * 9
+    assert len(noise) == 3 * 10
     assert all(c.family_config in MODEL_CONFIGS for c in noise)
+
+
+def test_q2_r4_noise_runs_each_knob_at_its_nominal_value():
+    grid = GRIDS['q2_r4_noise']
+    nominal = SimConfig.nominal(
+        STEMLAB_125_14, grid.channel_subsets[0], feedback_c=0.2, alpha=3.0
+    )
+    swept = {s.sweep[0]: s.sweep[1] for s in grid.sims if s.sweep is not None}
+    # The ladder's ADC rung fixes its own full scale; 14 bits is the board's.
+    assert swept.pop('adc_bits') == (nominal.adc_bits,) == (14,)
+    stressed_values = {'phase_drift_rad_per_sqrt_s': 116.0723093699996, 'snr_db': 20.0}
+    for field, values in swept.items():
+        stressed = (stressed_values[field],) if field in stressed_values else ()
+        assert values == (getattr(nominal, field), *stressed), field
