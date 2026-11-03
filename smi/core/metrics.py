@@ -173,16 +173,33 @@ def summarize_per_shot(values: np.ndarray) -> dict[str, float]:
 
 
 def band_coverage(draws: torch.Tensor, truth: torch.Tensor, level: float) -> float:
-    """Fraction of ``truth`` inside the central ``level`` band of ``draws``.
+    """Expected share of ``truth`` inside the central ``level`` band of ``draws``.
+
+    Rank-based, so a calibrated sampler reads ``level`` in expectation at any
+    ``S``. The rank ``r`` = #{draws < truth} of a truth exchangeable with ``S``
+    draws is uniform on the ``S + 1`` slots ``0..S``. Each tail excludes
+    ``m = (1 - level) (S + 1) / 2`` slots: with ``k = floor(m)``, slots
+    ``r < k`` and ``r > S - k`` count 0, the two boundary slots ``k`` and
+    ``S - k`` count ``1 - (m - k)``, the rest count 1. The expectation is
+    ``(S + 1 - 2 m) / (S + 1) = level`` exactly. Interpolated sample
+    quantiles instead cover ~``(S - 1) level / (S + 1)``: 0.872 at S = 64.
 
     Args:
         draws: ``[S, ...]`` samples of the predictive distribution.
         truth: ``[...]``, the realized values.
-        level: Band probability, e.g. 0.9 for the 5-95% quantiles.
+        level: Band probability, e.g. 0.9; needs ``2 m < S`` so the two
+            boundary slots are distinct.
     """
-    tail = (1 - level) / 2
-    q = torch.quantile(draws, torch.tensor([tail, 1 - tail], dtype=draws.dtype), dim=0)
-    return float(((truth >= q[0]) & (truth <= q[1])).double().mean())
+    s = draws.shape[0]
+    m = (1 - level) * (s + 1) / 2
+    k = math.floor(m)
+    if not 0 <= k < s - k:
+        raise ValueError(f'level {level} leaves no band at {s} draws')
+    rank = (draws < truth).sum(dim=0)
+    weight = torch.ones(rank.shape, dtype=torch.float32)
+    weight[(rank < k) | (rank > s - k)] = 0.0
+    weight[(rank == k) | (rank == s - k)] = 1 - (m - k)
+    return float(weight.mean())
 
 
 def crps_samples(draws: torch.Tensor, truth: torch.Tensor) -> torch.Tensor:

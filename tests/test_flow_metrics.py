@@ -18,6 +18,34 @@ def test_band_coverage_of_calibrated_draws():
     assert abs(band_coverage(draws, truth, 0.9) - 0.9) < 0.01
 
 
+def test_band_coverage_is_nominal_at_64_draws():
+    """64 calibrated draws read 0.9, as the ensemble's analytic band does.
+
+    Interpolated sample quantiles read ~0.873 here. 20000 truths put the MC
+    error near 0.002 for both.
+    """
+    g = torch.Generator().manual_seed(5)
+    n = 20000
+    draws = torch.randn(64, n, generator=g)
+    truth = torch.randn(n, generator=g)
+    mc = 3 * math.sqrt(0.9 * 0.1 / n)
+    assert abs(band_coverage(draws, truth, 0.9) - 0.9) < mc
+    # flow_eval.ensemble_scores' band with the true mean and std.
+    z = torch.distributions.Normal(0.0, 1.0).icdf(torch.tensor(0.95))
+    analytic = float((truth.abs() <= z).float().mean())
+    assert abs(analytic - 0.9) < mc
+    assert abs(band_coverage(draws, truth, 0.9) - analytic) < 2 * mc
+
+
+def test_band_coverage_slot_weights():
+    """S = 3, level 0.5: m = 1 slot per tail, so ranks 1 and 2 count 1."""
+    draws = torch.tensor([1.0, 2.0, 3.0])[:, None].expand(3, 4)
+    truth = torch.tensor([0.5, 1.5, 2.5, 3.5])
+    assert band_coverage(draws, truth, 0.5) == 0.5
+    # level 0.75: m = 0.5, so the boundary slots 0 and 3 count 1/2.
+    assert band_coverage(draws, truth, 0.75) == 0.75
+
+
 def test_band_coverage_of_overconfident_draws():
     """Draws at std 0.5 for N(0, 1) truth: P(|Z| < 1.645 * 0.5) = 0.589."""
     g = torch.Generator().manual_seed(1)
