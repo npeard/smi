@@ -93,11 +93,16 @@ real data before reading them. Questions without results carry a one-line
 status in place. The answers so far:
 
 #takeaway[
-  + *Q1.1, channel count: a second wavelength helps only without noise.*
-    Noise-free it cuts the error #val("q1_gain_tcn") to #val("q1_gain_tcan")
-    times below the best single channel, and on Michelson one channel alone
-    recovers nothing. At the nominal point the gain is at most
-    #val("q1_s4_gain_max_pct")% (@fig-q1-subsets).
+  + *Q1.1, channel count: for TCAN each added color helps, noise-free and at
+    the nominal point.* Noise-free its error at six colors is
+    #val("r1_tcan_nf_n6") times its 635 nm error, against a bound ratio of
+    #val("r1_bound_n6"); at the nominal point it is #val("r1_tcan_nom_n6")
+    times (@fig-q1-count). The offline UNetTransformer gains nothing that its
+    seed spread resolves.
+  + *Q1.2, colors against a one-color array: quadrature wins only without
+    noise.* Noise-free a 635 nm array with quadrature offsets scores
+    #val("r2_nf_ratio_lo") to #val("r2_nf_ratio_hi") times below the same
+    number of distinct colors; at the nominal point the two are level.
   + *Q2.1, accuracy floor: only with feedback does the architecture matter.*
     There TCAN is best on velocity, #val("q2_tcan_gain") times below the TCN
     in one seed, while the LSTMs and the offline neural operator do not
@@ -833,7 +838,102 @@ to seed.
 
 === Synthetic
 
-_Status: the R1 channel-count grid is running; the text below predates it._
+#assert(val("r1_tcan_nf_tracks"), message: "noise-free TCAN no longer follows the CRB ratio within 25% at N >= 3")
+#assert(val("r1_tcan_nf_n2_beats"), message: "noise-free TCAN's N = 2 ratio no longer beats the CRB ratio by 15%")
+#assert(val("r1_tcan_nom_monotone"), message: "nominal TCAN no longer falls at every added channel")
+#assert(val("r1_unet_nf_spread_big"), message: "UNetTransformer's noise-free N = 3 seed range is no longer above 30%")
+#assert(val("r1_unet_nom_flat"), message: "UNetTransformer's nominal error now varies by more than 25% over N")
+
+Noise-free, TCAN's error falls with channel count about as the bound does,
+and at the nominal point it keeps falling up to six colors; the offline
+UNetTransformer shows no gain that its seeds resolve (@fig-q1-count,
+@tab-q1-r1). The R1 grid trains the best causal and the best offline family
+of @sec-q2-floor, TCAN and UNetTransformer, on the first $N$ colors of
+@tab-q1-count, at $C = 0.2$, $alpha = 3$, both noise-free and at the nominal
+point. Each cell has one seed; $N = 1$ and $N = 3$ have three. All test sets
+share one motion draw, on which predicting zero scores #val("r1_zero").
+
+Noise-free, TCAN's six-color error is #val("r1_tcan_nf_n6") times its 635 nm
+error, and the bound ratio is #val("r1_bound_n6"). From $N = 3$ on, the
+cumulative ratio stays within 25% of the bound's. Step by step the match is
+looser (@tab-q1-r1). The 785 and 405 nm steps match the bound's
+(#val("r1_table").at(3).tcan_nf_step% against #val("r1_table").at(3).bstep%,
+#val("r1_table").at(5).tcan_nf_step% against #val("r1_table").at(5).bstep%).
+The 850 nm step, #val("r1_table").at(4).tcan_nf_step% against
+#val("r1_table").at(4).bstep%, is about the #val("r1_tcan_nf_spread3")% seed
+range at $N = 3$. The first two steps depart in opposite directions. Adding
+674.8 nm brings the error to #val("r1_tcan_nf_n2") times the single-channel
+value, where the bound ratio is only #val("r1_bound_n2"), and adding 515 nm
+then gains #val("r1_table").at(2).tcan_nf_step% against the bound's
+#val("r1_table").at(2).bstep%. A ratio of bounds does not cap a ratio of
+errors: a single-channel model sitting further above its own bound than the
+pair does would give this pattern. These runs cannot say whether it does.
+
+At the nominal point TCAN's error falls with every added color. Three colors
+bring it #val("r1_tcan_nom_gain_n3") times below 635 nm alone, with seed ranges
+of #val("r1_tcan_nom_spread1")% at $N = 1$ and #val("r1_tcan_nom_spread3")% at
+$N = 3$. Going from three to six colors cuts another
+#val("r1_tcan_nom_cut_36")%. The six-color ratio, #val("r1_tcan_nom_n6"), stays
+above the bound's #val("r1_bound_n6"). The bound leaves out phase drift, the
+knob that dominates the nominal error (@sec-q2-noise), and that omission would
+produce such a gap, but nothing here tests it.
+
+UNetTransformer's curve cannot be ranked. Noise-free, its seeds span
+#val("r1_unet_nf_spread1")% at $N = 1$ and #val("r1_unet_nf_spread3")% at
+$N = 3$, more than any step. At the nominal point every $N$ scores between
+#val("r1_unet_nom_oz_lo") and #val("r1_unet_nom_oz_hi") of the zero predictor,
+level to within that spread. The offline model has learned at the nominal
+point, but extra colors buy it nothing.
+
+At this resolution, which pair makes $N = 2$ does not matter. Noise-free,
+TCAN's three pairs score #val("r1_pairs_tcan_nf").join(", ") (635 + 674.8,
+635 + 515, 674.8 + 515 nm), a #val("r1_pairs_tcan_nf_spread")% spread against
+a per-cell shot SE of at most #val("r1_pairs_tcan_nf_se"). At the nominal point
+they score #val("r1_pairs_tcan_nom").join(", "), with a
+#val("r1_pairs_tcan_nom_spread")% spread and a shot SE of
+#val("r1_pairs_tcan_nom_se"). The two pairs containing 515 nm come out lowest,
+the direction the $lambda^(-2)$ weighting of @eq-fisher favours, but the gaps
+are not resolved. The shot SE is IQR $\/ 1.349 \/ sqrt(n)$ over the $n$
+test shots, because the records keep quartiles, not per-shot errors.
+
+#fig(
+  "q1_count",
+  caption: [
+    Noise-free, TCAN's error falls about as the velocity bound does as colors
+    are added; at the nominal point it falls more slowly, and UNetTransformer
+    does not resolve a gain at either point. Test velocity RMSE against the
+    number $N$ of colors, $C = 0.2$, $alpha = 3$: (a) noise-free, (b) the
+    nominal point. Lines: seed means; dots: seeds 0 to 2 at $N = 1, 3$;
+    open markers: the other two-color pairs; stars: 635 nm arrays with
+    quadrature offsets (@sec-q1-colors). Dotted: the bound ratio of
+    @tab-q1-count, scaled to TCAN at $N = 1$.
+  ],
+) <fig-q1-count>
+
+#figure(
+  table(
+    columns: 9,
+    align: (center, center, right, right, right, right, right, right, right),
+    table.header(
+      [$N$], [$lambda$ (nm)], [bound], [step (%)],
+      [TCAN nf], [step (%)], [TCAN nom], [step (%)], [UNetT nf],
+    ),
+    ..val("r1_table").map(r => (
+      [#r.n], [#r.lam], [#r.bound], [#r.bstep], [#r.tcan_nf], [#r.tcan_nf_step],
+      [#r.tcan_nom], [#r.tcan_nom_step], [#r.unet_nf],
+    )).flatten(),
+  ),
+  caption: [
+    From $N = 3$ on, TCAN's noise-free error ratio stays within 25% of the
+    bound ratio, though single steps do not. Test velocity RMSE (um/ms), seed
+    mean where seeds exist; nf: noise-free; nom: the nominal point; step:
+    change from $N - 1$. Bound: the CRB ratio of @tab-q1-count, with its
+    step.
+  ],
+) <tab-q1-r1>
+
+The subset grid below came before R1 and compares against the best single
+channel, 515 nm, rather than 635 nm.
 
 #assert(val("q1_multi_beats_single"), message: "a multi-channel set no longer beats the best single channel at C = 0.2 by more than the seed range")
 #assert(val("q1_515_best"), message: "515 nm is no longer the best single channel at C = 0.2 for both families")
@@ -914,10 +1014,11 @@ estimator seeing a window interpolates across an extremum, as the prior does
 in the bounds of @sec-crb. The growth with speed runs against the
 turning-point clause of the prediction.
 
-At the nominal point the error is set by phase drift more than by channel
-count. The gain left at
-30 dB is several times the nominal seed range and comes from pairing 515 nm
-with another channel (#ref(<fig-q1-subsets>)b). The classical oracle decodes under the Michelson model and scores worse than zero
+Measured against 515 nm alone, the TCN's gain at the nominal point is
+small. What is left at 30 dB is several times the nominal seed range and
+comes from pairing 515 nm with another channel (#ref(<fig-q1-subsets>)b). The
+larger nominal gain of @fig-q1-count is measured against 635 nm, the weakest
+of the three in the $lambda^(-2)$ order. The classical oracle decodes under the Michelson model and scores worse than zero
 at the nominal point, so it is not a reference there.
 
 These runs are one seed each at the 30-epoch budget, ranked against a seed
@@ -936,6 +1037,13 @@ confirm nor falsify. Prediction 6 expects the real ratio nearer the
 noise-free end the further prediction 3 places the rig from nominal. On
 another rig, @matha2023multichannel found its best single channel ahead of
 all three, so a ratio below 1 is a live outcome.
+
+R1 adds a prediction against 635 nm alone, on the rig's three colors. TCAN's
+three-channel error should be between #val("r1_table").at(2).tcan_nf_ratio
+(noise-free) and #val("r1_table").at(2).tcan_nom_ratio (nominal) of its 635 nm
+error. It is falsified if the ratio is above 1 minus the
+#val("r1_tcan_nom_spread3")% nominal seed range at $N = 3$, that is, if the
+real data resolve no three-channel gain over 635 nm.
 
 Predictions 5 and 7 rest on thinner evidence. 515 nm leads in the
 $lambda_k^(-2)$ order of @eq-fisher and in every synthetic cell, but its
@@ -994,7 +1102,53 @@ offset error.
 
 === Synthetic
 
-_Status: the R2 colors-against-array grid is running._
+#assert(val("r2_nf_array_wins"), message: "noise-free, the quadrature array no longer beats distinct colors by 5 times")
+#assert(val("r2_nom_parity"), message: "at the nominal point the array and the colors now differ by more than two combined shot SEs")
+#assert(val("r2_zero_shared"), message: "the R2 arms no longer share one motion draw")
+
+Noise-free, the one-color quadrature array beats distinct colors by
+#val("r2_nf_ratio_lo") to #val("r2_nf_ratio_hi") times, while at the nominal
+point the two are level (@tab-q1-r2, stars in @fig-q1-count). The R2 grids
+train the R1 families on $N$ copies of 635 nm that share one mirror phase,
+with known offsets $0, pi \/ 2$ ($N = 2$) or $2 pi k \/ 3$ ($N = 3$). The
+color arm is R1's cells at the same $N$. Every arm has its own frozen test
+set, because channel set and offsets differ between arms. All of those sets
+score the same under the zero predictor, so they share the motion draw but
+not the noise or the phases.
+
+The analytic tier predicted part of this. Local precision barely separates
+the arms, and for $N = 3$ it gives the colors #val("ch_colors_vs_array_n3_pct")%
+(@tab-q1-colors); the sign evidence favours the array strongly at low $C$.
+The noise-free gap is larger than local precision allows, an array error near
+#val("r2_table").at(0).tcan_arr um/ms against #val("r2_table").at(0).tcan_col
+for TCAN at $N = 2$. That makes local precision the wrong predictor here. We
+have not tested whether the sign evidence or the shared phase, which leaves
+one unknown phase where the colors have $N$, carries the gain. At the nominal
+point the array and the colors differ by less than two combined shot SEs in
+all four comparisons (#val("r2_nom_ratio_lo") to #val("r2_nom_ratio_hi")),
+so the nominal knobs wipe out the array's advantage. Which knob does it is
+also untested.
+
+#figure(
+  table(
+    columns: 8,
+    align: (center, left, right, right, right, right, right, right),
+    table.header(
+      [$N$], [sim], [TCAN array], [TCAN colors], [ratio], [UNetT array],
+      [UNetT colors], [ratio],
+    ),
+    ..val("r2_table").map(r => (
+      [#r.n], [#r.sim], [#r.tcan_arr], [#r.tcan_col], [#r.tcan_ratio],
+      [#r.unet_arr], [#r.unet_col], [#r.unet_ratio],
+    )).flatten(),
+  ),
+  caption: [
+    Noise-free the quadrature array is an order of magnitude ahead; at the
+    nominal point it is level with the colors. Test velocity RMSE (um/ms),
+    seed 0, $C = 0.2$, $alpha = 3$; ratio: colors over array. Each arm has
+    its own test set, with the same motion draw in all of them.
+  ],
+) <tab-q1-r2>
 
 === Real data
 
@@ -1005,6 +1159,9 @@ where the three colors do not, and its local precision differs from the colors' 
 #val("ch_colors_vs_array_n3_pct")% of @tab-q1-colors. It is
 falsified if the array's sign error at that feedback is no lower than the
 colors', or if collapsing its offsets to zero leaves its sign error unchanged.
+In simulation the array's advantage appears only noise-free (@tab-q1-r2), so
+a rig near the nominal point should show the two arms level in velocity
+RMSE. The sign test is then the only informative one.
 
 = Q2: which estimator <sec-q2> // math-ok: question label
 
@@ -1396,7 +1553,7 @@ SNR second, since the step from noise-free to 30 dB takes the information from
 unbounded to finite. Visibility third, at #val("an_vis_ratio") times on the
 bound. Amplitude drift, contrast drift and DC offset last: they rescale or
 offset the fringe without a confounded phase. That last placement is argued,
-not computed. The comparison with the noise ladder waits for R4.
+not computed. The R4 grid below tests the ranking.
 
 === Synthetic
 
@@ -1445,6 +1602,69 @@ a hardware fix asks about, because the knobs need not add.
   ],
 ) <fig-loo>
 
+#assert(val("r4_phase_first"), message: "phase drift is no longer the costliest single knob for all three R4 networks")
+#assert(val("r4_vis_over_snr"), message: "the families ranking visibility above white noise are no longer TCAN, PatchTransformer and LightGBM")
+#assert(val("r4_unet_third_named"), message: "UNetTransformer's third-cycle R4 rows are no longer visibility and DC offset")
+
+Three more families agree that phase drift is the costliest knob. The rest of
+the predicted order does not hold: visibility costs more than white noise for
+TCAN and PatchTransformer, the reverse of the prediction, which the
+ladder's TCN keeps (@tab-q2-r4). R4
+switches each knob on alone at its nominal value from the noise-free base,
+for TCAN, UNetTransformer and PatchTransformer (offline), the best three
+noise-free families of @sec-q2-floor, plus LightGBM, at one seed each. Phase
+drift and white noise also get one stressed rung each, and there is one cell
+at the nominal point. On the single-knob rows other than drift, the per-cell
+shot SE is at most #val("r4_knob_se_max").
+
+Drift alone raises the error over the cheapest knob, the ADC, by
+#val("r4_tcan_phase_cost") times for TCAN, #val("r4_unet_phase_cost") times
+for UNetTransformer and #val("r4_patch_phase_cost") times for
+PatchTransformer. For TCAN, visibility over white noise is
+#val("r4_table").at(2).at("tcan-44k") against
+#val("r4_table").at(1).at("tcan-44k") um/ms, several shot SEs apart and
+beyond the #val("r1_tcan_nf_spread3")% noise-free seed range of R1.
+UNetTransformer does rank white noise above visibility, but its visibility
+and DC-offset rows trained into a third cycle, so their low errors partly
+reflect training length. The analytic ranking put visibility third from a
+#val("an_vis_ratio") times rise in the bound, under the
+#val("an_snr_10db_ratio") times of 10 dB less SNR. That the networks invert
+it means at least one of the bounds' white-noise and visibility terms
+misstates what a trained network pays. The data do not say which.
+
+The stressed rungs show where the families give way. At 3.3 times the
+nominal drift, TCAN scores #val("r4_tcan_phase_stress_oz") of the zero
+predictor, while UNetTransformer and PatchTransformer reach
+#val("r4_unet_phase_stress_oz") and #val("r4_patch_phase_stress_oz"), near the
+point where they learn nothing. At 20 dB white noise each network stays
+well inside its error at nominal drift. LightGBM scores between
+#val("r4_lgbm_oz_lo") and #val("r4_lgbm_oz_hi") of the zero predictor on
+every single-knob row and #val("r4_lgbm_nominal_oz") at the nominal point. It
+learns little anywhere, so its ranking, with #val("r4_lgbm_first") first,
+carries no information about the knobs. At the nominal point TCAN is best
+at #val("r4_tcan_nominal"), against #val("r4_patch_nominal") for
+PatchTransformer and #val("r4_unet_nominal") for UNetTransformer.
+
+#figure(
+  table(
+    columns: 6,
+    align: (left, right, right, right, right, right),
+    table.header([knob at nominal], [TCN], [TCAN], [UNetT], [PatchT], [LightGBM]),
+    ..val("r4_table").map(r => (
+      [#r.knob], [#r.tcn], [#r.at("tcan-44k")],
+      [#r.at("unettransformer-offline-44k")],
+      [#r.at("patchtransformer-offline-44k")], [#r.at("lightgbm-w91")],
+    )).flatten(),
+  ),
+  caption: [
+    Phase drift costs the most for every neural network; visibility outranks
+    white noise for TCAN and PatchTransformer. Test velocity RMSE (um/ms) with one
+    knob at its nominal value and the rest noise-free, then the two stressed
+    rungs and the nominal point, $C = 0.2$, $alpha = 3$, one seed. TCN: the
+    noise ladder's nominal-value cell (@fig-noise), at the 30-epoch budget.
+  ],
+) <tab-q2-r4>
+
 The simulation draws phase drift independently per laser, as frequency drift
 of each laser would. A path-length drift shared by all channels would read as
 displacement and is not simulated. So the lever these runs support is
@@ -1483,6 +1703,11 @@ clause and drops out of the falsifier, and with all three None the
 prediction is unscored. Drift is not a clause, because @sec-q2-noise takes
 its nominal as a lower bound on the true rate. If prediction 3 fails, the
 motion prior or a noise source the simulator lacks carries the gap.
+
+R4 widens prediction 4 from the TCN to every network in @tab-q2-r4: on the
+rig, phase drift should cost more than any other knob, whatever the
+architecture. Visibility versus white noise is not predicted, because the
+families disagree on it.
 
 Prediction 4 needs a per-laser phase monitor or a more stable acquisition,
 neither of which exists, so it is directional only. The
@@ -2572,7 +2797,73 @@ ramp-rate path drift. The model assumes the reciprocity and mode coupling of
 
 === Synthetic
 
-_Status: the q3_fiber grid is queued; no cell has run._
+#assert(val("r7_all_near_zero"), message: "a fiber arm now scores below 0.9 of the zero predictor")
+#assert(val("r7_zero_shared"), message: "the q3_fiber arms no longer share one motion draw")
+#assert(val("r7_unet_none_converged"), message: "a UNetTransformer fiber arm now converges")
+#assert(val("r7_tcan_all_converged"), message: "a TCAN fiber arm no longer converges")
+
+At this operating point no network learns through the fiber in any arm, so
+the monitor benefit the analytic tier predicts does not show up (@fig-q3-fiber,
+@tab-q3-fiber). The q3_fiber grid trains TCAN and UNetTransformer (offline)
+on five arms at the nominal point, $C = 0.2$, $alpha = 3$, one seed: free
+space; the fiber alone; the fiber with a 785 nm monitor at the distal
+dichroic; a control that sends the same 785 nm color to the target as a
+fourth channel; and the fiber with a $P_perp$ channel per color (@sec-q3-polarization).
+The fiber has $N = 8$ modes, no dispersion and the path and speckle drifts
+of @sec-fiber-model. All arms draw the same motion shot for shot, and the
+zero predictor scores #val("r7_zero") on every one.
+
+The fiber costs TCAN #val("r7_tcan_cost") um/ms over free space, against a
+combined shot SE of #val("r7_tcan_cost_se"). That combination treats the two
+cells as independent, so it bounds the paired SE from above. Every fiber arm
+of either family then scores between #val("r7_fiber_oz_lo") and
+#val("r7_fiber_oz_hi") of the zero predictor. The differences between arms
+are therefore not rankings. The monitor arm minus the four-color control is
+#val("r7_tcan_monitor") $plus.minus$ #val("r7_tcan_monitor_se"), and the
+control minus the fiber alone #val("r7_tcan_fourth") $plus.minus$
+#val("r7_tcan_fourth_se"). The analytic tier predicts the monitor restores
+about #val("fb_mon1") of the free-space information; none of it is realized.
+
+Three causes are candidates, and none has been tested. First, training may
+fail at this operating point. UNetTransformer converged in no fiber arm, and
+it stopped after #val("r7_table").at(1).unet_ep epochs in each. TCAN converged in every arm, at the zero
+predictor. Second, fading. The mean coupling $|kappa|^2$ is
+#val("fb_k2_n8") at $N = 8$ (@sec-q3-polarization), which lowers the effective
+feedback and visibility, and the fading-free bound behind
+@eq-monitor-fraction ignores it. Third, the degeneracy itself. The path drift
+confounds $d$ sample by sample, and a network may not learn the monitor
+subtraction that @eq-monitor-fraction assumes. Among the other R-grid
+cells, only UNetTransformer and PatchTransformer at the stressed drift rung
+and LightGBM throughout come near the zero predictor (@sec-q2-noise); every
+R1 cell scores at most #val("r1_unet_nom_oz_hi") of it.
+
+#fig(
+  "q3_fiber",
+  width: 70%,
+  caption: [
+    Through the fiber no arm learns: every fiber cell sits at the zero
+    predictor, with or without the monitor or $P_perp$. Test velocity RMSE
+    of each q3_fiber arm, seed 0, the nominal point; bars: per-cell shot SE;
+    hollow: not converged; grey: the zero predictor, shared by all arms.
+  ],
+) <fig-q3-fiber>
+
+#figure(
+  table(
+    columns: 7,
+    align: (left, right, right, right, right, right, right),
+    table.header([arm], [TCAN], [over zero], [epochs], [UNetT], [over zero], [converged]),
+    ..val("r7_table").map(r => (
+      [#r.arm], [#r.tcan], [#r.tcan_oz], [#r.tcan_ep], [#r.unet], [#r.unet_oz],
+      [#r.unet_conv],
+    )).flatten(),
+  ),
+  caption: [
+    Every fiber arm scores at the zero predictor. Test velocity RMSE (um/ms),
+    its ratio to the zero predictor, TCAN's epochs, and whether
+    UNetTransformer converged (TCAN converged in every arm).
+  ],
+) <tab-q3-fiber>
 
 === Real data
 
@@ -2580,7 +2871,9 @@ _Status: not run; needs new hardware, a distal dichroic and a monitor laser._
 The committed prediction: through fiber, adding the monitor color lowers a
 trained estimator's velocity error, toward but not below the free-space error
 scaled by @eq-monitor-fraction. It is falsified if adding the monitor leaves the
-fiber error unchanged at matched training.
+fiber error unchanged at matched training. This prediction now rests on the analytic tier
+alone, because in simulation no arm learns through the fiber
+(@sec-q3-monitor).
 
 == Q3.2: the orthogonal-polarization channel <sec-q3-polarization> // math-ok: question label
 
@@ -2605,7 +2898,14 @@ and its share of the fade variance falls as $1 \/ N$.
 
 === Synthetic
 
-_Status: the q3_fiber grid is queued; no cell has run._
+The $P_perp$ arm shows no effect, because no fiber arm learns
+(@sec-q3-monitor). Against the fiber alone, TCAN's $P_perp$ arm scores
+#val("r7_tcan_pbs") $plus.minus$ #val("r7_tcan_pbs_se") um/ms
+(@tab-q3-fiber), while UNetTransformer did not converge in either. The
+analytic prediction, $R^2 = #val("fb_r2_n8")$ of the fade variance at
+$N = 8$, is a property of the input, and its value to a network can be
+measured only once a network learns through the fiber. The arm tests
+nothing until then.
 
 === Real data
 
