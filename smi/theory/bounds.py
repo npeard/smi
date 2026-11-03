@@ -27,6 +27,7 @@ import torch
 from smi.core.acquisition import AcquisitionConfig
 from smi.theory.forward import (
     SimConfig,
+    channel_phases,
     drive,
     fringe,
     noise_std,
@@ -139,12 +140,62 @@ def ideal_shots(cfg: SimConfig, n_shots: int, seed: int) -> IdealShots:
         n_shots, waveform, coil, cfg.drive_gain, cfg.sample_rate, _CPU, gen
     )
     k = len(cfg.wavelengths_um)
-    phase = 2 * math.pi * torch.rand(n_shots, k, 1, generator=gen, dtype=_F64)
+    phase = channel_phases(cfg.channel_phase_offsets_rad, (n_shots, k), _CPU, _F64, gen)
     lo, hi = cfg.visibility_range
     vis = lo + (hi - lo) * torch.rand(n_shots, k, generator=gen, dtype=_F64)
     lam = torch.tensor(cfg.wavelengths_um, dtype=_F64).view(1, -1, 1)
     d = displacement.to(_F64)
     return IdealShots(d, velocity.to(_F64), 4 * math.pi * d[:, None] / lam + phase, vis)
+
+
+def fisher_matrix(cfg: SimConfig, n_shots: int, seed: int) -> np.ndarray:
+    """Mean per-sample Fisher matrix of (velocity, phases), from ``ideal_shots``."""
+    return fisher_from_shots(cfg, ideal_shots(cfg, n_shots, seed))
+
+
+def fisher_from_shots(cfg: SimConfig, shots: IdealShots) -> np.ndarray:
+    """Mean per-sample Fisher matrix of (v, phase nuisances) on given shots.
+
+    Model: channel k, sample n reads ``V_k F(theta_kn) + N(0, sigma^2)`` with
+    theta_kn = 4 pi (d_n + v t_n) / lambda_k + phase_k, where v is a velocity
+    offset (um/ms) entering as a displacement ramp over the shot, t_n in ms
+    centred on the shot middle. Gaussian-likelihood Fisher: sum over (k, n) of
+    g g^T / sigma^2, averaged over the L samples and the shots (unit amplitude),
+    with g_v = V_k F'_kn 4 pi t_n / lambda_k (F' = ``fringe_slope``).
+
+    The nuisances follow ``cfg.channel_phase_offsets_rad``:
+    - None (independent paths): one unknown phi_k per channel, matrix
+      [K+1, K+1], g_phi_k = V_k F'_kn on channel k only. J is then
+      block-arrowhead, so the profiled velocity information
+      J_vv - J_vp J_pp^-1 J_pv is exactly the sum of per-channel profiled
+      information (R1).
+    - Set (shared target): one unknown phi_0, offsets known, matrix [2, 2],
+      g_phi0 = V_k F'_kn on every channel. The offsets now matter: they
+      change where each channel's fringe slope vanishes and how the
+      channels' phi_0 information correlates with v (R2).
+    The velocity entry scales as T^2 with shot length T, so compare at fixed
+    length. Local (CRB) only: global sign and fringe-order ambiguities are
+    ``sign_information``'s.
+    """
+    sigma = _check_noise(cfg)
+    n_shots, n_ch, length = shots.theta.shape
+    t_ms = (torch.arange(length, dtype=_F64) - (length - 1) / 2) * (
+        1e3 / cfg.sample_rate
+    )
+    lam = torch.tensor(cfg.wavelengths_um, dtype=_F64).view(1, -1, 1)
+    slope = shots.visibility[..., None] * fringe_slope(
+        shots.theta, cfg.feedback_c, cfg.alpha
+    )
+    if cfg.channel_phase_offsets_rad is None:
+        phase_jac = torch.eye(n_ch, dtype=_F64)[None, :, None]
+    else:
+        phase_jac = torch.ones(1, n_ch, 1, 1, dtype=_F64)
+    grads = torch.cat(
+        [(slope * (4 * math.pi / lam) * t_ms)[..., None], slope[..., None] * phase_jac],
+        -1,
+    )
+    flat = grads.reshape(-1, grads.shape[-1])
+    return (flat.T @ flat).numpy() / (n_shots * length * sigma**2)
 
 
 def _mirror_mismatch(
@@ -199,32 +250,68 @@ def sign_information(cfg: SimConfig, n_shots: int, seed: int) -> float:
     per-channel warps differ (they depend on each channel's phi_F and
     lambda), so no common trajectory mirrors all channels: the evidence is
     real but smaller than this fixed-trajectory value.
+
+    With ``channel_phase_offsets_rad`` set the channels share one phase, so
+    the mirror fits ONE phi' with the offsets known. Then even C = 0 carries
+    sign evidence when the offsets differ: cos(-x + phi' + o_k) matches
+    cos(x + phi_0 + o_k) only if phi' = -phi_0 - 2 o_k for every k at once
+    (quadrature detection); equal offsets reduce to the Michelson zero.
     """
     sigma = _check_noise(cfg)
     shots = ideal_shots(cfg, n_shots, seed)
     c, alpha = cfg.feedback_c, cfg.alpha
-    grid = torch.arange(_SIGN_PHASE_GRID, dtype=_F64) * (2 * math.pi / _SIGN_PHASE_GRID)
+    n_ch = len(cfg.wavelengths_um)
+    lam = torch.tensor(cfg.wavelengths_um, dtype=_F64).view(1, -1, 1)
+    target = shots.visibility[..., None] * fringe(shots.theta, c, alpha)
+    mirror = -4 * math.pi * shots.displacement[:, None] / lam
+    offsets = cfg.channel_phase_offsets_rad
+    if offsets is None:
+        # Independent paths: each channel's mirror phase is fitted on its own.
+        groups = [[k] for k in range(n_ch)]
+        known = torch.zeros(n_ch, dtype=_F64)
+    else:
+        # Shared target: one mirror phase for all channels, offsets known.
+        groups = [list(range(n_ch))]
+        known = torch.tensor(offsets, dtype=_F64)
     total = 0.0
     for b in range(n_shots):
-        for k, lam in enumerate(cfg.wavelengths_um):
-            target = shots.visibility[b, k] * fringe(shots.theta[b, k], c, alpha)
-            mirror = -4 * math.pi * shots.displacement[b] / lam
-
-            coarse = _mirror_mismatch(target, mirror, grid, c, alpha)
-            best = float(grid[int(coarse.argmin())])
-            step = 2 * math.pi / _SIGN_PHASE_GRID
-            fine = scipy.optimize.minimize_scalar(
-                lambda p, t=target, m=mirror: float(
-                    _mirror_mismatch(t, m, p, c, alpha)[0]
-                ),
-                bounds=(best - step, best + step),
-                method='bounded',
-                options={'xatol': 1e-10},
+        for group in groups:
+            residual = _best_mirror(
+                [target[b, k] for k in group],
+                [mirror[b, k] + known[k] for k in group],
+                c,
+                alpha,
             )
-            total += max(min(float(fine.fun), float(coarse.min())), 0.0) / (
-                2 * sigma**2
-            )
+            total += residual / (2 * sigma**2)
     return total / n_shots
+
+
+def _best_mirror(
+    targets: list[torch.Tensor],
+    mirrors: list[torch.Tensor],
+    feedback_c: float,
+    alpha: float,
+) -> float:
+    """Least residual energy over one phase phi' shared by the channels given."""
+
+    def mismatch(phi: torch.Tensor | float) -> torch.Tensor:
+        parts = [
+            _mirror_mismatch(t, m, phi, feedback_c, alpha)
+            for t, m in zip(targets, mirrors, strict=True)
+        ]
+        return torch.stack(parts).sum(0)
+
+    grid = torch.arange(_SIGN_PHASE_GRID, dtype=_F64) * (2 * math.pi / _SIGN_PHASE_GRID)
+    coarse = mismatch(grid)
+    best = float(grid[int(coarse.argmin())])
+    step = 2 * math.pi / _SIGN_PHASE_GRID
+    fine = scipy.optimize.minimize_scalar(
+        lambda p: float(mismatch(p)[0]),
+        bounds=(best - step, best + step),
+        method='bounded',
+        options={'xatol': 1e-10},
+    )
+    return max(min(float(fine.fun), float(coarse.min())), 0.0)
 
 
 @dataclass

@@ -396,3 +396,40 @@ def test_simconfig_accepts_a_board_name_and_hash_guards_other_boards():
         other.hash()
     with pytest.raises(ValueError, match='STEMlab'):
         SimConfig.nominal(other.acquisition, WAVELENGTHS_UM, 0.2, 3.0)
+
+
+def test_phase_offsets_none_is_identity():
+    """None draws what it always did: unseeded-config shots are unchanged by
+    the field's existence, pinned against the independent-phase law.
+    """
+    cfg = _noise_free(0.2, 3.0)
+    assert cfg.channel_phase_offsets_rad is None
+    a = _simulate(cfg)
+    gen = torch.Generator().manual_seed(0)
+    forward.sample_trajectory(
+        BATCH,
+        *forward.drive(cfg.acquisition, cfg.start_freq_hz, cfg.end_freq_hz),
+        cfg.drive_gain,
+        cfg.sample_rate,
+        CPU,
+        gen,
+    )
+    phi = torch.rand(BATCH, len(cfg.wavelengths_um), 1, generator=gen)
+    lam = torch.tensor(cfg.wavelengths_um).view(1, -1, 1)
+    expected = 4 * math.pi * a.displacement[:, None] / lam + 2 * math.pi * phi
+    assert torch.equal(a.optical_phase, expected)
+
+
+def test_phase_offsets_shift_phase():
+    """Set offsets: channels share one phase, apart by exactly the offsets."""
+    cfg = dataclasses.replace(_noise_free(0.2, 3.0), wavelengths_um=(0.635,) * 3)
+    offsets = (0.0, 2 * math.pi / 3, 4 * math.pi / 3)
+    b = _simulate(dataclasses.replace(cfg, channel_phase_offsets_rad=offsets))
+    rel = b.optical_phase - b.optical_phase[:, :1]
+    expected = torch.tensor(offsets).view(1, -1, 1).expand_as(rel)
+    torch.testing.assert_close(rel, expected)
+
+
+def test_phase_offsets_length_checked():
+    with pytest.raises(ValueError, match='one offset per channel'):
+        dataclasses.replace(_noise_free(), channel_phase_offsets_rad=(0.0,))

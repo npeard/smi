@@ -211,6 +211,15 @@ class SimConfig:
         adc_bits: Quantizer bits; None is unquantized.
         adc_full_scale: Quantizer range [-full_scale, +full_scale) in signal
             units; out-of-range samples clip to the end codes.
+        channel_phase_offsets_rad: None (default): each channel draws its
+            own uniform phase, as physically distinct paths do. Set: the
+            channels share ONE uniform phase phi_0 per shot plus these known,
+            fixed offsets (rad, one per channel) -- a one-color array on a
+            common target, whose geometric offsets are known (R2). Offsets
+            on independent uniform phases would be statistically a no-op,
+            hence the shared phase. The only defaulted field, and left out of
+            ``hash()`` when None, so configs and recorded hashes written
+            before it existed stay valid.
     """
 
     acquisition: AcquisitionConfig
@@ -231,6 +240,7 @@ class SimConfig:
     pd_bandwidth_hz: float | None
     adc_bits: int | None
     adc_full_scale: float
+    channel_phase_offsets_rad: tuple[float, ...] | None = None
 
     def _coerce(self) -> None:
         # YAML gives lists and ints; the frozen config's hash must not depend on
@@ -251,6 +261,12 @@ class SimConfig:
             'adc_full_scale',
         ):
             object.__setattr__(self, name, float(getattr(self, name)))
+        if self.channel_phase_offsets_rad is not None:
+            object.__setattr__(
+                self,
+                'channel_phase_offsets_rad',
+                tuple(float(x) for x in self.channel_phase_offsets_rad),
+            )
         for name in ('snr_db', 'pd_bandwidth_hz'):
             if getattr(self, name) is not None:
                 object.__setattr__(self, name, float(getattr(self, name)))
@@ -262,6 +278,12 @@ class SimConfig:
         if not 0.0 <= lo <= hi <= 1.0:
             raise ValueError(
                 f'visibility_range must satisfy 0 <= lo <= hi <= 1: {lo, hi}'
+            )
+        offsets = self.channel_phase_offsets_rad
+        if offsets is not None and len(offsets) != len(self.wavelengths_um):
+            raise ValueError(
+                f'need one offset per channel: {len(offsets)} offsets for '
+                f'{len(self.wavelengths_um)} wavelengths'
             )
         dc_lo, dc_hi = self.dc_offset_range
         if dc_lo > dc_hi:
@@ -302,7 +324,12 @@ class SimConfig:
                 f'STEMLAB_125_14; include it in identity_fields and regenerate the '
                 f'recorded hashes before using {self.acquisition}'
             )
-        return {k: v for k, v in asdict(self).items() if k != 'acquisition'}
+        out = asdict(self)
+        del out['acquisition']
+        # Added after hashes were recorded; dropping the unset value keeps them.
+        if out['channel_phase_offsets_rad'] is None:
+            del out['channel_phase_offsets_rad']
+        return out
 
     def hash(self) -> str:
         """Stable sha1 of ``identity_fields`` (keys frozen test sets)."""
@@ -606,6 +633,29 @@ def drive(
     )
 
 
+def channel_phases(
+    offsets: tuple[float, ...] | None,
+    shape: tuple[int, int],
+    device: torch.device | str,
+    dtype: torch.dtype,
+    generator: torch.Generator | None,
+) -> torch.Tensor:
+    """Per-shot channel phases [B, C, 1] (rad), see ``channel_phase_offsets_rad``.
+
+    The None path draws exactly what it always did, so existing outputs are
+    bitwise unchanged; the shared path draws one phase per shot.
+    """
+    batch, n_ch = shape
+    if offsets is None:
+        draw = torch.rand(
+            batch, n_ch, 1, device=device, generator=generator, dtype=dtype
+        )
+        return 2 * math.pi * draw
+    draw = torch.rand(batch, 1, 1, device=device, generator=generator, dtype=dtype)
+    shift = torch.tensor(offsets, device=device, dtype=dtype).view(1, -1, 1)
+    return 2 * math.pi * draw + shift
+
+
 def simulate_batch(
     cfg: SimConfig,
     batch_size: int,
@@ -653,11 +703,17 @@ def simulate_batch(
     lam = _wavelengths_tensor(
         cfg.wavelengths_um, torch.device(sim_device), torch.get_default_dtype()
     )
-    phi_k = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
+    phi_k = channel_phases(
+        cfg.channel_phase_offsets_rad,
+        (batch_size, n_ch),
+        sim_device,
+        torch.get_default_dtype(),
+        generator,
+    )
     lo, hi = cfg.visibility_range
     u = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
     visibility = lo + (hi - lo) * u
-    phase = 4 * math.pi * displacement[:, None] / lam + 2 * math.pi * phi_k
+    phase = 4 * math.pi * displacement[:, None] / lam + phi_k
     if cfg.phase_drift_rad_per_sqrt_s > 0:
         sigma = cfg.phase_drift_rad_per_sqrt_s / math.sqrt(cfg.sample_rate)
         phase = phase + sigma * _walk(full, sim_device, generator)
