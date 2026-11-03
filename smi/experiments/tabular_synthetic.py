@@ -6,7 +6,10 @@ tabular models are fit on ``n_train_shots`` shots simulated from that sim with
 grid's own frozen test set (seed 1000), so their records carry the same
 metrics, on the same shots, through the same code as the networks'. Families
 are named ``ridge-w<window>`` and ``lightgbm-w<window>``; cell keys follow
-:func:`smi.experiments.runner.cell_key`, so a recorded cell is skipped.
+:func:`smi.experiments.runner.cell_key` on the sim's own channels. A cell
+is skipped when recorded under the same fingerprint (sim, test set and
+tabular settings, hashed by :func:`smi.experiments.runner.fingerprint_of`);
+recorded under another, it raises, as the runner does.
 
 The target is the signed velocity (um/ms), as the grids train their networks
 (``sign_invariant=False``); evaluate reports the sign-invariant variant beside
@@ -57,7 +60,15 @@ from smi.estimators.tabular import (
 from smi.experiments.evaluate import evaluate
 from smi.experiments.grids import grid
 from smi.experiments.results_artifact import RunRecord, append_results, read_results
-from smi.experiments.runner import build_sims, cell_key, runner_lock
+from smi.experiments.runner import (
+    BUDGET_FIELDS,
+    build_sims,
+    cell_key,
+    fingerprint_of,
+    is_done,
+    record_fields,
+    runner_lock,
+)
 from smi.theory.forward import SimConfig, simulate_batch
 
 logger = logging.getLogger(__name__)
@@ -123,16 +134,22 @@ def training_windows(
     return np.concatenate(xs), np.concatenate(ys)
 
 
-def fit(
-    model_type: str, x: np.ndarray, y: np.ndarray, seed: int
-) -> tuple[SupportsPredict, dict[str, Any]]:
-    """Fit one model; returns it and the hyperparameters to record."""
+def hyperparameters(model_type: str, seed: int) -> dict[str, Any]:
+    """The fit settings of ``model_type``, as recorded and fingerprinted."""
     if model_type == 'ridge':
-        return fit_ridge(x, y, RIDGE_ALPHA), {'alpha': RIDGE_ALPHA}
+        return {'alpha': RIDGE_ALPHA}
     if model_type == 'lightgbm':
-        params = {**LIGHTGBM_PARAMS, 'seed': seed}
-        return fit_lightgbm(x, y, params), params
+        return {**LIGHTGBM_PARAMS, 'seed': seed}
     raise ValueError(f'unknown tabular model {model_type!r}; known: {MODELS}')
+
+
+def fit(
+    model_type: str, x: np.ndarray, y: np.ndarray, hparams: dict[str, Any]
+) -> SupportsPredict:
+    """Fit one model with its :func:`hyperparameters`."""
+    if model_type == 'ridge':
+        return fit_ridge(x, y, hparams['alpha'])
+    return fit_lightgbm(x, y, hparams)
 
 
 def run_tabular(
@@ -162,15 +179,40 @@ def run_tabular(
         raise ValueError(f'train_seed {train_seed} would train on the test set')
     appended: list[RunRecord] = []
     with runner_lock(lock_path):
-        done = {r.cell_key for r in read_results(out)} if Path(out).exists() else set()
+        records = read_results(out) if Path(out).exists() else []
         for entry in g.sims:
-            for wavelengths in g.channel_subsets:
-                for sim_name, sim, _sweep in build_sims(entry, wavelengths):
-                    keys = {
-                        m: cell_key(f'{m}-w{window}', wavelengths, sim_name, train_seed)
-                        for m in models
-                    }
-                    todo = [m for m in models if keys[m] not in done]
+            for subset in g.channel_subsets:
+                for sim_name, sim, _sweep in build_sims(entry, subset):
+                    # An override may add channels (a fiber monitor color);
+                    # fit and score on the sim's own, as the runner does.
+                    wavelengths = sim.wavelengths_um
+                    keys, configs, wants = {}, {}, {}
+                    for m in models:
+                        keys[m] = cell_key(
+                            f'{m}-w{window}', wavelengths, sim_name, train_seed
+                        )
+                        configs[m] = {
+                            'window': window,
+                            'train_stride': FIT_STRIDE,
+                            'n_train_shots': n_train_shots,
+                            'sign_invariant_loss': False,
+                            **hyperparameters(m, train_seed),
+                        }
+                        blocks = {
+                            'test_set': dataclasses.asdict(test),
+                            'sim': sim.identity_fields(),
+                            'tabular': {
+                                'model': m,
+                                'train_seed': train_seed,
+                                **configs[m],
+                            },
+                        }
+                        wants[m] = fingerprint_of(
+                            sim, blocks, dict.fromkeys(BUDGET_FIELDS)
+                        )
+                    todo = [
+                        m for m in models if not is_done(keys[m], wants[m], records)
+                    ]
                     if not todo:
                         continue
                     logger.info(
@@ -180,16 +222,9 @@ def run_tabular(
                     dataset = load_or_create(sim, test.seed, test.n_shots, frozen_root)
                     for m in todo:
                         start = time.perf_counter()
-                        model, hparams = fit(m, x, y, train_seed)
-                        config = {
-                            'window': window,
-                            'train_stride': FIT_STRIDE,
-                            'n_train_shots': n_train_shots,
-                            'sign_invariant_loss': False,
-                            **hparams,
-                        }
+                        model = fit(m, x, y, configs[m])
                         est = TabularEstimator(
-                            f'{m}-w{window}', m, model, window, config
+                            f'{m}-w{window}', m, model, window, configs[m]
                         )
                         result = evaluate(
                             est,
@@ -204,6 +239,7 @@ def run_tabular(
                             cell_key=keys[m],
                             sim_name=sim_name,
                             wall_clock_s=time.perf_counter() - start,
+                            **record_fields(wants[m]),
                         )
                         append_results(out, [record])
                         appended.append(record)

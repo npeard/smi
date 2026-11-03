@@ -54,14 +54,14 @@ def _tiny_grid() -> Grid:
     )
 
 
-def _run(tmp_path, monkeypatch, out):
+def _run(tmp_path, monkeypatch, out, n_train_shots):
     monkeypatch.setattr(tabular_synthetic, 'grid', lambda _name: _tiny_grid())
     return tabular_synthetic.run_tabular(
         'tiny',
         ('ridge', 'lightgbm'),
         WINDOW,
         out,
-        n_train_shots=4,
+        n_train_shots=n_train_shots,
         train_seed=0,
         frozen_root=tmp_path / 'frozen',
         lock_path=tmp_path / 'lock',
@@ -69,7 +69,7 @@ def _run(tmp_path, monkeypatch, out):
 
 
 def test_records_match_network_metric_keys_and_are_deterministic(tmp_path, monkeypatch):
-    records = _run(tmp_path, monkeypatch, tmp_path / 'a.json')
+    records = _run(tmp_path, monkeypatch, tmp_path / 'a.json', n_train_shots=4)
     assert [r.estimator for r in records] == [f'ridge-w{WINDOW}', f'lightgbm-w{WINDOW}']
     network_keys = {
         'velocity_rmse',
@@ -86,8 +86,11 @@ def test_records_match_network_metric_keys_and_are_deterministic(tmp_path, monke
         assert r.cell_key.endswith('__mich__seed0')
     assert read_results(tmp_path / 'a.json') == records
     # A second call on the same artifact skips the recorded cells.
-    assert _run(tmp_path, monkeypatch, tmp_path / 'a.json') == []
-    again = _run(tmp_path, monkeypatch, tmp_path / 'b.json')
+    assert _run(tmp_path, monkeypatch, tmp_path / 'a.json', n_train_shots=4) == []
+    # Other settings under the same keys raise rather than mix records.
+    with pytest.raises(ValueError, match='different setup'):
+        _run(tmp_path, monkeypatch, tmp_path / 'a.json', n_train_shots=5)
+    again = _run(tmp_path, monkeypatch, tmp_path / 'b.json', n_train_shots=4)
     assert [r.metrics for r in again] == [r.metrics for r in records]
 
 

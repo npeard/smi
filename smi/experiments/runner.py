@@ -370,9 +370,21 @@ def cell_fingerprint(
             # fingerprints survive the acquisition field.
             synthetic={**config.synthetic_config, 'sim': cell.sim.identity_fields()},
         )
+    return fingerprint_of(cell.sim, blocks, budget)
+
+
+def fingerprint_of(
+    sim: SimConfig, blocks: dict[str, Any], budget: dict[str, Any]
+) -> dict[str, Any]:
+    """A record's identity fields: ``blocks`` hashed per block and as a whole.
+
+    ``budget`` holds the ``BUDGET_FIELDS`` (all None for an untrained cell).
+    Shared by every writer of grid-keyed records, so :func:`is_done` compares
+    like with like.
+    """
     block_hashes = {k: _stable_hash(v) for k, v in blocks.items()}
     return {
-        'sim_config_hash': cell.sim.hash(),
+        'sim_config_hash': sim.hash(),
         'simulator_version': SIMULATOR_VERSION,
         'run_fingerprint': _stable_hash([block_hashes, SIMULATOR_VERSION]),
         'fingerprint_blocks': block_hashes,
@@ -386,15 +398,22 @@ def _stable_hash(value: object) -> str:
     return hashlib.sha1(blob.encode(), usedforsecurity=False).hexdigest()[:16]
 
 
-def _is_done(cell: Cell, want: dict[str, Any], records: list[RunRecord]) -> bool:
-    """Whether ``cell`` is recorded under its current sim, simulator and setup.
+def record_fields(want: dict[str, Any]) -> dict[str, Any]:
+    """The fields of :func:`fingerprint_of` ``want`` that a record stores."""
+    return {
+        k: want[k] for k in ('run_fingerprint', 'fingerprint_blocks', *BUDGET_FIELDS)
+    }
 
-    ``want`` is the cell's :func:`cell_fingerprint`.
+
+def is_done(key: str, want: dict[str, Any], records: list[RunRecord]) -> bool:
+    """Whether cell ``key`` is recorded under its current sim, simulator and setup.
+
+    ``want`` is the cell's :func:`fingerprint_of`.
 
     Raises:
         ValueError: If its key is recorded only under another setup.
     """
-    recorded = [r for r in records if r.cell_key == cell.key]
+    recorded = [r for r in records if r.cell_key == key]
     if not recorded:
         return False
     comparable = ('sim_config_hash', 'simulator_version', 'run_fingerprint')
@@ -413,7 +432,7 @@ def _is_done(cell: Cell, want: dict[str, Any], records: list[RunRecord]) -> bool
         if getattr(have, k) != want[k]
     }
     raise ValueError(
-        f'{cell.key} is recorded under a different setup: differing blocks '
+        f'{key} is recorded under a different setup: differing blocks '
         f'{differing or "(record predates fingerprints)"}; readable fields '
         f'(recorded, grid) {diff}; write to another --out or remove those '
         'records rather than mixing them'
@@ -467,10 +486,7 @@ def run_cell(
     dataset = load_or_create(cell.sim, test.seed, test.n_shots, frozen_root)
     start = time.perf_counter()
     est: Estimator
-    extra: dict[str, Any] = {
-        k: fingerprint[k]
-        for k in ('run_fingerprint', 'fingerprint_blocks', *BUDGET_FIELDS)
-    }
+    extra = record_fields(fingerprint)
     if config is None:
         est = InverseFitEstimator.for_dataset(dataset, test.n_shots)
         converged = True
@@ -530,7 +546,7 @@ def run_grid(
     with runner_lock(lock_path):
         # Read under the lock: the other runner may have just finished.
         records = read_results(out) if Path(out).exists() else []
-        todo = [c for c in cells if not _is_done(c, fingerprints[c.key], records)]
+        todo = [c for c in cells if not is_done(c.key, fingerprints[c.key], records)]
         logger.info(
             '%d cells selected, %d done, %d to run',
             len(cells),
