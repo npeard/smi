@@ -440,6 +440,23 @@ def is_done(key: str, want: dict[str, Any], records: list[RunRecord]) -> bool:
     )
 
 
+@functools.cache
+def trained_cells() -> tuple[tuple[str, Cell, dict[str, Any]], ...]:
+    """``(grid name, cell, cell_fingerprint)`` of every trained cell, GRIDS order.
+
+    Cached: expanding and fingerprinting every grid is the cost of a
+    checkpoint lookup, and callers look up many cells. The grids are module
+    constants, so the index cannot go stale; checkpoint existence is not
+    cached.
+    """
+    return tuple(
+        (name, c, cell_fingerprint(c, grid, training_config(c, grid)))
+        for name, grid in GRIDS.items()
+        for c in expand_grid(grid)
+        if c.family_config is not None
+    )
+
+
 def trained_checkpoint(cell: Cell, grid_name: str, runs_dir: Path) -> Path:
     """The checkpoint that trained ``cell`` of grid ``grid_name``.
 
@@ -456,13 +473,12 @@ def trained_checkpoint(cell: Cell, grid_name: str, runs_dir: Path) -> Path:
         return own
     grid = GRIDS[grid_name]
     want = cell_fingerprint(cell, grid, training_config(cell, grid))
-    for name, other in GRIDS.items():
+    for name, other, fingerprint in trained_cells():
         path = runs_dir / name / f'{cell.key}.ckpt'
-        if path.exists() and any(
-            c.key == cell.key
-            and cell_fingerprint(c, other, training_config(c, other))['run_fingerprint']
-            == want['run_fingerprint']
-            for c in expand_grid(other)
+        if (
+            other.key == cell.key
+            and fingerprint['run_fingerprint'] == want['run_fingerprint']
+            and path.exists()
         ):
             return path
     raise FileNotFoundError(
@@ -528,7 +544,12 @@ def run_cell(
         extra.update(trained)
         est = CheckpointEstimator(ckpt, device)
     result = evaluate(
-        est, dataset, cell.wavelengths_um, test.n_shots, converged, cell.seed
+        est,
+        dataset,
+        cell.wavelengths_um,
+        n_shots=test.n_shots,
+        converged=converged,
+        train_seed=cell.seed,
     )
     record = dataclasses.replace(
         result.record,
@@ -674,9 +695,9 @@ def rescore_metrics(
                 est,
                 dataset,
                 tuple(record.wavelengths_um),
-                None,
-                record.converged,
-                record.train_seed,
+                n_shots=None,
+                converged=record.converged,
+                train_seed=record.train_seed,
             ).record
             if new.sim_config_hash != record.sim_config_hash:
                 raise ValueError(

@@ -200,9 +200,9 @@ def evaluate_shifts(
                 _TrainedChannels(est, cfg.wavelengths_um),
                 dataset,
                 cfg.wavelengths_um,
-                test.n_shots,
-                False,
-                cell.seed,
+                n_shots=test.n_shots,
+                converged=False,
+                train_seed=cell.seed,
             )
             tag = f'{knob}={value:.6g}'
             if test_seed != test.seed:
