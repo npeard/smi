@@ -43,6 +43,7 @@ from smi.data.frozen import RIG_WAVELENGTHS_UM
 from smi.data.schema import PD_WAVELENGTHS_UM
 from smi.experiments import shift_eval
 from smi.experiments.grids import GRIDS
+from smi.experiments.grids.q2_r4_noise import STRESSED as R4_STRESSED
 from smi.experiments.results_artifact import RunRecord, read_results
 from smi.experiments.runner import (
     ORACLE_FAMILY,
@@ -183,11 +184,7 @@ SHIFT_DEFAULT_TEST_SEED = GRIDS[shift_eval.GRID].test_set.seed
 
 @dataclass(frozen=True)
 class ShiftScore:
-    """One shifted-test-set score: mean per-shot velocity RMSE and its SE.
-
-    The SE is IQR / 1.349 / sqrt(n): the record keeps quartiles, not the
-    per-shot std, and IQR / 1.349 is the std of a normal law.
-    """
+    """One shifted-test-set score: mean per-shot velocity RMSE, SE ``shot_se``."""
 
     rmse: float
     se: float
@@ -200,12 +197,21 @@ def shift_scores() -> dict[tuple[str, str, float, int], ShiftScore]:
         tag, _, seed = r.sim_name.partition('@test')
         knob, _, value = tag.partition('=')
         family = r.cell_key.split('__')[0]
-        m = r.metrics['velocity_rmse']
-        n = int(r.dataset.rsplit('_n', 1)[1])
-        se = (m['p75'] - m['p25']) / 1.349 / math.sqrt(n)
         key = (family, knob, float(value), int(seed or SHIFT_DEFAULT_TEST_SEED))
-        out[key] = ShiftScore(m['mean'], se)
+        out[key] = ShiftScore(r.metrics['velocity_rmse']['mean'], shot_se(r))
     return out
+
+
+def shot_se(record: RunRecord, metric: str = 'velocity_rmse') -> float:
+    """SE of the shot mean of ``metric``: IQR / 1.349 / sqrt(n).
+
+    The record keeps quartiles, not the per-shot std, and IQR / 1.349 is the
+    std of a normal law. Two cells on shared trajectories are compared with
+    these in quadrature, an upper bound on the paired SE.
+    """
+    m = record.metrics[metric]
+    n = int(record.dataset.rsplit('_n', 1)[1])
+    return (m['p75'] - m['p25']) / 1.349 / math.sqrt(n)
 
 
 def synthetic_cell(records: dict[str, RunRecord], family: str, sim: str) -> RunRecord:
@@ -576,6 +582,64 @@ def pending_panel(ax: plt.Axes, what: str) -> None:
 # SMI sim, which its header leaves unrun: the oracle decodes under the
 # Michelson model, so only its Michelson cells are read.
 Q1_FAMILIES = ('tcn-44k', 'tcan-44k')
+
+# The R grids (q1_r1_*, q1_r2_*, q2_r4_noise, q3_fiber): best causal and best
+# offline family; R4 adds the third-best and LightGBM.
+R_FAMILIES = ('tcan-44k', 'unettransformer-offline-44k')
+R4_FAMILIES = (*R_FAMILIES, 'patchtransformer-offline-44k', 'lightgbm-w91')
+R_FAMILY_LABELS = {
+    'tcan-44k': 'TCAN',
+    'unettransformer-offline-44k': 'UNetTransformer (offline)',
+    'patchtransformer-offline-44k': 'PatchTransformer (offline)',
+    'lightgbm-w91': 'LightGBM',
+    'tcn-44k': 'TCN',
+}
+#: q1_r1_count's colors in the order added, N = 1..6.
+R1_COLORS_UM = (0.635, 0.6748, 0.515, 0.785, 0.85, 0.405)
+R1_SIMS = {'s2-smi-a3': 'noise-free', 'nominal': 'nominal'}
+R1_SEEDS = (0, 1, 2)
+#: q3_fiber's arms, in reading order, with their channel sets.
+FIBER_ARMS = {
+    'nominal': R1_COLORS_UM[:3],
+    'fiber': R1_COLORS_UM[:3],
+    'fiber-4color': R1_COLORS_UM[:4],
+    'fiber-monitor': R1_COLORS_UM[:4],
+    'fiber-pbs': R1_COLORS_UM[:3],
+}
+
+
+R4_GRID = 'q2_r4_noise'
+R4_TABULAR = 'lightgbm-w91'
+
+
+def r4_cells(records: dict[str, RunRecord]) -> dict[tuple[str, str, bool], RunRecord]:
+    """q2_r4_noise keyed ``(family, knob field or 'nominal', stressed)``.
+
+    LightGBM ran on the grid's sims outside the runner, so its records share
+    the grid's sim names but not its families; they are found by key.
+    """
+    out = {}
+    for cell, record in grid_cells(records, R4_GRID):
+        field, value = cell.sweep or ('nominal', None)
+        stressed = field in R4_STRESSED and R4_STRESSED[field] == value
+        out[cell.family, field, stressed] = record
+        if cell.family == R_FAMILIES[0]:
+            key = cell_key(R4_TABULAR, cell.wavelengths_um, cell.sim_name, 0)
+            out[R4_TABULAR, field, stressed] = records[key]
+    return out
+
+
+def r_cell(
+    records: dict[str, RunRecord],
+    family: str,
+    wavelengths_um: tuple[float, ...],
+    sim: str,
+    seed: int = 0,
+) -> RunRecord:
+    """One R-grid record; a missing cell raises, naming its key."""
+    return records[cell_key(family, wavelengths_um, sim, seed)]
+
+
 Q1_S2_SIMS = {
     's2-michelson': 'velocity_rmse_sign_invariant',
     's2-smi-a3': 'velocity_rmse',

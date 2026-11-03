@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _figcommon import (
     CEILING_GRID,
     DISPLACEMENT_METRICS,
+    FIBER_ARMS,
     LEAVE_ONE_OUT,
     MISMATCH_SHOTS,
     NOISE_KNOBS,
@@ -58,6 +59,11 @@ from _figcommon import (
     Q2_STEMS,
     Q3_BUDGETS,
     Q3_FEEDBACK_C,
+    R1_COLORS_UM,
+    R1_SEEDS,
+    R4_FAMILIES,
+    R_FAMILIES,
+    R_FAMILY_LABELS,
     RESULTS_DIR,
     S1D_FAMILIES,
     SHIFT_DEFAULT_TEST_SEED,
@@ -75,8 +81,11 @@ from _figcommon import (
     noise_seeds,
     oracle_cell,
     q2_record,
+    r4_cells,
+    r_cell,
     s1d_record,
     shift_scores,
+    shot_se,
     synthetic_cell,
     synthetic_records,
     velocity_bounds,
@@ -1315,6 +1324,285 @@ def prediction_values(records: dict[str, RunRecord], zero: float) -> dict[str, s
     }
 
 
+def _spread(xs: list[float]) -> float:
+    """Seed range over seed mean."""
+    return (max(xs) - min(xs)) / float(np.mean(xs))
+
+
+def r1_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
+    """Q1.1 R1 and Q1.2 R2: RMSE against channel count, pair and array."""
+    data = json.loads((RESULTS_DIR / 'channel_analytics.json').read_text())
+    seeds = [data['q1_count'][str(k)]['0.2'] for k in data['count_seeds']]
+    info = [float(np.mean([sd[i]['info'] for sd in seeds])) for i in range(6)]
+
+    def runs(family: str, n: int, sim: str) -> list[float]:
+        ws = R1_COLORS_UM[:n]
+        return [
+            mean_metric(records[k], 'velocity_rmse')
+            for seed in R1_SEEDS
+            if (k := cell_key(family, ws, sim, seed)) in records
+        ]
+
+    def rmse(family: str, n: int, sim: str) -> float:
+        return float(np.mean(runs(family, n, sim)))
+
+    tcan, unet = R_FAMILIES
+    out: dict[str, object] = {}
+    rows = []
+    for i in range(6):
+        n = i + 1
+        row = {'n': str(n), 'lam': f'{R1_COLORS_UM[i] * 1e3:.1f}'}
+        row['bound'] = f'{(info[i] / info[0]) ** -0.5:.2f}'
+        row['bstep'] = '' if i == 0 else pct((info[i] / info[i - 1]) ** -0.5 - 1)
+        for fam, tag in ((tcan, 'tcan'), (unet, 'unet')):
+            for sim, stag in (('s2-smi-a3', 'nf'), ('nominal', 'nom')):
+                row[f'{tag}_{stag}'] = f'{rmse(fam, n, sim):.3f}'
+                row[f'{tag}_{stag}_ratio'] = (
+                    f'{rmse(fam, n, sim) / rmse(fam, 1, sim):.2f}'
+                )
+                row[f'{tag}_{stag}_step'] = (
+                    '' if i == 0 else pct(rmse(fam, n, sim) / rmse(fam, n - 1, sim) - 1)
+                )
+        rows.append(row)
+    out['r1_table'] = rows
+    for fam, tag in ((tcan, 'tcan'), (unet, 'unet')):
+        for sim, stag in (('s2-smi-a3', 'nf'), ('nominal', 'nom')):
+            for n in (1, 3):
+                out[f'r1_{tag}_{stag}_spread{n}'] = pct(_spread(runs(fam, n, sim)))
+                out[f'r1_{tag}_{stag}_nseeds{n}'] = str(len(runs(fam, n, sim)))
+            out |= lo_hi(
+                f'r1_{tag}_{stag}_oz',
+                [rmse(fam, n, sim) / zero for n in range(1, 7)],
+                lambda x: f'{x:.2f}',
+            )
+    out['r1_zero'] = f'{zero:.3f}'
+    bound = [(info[i] / info[0]) ** -0.5 for i in range(6)]
+    tnf = [rmse(tcan, n, 's2-smi-a3') / rmse(tcan, 1, 's2-smi-a3') for n in range(1, 7)]
+    tnom = [rmse(tcan, n, 'nominal') / rmse(tcan, 1, 'nominal') for n in range(1, 7)]
+    out['r1_tcan_nf_n6'] = f'{tnf[5]:.2f}'
+    out['r1_tcan_nom_n6'] = f'{tnom[5]:.2f}'
+    out['r1_tcan_nom_gain_n3'] = f'{1 / tnom[2]:.2f}'
+    out['r1_tcan_nom_cut_36'] = pct(
+        1 - rmse(tcan, 6, 'nominal') / rmse(tcan, 3, 'nominal')
+    )
+    out['r1_bound_n6'] = f'{bound[5]:.2f}'
+    # Noise-free TCAN follows the bound's ratio to within 25% at every N >= 3.
+    out['r1_tcan_nf_tracks'] = all(0.75 < tnf[i] / bound[i] < 1.25 for i in range(2, 6))
+    # ... but beats it at N = 2, where the learned gain exceeds the Fisher one.
+    out['r1_tcan_nf_n2_beats'] = tnf[1] < 0.85 * bound[1]
+    out['r1_tcan_nf_n2'] = f'{tnf[1]:.2f}'
+    out['r1_bound_n2'] = f'{bound[1]:.2f}'
+    out['r1_tcan_nom_monotone'] = all(a > b for a, b in itertools.pairwise(tnom))
+    out['r1_unet_nf_spread_big'] = _spread(runs(unet, 3, 's2-smi-a3')) > 0.3
+    out['r1_unet_nom_flat'] = (
+        max(rmse(unet, n, 'nominal') for n in range(1, 7))
+        / min(rmse(unet, n, 'nominal') for n in range(1, 7))
+        < 1.25
+    )
+    return out
+
+
+def r1_pair_values(records: dict[str, RunRecord]) -> dict[str, object]:
+    """Q1.1 R1: the three two-color pairs."""
+    tcan, unet = R_FAMILIES
+    out: dict[str, object] = {}
+    # The three two-color pairs.
+    pairs = ((0.635, 0.6748), (0.635, 0.515), (0.6748, 0.515))
+    for fam, tag in ((tcan, 'tcan'), (unet, 'unet')):
+        for sim, stag in (('s2-smi-a3', 'nf'), ('nominal', 'nom')):
+            xs = [
+                mean_metric(r_cell(records, fam, p, sim), 'velocity_rmse')
+                for p in pairs
+            ]
+            out[f'r1_pairs_{tag}_{stag}'] = [f'{x:.3f}' for x in xs]
+            out[f'r1_pairs_{tag}_{stag}_spread'] = pct(_spread(xs))
+            se = max(shot_se(r_cell(records, fam, p, sim)) for p in pairs)
+            out[f'r1_pairs_{tag}_{stag}_se'] = f'{se:.3f}'
+    return out
+
+
+def r2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
+    """Q1.2 R2: 0.635 um x N with quadrature offsets against N colors."""
+    tcan, unet = R_FAMILIES
+    out: dict[str, object] = {}
+    r2 = []
+    within = []
+    for n in (2, 3):
+        for sim, stag in (('s2-smi-a3', 'noise-free'), ('nominal', 'nominal')):
+            row = {'n': str(n), 'sim': stag}
+            for fam, tag in ((tcan, 'tcan'), (unet, 'unet')):
+                arr = r_cell(records, fam, (0.635,) * n, f'{sim}-1color')
+                col = r_cell(records, fam, R1_COLORS_UM[:n], sim)
+                a, c = (mean_metric(r, 'velocity_rmse') for r in (arr, col))
+                row[f'{tag}_arr'] = f'{a:.4f}' if a < 0.01 else f'{a:.3f}'
+                row[f'{tag}_col'] = f'{c:.3f}'
+                row[f'{tag}_ratio'] = f'{c / a:.2g}' if c / a > 3 else f'{c / a:.2f}'
+                row[f'{tag}_se'] = f'{math.hypot(shot_se(arr), shot_se(col)):.3f}'
+                out[f'r2_{tag}_{stag[:3]}_ratio_n{n}'] = c / a
+                if stag == 'nominal':
+                    within.append(
+                        abs(c - a) < 2 * math.hypot(shot_se(arr), shot_se(col))
+                    )
+            r2.append(row)
+    out['r2_table'] = r2
+    nf_ratios = [
+        out[f'r2_{t}_noi_ratio_n{n}'] for t in ('tcan', 'unet') for n in (2, 3)
+    ]
+    nom_ratios = [
+        out[f'r2_{t}_nom_ratio_n{n}'] for t in ('tcan', 'unet') for n in (2, 3)
+    ]
+    out |= lo_hi('r2_nf_ratio', nf_ratios, lambda x: f'{x:.0f}')
+    out |= lo_hi('r2_nom_ratio', nom_ratios, lambda x: f'{x:.2f}')
+    out['r2_nf_array_wins'] = min(nf_ratios) > 5
+    out['r2_nom_parity'] = all(within)
+    # Each arm has its own frozen set; equal zero-predictor RMSE shows the
+    # motion draw is the same in all of them.
+    zs = [
+        zero_predictor_rmse(records, grid, cell_key(tcan, ws, f'{sim}-1color', 0))
+        for grid, ws in (
+            ('q1_r2_colors', (0.635,) * 2),
+            ('q1_r2_colors_n3', (0.635,) * 3),
+        )
+        for sim in ('s2-smi-a3', 'nominal')
+    ]
+    out['r2_zero_shared'] = max(abs(z - zero) for z in zs) < 1e-9
+    for k in [k for k in out if k.startswith('r2_') and k[-3:] in ('_n2', '_n3')]:
+        del out[k]
+    return out
+
+
+def r4_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
+    """Q2.2 R4: each knob alone at nominal, the stressed rungs, the nominal point."""
+    cells = r4_cells(records)
+    ladder = noise_ladder(records)
+
+    def rmse(family: str, field: str, stressed: bool = False) -> float:
+        return mean_metric(cells[family, field, stressed], 'velocity_rmse')
+
+    knobs = [f for f in NOISE_KNOBS if (R_FAMILIES[0], f, False) in cells]
+    out: dict[str, object] = {}
+    rows = []
+    for field in knobs:
+        tcn = next(r for r in ladder[field] if r.nominal).record
+        row = {
+            'knob': NOISE_KNOBS[field],
+            'tcn': f'{mean_metric(tcn, "velocity_rmse"):.3f}',
+        }
+        for fam in R4_FAMILIES:
+            row[fam] = f'{rmse(fam, field):.3f}'
+        rows.append(row)
+    for label, field, stressed in (
+        ('phase drift, 3.3x', 'phase_drift_rad_per_sqrt_s', True),
+        ('white noise, 20 dB', 'snr_db', True),
+        ('all nominal', 'nominal', False),
+    ):
+        row = {'knob': label, 'tcn': ''}
+        for fam in R4_FAMILIES:
+            row[fam] = f'{rmse(fam, field, stressed):.3f}'
+        rows.append(row)
+    out['r4_table'] = rows
+    rank = {
+        fam: sorted(knobs, key=lambda f, fam=fam: -rmse(fam, f)) for fam in R4_FAMILIES
+    }
+    neural = R4_FAMILIES[:3]
+    out['r4_phase_first'] = all(
+        rank[f][0] == 'phase_drift_rad_per_sqrt_s' for f in neural
+    )
+    # The predicted SNR-over-visibility order holds for UNetTransformer only.
+    out['r4_vis_over_snr'] = [
+        R_FAMILY_LABELS[f]
+        for f in R4_FAMILIES
+        if rmse(f, 'visibility_range') > rmse(f, 'snr_db')
+    ] == ['TCAN', 'PatchTransformer (offline)', 'LightGBM']
+    out['r4_lgbm_first'] = NOISE_KNOBS[rank['lightgbm-w91'][0]]
+    out |= lo_hi(
+        'r4_lgbm_oz',
+        [rmse('lightgbm-w91', f) / zero for f in knobs],
+        lambda x: f'{x:.2f}',
+    )
+    out['r4_lgbm_nominal_oz'] = f'{rmse("lightgbm-w91", "nominal") / zero:.2f}'
+    for fam, tag in zip(R4_FAMILIES, ('tcan', 'unet', 'patch', 'lgbm'), strict=True):
+        out[f'r4_{tag}_phase_stress_oz'] = (
+            f'{rmse(fam, "phase_drift_rad_per_sqrt_s", True) / zero:.2f}'
+        )
+        out[f'r4_{tag}_nominal'] = f'{rmse(fam, "nominal"):.3f}'
+        out[f'r4_{tag}_phase_cost'] = sig(
+            rmse(fam, 'phase_drift_rad_per_sqrt_s') / rmse(fam, 'adc_bits'), 2
+        )
+    knob_se = max(
+        shot_se(cells[f, k, False])
+        for f in R4_FAMILIES[:3]
+        for k in knobs
+        if k != 'phase_drift_rad_per_sqrt_s'
+    )
+    out['r4_knob_se_max'] = f'{knob_se:.3f}'
+    unet = R_FAMILIES[1]
+    third = [NOISE_KNOBS[f] for f in knobs if ran_third_cycle(cells[unet, f, False])]
+    out['r4_unet_third'] = ' and '.join(third)
+    out['r4_unet_third_named'] = set(third) == {'visibility', 'DC offset'}
+    return out
+
+
+def r7_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
+    """Q3.1 and Q3.2 R7: the fiber arms against free space and each other."""
+    out: dict[str, object] = {}
+    rows = []
+    zeros = {
+        arm: zero_predictor_rmse(
+            records, 'q3_fiber', cell_key(R_FAMILIES[0], ws, arm, 0)
+        )
+        for arm, ws in FIBER_ARMS.items()
+    }
+    # The arms share trajectories, so every arm has the same zero predictor.
+    out['r7_zero_shared'] = max(zeros.values()) - min(zeros.values()) < 1e-9
+    out['r7_zero'] = f'{zeros["fiber"]:.3f}'
+    for arm, ws in FIBER_ARMS.items():
+        row = {'arm': arm}
+        for fam, tag in zip(R_FAMILIES, ('tcan', 'unet'), strict=True):
+            r = r_cell(records, fam, ws, arm)
+            row[tag] = f'{mean_metric(r, "velocity_rmse"):.3f}'
+            row[f'{tag}_oz'] = f'{mean_metric(r, "velocity_rmse") / zeros[arm]:.2f}'
+            row[f'{tag}_se'] = f'{shot_se(r):.3f}'
+            row[f'{tag}_ep'] = str(epochs(r))
+            row[f'{tag}_conv'] = 'yes' if r.converged else 'no'
+        rows.append(row)
+    out['r7_table'] = rows
+
+    def diff(fam: str, a: str, b: str) -> tuple[float, float]:
+        ra, rb = (r_cell(records, fam, FIBER_ARMS[x], x) for x in (a, b))
+        d = mean_metric(ra, 'velocity_rmse') - mean_metric(rb, 'velocity_rmse')
+        return d, math.hypot(shot_se(ra), shot_se(rb))
+
+    tcan, unet = R_FAMILIES
+    for name, a, b in (
+        ('cost', 'fiber', 'nominal'),
+        ('monitor', 'fiber-monitor', 'fiber-4color'),
+        ('pbs', 'fiber-pbs', 'fiber'),
+        ('fourth', 'fiber-4color', 'fiber'),
+    ):
+        d, se = diff(tcan, a, b)
+        out[f'r7_tcan_{name}'] = f'{d:+.3f}'
+        out[f'r7_tcan_{name}_se'] = f'{se:.3f}'
+        out[f'r7_tcan_{name}_z'] = f'{d / se:+.1f}'
+    fiber_oz = [
+        mean_metric(r_cell(records, f, ws, arm), 'velocity_rmse') / zeros[arm]
+        for f in R_FAMILIES
+        for arm, ws in FIBER_ARMS.items()
+        if arm != 'nominal'
+    ]
+    out |= lo_hi('r7_fiber_oz', fiber_oz, lambda x: f'{x:.2f}')
+    out['r7_all_near_zero'] = min(fiber_oz) > 0.9
+    out['r7_unet_none_converged'] = not any(
+        r_cell(records, unet, ws, arm).converged
+        for arm, ws in FIBER_ARMS.items()
+        if arm != 'nominal'
+    )
+    out['r7_tcan_all_converged'] = all(
+        r_cell(records, tcan, ws, arm).converged for arm, ws in FIBER_ARMS.items()
+    )
+    return out
+
+
 def sagnac_values() -> dict[str, Any]:
     """Q4 gains quoted in the prose, from scripts/sagnac_table.py's JSON."""
     rows = json.loads((RESULTS_DIR / 'sagnac_results.json').read_text())['table']
@@ -1786,6 +2074,11 @@ def main() -> None:
         **shift_values(prior),
         **q2_analytic_values(records, prior),
         **fiber_values(),
+        **r1_values(records, zero),
+        **r1_pair_values(records),
+        **r2_values(records, zero),
+        **r4_values(records, zero),
+        **r7_values(records, zero),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(values, indent=1) + '\n', encoding='utf-8')
