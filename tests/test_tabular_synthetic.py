@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from smi.data.datasets import select_pd_keys
-from smi.data.frozen import RIG_WAVELENGTHS_UM
+from smi.data.frozen import RIG_WAVELENGTHS_UM, load_or_create
 from smi.estimators.tabular import predict_trace, windowize
 from smi.experiments import tabular_synthetic
 from smi.experiments.evaluate import evaluate
@@ -94,7 +94,7 @@ def test_records_match_network_metric_keys_and_are_deterministic(tmp_path, monke
 def test_perfect_window_predictor_scores_zero_through_evaluate(tmp_path):
     """A window model that reads the truth scores RMSE 0 through evaluate()."""
     sim = build_sims(_tiny_grid().sims[0], WAVELENGTHS)[0][1]
-    dataset = tabular_synthetic.load_or_create(sim, 1000, 2, tmp_path)
+    dataset = load_or_create(sim, 1000, 2, tmp_path)
     # Overwrite the 635 nm channel with the true velocity, so a window-1 model
     # that returns its only feature is exact.
     with h5py.File(dataset, 'r+') as f:

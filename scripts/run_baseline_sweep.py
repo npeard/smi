@@ -47,10 +47,14 @@ from smi.core.paths import DATA_DIR, DATASETS, RESULTS_DIR
 from smi.data.datamodule import VelocityDataModule
 from smi.estimators.tabular import CAUSAL as TABULAR_CAUSAL
 from smi.estimators.tabular import (
-    SupportsPredict,
+    FIT_STRIDE,
+    LIGHTGBM_PARAMS,
+    RIDGE_ALPHA,
+    WINDOW,
     fit_lightgbm,
     fit_ridge,
     predict_trace,
+    trace_span,
     windowize,
 )
 from smi.experiments.results_artifact import RunRecord, write_results
@@ -82,20 +86,6 @@ TORCH_CONFIGS: tuple[str, ...] = (
     'tcn-repeated',
 )
 
-#: Window for the tabular baselines, matched to the Barland receptive field.
-TABULAR_WINDOW = 91
-#: Hop between tabular *training* windows. Dense strides would make a
-#: 16384-long shot into 16k rows; 64 keeps the design matrix tractable without
-#: changing what the model is asked to predict.
-TABULAR_FIT_STRIDE = 64
-#: Hop between tabular *evaluation* windows. 1, unlike the fit stride, because
-#: the evaluation stride is what the reported RMSE measures: at stride s the
-#: reconstructed trace is piecewise constant over s samples, which imposes a
-#: discretization floor on the RMSE independent of the model (0.052 um/ms at
-#: s=64, against a TCN at 0.112). At stride 1 that floor is zero, so the row
-#: measures the predictor. Evaluation is 100 shots on CPU, cheap enough to
-#: afford the dense design matrix the fit cannot.
-TABULAR_EVAL_STRIDE = 1
 #: Shots used to fit the tabular baselines. Both are fit on CPU from a dense
 #: design matrix, so this is bounded by memory and fit time rather than by the
 #: GPU budget the torch runs are bounded by. 800 shots is 204k rows and costs
@@ -105,15 +95,6 @@ TABULAR_EVAL_STRIDE = 1
 TABULAR_FIT_SHOTS = 800
 #: Shots the tabular baselines are scored on, from the same fixed test split.
 TABULAR_EVAL_SHOTS = 100
-
-LIGHTGBM_PARAMS: dict[str, Any] = {
-    'objective': 'regression',
-    'num_leaves': 31,
-    'learning_rate': 0.05,
-    'num_boost_round': 200,
-    'verbose': -1,
-}
-RIDGE_ALPHA = 1.0
 
 
 @dataclass
@@ -433,16 +414,6 @@ def _collect_shots(
     return signals, velocities
 
 
-def _tabular_predictions(
-    model: SupportsPredict, signals: list[np.ndarray], length: int
-) -> torch.Tensor:
-    """[shots, length] predicted velocity (um/ms); see ``predict_trace``."""
-    assert TABULAR_EVAL_STRIDE == 1, 'predict_trace reconstructs at stride 1'
-    out = np.stack([predict_trace(model, sig, TABULAR_WINDOW) for sig in signals])
-    assert out.shape[1] == length
-    return torch.from_numpy(out.astype(np.float32))
-
-
 def run_tabular(
     kind: str, dataset: str, seed: int, settings: SweepSettings, dt_ms: float
 ) -> RunRecord:
@@ -474,11 +445,10 @@ def run_tabular(
     test_signals, test_velocity = _collect_shots(
         module.test_dataset, min(TABULAR_EVAL_SHOTS, settings.eval_shots)
     )
-    length = train_signals[0].shape[1]
 
     xs, ys = zip(
         *(
-            windowize(sig, vel, TABULAR_WINDOW, TABULAR_FIT_STRIDE)
+            windowize(sig, vel, WINDOW, FIT_STRIDE)
             for sig, vel in zip(train_signals, train_velocity, strict=True)
         ),
         strict=True,
@@ -488,9 +458,8 @@ def run_tabular(
 
     record_config: dict[str, Any] = {
         'config_name': kind.lower(),
-        'window': TABULAR_WINDOW,
-        'fit_stride': TABULAR_FIT_STRIDE,
-        'eval_stride': TABULAR_EVAL_STRIDE,
+        'window': WINDOW,
+        'fit_stride': FIT_STRIDE,
         'fit_shots': len(train_signals),
         'eval_shots': len(test_signals),
         'train_rows': int(x_train.shape[0]),
@@ -511,7 +480,9 @@ def run_tabular(
             record_config['alpha'] = RIDGE_ALPHA
             model = fit_ridge(x_train, y_train, RIDGE_ALPHA)
             total_params = int(model.coef_.size + 1)
-        preds = _tabular_predictions(model, test_signals, length)
+        preds = torch.from_numpy(
+            np.stack([predict_trace(model, sig, WINDOW) for sig in test_signals])
+        ).float()
         targets = torch.from_numpy(np.stack(test_velocity))
         metrics = evaluate_per_shot(preds, targets, dt_ms)
     except Exception as exc:
@@ -533,7 +504,7 @@ def run_tabular(
         model_type=kind,
         config=record_config,
         total_params=total_params,
-        receptive_field=TABULAR_WINDOW,
+        receptive_field=trace_span(WINDOW),
         causal=TABULAR_CAUSAL,
         seed=seed,
         device='cpu',

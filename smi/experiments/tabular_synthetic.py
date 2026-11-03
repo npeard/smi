@@ -22,7 +22,10 @@ window 91 (the Barland receptive field, as the real-data tabular baselines in
 training stride 64 and 512 training shots, a 130k x 273 design matrix. On real
 data 200 -> 800 shots moved LightGBM 6% and ridge not at all, so 512 is past
 the point where the fit is data-starved, and a noise-free sim is no harder to
-cover than a noisy one.
+cover than a noisy one. Traces are reconstructed at stride 1
+(:func:`~smi.estimators.tabular.predict_trace`), so a prediction depends on
+``2 * window - 1`` = 181 samples centred on it, which is the recorded
+``receptive_field``; the ends are averaged over fewer windows, not padded.
 """
 
 import dataclasses
@@ -39,12 +42,16 @@ from torch import Tensor
 from smi.data.frozen import load_or_create
 from smi.estimators.tabular import (
     CAUSAL,
+    FIT_STRIDE,
     LIGHTGBM_AVAILABLE,
+    LIGHTGBM_PARAMS,
+    RIDGE_ALPHA,
     SupportsPredict,
     fit_lightgbm,
     fit_ridge,
     lgb,
     predict_trace,
+    trace_span,
     windowize,
 )
 from smi.experiments.evaluate import evaluate
@@ -55,19 +62,8 @@ from smi.theory.forward import SimConfig, simulate_batch
 
 logger = logging.getLogger(__name__)
 
-TRAIN_STRIDE = 64
 # Shots per simulate_batch call while drawing the training set; bounds memory.
 SIM_CHUNK_SHOTS = 64
-RIDGE_ALPHA = 1.0
-LIGHTGBM_PARAMS: dict[str, Any] = {
-    'objective': 'regression',
-    'num_leaves': 31,
-    'learning_rate': 0.05,
-    'num_boost_round': 200,
-    # Same fit on rerun: no row/column sampling races across threads.
-    'deterministic': True,
-    'force_row_wise': True,
-}
 MODELS = ('ridge', 'lightgbm')
 
 
@@ -88,7 +84,7 @@ class TabularEstimator:
         self.name = name
         self.model_type = model_type
         self.model = model
-        self.receptive_field: int | None = window
+        self.receptive_field: int | None = trace_span(window)
         self.window = window
         self.config = config
         self.total_params = _param_count(model)
@@ -121,7 +117,7 @@ def training_windows(
         n = min(SIM_CHUNK_SHOTS, n_shots - start)
         batch = simulate_batch(sim, n, torch.device('cpu'), generator)
         for sig, vel in zip(batch.signals.numpy(), batch.velocity.numpy(), strict=True):
-            x, y = windowize(sig, vel, window, TRAIN_STRIDE)
+            x, y = windowize(sig, vel, window, FIT_STRIDE)
             xs.append(x)
             ys.append(y)
     return np.concatenate(xs), np.concatenate(ys)
@@ -187,7 +183,7 @@ def run_tabular(
                         model, hparams = fit(m, x, y, train_seed)
                         config = {
                             'window': window,
-                            'train_stride': TRAIN_STRIDE,
+                            'train_stride': FIT_STRIDE,
                             'n_train_shots': n_train_shots,
                             'sign_invariant_loss': False,
                             **hparams,
@@ -196,7 +192,12 @@ def run_tabular(
                             f'{m}-w{window}', m, model, window, config
                         )
                         result = evaluate(
-                            est, dataset, wavelengths, test.n_shots, True, train_seed
+                            est,
+                            dataset,
+                            wavelengths,
+                            test.n_shots,
+                            converged=True,
+                            train_seed=train_seed,
                         )
                         record = dataclasses.replace(
                             result.record,

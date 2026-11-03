@@ -11,6 +11,7 @@ from pathlib import Path
 
 from smi.core.paths import RESULTS_DIR
 from smi.data.frozen import DEFAULT_ROOT
+from smi.estimators import tabular
 from smi.experiments import tabular_synthetic
 
 DEFAULT_OUT = RESULTS_DIR / 'synthetic_results.json'
@@ -24,7 +25,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=doc.split('\n')[0])
     parser.add_argument('grids', nargs='+', help='grid names (smi.experiments.grids)')
     parser.add_argument('--models', nargs='+', default=list(tabular_synthetic.MODELS))
-    parser.add_argument('--window', type=int, default=91)
+    parser.add_argument('--window', type=int, default=tabular.WINDOW)
     parser.add_argument('--n-train-shots', type=int, default=512)
     # 0, as the grids' network seeds; the test set is seed 1000.
     parser.add_argument('--train-seed', type=int, default=0)

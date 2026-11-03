@@ -27,6 +27,37 @@ except ImportError:  # pragma: no cover -- exercised only in a stripped env
 #: each window at its centre, so the prediction uses the half window after it.
 CAUSAL = False
 
+#: Window length, matched to the Barland receptive field.
+WINDOW = 91
+#: Hop between *training* windows. Dense strides would make a 16384-long shot
+#: into 16k rows; 64 keeps the design matrix tractable without changing what
+#: the model is asked to predict. Evaluation is always stride 1
+#: (:func:`predict_trace`): at stride s the reconstructed trace is piecewise
+#: constant over s samples, a discretization floor on the RMSE independent of
+#: the model (0.052 um/ms at s=64, against a TCN at 0.112).
+FIT_STRIDE = 64
+RIDGE_ALPHA = 1.0
+LIGHTGBM_PARAMS: dict[str, Any] = {
+    'objective': 'regression',
+    'num_leaves': 31,
+    'learning_rate': 0.05,
+    'num_boost_round': 200,
+    'verbose': -1,
+    # Same fit on rerun: no row/column sampling races across threads.
+    'deterministic': True,
+    'force_row_wise': True,
+}
+
+
+def trace_span(window: int) -> int:
+    """Two-sided samples one :func:`predict_trace` output depends on.
+
+    A sample is covered by every window starting up to ``window - 1`` before
+    it, and each of those reads up to ``window - 1`` after it, so the span is
+    ``2 * window - 1`` -- the honest receptive field of a stride-1 trace.
+    """
+    return 2 * window - 1
+
 
 class SupportsPredict(Protocol):
     """Anything with a scikit-learn-style ``predict``.
