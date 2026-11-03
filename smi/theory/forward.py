@@ -7,7 +7,7 @@ import logging
 import math
 import statistics
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, fields
+from dataclasses import MISSING, asdict, dataclass, fields
 from typing import Any
 
 import torch
@@ -340,12 +340,13 @@ class SimConfig:
                 f'STEMLAB_125_14; include it in identity_fields and regenerate the '
                 f'recorded hashes before using {self.acquisition}'
             )
+        # Defaulted fields were added after hashes were recorded; leaving one
+        # out while it holds its default keeps those hashes valid.
         out = asdict(self)
         del out['acquisition']
-        # Added after hashes were recorded; dropping the unset value keeps them.
-        for name in ('channel_phase_offsets_rad', 'fiber'):
-            if out[name] is None:
-                del out[name]
+        for f in fields(self):
+            if f.default is not MISSING and getattr(self, f.name) == f.default:
+                del out[f.name]
         return out
 
     def hash(self) -> str:
@@ -665,9 +666,13 @@ def drive(
     )
 
 
+# simulate_batch's memo caches, emptied together by clear_caches.
+_CACHED = (drive, _lowpass_kernel, _wavelengths_tensor)
+
+
 def clear_caches() -> None:
     """Empty simulate_batch's memo caches, so the next batch builds afresh."""
-    for cache in (drive, _lowpass_kernel, _wavelengths_tensor):
+    for cache in _CACHED:
         cache.cache_clear()
 
 
