@@ -249,11 +249,13 @@ lmfit = "*"
 uncertainties = "*"
 schemdraw = "*"
 
+[tool.pixi.feature.test.dependencies]
+pytest-benchmark = ">=5.3.1"
+
 [tool.pixi.feature.test.pypi-dependencies]
 pytest = ">=8.0"
 pytest-cov = ">=3.0"
 pytest-xdist = ">=2.5"
-pytest-benchmark = "*"
 import-linter = "*"
 coverage = { version = "*", extras = ["toml"] }
 
