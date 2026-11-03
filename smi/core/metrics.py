@@ -186,9 +186,12 @@ def band_coverage(draws: torch.Tensor, truth: torch.Tensor, level: float) -> flo
 
 
 def crps_samples(draws: torch.Tensor, truth: torch.Tensor) -> torch.Tensor:
-    """Sample CRPS, ``E|X - y| - E|X - X'| / 2``, elementwise over ``truth``.
+    """Fair sample CRPS, ``E|X - y| - E|X - X'| / 2``, elementwise over ``truth``.
 
-    The pair term uses the sorted-sample identity
+    The pair mean runs over the ``S (S - 1)`` distinct pairs: dividing by
+    ``S^2`` counts the zero self-pairs and biases the score high by about
+    ``E|X - X'| / (2 S)``, which at 64 draws is comparable to the gaps being
+    compared. The pair term uses the sorted-sample identity
     ``sum_ij |x_i - x_j| = 2 sum_i (2 i - S + 1) x_(i)`` (0-based), which is
     O(S log S) rather than O(S^2) memory.
     """
@@ -198,7 +201,7 @@ def crps_samples(draws: torch.Tensor, truth: torch.Tensor) -> torch.Tensor:
     weight = (2 * torch.arange(s, dtype=draws.dtype) - s + 1).reshape(
         -1, *([1] * truth.dim())
     )
-    pair = 2 * (weight * ordered).sum(dim=0) / s**2
+    pair = 2 * (weight * ordered).sum(dim=0) / (s * (s - 1))
     return spread - pair / 2
 
 

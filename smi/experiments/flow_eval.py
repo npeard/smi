@@ -10,14 +10,16 @@ is the same statistic as the grid's own records:
 * Q3.4: the posterior's mean is the point estimate; its draws give 90% band
   coverage, CRPS, the fraction of multimodal per-sample marginals and the
   fraction of shots whose draws split in global sign. A deep ensemble of every
-  trained TCAN-44k seed on the same sim, when there are at least two, is the
-  uncertainty baseline (Gaussian predictive from its mean and spread).
+  TCAN-44k seed trained exactly as the arm's grid cell, when there are at
+  least three, is the uncertainty baseline (Gaussian predictive from its mean
+  and spread).
 
 The prediction these test (data-processing argument, continuous broadening)
 is in the R8 plan; it is not restated here.
 """
 
 import dataclasses
+import hashlib
 import importlib
 import pkgutil
 from pathlib import Path
@@ -43,9 +45,8 @@ from smi.data.schema import VELOCITY_KEY
 from smi.experiments import grids
 from smi.experiments.evaluate import CheckpointEstimator, evaluate
 from smi.experiments.grid import Grid
-from smi.experiments.runner import Cell, expand_grid
+from smi.experiments.runner import Cell, cell_fingerprint, expand_grid, training_config
 from smi.learning.flow_lit_module import FlowLitModule
-from smi.theory.forward import SimConfig
 
 BAND_LEVEL = 0.9
 FAMILY = 'tcan-44k'
@@ -55,19 +56,47 @@ MODALITY_STRIDE = 64
 # A shot is sign-split when at least this share of its draws has the minority
 # global sign relative to draw 0.
 SIGN_SPLIT_MIN = 0.1
+# Two seeds give a spread with one degree of freedom; three is the least
+# that makes the Gaussian predictive's std worth scoring.
+ENSEMBLE_MIN = 3
+# Q3.3 sampling checks: posterior-mean RMSE at nested draw counts (prefixes of
+# one draw set at the base step count), and at STEP_CHECK_DRAWS draws with
+# twice the steps. A setting has plateaued when the next one moves the mean
+# RMSE by less than PLATEAU_RTOL.
+DENOISE_DRAWS = (8, 16, 32)
+STEP_CHECK_DRAWS = 16
+PLATEAU_RTOL = 0.01
+# Two-mode criterion of multimodal_fraction. 10 BIC units is "very strong"
+# evidence on the Kass-Raftery scale. An equal two-Gaussian mixture turns
+# bimodal at 2 sigma, but at 64 draws a 2-sigma cut still flags ~12% of
+# exponential marginals; 3 sigma brings exponential to ~3% and lognormal to
+# ~1% while keeping a 6-sigma mode split at 100% (measured, 400 columns).
+MODE_BIC_MARGIN = 10.0
+MODE_MIN_WEIGHT = 0.1
+MODE_SEPARATION = 3.0
 
 
 def multimodal_fraction(draws: np.ndarray) -> float:
-    """Share of columns of ``draws`` ``[S, N]`` a 2-component GMM fits better.
+    """Share of columns of ``draws`` ``[S, N]`` with two separated modes.
 
-    "Better" is a lower BIC than one Gaussian, which charges the mixture its
-    three extra parameters, so sampling noise in S draws is not a mode.
+    A 2-component GMM must beat one Gaussian by ``MODE_BIC_MARGIN`` in BIC,
+    give its lighter component at least ``MODE_MIN_WEIGHT``, and put the means
+    more than ``MODE_SEPARATION`` of the wider std apart. BIC alone flags
+    nearly every skewed unimodal marginal (exponential, lognormal) at 64
+    draws, because two Gaussians fit a skewed shape better than one; the
+    weight and separation tests ask for what a mode split looks like.
     """
     multi = 0
     for column in draws.T:
         x = column[:, None]
-        bic = [GaussianMixture(k, random_state=0).fit(x).bic(x) for k in (1, 2)]
-        multi += bic[1] < bic[0]
+        one, two = (GaussianMixture(k, random_state=0).fit(x) for k in (1, 2))
+        mu = two.means_[:, 0]
+        sigma = np.sqrt(two.covariances_.reshape(-1))
+        multi += (
+            two.bic(x) < one.bic(x) - MODE_BIC_MARGIN
+            and two.weights_.min() >= MODE_MIN_WEIGHT
+            and abs(mu[0] - mu[1]) > MODE_SEPARATION * sigma.max()
+        )
     return multi / draws.shape[1]
 
 
@@ -107,17 +136,31 @@ class Sampling:
 
 
 class DenoisedEstimator:
-    """A regressor applied to the denoiser's posterior-mean trace."""
+    """A regressor applied to the mean of the denoiser's first ``n_mean`` draws.
+
+    Draws are memoized per input batch in ``cache``, so estimators that share
+    a cache score nested subsets (8, 16, 32 draws) of one set of draws instead
+    of paying for each separately.
+    """
 
     causal = False
     receptive_field = None
 
     def __init__(
-        self, flow: FlowLitModule, regressor: CheckpointEstimator, sampling: Sampling
+        self,
+        flow: FlowLitModule,
+        regressor: CheckpointEstimator,
+        sampling: Sampling,
+        n_mean: int,
+        cache: dict[str, Tensor],
     ):
+        if n_mean > sampling.n_samples:
+            raise ValueError(f'n_mean {n_mean} > n_samples {sampling.n_samples}')
         self.flow = flow
         self.regressor = regressor
         self.sampling = sampling
+        self.n_mean = n_mean
+        self.cache = cache
         self.generator = torch.Generator(flow.device).manual_seed(sampling.seed)
         self.name = f'denoised:{regressor.name}'
         self.model_type = f'flow+{regressor.model_type}'
@@ -125,18 +168,25 @@ class DenoisedEstimator:
             p.numel() for p in flow.parameters()
         )
         self.device = regressor.device
-        self.config = {'regressor': regressor.config, **dataclasses.asdict(sampling)}
+        self.config = {
+            'regressor': regressor.config,
+            **dataclasses.asdict(sampling),
+            'n_mean': n_mean,
+        }
 
     def predict_velocity(
         self, signals: Tensor, wavelengths_um: tuple[float, ...]
     ) -> Tensor:
         """Posterior-mean free-space trace of ``signals``, then the regressor."""
         _check_wavelengths(self.flow, wavelengths_um)
-        s = self.sampling
-        draws = _draws(
-            self.flow, signals, s.n_samples, s.n_steps, s.per_call, self.generator
-        )
-        return self.regressor.predict_velocity(draws.mean(dim=0), wavelengths_um)
+        key = hashlib.blake2b(signals.numpy().tobytes()).hexdigest()
+        if key not in self.cache:
+            s = self.sampling
+            self.cache[key] = _draws(
+                self.flow, signals, s.n_samples, s.n_steps, s.per_call, self.generator
+            )
+        mean = self.cache[key][: self.n_mean].mean(dim=0)
+        return self.regressor.predict_velocity(mean, wavelengths_um)
 
 
 class PosteriorEstimator:
@@ -201,6 +251,16 @@ def band_scores(draws: Tensor, truth: Tensor) -> dict[str, Any]:
     }
 
 
+@dataclasses.dataclass
+class Member:
+    """One deep-ensemble member: a grid cell's trained checkpoint."""
+
+    grid: str
+    cell: str
+    seed: int
+    checkpoint: Path
+
+
 def ensemble_scores(
     members: list[CheckpointEstimator],
     dataset: Path,
@@ -222,7 +282,6 @@ def ensemble_scores(
     z = torch.distributions.Normal(0.0, 1.0).icdf(torch.tensor(0.5 + BAND_LEVEL / 2))
     inside = (truth - mean).abs() <= z * std
     return {
-        'members': [m.name for m in members],
         'coverage': float(inside.double().mean()),
         'crps_um_per_ms': summarize_per_shot(
             crps_gaussian(mean, std, truth).mean(dim=-1).numpy()
@@ -231,25 +290,36 @@ def ensemble_scores(
     }
 
 
-def tcan_cells(sim: SimConfig, runs_dir: Path) -> list[tuple[Cell, Path]]:
-    """Every TCAN-44k cell on ``sim`` with a checkpoint, one per seed.
+def _training(cell: Cell, grid: Grid) -> dict[str, Any]:
+    """What ``cell`` trained, test set excluded: seed-independent by design."""
+    blocks = cell_fingerprint(cell, grid, training_config(cell, grid))
+    return {k: v for k, v in blocks['fingerprint_blocks'].items() if k != 'test_set'}
+
+
+def tcan_cells(reference: Cell, reference_grid: Grid, runs_dir: Path) -> list[Member]:
+    """Every TCAN-44k seed trained exactly as ``reference``, one per seed.
 
     Searched across all grids, because seeds of one sim are spread over grids
-    (q1_channels, q1_r1_count/seeds, q2_r4_noise, q3_fiber).
+    (q1_channels, q1_r1_count/seeds, q2_r4_noise, q3_fiber). Only members
+    whose resolved training config (budget, schedule, architecture, loss,
+    sim) matches the reference's count, so the ensemble's spread is seed
+    variation and not a mix of training budgets.
     """
-    found: dict[int, tuple[Cell, Path]] = {}
-    want = sim.hash()
+    want = _training(reference, reference_grid)
+    found: dict[int, Member] = {}
     for info in sorted(pkgutil.iter_modules(grids.__path__), key=lambda m: m.name):
-        for cell in expand_grid(_grid(info.name)):
+        grid = _grid(info.name)
+        for cell in expand_grid(grid):
             ckpt = runs_dir / info.name / f'{cell.key}.ckpt'
             if (
                 cell.family == FAMILY
                 and cell.seed is not None
                 and cell.seed not in found
-                and cell.sim.hash() == want
+                and cell.sim.hash() == reference.sim.hash()
                 and ckpt.exists()
+                and _training(cell, grid) == want
             ):
-                found[cell.seed] = (cell, ckpt)
+                found[cell.seed] = Member(info.name, cell.key, cell.seed, ckpt)
     return [found[s] for s in sorted(found)]
 
 
@@ -292,13 +362,42 @@ def score_denoise(
     def run(est: Any, dataset: Path) -> dict[str, float]:
         return _rmse(evaluate(est, dataset, wl, test.n_shots, True, 0).record)
 
+    def denoised(s: Sampling, n_mean: int, cache: dict[str, Tensor]) -> Any:
+        return run(DenoisedEstimator(flow, free_tcan, s, n_mean, cache), fiber_set)
+
+    if sampling.n_samples != DENOISE_DRAWS[-1]:
+        raise ValueError(f'denoise sampling must draw {DENOISE_DRAWS[-1]}')
+    shared: dict[str, Tensor] = {}
+    by_draws = {n: denoised(sampling, n, shared) for n in DENOISE_DRAWS}
+    long = dataclasses.replace(
+        sampling, n_samples=STEP_CHECK_DRAWS, n_steps=2 * sampling.n_steps
+    )
+    long_rmse = denoised(long, STEP_CHECK_DRAWS, {})
+
+    def moved(a: dict[str, float], b: dict[str, float]) -> float:
+        return abs(a['mean'] - b['mean']) / b['mean']
+
+    draws_moved = moved(by_draws[DENOISE_DRAWS[-2]], by_draws[DENOISE_DRAWS[-1]])
+    steps_moved = moved(by_draws[STEP_CHECK_DRAWS], long_rmse)
     return {
         'test_set': {**dataclasses.asdict(test), 'dataset': fiber_set.stem},
         'sampling': dataclasses.asdict(sampling),
+        'sampling_check': {
+            'velocity_rmse_by_draws': {str(n): r for n, r in by_draws.items()},
+            'step_check': {
+                'n_samples': STEP_CHECK_DRAWS,
+                'n_steps': long.n_steps,
+                'velocity_rmse': long_rmse,
+            },
+            'draws_rel_change': draws_moved,
+            'steps_rel_change': steps_moved,
+            'plateau_rtol': PLATEAU_RTOL,
+            'draws_plateau': draws_moved < PLATEAU_RTOL,
+            'steps_plateau': steps_moved < PLATEAU_RTOL,
+        },
         'velocity_rmse': {
-            'free_tcan_on_denoised_fiber': run(
-                DenoisedEstimator(flow, free_tcan, sampling), fiber_set
-            ),
+            # The largest draw count: the plateau value when draws_plateau.
+            'free_tcan_on_denoised_fiber': by_draws[DENOISE_DRAWS[-1]],
             'fiber_tcan_on_fiber': run(fiber_tcan, fiber_set),
             'free_tcan_on_fiber': run(free_tcan, fiber_set),
             'free_tcan_on_free_space': run(free_tcan, free_set),
@@ -332,7 +431,7 @@ def score_posterior(
         'posterior_mean_velocity_rmse': _rmse(record),
         **band_scores(torch.cat(est.draws, dim=1), _velocity(dataset, test.n_shots)),
     }
-    members = tcan_cells(cell.sim, runs_dir)
+    members = tcan_cells(cell, grid, runs_dir)
     regressor = runs_dir / grid_name / f'{cell.key}.ckpt'
     out['best_regressor'] = {
         'cell': cell.key,
@@ -348,13 +447,18 @@ def score_posterior(
         ),
     }
     out['deep_ensemble'] = (
-        ensemble_scores(
-            [CheckpointEstimator(p, device) for _, p in members],
-            dataset,
-            wl,
-            test.n_shots,
-        )
-        if len(members) >= 2
-        else f'unavailable: {len(members)} trained TCAN-44k seed(s) on this sim'
+        {
+            **ensemble_scores(
+                [CheckpointEstimator(m.checkpoint, device) for m in members],
+                dataset,
+                wl,
+                test.n_shots,
+            ),
+            'members': [
+                {'grid': m.grid, 'cell': m.cell, 'seed': m.seed} for m in members
+            ],
+        }
+        if len(members) >= ENSEMBLE_MIN
+        else f'unavailable: {len(members)} TCAN-44k seed(s) trained as {cell.key}'
     )
     return out

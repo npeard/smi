@@ -3,6 +3,7 @@
 import math
 
 import numpy as np
+import pytest
 import torch
 
 from smi.core.metrics import band_coverage, crps_gaussian, crps_samples
@@ -43,18 +44,50 @@ def test_crps_samples_matches_gaussian():
     assert torch.allclose(crps_samples(draws, truth), want, rtol=0.02)
 
 
+def test_crps_samples_is_unbiased_at_64_draws():
+    """Averaged over replicates of 64 draws, the fair CRPS hits the closed form.
+
+    The S^2 (V-statistic) form sits ~E|X - X'| / (2 S) = 2 / sqrt(pi) / 128
+    ~ 0.0088 high for N(0, 1); 4000 replicates put the MC error near 0.002.
+    """
+    g = torch.Generator().manual_seed(4)
+    draws = torch.randn(64, 4000, dtype=torch.float64, generator=g)
+    truth = torch.randn(4000, dtype=torch.float64, generator=g)
+    got = crps_samples(draws, truth)
+    want = crps_gaussian(torch.zeros(4000), torch.ones(4000), truth.float()).double()
+    diff = got - want
+    assert abs(diff.mean()) < 3 * diff.std() / math.sqrt(len(diff))
+
+
 def test_crps_samples_of_a_point_mass():
     """One repeated draw x: CRPS = |x - y|."""
     draws = torch.full((5, 1), 2.0)
     assert torch.allclose(crps_samples(draws, torch.tensor([0.5])), torch.tensor([1.5]))
 
 
-def test_multimodal_fraction():
-    """A +/-3 two-mode mixture is multimodal; a Gaussian is not."""
-    rng = np.random.default_rng(3)
-    n = 64
-    gauss = rng.standard_normal((n, 40))
-    sign = rng.choice([-1.0, 1.0], size=(n, 40))
-    mixture = 3 * sign + 0.3 * rng.standard_normal((n, 40))
-    assert multimodal_fraction(gauss) < 0.1
-    assert multimodal_fraction(mixture) > 0.9
+def _columns(rng: np.random.Generator, kind: str) -> np.ndarray:
+    n, cols = 64, 200
+    if kind == 'gauss':
+        return rng.standard_normal((n, cols))
+    if kind == 'exponential':
+        return rng.exponential(size=(n, cols))
+    if kind == 'lognormal':
+        return rng.lognormal(size=(n, cols))
+    sign = rng.choice([-1.0, 1.0], size=(n, cols))
+    return 3 * sign + 0.3 * rng.standard_normal((n, cols))
+
+
+@pytest.mark.parametrize(
+    ('kind', 'low', 'high'),
+    [
+        ('gauss', 0.0, 0.02),
+        # Skewed but unimodal: BIC alone flagged ~99% of these at 64 draws.
+        ('exponential', 0.0, 0.05),
+        ('lognormal', 0.0, 0.05),
+        ('mixture', 0.95, 1.0),
+    ],
+)
+def test_multimodal_fraction(kind: str, low: float, high: float):
+    """Only a well-separated two-mode mixture counts as multimodal."""
+    frac = multimodal_fraction(_columns(np.random.default_rng(3), kind))
+    assert low <= frac <= high

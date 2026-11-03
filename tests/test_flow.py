@@ -1,11 +1,14 @@
 """Flow matching: the paired simulation, the sampler on a known posterior, shapes."""
 
 import dataclasses
+from unittest.mock import Mock
 
 import pytest
 import torch
 from torch import nn
 
+from smi.experiments import flow_eval
+from smi.experiments.flow_eval import _cell, _grid, _training
 from smi.experiments.grids.q3_fiber import GRID as Q3_FIBER
 from smi.experiments.runner import expand_grid
 from smi.learning.configs import model_config
@@ -150,3 +153,45 @@ def test_lit_module_shapes(task):
     x_channels = n_channels if task == 'denoise' else 1
     assert draws.shape == (3, 2, x_channels, 128)
     assert draws.dtype == torch.float32
+
+
+def test_ensemble_members_share_the_training_budget():
+    """q1_channels trains its nominal TCAN-44k on another budget: not a member."""
+    ref = _cell(Q3_FIBER, 'nominal')
+    want = _training(ref, Q3_FIBER)
+    for name, same in (('q1_r1_seeds', True), ('q1_channels', False)):
+        grid = _grid(name)
+        cells = [
+            c
+            for c in expand_grid(grid)
+            if c.family == 'tcan-44k' and c.sim.hash() == ref.sim.hash()
+        ]
+        assert cells
+        assert all((_training(c, grid) == want) is same for c in cells)
+
+
+def test_denoised_estimator_nests_draw_counts(monkeypatch: pytest.MonkeyPatch):
+    """Estimators sharing a cache average prefixes of one set of draws."""
+    calls = []
+
+    def fake_draws(*args: object) -> torch.Tensor:
+        calls.append(args)
+        return torch.arange(4.0).reshape(4, 1, 1, 1)
+
+    monkeypatch.setattr(flow_eval, '_draws', fake_draws)
+    monkeypatch.setattr(flow_eval, '_check_wavelengths', lambda *_: None)
+    flow = Mock(device=torch.device('cpu'))
+    flow.parameters.return_value = []
+    regressor = Mock(name='r', model_type='r', total_params=0, device='cpu')
+    regressor.predict_velocity = lambda x, _wl: x
+    sampling = flow_eval.Sampling(n_samples=4, n_steps=2, per_call=2, seed=0)
+    cache: dict[str, torch.Tensor] = {}
+    signals = torch.zeros(1, 1, 1)
+    means = [
+        flow_eval.DenoisedEstimator(flow, regressor, sampling, n, cache)
+        .predict_velocity(signals, ())
+        .item()
+        for n in (2, 4)
+    ]
+    assert means == [0.5, 1.5]
+    assert len(calls) == 1

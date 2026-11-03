@@ -6,10 +6,14 @@ check) has no counterpart for a flow loss, which has no zero-output plateau.
 Training here is a fixed epoch budget with the best checkpoint by
 ``val/flow_loss``.
 
-Budget (CPU, 4 threads, measured on one smoke step each): denoise 0.45 s per
-crop-4096 step, the global posterior 0.69 s per full-shot step, at 200 steps
-plus 20 validation steps per epoch; with ``FLOW_EPOCHS`` that is ~1.6 h for
-the denoiser and ~1.7 h per posterior, ~5 h, plus ~0.5 h of scoring.
+Budget (CPU, 2 torch threads, others' jobs running): denoise 0.45 s per
+crop-4096 step; the global posterior 0.72 s per full-shot training step and
+0.53 s per validation step (median of 5), at 200 steps plus 20 validation
+steps per epoch. With ``FLOW_EPOCHS`` that is ~1.6 h for the denoiser and
+~1.7 h per posterior, ~5 h. Scoring is ~2.4 h: sampling costs 0.07 s
+(denoiser) and 0.03 s (posterior) per draw-step per full shot, over 64 shots,
+for the Q3.3 sampling check's 32 draws x 16 steps plus 16 x 32 and each
+posterior's 64 x 16.
 
     pixi run python scripts/flow.py train flow/denoise-unettransformer-offline-44k
     pixi run python scripts/flow.py score
@@ -42,9 +46,10 @@ POSTERIORS = {
     'nominal': 'flow/posterior-free-unettransformer-global-44k',
     'fiber': 'flow/posterior-fiber-unettransformer-global-44k',
 }
-# Posterior mean of the denoised trace needs few draws; the band and modality
-# scores need enough per marginal for a 2-component BIC to mean something.
-DENOISE_SAMPLING = Sampling(n_samples=8, n_steps=16, per_call=4, seed=0)
+# The denoiser's 32 draws are the top of score_denoise's draw-count check
+# (8/16/32 are prefixes of them); the band and modality scores need enough
+# draws per marginal for a 2-component BIC to mean something.
+DENOISE_SAMPLING = Sampling(n_samples=32, n_steps=16, per_call=4, seed=0)
 POSTERIOR_SAMPLING = Sampling(n_samples=64, n_steps=16, per_call=8, seed=0)
 
 
@@ -112,6 +117,8 @@ def score(device: str, frozen_root: Path, out: Path) -> None:
 
     results = {
         'grid': GRID,
+        'device': device,
+        'torch_threads': torch.get_num_threads(),
         'q3_3_denoise': {
             'config': DENOISE,
             **score_denoise(
