@@ -24,7 +24,12 @@ def main() -> None:
     assert doc is not None
     parser = argparse.ArgumentParser(description=doc.split('\n')[0])
     parser.add_argument('grids', nargs='+', help='grid names (smi.experiments.grids)')
-    parser.add_argument('--models', nargs='+', default=list(tabular_synthetic.MODELS))
+    parser.add_argument(
+        '--models',
+        nargs='+',
+        choices=tabular_synthetic.MODELS,
+        default=list(tabular_synthetic.MODELS),
+    )
     parser.add_argument('--window', type=int, default=tabular.WINDOW)
     parser.add_argument('--n-train-shots', type=int, default=512)
     # 0, as the grids' network seeds; the test set is seed 1000.

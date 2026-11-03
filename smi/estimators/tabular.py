@@ -8,6 +8,8 @@ predicting the target at the window's centre -- so their error numbers sit in
 the same table as the networks' without a caveat about a different task.
 """
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 import numpy as np
@@ -218,3 +220,26 @@ def predict_trace(
     accum = np.convolve(predict_windows(model, x), kernel)
     counts = np.convolve(np.ones(len(x)), kernel)
     return accum / counts
+
+
+@dataclass(frozen=True)
+class TabularModel:
+    """A tabular model's recorded fit settings and how to fit it with them.
+
+    ``hyperparameters(seed)`` is what a run records and fingerprints; ``fit``
+    takes a mapping holding at least those keys.
+    """
+
+    hyperparameters: Callable[[int], dict[str, Any]]
+    fit: Callable[[np.ndarray, np.ndarray, dict[str, Any]], SupportsPredict]
+
+
+TABULAR_MODELS: dict[str, TabularModel] = {
+    'ridge': TabularModel(
+        hyperparameters=lambda _seed: {'alpha': RIDGE_ALPHA},
+        fit=lambda x, y, hparams: fit_ridge(x, y, hparams['alpha']),
+    ),
+    'lightgbm': TabularModel(
+        hyperparameters=lambda seed: {**LIGHTGBM_PARAMS, 'seed': seed}, fit=fit_lightgbm
+    ),
+}

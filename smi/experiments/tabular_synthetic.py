@@ -48,11 +48,8 @@ from smi.estimators.tabular import (
     CAUSAL,
     FIT_STRIDE,
     LIGHTGBM_AVAILABLE,
-    LIGHTGBM_PARAMS,
-    RIDGE_ALPHA,
+    TABULAR_MODELS,
     SupportsPredict,
-    fit_lightgbm,
-    fit_ridge,
     lgb,
     predict_trace,
     trace_span,
@@ -76,7 +73,7 @@ logger = logging.getLogger(__name__)
 
 # Shots per simulate_batch call while drawing the training set; bounds memory.
 SIM_CHUNK_SHOTS = 64
-MODELS = ('ridge', 'lightgbm')
+MODELS = tuple(TABULAR_MODELS)
 
 
 class TabularEstimator:
@@ -135,24 +132,6 @@ def training_windows(
     return np.concatenate(xs), np.concatenate(ys)
 
 
-def hyperparameters(model_type: str, seed: int) -> dict[str, Any]:
-    """The fit settings of ``model_type``, as recorded and fingerprinted."""
-    if model_type == 'ridge':
-        return {'alpha': RIDGE_ALPHA}
-    if model_type == 'lightgbm':
-        return {**LIGHTGBM_PARAMS, 'seed': seed}
-    raise ValueError(f'unknown tabular model {model_type!r}; known: {MODELS}')
-
-
-def fit(
-    model_type: str, x: np.ndarray, y: np.ndarray, hparams: dict[str, Any]
-) -> SupportsPredict:
-    """Fit one model with its :func:`hyperparameters`."""
-    if model_type == 'ridge':
-        return fit_ridge(x, y, hparams['alpha'])
-    return fit_lightgbm(x, y, hparams)
-
-
 def run_tabular(
     grid_name: str,
     models: tuple[str, ...],
@@ -197,7 +176,7 @@ def run_tabular(
                             'train_stride': FIT_STRIDE,
                             'n_train_shots': n_train_shots,
                             'sign_invariant_loss': False,
-                            **hyperparameters(m, train_seed),
+                            **TABULAR_MODELS[m].hyperparameters(train_seed),
                         }
                         blocks = {
                             'test_set': dataclasses.asdict(test),
@@ -223,7 +202,7 @@ def run_tabular(
                     dataset = load_or_create(sim, test.seed, test.n_shots, frozen_root)
                     for m in todo:
                         start = time.perf_counter()
-                        model = fit(m, x, y, configs[m])
+                        model = TABULAR_MODELS[m].fit(x, y, configs[m])
                         est = TabularEstimator(
                             f'{m}-w{window}', m, model, window, configs[m]
                         )
