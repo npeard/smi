@@ -12,6 +12,7 @@ from smi.core.acquisition import STEMLAB_125_14
 from smi.data import frozen
 from smi.data.datasets import VelocityDataset
 from smi.data.frozen import frozen_set_path, load_or_create, pd_keys, write_frozen_set
+from smi.theory.fiber import FiberConfig
 from smi.theory.forward import NOMINAL_DRIVE_GAIN, SIMULATOR_VERSION, SimConfig
 from tests._sims import SAMPLE_RATE, WAVELENGTHS_UM
 
@@ -83,6 +84,8 @@ def test_hash_changes_with_any_field(tmp_path):
         'pd_bandwidth_hz': 1500.0,
         'adc_bits': 10,
         'adc_full_scale': 3.0,
+        'channel_phase_offsets_rad': (0.0, 1.0, 2.0),
+        'fiber': FiberConfig(4, 3.0, 2.8, 0.0, 0.01, (), False),
     }
     # `acquisition` is deliberately unhashed (see SimConfig.hash).
     hashed = {f.name for f in dataclasses.fields(SimConfig)} - {'acquisition'}
@@ -183,3 +186,9 @@ def test_load_or_create_regenerates_after_simulator_version_change(
     assert load_or_create(cfg, 2, 5, tmp_path) == path
     with h5py.File(path, 'r') as f:
         assert f.attrs['simulator_version'] == SIMULATOR_VERSION + 1
+
+
+def test_pd_keys_unique_for_repeated_wavelength():
+    """A one-color array needs one dataset per channel, not one per color."""
+    keys = pd_keys((0.635, 0.635, 0.635))
+    assert len(set(keys)) == 3

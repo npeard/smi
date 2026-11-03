@@ -9,6 +9,7 @@ Run: pixi run experiments q1_s4_oracle
 from smi.experiments.grid import (
     FAMILY_BUDGET,
     MPS,
+    RIG_OPERATING_POINT,
     RIG_WAVELENGTHS_UM,
     TEST_SET,
     Grid,
@@ -23,8 +24,7 @@ GRID = Grid(
         Sim(
             'q1-nominal',
             'nominal',
-            feedback_c=0.2,
-            alpha=3.0,
+            **RIG_OPERATING_POINT,
             sweep=('snr_db', (0.0, 10.0, 20.0, 30.0, 40.0)),
         ),
     ),

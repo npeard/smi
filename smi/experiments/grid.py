@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from smi.learning.configs import model_config
-from smi.theory.forward import SimConfig
+from smi.theory.forward import NOMINAL_ALPHA, NOMINAL_FEEDBACK_C, SimConfig
 
 _SIM_FIELDS = frozenset(f.name for f in dataclasses.fields(SimConfig))
 
@@ -114,6 +114,8 @@ class Grid:
 
 # Shared by the shipped grids.
 RIG_WAVELENGTHS_UM = (0.635, 0.6748, 0.515)
+#: The rig's SMI operating point, as ``Sim`` / ``SimConfig.nominal`` keywords.
+RIG_OPERATING_POINT = {'feedback_c': NOMINAL_FEEDBACK_C, 'alpha': NOMINAL_ALPHA}
 #: Every non-empty subset of the rig lasers, singles first, in channel order.
 ALL_SUBSETS = tuple(
     subset

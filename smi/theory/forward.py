@@ -7,7 +7,7 @@ import logging
 import math
 import statistics
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, fields
+from dataclasses import MISSING, asdict, dataclass, fields
 from typing import Any
 
 import torch
@@ -19,6 +19,7 @@ from smi.core.acquisition import (
     parse_acquisition,
 )
 from smi.theory.coil_driver import CoilDriver
+from smi.theory.fiber import FiberConfig, simulate_fiber
 from smi.theory.waveform import Waveform
 
 # Scale of the drive voltage relative to the rig's pre-compensated waveform
@@ -211,6 +212,20 @@ class SimConfig:
         adc_bits: Quantizer bits; None is unquantized.
         adc_full_scale: Quantizer range [-full_scale, +full_scale) in signal
             units; out-of-range samples clip to the end codes.
+        channel_phase_offsets_rad: None (default): each channel draws its
+            own uniform phase, as physically distinct paths do. Set: the
+            channels share ONE uniform phase phi_0 per shot plus these known,
+            fixed offsets (rad, one per channel) -- a one-color array on a
+            common target, whose geometric offsets are known (R2). Offsets
+            on independent uniform phases would be statistically a no-op,
+            hence the shared phase. The only defaulted field, and left out of
+            ``hash()`` when None, so configs and recorded hashes written
+            before it existed stay valid.
+        fiber: None (default): free space, output bitwise unchanged. Set: a
+            multimode fiber (``smi.theory.fiber``) between lasers and
+            target; per sample, |kappa| scales C and the visibility,
+            arg(kappa) adds to the phase. Left out of ``hash()`` when None,
+            like ``channel_phase_offsets_rad``.
     """
 
     acquisition: AcquisitionConfig
@@ -231,6 +246,14 @@ class SimConfig:
     pd_bandwidth_hz: float | None
     adc_bits: int | None
     adc_full_scale: float
+    channel_phase_offsets_rad: tuple[float, ...] | None = None
+    fiber: FiberConfig | None = None
+
+    @property
+    def n_signal_channels(self) -> int:
+        """Rows of ``SimBatch.signals``: a fiber PBS adds one P_perp per color."""
+        pbs = self.fiber is not None and self.fiber.pbs_channel
+        return len(self.wavelengths_um) * (2 if pbs else 1)
 
     def _coerce(self) -> None:
         # YAML gives lists and ints; the frozen config's hash must not depend on
@@ -251,6 +274,12 @@ class SimConfig:
             'adc_full_scale',
         ):
             object.__setattr__(self, name, float(getattr(self, name)))
+        if self.channel_phase_offsets_rad is not None:
+            object.__setattr__(
+                self,
+                'channel_phase_offsets_rad',
+                tuple(float(x) for x in self.channel_phase_offsets_rad),
+            )
         for name in ('snr_db', 'pd_bandwidth_hz'):
             if getattr(self, name) is not None:
                 object.__setattr__(self, name, float(getattr(self, name)))
@@ -263,6 +292,15 @@ class SimConfig:
             raise ValueError(
                 f'visibility_range must satisfy 0 <= lo <= hi <= 1: {lo, hi}'
             )
+        offsets = self.channel_phase_offsets_rad
+        if offsets is not None and len(offsets) != len(self.wavelengths_um):
+            raise ValueError(
+                f'need one offset per channel: {len(offsets)} offsets for '
+                f'{len(self.wavelengths_um)} wavelengths'
+            )
+        monitors = () if self.fiber is None else self.fiber.monitor_wavelengths_um
+        if stray := set(monitors) - set(self.wavelengths_um):
+            raise ValueError(f'monitor wavelengths {sorted(stray)} are not channels')
         dc_lo, dc_hi = self.dc_offset_range
         if dc_lo > dc_hi:
             raise ValueError(f'dc_offset_range must satisfy lo <= hi: {dc_lo, dc_hi}')
@@ -302,7 +340,14 @@ class SimConfig:
                 f'STEMLAB_125_14; include it in identity_fields and regenerate the '
                 f'recorded hashes before using {self.acquisition}'
             )
-        return {k: v for k, v in asdict(self).items() if k != 'acquisition'}
+        # Defaulted fields were added after hashes were recorded; leaving one
+        # out while it holds its default keeps those hashes valid.
+        out = asdict(self)
+        del out['acquisition']
+        for f in fields(self):
+            if f.default is not MISSING and getattr(self, f.name) == f.default:
+                del out[f.name]
+        return out
 
     def hash(self) -> str:
         """Stable sha1 of ``identity_fields`` (keys frozen test sets)."""
@@ -316,7 +361,10 @@ class SimConfig:
         ``AcquisitionConfig``.
         """
         acquisition = parse_acquisition(fields['acquisition'])
-        return cls(**{**fields, 'acquisition': acquisition})
+        out = {**fields, 'acquisition': acquisition}
+        if isinstance(out.get('fiber'), Mapping):
+            out['fiber'] = FiberConfig(**out['fiber'])
+        return cls(**out)
 
     @classmethod
     def nominal(
@@ -455,7 +503,9 @@ class SimConfig:
 class SimBatch:
     """One simulated batch, all float32 on the requested device."""
 
-    signals: torch.Tensor  # [B, C, L] detector output, not normalized
+    # [B, C, L] detector output, not normalized; [B, 2C, L] with a fiber PBS
+    # channel (the C P_perp channels follow the C coherent ones).
+    signals: torch.Tensor
     voltage: torch.Tensor  # [B, L] drive voltage
     velocity: torch.Tensor  # [B, L] um/ms
     displacement: torch.Tensor  # [B, L] um
@@ -473,7 +523,7 @@ def _check_feedback(feedback_c: float) -> None:
 
 
 def smi_excess_phase(
-    phase: torch.Tensor, feedback_c: float, alpha: float
+    phase: torch.Tensor, feedback_c: float | torch.Tensor, alpha: float
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Solve the weak-feedback excess phase equation by bracketed Newton.
 
@@ -485,14 +535,22 @@ def smi_excess_phase(
     root sits exactly ON -C at psi = pi/2 + C (and on +C at psi = 3 pi/2 - C), where a
     strict [-C, C] bracket rejects every Newton step and degrades to bisection.
 
+    A tensor C (broadcastable to ``phase``) is a per-sample feedback
+    strength, as a fiber's fading coupling gives; the caller bounds it by a
+    checked scalar C.
+
     Returns:
         ``(delta, psi)``, so the residual is ``delta + C sin(psi + delta)``.
     """
-    _check_feedback(feedback_c)
+    if isinstance(feedback_c, torch.Tensor):
+        if feedback_c.numel() and float(feedback_c.max()) >= 1.0:
+            raise ValueError('per-sample feedback C must stay below 1')
+    else:
+        _check_feedback(feedback_c)
     psi = torch.remainder(phase + math.atan(alpha), 2 * math.pi)
     delta = -feedback_c * torch.sin(psi)
-    lo = torch.full_like(psi, -2 * feedback_c)
-    hi = torch.full_like(psi, 2 * feedback_c)
+    lo = torch.zeros_like(psi) - 2 * feedback_c
+    hi = torch.zeros_like(psi) + 2 * feedback_c
     for _ in range(SMI_NEWTON_ITERATIONS):
         h = delta + feedback_c * torch.sin(psi + delta)
         lo = torch.where(h < 0, delta, lo)
@@ -502,7 +560,9 @@ def smi_excess_phase(
     return delta, psi
 
 
-def fringe(phase: torch.Tensor, feedback_c: float, alpha: float) -> torch.Tensor:
+def fringe(
+    phase: torch.Tensor, feedback_c: float | torch.Tensor, alpha: float
+) -> torch.Tensor:
     """Fringe shape cos(phi_F): Michelson for C = 0, weak-feedback SMI above.
 
     Sign convention: displacement d increasing (v > 0) increases the phase.
@@ -512,7 +572,7 @@ def fringe(phase: torch.Tensor, feedback_c: float, alpha: float) -> torch.Tensor
     low point is narrowed and the peak broadened, which carries no direction, so
     direction is observable only for C > 0 AND alpha != 0.
     """
-    if feedback_c == 0.0:
+    if not isinstance(feedback_c, torch.Tensor) and feedback_c == 0.0:
         return torch.cos(phase)
     delta, _ = smi_excess_phase(phase, feedback_c, alpha)
     return torch.cos(phase + delta)
@@ -606,6 +666,111 @@ def drive(
     )
 
 
+# simulate_batch's memo caches, emptied together by clear_caches.
+_CACHED = (drive, _lowpass_kernel, _wavelengths_tensor)
+
+
+def clear_caches() -> None:
+    """Empty simulate_batch's memo caches, so the next batch builds afresh."""
+    for cache in _CACHED:
+        cache.cache_clear()
+
+
+def channel_phases(
+    offsets: tuple[float, ...] | None,
+    shape: tuple[int, int],
+    device: torch.device | str,
+    dtype: torch.dtype,
+    generator: torch.Generator | None,
+) -> torch.Tensor:
+    """Per-shot channel phases [B, C, 1] (rad), see ``channel_phase_offsets_rad``.
+
+    The None path draws exactly what it always did, so existing outputs are
+    bitwise unchanged; the shared path draws one phase per shot.
+    """
+    batch, n_ch = shape
+    if offsets is None:
+        draw = torch.rand(
+            batch, n_ch, 1, device=device, generator=generator, dtype=dtype
+        )
+        return 2 * math.pi * draw
+    draw = torch.rand(batch, 1, 1, device=device, generator=generator, dtype=dtype)
+    shift = torch.tensor(offsets, device=device, dtype=dtype).view(1, -1, 1)
+    return 2 * math.pi * draw + shift
+
+
+def derived_generator(
+    generator: torch.Generator, device: torch.device
+) -> torch.Generator:
+    """A generator on ``device`` seeded by one draw from ``generator``.
+
+    A generator draws only on its own device, so this keeps an off-device
+    stream (MPS caller, CPU fiber) a deterministic function of the seed.
+    """
+    seed = torch.randint(2**62, (1,), device=generator.device, generator=generator)
+    return torch.Generator(device).manual_seed(int(seed.item()))
+
+
+def _through_fiber(
+    cfg: SimConfig,
+    phase: torch.Tensor,
+    phi_k: torch.Tensor,
+    visibility: torch.Tensor,
+    sim_device: torch.device | str,
+    generator: torch.Generator | None,
+) -> tuple[torch.Tensor, torch.Tensor, float | torch.Tensor, list[torch.Tensor]]:
+    """Apply ``cfg.fiber`` to the free-space phase: (phase, visibility, C, perp).
+
+    |kappa| is the return-field amplitude, so it scales both C and the
+    modulation depth; arg(kappa) adds to the phase. Monitor colors keep
+    phi_k and the fiber phase only (the dichroic returns it before the
+    target). ``perp`` holds the [B, C, L] P_perp channels with
+    ``pbs_channel``, else nothing. No fiber: inputs back, nothing drawn.
+    """
+    fib = cfg.fiber
+    if fib is None:
+        return phase, visibility, cfg.feedback_c, []
+    batch, _, length = phase.shape
+    # Complex linalg (matrix_exp) is not relied on under MPS: draw on CPU.
+    fiber_device = torch.device(sim_device)
+    if fiber_device.type == 'mps':
+        fiber_device = torch.device('cpu')
+    if generator is not None and generator.device != fiber_device:
+        generator = derived_generator(generator, fiber_device)
+    draw = simulate_fiber(
+        fib, cfg.wavelengths_um, batch, length, cfg.sample_rate, fiber_device, generator
+    )
+    if fib.monitor_wavelengths_um:
+        phase = phase.clone()
+        for lam in fib.monitor_wavelengths_um:
+            k = cfg.wavelengths_um.index(lam)
+            phase[:, k] = phi_k[:, k]
+    kappa = draw.kappa.to(phase.device)
+    coupling = kappa.abs()
+    feedback_c = cfg.feedback_c * coupling if cfg.feedback_c > 0 else 0.0
+    perp = [draw.p_perp.to(phase.device)] if fib.pbs_channel else []
+    return phase + kappa.angle(), visibility * coupling, feedback_c, perp
+
+
+@dataclass
+class Optics:
+    """The optical half of a shot, before any post-fiber draw.
+
+    ``simulate_optics`` draws motion, phi_k, visibility and the fiber; every
+    later draw is :func:`detect`'s, so a free-space and a fiber run of one seed
+    can share their detector draws (``paired_batch`` in
+    ``smi.learning.flow_lit_module``).
+    """
+
+    voltage: torch.Tensor  # [B, L]
+    velocity: torch.Tensor  # [B, L]
+    displacement: torch.Tensor  # [B, L]
+    phase: torch.Tensor  # [B, C, L] rad
+    visibility: torch.Tensor  # [B, C, 1]
+    feedback_c: float | torch.Tensor
+    perp: list[torch.Tensor]  # fiber PBS P_perp channels, [B, C, L] each
+
+
 def simulate_batch(
     cfg: SimConfig,
     batch_size: int,
@@ -632,6 +797,17 @@ def simulate_batch(
             the result to ``device``.
     """
     sim_device = generator.device if generator is not None else device
+    optics = simulate_optics(cfg, batch_size, sim_device, generator)
+    return detect(cfg, optics, device, generator)
+
+
+def simulate_optics(
+    cfg: SimConfig,
+    batch_size: int,
+    sim_device: torch.device | str,
+    generator: torch.Generator | None,
+) -> Optics:
+    """The draws of :func:`simulate_batch` up to and including the fiber."""
     waveform, coil = drive(cfg.acquisition, cfg.start_freq_hz, cfg.end_freq_hz)
     if waveform.acq_sample_rate != cfg.sample_rate:
         raise ValueError(
@@ -647,17 +823,38 @@ def simulate_batch(
         sim_device,
         generator,
     )
-    n_ch, length = len(cfg.wavelengths_um), displacement.shape[-1]
-    full = (batch_size, n_ch, length)
-
+    n_ch = len(cfg.wavelengths_um)
     lam = _wavelengths_tensor(
         cfg.wavelengths_um, torch.device(sim_device), torch.get_default_dtype()
     )
-    phi_k = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
+    phi_k = channel_phases(
+        cfg.channel_phase_offsets_rad,
+        (batch_size, n_ch),
+        sim_device,
+        torch.get_default_dtype(),
+        generator,
+    )
     lo, hi = cfg.visibility_range
     u = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
     visibility = lo + (hi - lo) * u
-    phase = 4 * math.pi * displacement[:, None] / lam + 2 * math.pi * phi_k
+    phase = 4 * math.pi * displacement[:, None] / lam + phi_k
+    phase, visibility, feedback_c, perp = _through_fiber(
+        cfg, phase, phi_k, visibility, sim_device, generator
+    )
+    return Optics(voltage, velocity, displacement, phase, visibility, feedback_c, perp)
+
+
+def detect(
+    cfg: SimConfig,
+    optics: Optics,
+    device: torch.device,
+    generator: torch.Generator | None,
+) -> SimBatch:
+    """The post-fiber draws of :func:`simulate_batch` and the detector chain."""
+    phase, visibility = optics.phase, optics.visibility
+    sim_device = phase.device
+    full = tuple(phase.shape)
+    length = full[-1]
     if cfg.phase_drift_rad_per_sqrt_s > 0:
         sigma = cfg.phase_drift_rad_per_sqrt_s / math.sqrt(cfg.sample_rate)
         phase = phase + sigma * _walk(full, sim_device, generator)
@@ -667,13 +864,17 @@ def simulate_batch(
         rel = cfg.contrast_drift_rel / math.sqrt(length)
         walk = _walk(full, sim_device, generator)
         visibility = (visibility * (1 + rel * walk)).clamp(0.0, 1.0)
-    intensity = 1 + visibility * fringe(phase, cfg.feedback_c, cfg.alpha)
+    intensity = 1 + visibility * fringe(phase, optics.feedback_c, cfg.alpha)
+    # A PBS PD reads P_perp (signal = intensity - 1 = P_perp); it then shares
+    # the detector chain below with the coherent channels.
+    intensity = torch.cat([intensity, *(1 + p for p in optics.perp)], 1)
+    full = tuple(intensity.shape)
     if cfg.amplitude_drift_rel > 0:
         rel = cfg.amplitude_drift_rel / math.sqrt(length)
         intensity = intensity * (1 + rel * _walk(full, sim_device, generator))
     if cfg.dc_offset_range != (0.0, 0.0):
         dc_lo, dc_hi = cfg.dc_offset_range
-        dc = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
+        dc = torch.rand(full[0], full[1], 1, device=sim_device, generator=generator)
         intensity = intensity + dc_lo + (dc_hi - dc_lo) * dc
     if cfg.pd_bandwidth_hz is not None:
         intensity = pd_lowpass(intensity, cfg.pd_bandwidth_hz, cfg.sample_rate)
@@ -691,9 +892,9 @@ def simulate_batch(
 
     return SimBatch(
         signals=signals.to(device),
-        voltage=voltage.to(device),
-        velocity=velocity.to(device),
-        displacement=displacement.to(device),
+        voltage=optics.voltage.to(device),
+        velocity=optics.velocity.to(device),
+        displacement=optics.displacement.to(device),
         optical_phase=phase.to(device),
     )
 

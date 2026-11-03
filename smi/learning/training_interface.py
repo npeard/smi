@@ -24,6 +24,7 @@ from smi.data.datamodule import VelocityDataModule
 from smi.data.schema import read_sample_rate
 from smi.learning.lit_module import LitModule
 from smi.learning.synthetic_lit_module import SyntheticIndexDataset, SyntheticLitModule
+from smi.theory.forward import SimConfig
 
 logger = logging.getLogger(__name__)
 
@@ -301,8 +302,8 @@ class TrainingInterface:
         """
         # Derive in_channels from data, not model config
         if self._is_synthetic():
-            sim = self.config.synthetic_config['sim']
-            self.config.model_config['in_channels'] = len(sim['wavelengths_um'])
+            sim = SimConfig.from_dict(self.config.synthetic_config['sim'])
+            self.config.model_config['in_channels'] = sim.n_signal_channels
         else:
             self.config.model_config['in_channels'] = self.config.data_config.get(
                 'num_pd_channels', 3

@@ -9,6 +9,7 @@ import torch
 from smi.core.acquisition import STEMLAB_125_14
 from smi.learning.synthetic_lit_module import SyntheticLitModule
 from smi.theory import forward
+from smi.theory.fiber import FiberConfig
 from smi.theory.forward import (
     NOMINAL_DRIVE_GAIN,
     SMI_NEWTON_ITERATIONS,
@@ -303,8 +304,7 @@ def test_cached_simulation_is_bitwise_the_uncached_one(device):
     cfg = dataclasses.replace(
         _noise_free(feedback_c=0.3, alpha=3.0), snr_db=20.0, pd_bandwidth_hz=50e3
     )
-    for cache in (forward.drive, forward._lowpass_kernel, forward._wavelengths_tensor):
-        cache.cache_clear()
+    forward.clear_caches()
     cold, warm = (
         simulate_batch(
             cfg, 4, torch.device(device), torch.Generator(device).manual_seed(3)
@@ -396,3 +396,108 @@ def test_simconfig_accepts_a_board_name_and_hash_guards_other_boards():
         other.hash()
     with pytest.raises(ValueError, match='STEMlab'):
         SimConfig.nominal(other.acquisition, WAVELENGTHS_UM, 0.2, 3.0)
+
+
+def test_phase_offsets_none_is_identity():
+    """None draws what it always did: unseeded-config shots are unchanged by
+    the field's existence, pinned against the independent-phase law.
+    """
+    cfg = _noise_free(0.2, 3.0)
+    assert cfg.channel_phase_offsets_rad is None
+    a = _simulate(cfg)
+    gen = torch.Generator().manual_seed(0)
+    forward.sample_trajectory(
+        BATCH,
+        *forward.drive(cfg.acquisition, cfg.start_freq_hz, cfg.end_freq_hz),
+        cfg.drive_gain,
+        cfg.sample_rate,
+        CPU,
+        gen,
+    )
+    phi = torch.rand(BATCH, len(cfg.wavelengths_um), 1, generator=gen)
+    lam = torch.tensor(cfg.wavelengths_um).view(1, -1, 1)
+    expected = 4 * math.pi * a.displacement[:, None] / lam + 2 * math.pi * phi
+    assert torch.equal(a.optical_phase, expected)
+
+
+def test_phase_offsets_shift_phase():
+    """Set offsets: channels share one phase, apart by exactly the offsets."""
+    cfg = dataclasses.replace(_noise_free(0.2, 3.0), wavelengths_um=(0.635,) * 3)
+    offsets = (0.0, 2 * math.pi / 3, 4 * math.pi / 3)
+    b = _simulate(dataclasses.replace(cfg, channel_phase_offsets_rad=offsets))
+    rel = b.optical_phase - b.optical_phase[:, :1]
+    expected = torch.tensor(offsets).view(1, -1, 1).expand_as(rel)
+    torch.testing.assert_close(rel, expected)
+
+
+def test_phase_offsets_length_checked():
+    with pytest.raises(ValueError, match='one offset per channel'):
+        dataclasses.replace(_noise_free(), channel_phase_offsets_rad=(0.0,))
+
+
+_R8_FIBER = FiberConfig(
+    n_modes=8,
+    drift_rad_per_sqrt_s=3.0,
+    path_drift_um_per_sqrt_s=2.8,
+    dispersion_per_um=0.0,
+    spectral_corr_width_um=0.01,
+    monitor_wavelengths_um=(),
+    pbs_channel=False,
+)
+
+
+def _golden_sim(path: str) -> SimConfig:
+    nom = SimConfig.nominal(STEMLAB_125_14, (0.635, 0.6748, 0.515), 0.2, 3.0)
+    return {
+        'noise_free': dataclasses.replace(
+            nom,
+            snr_db=None,
+            shot_noise=False,
+            amplitude_drift_rel=0.0,
+            phase_drift_rad_per_sqrt_s=0.0,
+            contrast_drift_rel=0.0,
+            pd_bandwidth_hz=None,
+            adc_bits=None,
+            dc_offset_range=(0.0, 0.0),
+        ),
+        'nominal': nom,
+        'fiber': dataclasses.replace(nom, fiber=_R8_FIBER),
+        'fiber_pbs': dataclasses.replace(
+            nom, fiber=dataclasses.replace(_R8_FIBER, pbs_channel=True)
+        ),
+        'shared_phase': dataclasses.replace(
+            nom, channel_phase_offsets_rad=(0.0, 1.0, 2.5)
+        ),
+    }[path]
+
+
+# Generated from the pre-split simulate_batch (1b63a49^), which matched the
+# simulate_optics/detect split bitwise on every path: the split must keep the
+# draw order, and frozen sets and recorded fingerprints depend on it.
+# signals[0, :, ::5461] flattened, first four values; float64 sum of signals.
+_GOLDEN = {
+    'noise_free': (
+        1369.4481009840965,
+        [-0.59934914, 0.4963696, -0.7735995, -0.60054338],
+    ),
+    'nominal': (5028.5732421875, [-0.61376953, 1.06958008, 0.93090820, -0.67895508]),
+    'fiber': (6299.5, [-0.18920898, 0.00683594, 0.05859375, -0.13916016]),
+    'fiber_pbs': (
+        55752.696044921875,
+        [-0.16528320, -0.00170898, 0.05395508, -0.16650391],
+    ),
+    'shared_phase': (
+        -4341.12353515625,
+        [-0.31884766, -0.30786133, -0.50610352, 0.51123047],
+    ),
+}
+
+
+@pytest.mark.parametrize('path', sorted(_GOLDEN))
+def test_simulate_batch_golden_values(path: str):
+    """Fixed-seed signals on each config path match the pre-split simulator."""
+    total, head = _GOLDEN[path]
+    signals = _simulate(_golden_sim(path), seed=11, batch=2).signals
+    assert signals.double().sum().item() == pytest.approx(total, rel=1e-5)
+    got = signals[0, :, ::5461].flatten()[:4].tolist()
+    assert got == pytest.approx(head, abs=1e-3)

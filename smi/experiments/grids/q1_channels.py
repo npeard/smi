@@ -10,6 +10,7 @@ from smi.experiments.grid import (
     ALL_SUBSETS,
     FAMILY_BUDGET,
     MPS,
+    RIG_OPERATING_POINT,
     STEMS_44K,
     TEST_SET,
     Family,
@@ -21,8 +22,8 @@ GRID = Grid(
     families=tuple(Family(stem, f'matched/{stem}') for stem in STEMS_44K),
     channel_subsets=ALL_SUBSETS,
     sims=(
-        Sim('noise-free', 'noise_free', feedback_c=0.2, alpha=3.0),
-        Sim('nominal', 'nominal', feedback_c=0.2, alpha=3.0),
+        Sim('noise-free', 'noise_free', **RIG_OPERATING_POINT),
+        Sim('nominal', 'nominal', **RIG_OPERATING_POINT),
     ),
     seeds=(0, 1, 2),
     oracle=True,

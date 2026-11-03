@@ -11,6 +11,7 @@ import torch
 from smi.core.acquisition import STEMLAB_125_14
 from smi.data.frozen import RIG_WAVELENGTHS_UM
 from smi.theory import bounds
+from smi.theory.fiber import FiberConfig
 from smi.theory.forward import SimConfig, fringe, noise_std, smi_excess_phase
 
 
@@ -355,3 +356,132 @@ def test_ekf_mse_above_bound(prior):
     # Measured 1.16x: a near-efficient EKF; a bound far below every estimator
     # would pass the line above while being useless.
     assert mse < 2 * bound[skip:].mean()
+
+
+def _velocity_marginal(j):
+    """Velocity information with the nuisance phases profiled out (Schur)."""
+    return j[0, 0] - j[0, 1:] @ np.linalg.solve(j[1:, 1:], j[1:, 0])
+
+
+def test_fisher_matrix_additive_independent_channels():
+    """Independent phases: 3-channel profiled velocity information equals the
+    sum of single-channel matrices computed on the same (sliced) draws.
+    """
+    cfg = _cfg((0.635, 0.6748, 0.515), 0.2, 3.0)
+    shots = bounds.ideal_shots(cfg, 4, 0)
+    j = bounds.fisher_from_shots(cfg, shots)
+    assert j.shape == (4, 4)
+    singles = 0.0
+    for k, lam in enumerate(cfg.wavelengths_um):
+        one = dataclasses.replace(cfg, wavelengths_um=(lam,))
+        sub = dataclasses.replace(
+            shots,
+            theta=shots.theta[:, k : k + 1],
+            visibility=shots.visibility[:, k : k + 1],
+        )
+        singles += _velocity_marginal(bounds.fisher_from_shots(one, sub))
+    assert _velocity_marginal(j) == pytest.approx(singles, rel=1e-6)
+
+
+def test_fisher_matrix_shared_phase_depends_on_offsets():
+    """Shared phase: 2 pi k / 3 offsets make sum_k F'^2 constant at C = 0, so
+    v decouples from phi_0 exactly; zero offsets leave them coupled.
+    """
+
+    def corr(offsets):
+        cfg = dataclasses.replace(
+            _cfg((0.635,) * 3, 0.0, 3.0),
+            channel_phase_offsets_rad=offsets,
+            visibility_range=(1.0, 1.0),
+        )
+        j = bounds.fisher_matrix(cfg, n_shots=4, seed=0)
+        assert j.shape == (2, 2)
+        return abs(j[0, 1]) / math.sqrt(j[0, 0] * j[1, 1])
+
+    spread = corr(tuple(2 * math.pi * k / 3 for k in range(3)))
+    assert spread < 1e-9
+    assert corr((0.0, 0.0, 0.0)) > 1e3 * spread + 1e-4
+
+
+def test_fisher_matrix_matches_finite_difference():
+    """One channel: J equals the Gaussian-likelihood Fisher of the mean signal,
+    whose derivatives are taken by central differences of ``fringe``.
+    """
+    cfg = _cfg((0.635,), 0.2, 3.0)
+    sigma = noise_std(cfg.snr_db)
+    j = bounds.fisher_matrix(cfg, n_shots=2, seed=3)
+
+    shots = bounds.ideal_shots(cfg, 2, 3)
+    length = shots.theta.shape[-1]
+    t_ms = (torch.arange(length, dtype=torch.float64) - (length - 1) / 2) * (
+        1e3 / cfg.sample_rate
+    )
+    k = 4 * math.pi / 0.635
+    eps = 1e-6
+
+    def mean(dv, dphi):
+        theta = shots.theta[:, 0] + k * dv * t_ms + dphi
+        return shots.visibility[:, :1] * fringe(theta, cfg.feedback_c, cfg.alpha)
+
+    g_v = (mean(eps, 0) - mean(-eps, 0)) / (2 * eps)
+    g_p = (mean(0, eps) - mean(0, -eps)) / (2 * eps)
+    grads = torch.stack([g_v, g_p], -1).reshape(-1, 2).numpy()
+    fd = grads.T @ grads / (grads.shape[0] * sigma**2)
+    np.testing.assert_allclose(j, fd, rtol=1e-2)
+
+
+def test_sign_information_shared_phase_quadrature_at_michelson():
+    """C = 0: a one-color array with known 2 pi k / 3 offsets on one shared
+    phase resolves direction (quadrature); zero offsets cannot.
+    """
+
+    def sign(offsets):
+        cfg = dataclasses.replace(
+            _cfg((0.635,) * 3, 0.0, 3.0), channel_phase_offsets_rad=offsets
+        )
+        return bounds.sign_information(cfg, 2, 0)
+
+    assert sign((0.0, 0.0, 0.0)) < 1e-6
+    assert sign(tuple(2 * math.pi * k / 3 for k in range(3))) > 1e3
+
+
+def _fiber_cfg(wavelengths_um, monitor, dispersion):
+    fib = FiberConfig(
+        n_modes=4,
+        drift_rad_per_sqrt_s=0.0,
+        path_drift_um_per_sqrt_s=0.0,
+        dispersion_per_um=dispersion,
+        spectral_corr_width_um=0.01,
+        monitor_wavelengths_um=monitor,
+        pbs_channel=False,
+    )
+    return dataclasses.replace(_cfg(wavelengths_um, 0.2, 3.0), fiber=fib)
+
+
+def test_fiber_fisher_extends_free_space_block():
+    """Fiber on, no monitor: the (v, phases) block is today's matrix."""
+    lam = (0.635, 0.6748, 0.515)
+    free = bounds.fisher_matrix(_cfg(lam, 0.2, 3.0), n_shots=2, seed=0)
+    j = bounds.fisher_matrix(_fiber_cfg(lam, (), 0.0), n_shots=2, seed=0)
+    assert j.shape == (5, 5)
+    np.testing.assert_array_equal(j[:4, :4], free)
+
+
+def test_fiber_phase_is_collinear_without_a_dichroic_monitor():
+    """Q3.1: 1/lambda fiber phase makes J singular for colors through the
+    target; a dichroic monitor color lifts the degeneracy.
+    """
+    lam = (0.635, 0.6748, 0.515)
+    through = bounds.fisher_matrix(_fiber_cfg(lam, (), 0.0), n_shots=2, seed=0)
+    monitor = bounds.fisher_matrix(_fiber_cfg(lam, (0.515,), 0.0), n_shots=2, seed=0)
+    assert np.linalg.cond(through) > 1e12
+    assert np.linalg.cond(monitor) < 1e8
+
+
+@pytest.mark.parametrize('target', [0, 2, -1])
+def test_profiled_information_is_the_inverse_diagonal(target):
+    rng = np.random.default_rng(0)
+    a = rng.normal(size=(4, 4))
+    fisher = a @ a.T + 4 * np.eye(4)
+    expected = 1 / np.linalg.inv(fisher)[target, target]
+    assert math.isclose(bounds.profiled_information(fisher, target), expected)

@@ -1,11 +1,10 @@
 # Self-Mix Interferometry Tasks
 
-The research program is specified in
-`docs/superpowers/specs/2026-10-29-synthetic-research-program-design.md`
-(gitignored; Q1-Q5, phases P0-P6, infrastructure I1-I2). P0-P3 are done; the
-synthetic report is `report/synthetic.typ`. Order from here: integrate the
-synthetic branch, restructure the code base, restructure acquisition and data
-handling, then resume experiments (P4-P6).
+The research questions are in `QUESTIONS.md`; `report/report.typ` answers
+them, one section each. Question numbers below follow QUESTIONS.md. The
+current spec is `docs/superpowers/specs/2026-11-02-unified-report-design.md`
+(gitignored; results R1-R8), which keeps the phases P4-P6 and infrastructure
+I1-I2 of `2026-10-29-synthetic-research-program-design.md`.
 
 ---
 
@@ -68,9 +67,9 @@ Carried-over cleanup:
   Julia RedPitayaDAQServer item) against the new API, rather than porting
   separately.
 - [ ] **Data handling for new acquisitions.**
-  - Paired free-space/fiber shots of the same trajectory (Q4b, Q5.1).
-  - An orthogonal-polarization PD channel (Q4c).
-  - A dichroic monitor color (Q4a).
+  - Paired free-space/fiber shots of the same trajectory (Q3.3).
+  - An orthogonal-polarization PD channel (Q3.2).
+  - A dichroic monitor color (Q3.1).
   - Each extends the HDF5 schema; design the schema change with R2.
   - I1 must land before any of these acquisitions.
 
@@ -79,7 +78,7 @@ Carried-over cleanup:
 ## 3. Then: resume the research program
 
 Report follow-ups, from the PI's round-2 review:
-- [ ] **PI review of the regenerated report** (`report/build/synthetic.pdf`).
+- [ ] **PI review of the regenerated report** (`report/build/report.pdf`).
 - [ ] **Extra seeds where the figures-only reader judged an answer only
   suggestive.**
   - A4: seeds 1-2 of TCN and TCAN at C = 0.2, about 80 min, to settle "TCAN
@@ -109,16 +108,32 @@ Open science questions the synthetic run raised:
   not retargeted.
 
 Phases:
-- [ ] **P4: fiber simulator** (spec 4.3). A time-varying transmission
+- [x] **P4: fiber simulator** (spec 4.3). A time-varying transmission
   matrix over N modes x 2 polarizations, wavelength-dependent, emitting the
   feedback coupling kappa(t) and the orthogonal-polarization power P_perp(t).
-  It serves Q4a/b/c and Q5.1/5.2. Own spec and plan.
-- [ ] **Q4: fiber phase scrambling.** 4a: monitor color, settled by Fisher
-  condition number and RMSE. 4b: matched free-space/fiber denoiser. 4c: the
+  It serves Q3.1-Q3.4. Own spec and plan.
+- [x] **Q3: fiber phase scrambling.** Q3.1: monitor color, settled by Fisher
+  condition number and RMSE. Q3.3: matched free-space/fiber denoiser. Q3.2: the
   P_perp side channel, corr(P_perp, |kappa|^2) against mode count.
-- [ ] **P5: Q5 flow matching.** 5.1: fiber -> free-space trace. 5.2: signal
+- [x] **P5: flow matching.** Q3.3: fiber -> free-space trace. Q3.4: signal
   -> trajectory posterior, settled by coverage, CRPS and posterior-mean RMSE
   against a deep ensemble.
+  Run on `research-questions`; neither question is answered (below).
+
+Follow-ups the Q3 runs raised:
+- [ ] **Retrain the fiber arms.** Every q3_fiber net sits at the zero
+  predictor, even on a static fiber, and UNetTransformer never converged.
+  Levers: a curriculum from the static fiber, visibility augmentation, a
+  longer budget.
+- [ ] **A working classical decode at the nominal point** (C = 0.2,
+  alpha = 3), to calibrate whether a static fiber keeps the information. The
+  inverse fit scores 1.25 there against the zero predictor's 0.4575.
+- [ ] **The flow posteriors are sign-symmetric.** Try sign-aware
+  conditioning or a sign-breaking prior; raise the denoise draws past 32
+  (2.9% change from 16).
+- [ ] **Per-shot std in `RunRecord`**, so paired SEs need no side file
+  (`report/results/per_shot_rmse.json` today).
+
 - [ ] **P6: unblinding.**
   - Calibrate the simulator on real data (`scripts/calibrate_sim.py`).
   - Score the pre-registered predictions (commits d2b5fbc, c4707de) against
@@ -126,6 +141,11 @@ Phases:
   - Resolve the CoilDriver drive-scale quirk (the code gives ~350x the
     published 0.375 um/ms; the simulator anchors to the published value).
   - Revisit the nominal values anchored to published numbers.
+- [ ] **The R4 full ladder.** Trimmed to the nominal and two stressed rungs
+  for time; q2_r4_noise ran about 3 h against an estimated 9.
+- [ ] **Tabular q3_noise_free LightGBM cells** were never run.
+- [ ] **An offset tolerance for the Q1.2 sign evidence.**
+- [ ] **UNetTransformer's 18-49% seed spread on Q1.**
 - [ ] **I2: the Google Slides deck to Typst slides** (connector auth needed;
   location to be chosen).
 
@@ -153,7 +173,7 @@ Phases:
 - [ ] **Cavity reflectance notebook: Fisher information** and the dynamic
   range / Fisher-information tradeoff.
 - [ ] **PCB for current supply and active modulation.** Evaluate, and find
-  an optics hardware consultant. (The dichroic reflector item is now Q4a.)
+  an optics hardware consultant. (The dichroic reflector item is now Q3.1.)
 
 ---
 
@@ -164,6 +184,11 @@ Phases:
   keep the ignore deliberately.
 - [ ] **Snakemake ILP scheduler** fails on Apple Silicon without Rosetta.
   Preflight suggests `scheduler: greedy` in a profile.
+- [ ] **Restore the HDF5 figures through a committed raw-data extract**
+  (the free-space/fiber spectrum and the other real-data figures out of the
+  DAG).
+- [ ] **Snakemake does not rebuild deleted figure outputs** while
+  `report.pdf` is present (found on `research-questions`).
 - [ ] **agent-config Windows CI** (left for now). The `report` env resolves
   Python 3.15, where `immutables` has no Windows wheel.
 

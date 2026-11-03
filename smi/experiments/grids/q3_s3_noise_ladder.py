@@ -13,6 +13,7 @@ Run: pixi run experiments q3_s3_noise_ladder
 from smi.experiments.grid import (
     FAMILY_BUDGET,
     MPS,
+    RIG_OPERATING_POINT,
     RIG_WAVELENGTHS_UM,
     TEST_SET,
     Grid,
@@ -48,18 +49,17 @@ GRID = Grid(
     channel_subsets=(RIG_WAVELENGTHS_UM,),
     sims=(
         *(
-            Sim(f'ladder-{knob}', 'noise_free', feedback_c=0.2, alpha=3.0, sweep=s)
+            Sim(f'ladder-{knob}', 'noise_free', **RIG_OPERATING_POINT, sweep=s)
             for knob, s in _SWEEPS.items()
         ),
         Sim(
             'ladder-adc',
             'noise_free',
-            feedback_c=0.2,
-            alpha=3.0,
+            **RIG_OPERATING_POINT,
             override={'adc_full_scale': 2.0},
             sweep=('adc_bits', (14, 12, 10, 8)),
         ),
-        Sim('nominal', 'nominal', feedback_c=0.2, alpha=3.0),
+        Sim('nominal', 'nominal', **RIG_OPERATING_POINT),
         # best C of the noise-free curve (monotone in C up to 0.9, q3_s0c_ceiling)
         Sim('nominal-c0.9', 'nominal', feedback_c=0.9, alpha=3.0),
     ),

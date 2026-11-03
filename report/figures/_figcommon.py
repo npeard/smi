@@ -31,7 +31,6 @@ import matplotlib
 
 matplotlib.use('Agg')
 
-import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -39,10 +38,12 @@ from matplotlib.typing import RcKeyType
 from scipy import signal
 
 from smi.core.acquisition import STEMLAB_125_14
-from smi.core.paths import DATA_DIR, RESULTS_DIR
+from smi.core.paths import RESULTS_DIR
 from smi.data.frozen import RIG_WAVELENGTHS_UM
-from smi.data.schema import DRIVE_KEY, PD_WAVELENGTHS_UM, read_sample_rate
+from smi.data.schema import PD_WAVELENGTHS_UM
+from smi.experiments import shift_eval
 from smi.experiments.grids import GRIDS
+from smi.experiments.grids.q2_r4_noise import STRESSED as R4_STRESSED
 from smi.experiments.results_artifact import RunRecord, read_results
 from smi.experiments.runner import (
     ORACLE_FAMILY,
@@ -59,9 +60,6 @@ from smi.theory.forward import (
     simulate_batch,
 )
 
-FREE_SPACE_H5 = DATA_DIR / 'free-space-synchro_10k.h5'
-MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
-
 # Baseline results, written by smi.experiments.baselines and committed. Figures
 # read this rather than recomputing: method 2's Viterbi decode is ~20 minutes
 # per acquisition on a GPU, which is not work a document build should be
@@ -70,12 +68,18 @@ MMFIBER_H5 = DATA_DIR / 'mmfiber-synchro_10k.h5'
 # method 2 that makes regeneration expensive.)
 RESULTS_JSON = RESULTS_DIR / 'baseline_results.json'
 
-# Experiment-runner records behind synthetic.typ's learned-model results.
+# Experiment-runner records behind report.typ's synthetic learned-model results.
 SYNTHETIC_RESULTS_JSON = RESULTS_DIR / 'synthetic_results.json'
 
 # The same lasers as the synthetic simulator spells them, for figures that
 # compute from smi.theory.
 SYNTHETIC_WAVELENGTHS_UM = RIG_WAVELENGTHS_UM
+
+
+def rig_nm(wavelength_um: float) -> str:
+    """The rig laser nearest ``wavelength_um``, in nm; baseline records round 674.8."""
+    return f'{min(RIG_WAVELENGTHS_UM, key=lambda w: abs(w - wavelength_um)) * 1e3:g}'
+
 
 # The feedback values the Q3 grids sweep at alpha = 3.
 Q3_FEEDBACK_C = (0.05, 0.1, 0.2, 0.4, 0.7, 0.9)
@@ -86,8 +90,8 @@ def c_sim(c: float) -> str:
     return f'smi-a3-feedback_c={c}'
 
 
-# The sign-collapse controls of synthetic.typ sections 1.1 (the exit check's
-# signed Michelson run) and 2A (alpha = 0 at both schedules). These are the
+# The sign-collapse controls of report.typ (the exit check's signed Michelson
+# run, and alpha = 0 at both schedules). These are the
 # only records without zero_predictor_monitor (written before the min_epochs
 # grace) that patience stopped inside the grace, at epoch 11 on the
 # zero-output plateau. The report quotes exactly that collapse, so they are
@@ -178,10 +182,48 @@ def synthetic_records() -> dict[str, RunRecord]:
     return {r.cell_key: r for r in records if r.cell_key is not None}
 
 
+SHIFT_RESULTS_JSON = RESULTS_DIR / 'shift_results.json'
+SHIFT_FAMILIES = shift_eval.FAMILIES
+# A record without an ``@test`` tag was scored on the grid's own test draw.
+SHIFT_DEFAULT_TEST_SEED = GRIDS[shift_eval.GRID].test_set.seed
+
+
+@dataclass(frozen=True)
+class ShiftScore:
+    """One shifted-test-set score: mean per-shot velocity RMSE, SE ``shot_se``."""
+
+    rmse: float
+    se: float
+
+
+def shift_scores() -> dict[tuple[str, str, float, int], ShiftScore]:
+    """Keyed (family, knob, value, test seed), from sim_name ``knob=value[@testS]``."""
+    out = {}
+    for r in read_results(SHIFT_RESULTS_JSON):
+        tag, _, seed = r.sim_name.partition('@test')
+        knob, _, value = tag.partition('=')
+        family = r.cell_key.split('__')[0]
+        key = (family, knob, float(value), int(seed or SHIFT_DEFAULT_TEST_SEED))
+        out[key] = ShiftScore(r.metrics['velocity_rmse']['mean'], shot_se(r))
+    return out
+
+
+def shot_se(record: RunRecord, metric: str = 'velocity_rmse') -> float:
+    """SE of the shot mean of ``metric``: IQR / 1.349 / sqrt(n).
+
+    The record keeps quartiles, not the per-shot std, and IQR / 1.349 is the
+    std of a normal law. Arm differences on shared trajectories take the
+    paired SE from per_shot_rmse.json instead.
+    """
+    m = record.metrics[metric]
+    n = int(record.dataset.rsplit('_n', 1)[1])
+    return (m['p75'] - m['p25']) / 1.349 / math.sqrt(n)
+
+
 def synthetic_cell(records: dict[str, RunRecord], family: str, sim: str) -> RunRecord:
     """The seed-0, three-channel record of ``family`` on ``sim``.
 
-    Every synthetic.typ figure reads three-channel seed-0 cells; a missing one
+    Every synthetic figure of report.typ reads three-channel seed-0 cells; a missing one
     raises here, naming the key, rather than plotting a gap.
     """
     return records[cell_key(family, SYNTHETIC_WAVELENGTHS_UM, sim, 0)]
@@ -418,7 +460,6 @@ def mismatch_spectra(noise_free: bool) -> MismatchSpectra:
 # Photodiode channels, in the order the dataset feeds them to the model, with
 # the laser wavelength each one detects (microns).
 PD_CHANNELS: tuple[tuple[str, float], ...] = tuple(PD_WAVELENGTHS_UM.items())
-VOLTAGE_CHANNEL = DRIVE_KEY
 
 # The two acquisitions, as (key in baseline_results.json, axis label). Shared
 # so that adding a third cannot leave one figure silently showing two.
@@ -547,6 +588,64 @@ def pending_panel(ax: plt.Axes, what: str) -> None:
 # SMI sim, which its header leaves unrun: the oracle decodes under the
 # Michelson model, so only its Michelson cells are read.
 Q1_FAMILIES = ('tcn-44k', 'tcan-44k')
+
+# The R grids (q1_r1_*, q1_r2_*, q2_r4_noise, q3_fiber): best causal and best
+# offline family; R4 adds the third-best and LightGBM.
+R_FAMILIES = ('tcan-44k', 'unettransformer-offline-44k')
+R4_FAMILIES = (*R_FAMILIES, 'patchtransformer-offline-44k', 'lightgbm-w91')
+R_FAMILY_LABELS = {
+    'tcan-44k': 'TCAN',
+    'unettransformer-offline-44k': 'UNetTransformer (offline)',
+    'patchtransformer-offline-44k': 'PatchTransformer (offline)',
+    'lightgbm-w91': 'LightGBM',
+    'tcn-44k': 'TCN',
+}
+#: q1_r1_count's colors in the order added, N = 1..6.
+R1_COLORS_UM = (0.635, 0.6748, 0.515, 0.785, 0.85, 0.405)
+R1_SIMS = {'s2-smi-a3': 'noise-free', 'nominal': 'nominal'}
+R1_SEEDS = (0, 1, 2)
+#: q3_fiber's arms, in reading order, with their channel sets.
+FIBER_ARMS = {
+    'nominal': R1_COLORS_UM[:3],
+    'fiber': R1_COLORS_UM[:3],
+    'fiber-4color': R1_COLORS_UM[:4],
+    'fiber-monitor': R1_COLORS_UM[:4],
+    'fiber-pbs': R1_COLORS_UM[:3],
+}
+
+
+R4_GRID = 'q2_r4_noise'
+R4_TABULAR = 'lightgbm-w91'
+
+
+def r4_cells(records: dict[str, RunRecord]) -> dict[tuple[str, str, bool], RunRecord]:
+    """q2_r4_noise keyed ``(family, knob field or 'nominal', stressed)``.
+
+    LightGBM ran on the grid's sims outside the runner, so its records share
+    the grid's sim names but not its families; they are found by key.
+    """
+    out = {}
+    for cell, record in grid_cells(records, R4_GRID):
+        field, value = cell.sweep or ('nominal', None)
+        stressed = field in R4_STRESSED and R4_STRESSED[field] == value
+        out[cell.family, field, stressed] = record
+        if cell.family == R_FAMILIES[0]:
+            key = cell_key(R4_TABULAR, cell.wavelengths_um, cell.sim_name, 0)
+            out[R4_TABULAR, field, stressed] = records[key]
+    return out
+
+
+def r_cell(
+    records: dict[str, RunRecord],
+    family: str,
+    wavelengths_um: tuple[float, ...],
+    sim: str,
+    seed: int = 0,
+) -> RunRecord:
+    """One R-grid record; a missing cell raises, naming its key."""
+    return records[cell_key(family, wavelengths_um, sim, seed)]
+
+
 Q1_S2_SIMS = {
     's2-michelson': 'velocity_rmse_sign_invariant',
     's2-smi-a3': 'velocity_rmse',
@@ -672,38 +771,6 @@ def save(fig: plt.Figure, output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, metadata={'CreationDate': None})
     plt.close(fig)
-
-
-def read_shot(
-    h5_path: Path, channel: str, index: int, decimate: int = 1
-) -> tuple[np.ndarray, float]:
-    """Read one shot from one channel of an acquisition file.
-
-    A single channel of these files is 0.66 GB, so read exactly one row -- never
-    the whole dataset.
-
-    Args:
-        h5_path: Path to the acquisition HDF5 file.
-        channel: Dataset name, e.g. ``RP1_CH1``.
-        index: Row (shot) index.
-        decimate: Keep every ``decimate``-th sample of the returned trace.
-
-    Returns:
-        Tuple of (trace, sample_rate). ``sample_rate`` is the rate of the
-        returned trace, i.e. already divided by ``decimate``.
-    """
-    with h5py.File(h5_path, 'r') as f:
-        trace = np.asarray(f[channel][index, :], dtype=np.float64)
-        sample_rate = read_sample_rate(f.attrs)
-    if decimate > 1:
-        trace = trace[::decimate]
-        sample_rate /= decimate
-    return trace, sample_rate
-
-
-def time_axis(n: int, sample_rate: float) -> np.ndarray:
-    """Time axis in milliseconds for ``n`` samples at ``sample_rate`` Hz."""
-    return np.arange(n) / sample_rate * 1e3
 
 
 def panel_label(ax: plt.Axes, text: str) -> None:

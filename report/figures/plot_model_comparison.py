@@ -153,7 +153,7 @@ def main() -> None:
             va='center',
         )
 
-        ax.set_xlabel('velocity RMSE (um/ms)')
+        ax.set_xlabel(r'velocity RMSE ($\mu$m/ms)')
         ax.set_title(label)
         ax.set_xlim(0, 0.66)
 

@@ -156,9 +156,9 @@ class SyntheticLitModule(LitModule):
         # _make_model runs inside LitModule.__init__ and needs both.
         self.sim_config = SimConfig.from_dict(sim)
         self._restoring_checkpoint = restoring_checkpoint
-        if len(self.sim_config.wavelengths_um) != model_hparams['in_channels']:
+        if self.sim_config.n_signal_channels != model_hparams['in_channels']:
             raise ValueError(
-                f'{len(self.sim_config.wavelengths_um)} wavelengths but '
+                f'{self.sim_config.n_signal_channels} signal channels but '
                 f'in_channels={model_hparams["in_channels"]}'
             )
         super().__init__(
@@ -185,7 +185,7 @@ class SyntheticLitModule(LitModule):
         if self._restoring_checkpoint:
             # Two tensors: Model keeps them as buffers without copying, and a
             # shared storage would let loading one overwrite the other.
-            n_ch = len(self.sim_config.wavelengths_um)
+            n_ch = self.sim_config.n_signal_channels
             stats = {
                 'input_mean': torch.full((n_ch,), torch.nan),
                 'input_std': torch.full((n_ch,), torch.nan),

@@ -6,6 +6,8 @@ artifact reports: velocity RMSE in um/ms and displacement RMSE in um,
 summarized per shot with the same six keys ``baseline_results.json`` uses.
 """
 
+import math
+
 import numpy as np
 import torch
 
@@ -168,3 +170,66 @@ def summarize_per_shot(values: np.ndarray) -> dict[str, float]:
         'min': float(np.min(values)),
         'max': float(np.max(values)),
     }
+
+
+def band_coverage(draws: torch.Tensor, truth: torch.Tensor, level: float) -> float:
+    """Expected share of ``truth`` inside the central ``level`` band of ``draws``.
+
+    Rank-based, so a calibrated sampler reads ``level`` in expectation at any
+    ``S``. The rank ``r`` = #{draws < truth} of a truth exchangeable with ``S``
+    draws is uniform on the ``S + 1`` slots ``0..S``. Each tail excludes
+    ``m = (1 - level) (S + 1) / 2`` slots: with ``k = floor(m)``, slots
+    ``r < k`` and ``r > S - k`` count 0, the two boundary slots ``k`` and
+    ``S - k`` count ``1 - (m - k)``, the rest count 1. The expectation is
+    ``(S + 1 - 2 m) / (S + 1) = level`` exactly. Interpolated sample
+    quantiles instead cover ~``(S - 1) level / (S + 1)``: 0.872 at S = 64.
+
+    Args:
+        draws: ``[S, ...]`` samples of the predictive distribution.
+        truth: ``[...]``, the realized values.
+        level: Band probability, e.g. 0.9; needs ``2 m < S`` so the two
+            boundary slots are distinct.
+    """
+    s = draws.shape[0]
+    m = (1 - level) * (s + 1) / 2
+    k = math.floor(m)
+    if not 0 <= k < s - k:
+        raise ValueError(f'level {level} leaves no band at {s} draws')
+    rank = (draws < truth).sum(dim=0)
+    weight = torch.ones(rank.shape, dtype=torch.float32)
+    weight[(rank < k) | (rank > s - k)] = 0.0
+    weight[(rank == k) | (rank == s - k)] = 1 - (m - k)
+    return float(weight.mean())
+
+
+def crps_samples(draws: torch.Tensor, truth: torch.Tensor) -> torch.Tensor:
+    """Fair sample CRPS, ``E|X - y| - E|X - X'| / 2``, elementwise over ``truth``.
+
+    The pair mean runs over the ``S (S - 1)`` distinct pairs: dividing by
+    ``S^2`` counts the zero self-pairs and biases the score high by about
+    ``E|X - X'| / (2 S)``, which at 64 draws is comparable to the gaps being
+    compared. The pair term uses the sorted-sample identity
+    ``sum_ij |x_i - x_j| = 2 sum_i (2 i - S + 1) x_(i)`` (0-based), which is
+    O(S log S) rather than O(S^2) memory.
+    """
+    s = draws.shape[0]
+    spread = (draws - truth).abs().mean(dim=0)
+    ordered = draws.sort(dim=0).values
+    weight = (2 * torch.arange(s, dtype=draws.dtype) - s + 1).reshape(
+        -1, *([1] * truth.dim())
+    )
+    pair = 2 * (weight * ordered).sum(dim=0) / (s * (s - 1))
+    return spread - pair / 2
+
+
+def crps_gaussian(
+    mean: torch.Tensor, std: torch.Tensor, truth: torch.Tensor
+) -> torch.Tensor:
+    """Closed-form CRPS of ``N(mean, std^2)`` at ``truth``."""
+    z = (truth - mean) / std
+    normal = torch.distributions.Normal(0.0, 1.0)
+    return std * (
+        z * (2 * normal.cdf(z) - 1)
+        + 2 * normal.log_prob(z).exp()
+        - 1 / math.sqrt(math.pi)
+    )

@@ -10,6 +10,7 @@ from smi.experiments.grid import (
     FAMILY_BUDGET,
     MICHELSON,
     MPS,
+    RIG_OPERATING_POINT,
     RIG_WAVELENGTHS_UM,
     STEMS_44K,
     TEST_SET,
@@ -26,8 +27,7 @@ GRID = Grid(
         Sim(
             'smi',
             'noise_free',
-            feedback_c=0.2,
-            alpha=3.0,
+            **RIG_OPERATING_POINT,
             sweep=('feedback_c', (0.05, 0.1, 0.2, 0.4, 0.7, 0.9)),
         ),
     ),

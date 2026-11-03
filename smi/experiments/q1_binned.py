@@ -1,6 +1,6 @@
 """Q1's binned test: velocity error against |v| and fringe-extremum distance.
 
-Section 1 of synthetic.typ predicts that one channel loses its information at
+The analytic foundation of report.typ predicts that one channel loses its information at
 its fringe extrema and three channels do not, so the error should rise toward
 an extremum for one channel and stay flat for three. The runner's records bin
 only by the pre-feedback phase of the shortest channel, and the checkpoints
@@ -32,7 +32,7 @@ from smi.data.frozen import DEFAULT_ROOT, load_or_create
 from smi.experiments.evaluate import EVAL_CHUNK_SHOTS, N_BINS, CheckpointEstimator
 from smi.experiments.grids import grid as shipped_grid
 from smi.experiments.results_artifact import read_results
-from smi.experiments.runner import Cell, cell_key, expand_grid
+from smi.experiments.runner import Cell, cell_key, expand_grid, trained_checkpoint
 from smi.theory.forward import smi_excess_phase
 
 RESULTS = RESULTS_DIR / 'synthetic_results.json'
@@ -113,11 +113,6 @@ def _table(
     return {'rmse': rmse.tolist(), 'zero': zero.tolist(), 'n': n.tolist()}
 
 
-def grid_checkpoint(grid_name: str, key: str) -> Path:
-    """The runner's checkpoint of cell ``key`` of the grid ``grid_name``."""
-    return GRID_RUNS_DIR / grid_name / f'{key}.ckpt'
-
-
 def evaluate_cell(
     grid_name: str, wavelengths_um: tuple[float, ...], sim_name: str
 ) -> tuple[Cell, float, np.ndarray, np.ndarray, np.ndarray]:
@@ -143,7 +138,7 @@ def evaluate_cell(
     )
     if path.stem != record.dataset:
         raise ValueError(f'{key}: scored on {record.dataset}, not {path.stem}')
-    est = CheckpointEstimator(grid_checkpoint(grid_name, key), 'cpu')
+    est = CheckpointEstimator(trained_checkpoint(cell, grid_name, GRID_RUNS_DIR), 'cpu')
     with h5py.File(path, 'r') as f:
         keys = select_pd_keys(f, cell.wavelengths_um)
         signals = torch.from_numpy(np.stack([f[k][:] for k in keys], axis=1))

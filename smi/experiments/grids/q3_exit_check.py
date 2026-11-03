@@ -11,6 +11,7 @@ Run: pixi run experiments q3_exit_check
 from smi.experiments.grid import (
     FAMILY_BUDGET,
     MPS,
+    RIG_OPERATING_POINT,
     RIG_WAVELENGTHS_UM,
     TEST_SET,
     Grid,
@@ -36,7 +37,7 @@ GRID = Grid(
             alpha=0.0,
             sign_invariant=True,
         ),
-        Sim('smi-c0.2-signed', 'noise_free', feedback_c=0.2, alpha=3.0),
+        Sim('smi-c0.2-signed', 'noise_free', **RIG_OPERATING_POINT),
     ),
     seeds=(0,),
     oracle=False,

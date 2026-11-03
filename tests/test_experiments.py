@@ -16,14 +16,19 @@ import numpy as np
 import pytest
 import torch
 
+from smi.core.acquisition import STEMLAB_125_14
 from smi.core.kinematics import derivative_displacement
 from smi.core.paths import REPO_ROOT
+from smi.data import frozen
 from smi.data.datasets import select_pd_keys
+from smi.data.frozen import PERP_SUFFIX, pd_keys, write_frozen_set
+from smi.data.schema import DISPLACEMENT_KEY, VELOCITY_KEY
 from smi.experiments import grid as grid_module
 from smi.experiments import runner as experiments
 from smi.experiments.evaluate import load_lit_module
 from smi.experiments.grid import EvalSet, Family, Grid, Sim, Synthetic
 from smi.experiments.grids import GRIDS
+from smi.experiments.grids.q2_r4_noise import STRESSED
 from smi.experiments.results_artifact import read_results
 from smi.experiments.runner import (
     RunnerLockedError,
@@ -37,7 +42,8 @@ from smi.experiments.runner import (
 from smi.learning import configs, synthetic_lit_module
 from smi.learning.configs import MODEL_CONFIGS, model_config
 from smi.learning.lit_module import LitModule
-from smi.learning.training_interface import SIGNED_RMSE_KEY
+from smi.learning.training_interface import SIGNED_RMSE_KEY, TrainingInterface
+from smi.theory.forward import SimConfig, simulate_batch
 from tests._helpers import script_log
 
 TINY = 'tiny-tcn'
@@ -650,3 +656,203 @@ def test_sim_naming_an_unknown_field_fails_when_built():
         replace(SMI, override={'snr': 30.0})
     with pytest.raises(ValueError, match='not a SimConfig field'):
         replace(SMI, sweep=('feedbak_c', (0.1,)))
+
+
+def test_r1_r2_r4_grids_expand_to_their_planned_cells():
+    # R1: N = 1..6 x 2 families x 2 sims at seed 0; seeds 1-2 at N = 1, 3 only.
+    count = expand_grid(GRIDS['q1_r1_count'])
+    assert len(count) == 6 * 2 * 2
+    assert sorted({len(c.wavelengths_um) for c in count}) == [1, 2, 3, 4, 5, 6]
+    seeds = expand_grid(GRIDS['q1_r1_seeds'])
+    assert len(seeds) == 2 * 2 * 2 * 2
+    assert {len(c.wavelengths_um) for c in seeds} == {1, 3}
+    # R1 pairs: the two rig pairs q1_r1_count's N = 2 cell leaves out.
+    pairs = expand_grid(GRIDS['q1_r1_pairs'])
+    assert len(pairs) == 2 * 2 * 2
+    assert {c.wavelengths_um for c in pairs} == {(0.635, 0.515), (0.6748, 0.515)}
+    # R2: one color repeated N times; quadrature at N = 2, three-phase at N = 3.
+    for name, n in (('q1_r2_colors', 2), ('q1_r2_colors_n3', 3)):
+        cells = expand_grid(GRIDS[name])
+        assert len(cells) == 2 * 2
+        for c in cells:
+            assert c.wavelengths_um == (0.635,) * n
+            assert c.sim.channel_phase_offsets_rad == pytest.approx(
+                (0.0, math.pi / 2)
+                if n == 2
+                else (0.0, 2 * math.pi / 3, 4 * math.pi / 3)
+            )
+    # R4: 3 families x (7 knobs at nominal + 2 stressed rungs + nominal point).
+    noise = expand_grid(GRIDS['q2_r4_noise'])
+    assert len(noise) == 3 * 10
+    assert all(c.family_config in MODEL_CONFIGS for c in noise)
+
+
+def test_q2_r4_noise_runs_each_knob_at_its_nominal_value():
+    grid = GRIDS['q2_r4_noise']
+    nominal = SimConfig.nominal(
+        STEMLAB_125_14, grid.channel_subsets[0], feedback_c=0.2, alpha=3.0
+    )
+    swept = {s.sweep[0]: s.sweep[1] for s in grid.sims if s.sweep is not None}
+    # The ladder's ADC rung fixes its own full scale; 14 bits is the board's.
+    assert swept.pop('adc_bits') == (nominal.adc_bits,) == (14,)
+    for field, values in swept.items():
+        stressed = (STRESSED[field],) if field in STRESSED else ()
+        assert values == (getattr(nominal, field), *stressed), field
+
+
+def _q3_fiber_grid():
+    return GRIDS['q3_fiber']
+
+
+def _q3_fiber_arm(name):
+    return next(c.sim for c in expand_grid(_q3_fiber_grid()) if c.sim_name == name)
+
+
+ARM_CHANNELS = {
+    'nominal': 3,
+    'fiber': 3,
+    'fiber-4color': 4,
+    'fiber-monitor': 4,
+    'fiber-pbs': 6,
+}
+
+
+def test_q3_fiber_grid_expands_to_two_families_by_five_arms():
+    cells = expand_grid(_q3_fiber_grid())
+    assert len(cells) == 2 * 5
+    assert {c.sim_name for c in cells} == set(ARM_CHANNELS)
+    four = (0.635, 0.6748, 0.515, 0.785)
+    for arm in ('fiber-monitor', 'fiber-4color'):
+        cell = next(c for c in cells if c.sim_name == arm)
+        assert cell.wavelengths_um == four
+        assert cell.key.split('__')[1] == 'ch635-675-515-785'
+    monitor, control = (
+        next(c.sim.fiber for c in cells if c.sim_name == a)
+        for a in ('fiber-monitor', 'fiber-4color')
+    )
+    # The control routes the monitor's color through the target instead.
+    assert monitor.monitor_wavelengths_um == (0.785,)
+    assert control.monitor_wavelengths_um == ()
+    # One frozen test set per arm: every arm is a distinct sim.
+    assert len({c.sim.hash() for c in cells}) == 5
+
+
+def test_q3_fiber_families_take_each_arms_input_channels():
+    grid = _q3_fiber_grid()
+    for cell in expand_grid(grid):
+        # The runner's own path: TrainingInterface derives in_channels.
+        interface = TrainingInterface(config=training_config(cell, grid))
+        module = interface.create_lightning_module()
+        n_ch = ARM_CHANNELS[cell.sim_name]
+        assert module.hparams.model_hparams['in_channels'] == n_ch, cell.key
+        x = torch.zeros(1, n_ch, 4096)
+        with torch.no_grad():
+            assert module.model.eval()(x).shape[-1] == 4096, cell.key
+
+
+def test_fiber_pbs_sim_emits_a_perp_row_per_color():
+    sim = _q3_fiber_arm('fiber-pbs')
+    assert len(sim.wavelengths_um) == 3
+    batch = simulate_batch(sim, 1, torch.device('cpu'), torch.Generator())
+    assert batch.signals.shape[1] == 6
+
+
+def test_fiber_arms_share_their_test_trajectories(tmp_path):
+    """Every arm's frozen set holds the same motion, so arms compare paired."""
+    grid = _q3_fiber_grid()
+    sims = {c.sim_name: c.sim for c in expand_grid(grid)}
+    seed = grid.test_set.seed
+    motion = {}
+    for arm, sim in sims.items():
+        path = write_frozen_set(sim, seed, 2, tmp_path / f'{arm}.h5')
+        with h5py.File(path, 'r') as f:
+            motion[arm] = (f[VELOCITY_KEY][:], f[DISPLACEMENT_KEY][:])
+    v0, x0 = motion['nominal']
+    for arm, (v, x) in motion.items():
+        np.testing.assert_array_equal(v, v0, err_msg=arm)
+        np.testing.assert_array_equal(x, x0, err_msg=arm)
+
+
+def test_fiber_pbs_frozen_set_stores_perp_rows_in_signal_order(tmp_path):
+    sim = _q3_fiber_arm('fiber-pbs')
+    path = write_frozen_set(sim, 7, 2, tmp_path / 'pbs.h5')
+    # small_chunks patches the chunk size; the writer draws one chunk per call.
+    batch = simulate_batch(
+        sim, frozen.CHUNK_SHOTS, torch.device('cpu'), torch.Generator().manual_seed(7)
+    )
+    keys = pd_keys(sim.wavelengths_um)
+    with h5py.File(path, 'r') as f:
+        for i, k in enumerate(keys):
+            np.testing.assert_array_equal(f[k][:], batch.signals[:2, i].numpy())
+            np.testing.assert_array_equal(
+                f[k + PERP_SUFFIX][:], batch.signals[:2, len(keys) + i].numpy()
+            )
+        # evaluate reads the coherent keys, then each color's P_perp after them.
+        read = select_pd_keys(f, sim.wavelengths_um)
+        read += [k + PERP_SUFFIX for k in read]
+    assert read == keys + [k + PERP_SUFFIX for k in keys]
+
+
+@pytest.mark.parametrize(
+    'name',
+    [
+        'q1_r1_count',
+        'q1_r2_colors',
+        'q1_r2_colors_n3',
+        'q2_r4_noise',
+        'q1_r1_seeds',
+        'q1_r1_pairs',
+    ],
+)
+def test_cells_take_their_grids_channel_subset(name):
+    # The runner takes a cell's wavelengths from its sim; without an override
+    # adding channels, that must still be the grid subset the cell expanded on.
+    grid = GRIDS[name]
+    cells = expand_grid(grid)
+    assert cells
+    subsets = set(grid.channel_subsets)
+    for cell in cells:
+        assert cell.wavelengths_um in subsets, cell.key
+    per_subset = {s: sum(c.wavelengths_um == s for c in cells) for s in subsets}
+    assert len(set(per_subset.values())) == 1, per_subset
+
+
+@pytest.mark.parametrize('arm', ['fiber-monitor', 'fiber-pbs'])
+def test_fiber_arm_trains_and_scores_end_to_end(tmp_path, arm):
+    (sim,) = [s for s in _q3_fiber_grid().sims if s.name == arm]
+    grid = _grid(seeds=(0,), sims=(sim,))
+    assert _run(grid, tmp_path) == 1
+    (record,) = read_results(tmp_path / 'results.json')
+    assert math.isfinite(record.metrics['velocity_rmse']['mean'])
+
+
+_SHARED_KEY = 'tcan-44k__ch635-675-515__nominal__seed0'
+
+
+def _touch(runs_dir: Path, grid_name: str) -> Path:
+    path = runs_dir / grid_name / f'{_SHARED_KEY}.ckpt'
+    path.parent.mkdir(parents=True)
+    path.touch()
+    return path
+
+
+def _shared_cell():
+    (cell,) = [
+        c for c in experiments.expand_grid(GRIDS['q3_fiber']) if c.key == _SHARED_KEY
+    ]
+    return cell
+
+
+def test_a_cell_trained_by_another_grid_resolves_to_its_checkpoint(tmp_path):
+    # q1_r1_count trains this cell identically, so q3_fiber's resume skips it.
+    other = _touch(tmp_path, 'q1_r1_count')
+    assert experiments.trained_checkpoint(_shared_cell(), 'q3_fiber', tmp_path) == other
+    own = _touch(tmp_path, 'q3_fiber')
+    assert experiments.trained_checkpoint(_shared_cell(), 'q3_fiber', tmp_path) == own
+
+
+def test_a_same_key_checkpoint_trained_differently_is_not_used(tmp_path):
+    # q1_channels shares the key under another fingerprint.
+    _touch(tmp_path, 'q1_channels')
+    with pytest.raises(FileNotFoundError, match='no identically trained checkpoint'):
+        experiments.trained_checkpoint(_shared_cell(), 'q3_fiber', tmp_path)

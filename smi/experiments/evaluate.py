@@ -45,6 +45,7 @@ from smi.core.metrics import (
     summarize_per_shot,
 )
 from smi.data.datasets import file_pd_channels, select_pd_keys
+from smi.data.frozen import PERP_SUFFIX
 from smi.data.schema import (
     DISPLACEMENT_KEY,
     DRIVE_KEY,
@@ -334,10 +335,12 @@ def evaluate(
     wavelengths_um = tuple(wavelengths_um)
     with h5py.File(dataset, 'r') as f:
         keys = select_pd_keys(f, wavelengths_um)
+        fringe = (keys[int(np.argmin(wavelengths_um))], min(wavelengths_um))
+        # A fiber PBS set: each color's P_perp follows the coherent channels.
+        if keys[0] + PERP_SUFFIX in f:
+            keys += [k + PERP_SUFFIX for k in keys]
         n = len(f[DRIVE_KEY] if DRIVE_KEY in f else f[VELOCITY_KEY])
         n = n if n_shots is None else min(n_shots, n)
-        shortest = int(np.argmin(wavelengths_um))
-        fringe = (keys[shortest], wavelengths_um[shortest])
         sample_rate = read_sample_rate(f.attrs)
 
         # Pass 1: quantile edges of the true |v| need the whole evaluated set.

@@ -1,0 +1,43 @@
+"""R8 flow matching: train a FlowLitModule config, or score the trained flows.
+
+The CLI over ``smi.experiments.flow_runner``, which holds the budget and the
+rationale.
+
+    pixi run python scripts/flow.py train flow/denoise-unettransformer-offline-44k
+    pixi run python scripts/flow.py score
+"""
+
+import argparse
+from pathlib import Path
+
+import torch
+
+from smi.core.cli import add_verbosity, setup_logging
+from smi.core.paths import RESULTS_DIR
+from smi.data.frozen import DEFAULT_ROOT
+from smi.experiments.flow_runner import DENOISE, POSTERIORS, score, train
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    add_verbosity(parser)
+    sub = parser.add_subparsers(dest='command', required=True)
+    t = sub.add_parser('train', help='train one flow config')
+    t.add_argument('config', choices=[DENOISE, *POSTERIORS.values()])
+    t.add_argument('--accelerator', default='cpu')
+    t.add_argument('--seed', type=int, default=0)
+    s = sub.add_parser('score', help='score the trained flows')
+    s.add_argument('--device', default='cpu')
+    s.add_argument('--frozen-root', type=Path, default=DEFAULT_ROOT)
+    s.add_argument('--out', type=Path, default=RESULTS_DIR / 'flow_results.json')
+    args = parser.parse_args()
+    setup_logging(args.verbosity)
+    torch.set_float32_matmul_precision('high')
+    if args.command == 'train':
+        train(args.config, args.accelerator, args.seed)
+    else:
+        score(args.device, args.frozen_root, args.out)
+
+
+if __name__ == '__main__':
+    main()

@@ -48,6 +48,7 @@ from smi.experiments.evaluate import (
     evaluate,
 )
 from smi.experiments.grid import Grid, Sim
+from smi.experiments.grids import GRIDS
 from smi.experiments.results_artifact import (
     RunRecord,
     append_results,
@@ -140,7 +141,7 @@ def cell_key(
     return f'{family}__{subset_label(wavelengths_um)}__{sim_name}__{tail}'
 
 
-def _build_sims(
+def build_sims(
     entry: Sim, wavelengths_um: tuple[float, ...]
 ) -> list[tuple[str, SimConfig, tuple[str, object] | None]]:
     """Expand one ``sims`` entry (and its sweep) for a channel subset.
@@ -196,8 +197,11 @@ def expand_grid(grid: Grid) -> list[Cell]:
             if entry.sign_invariant is None
             else entry.sign_invariant
         )
-        for wavelengths in grid.channel_subsets:
-            for sim_name, sim, sweep in _build_sims(entry, wavelengths):
+        for subset in grid.channel_subsets:
+            for sim_name, sim, sweep in build_sims(entry, subset):
+                # An override may add channels (a fiber monitor color); the
+                # cell trains and is scored on the sim's own.
+                wavelengths = sim.wavelengths_um
                 if grid.oracle:
                     cells.append(
                         Cell(
@@ -367,9 +371,21 @@ def cell_fingerprint(
             # fingerprints survive the acquisition field.
             synthetic={**config.synthetic_config, 'sim': cell.sim.identity_fields()},
         )
+    return fingerprint_of(cell.sim, blocks, budget)
+
+
+def fingerprint_of(
+    sim: SimConfig, blocks: dict[str, Any], budget: dict[str, Any]
+) -> dict[str, Any]:
+    """A record's identity fields: ``blocks`` hashed per block and as a whole.
+
+    ``budget`` holds the ``BUDGET_FIELDS`` (all None for an untrained cell).
+    Shared by every writer of grid-keyed records, so :func:`is_done` compares
+    like with like.
+    """
     block_hashes = {k: _stable_hash(v) for k, v in blocks.items()}
     return {
-        'sim_config_hash': cell.sim.hash(),
+        'sim_config_hash': sim.hash(),
         'simulator_version': SIMULATOR_VERSION,
         'run_fingerprint': _stable_hash([block_hashes, SIMULATOR_VERSION]),
         'fingerprint_blocks': block_hashes,
@@ -383,15 +399,22 @@ def _stable_hash(value: object) -> str:
     return hashlib.sha1(blob.encode(), usedforsecurity=False).hexdigest()[:16]
 
 
-def _is_done(cell: Cell, want: dict[str, Any], records: list[RunRecord]) -> bool:
-    """Whether ``cell`` is recorded under its current sim, simulator and setup.
+def record_fields(want: dict[str, Any]) -> dict[str, Any]:
+    """The fields of :func:`fingerprint_of` ``want`` that a record stores."""
+    return {
+        k: want[k] for k in ('run_fingerprint', 'fingerprint_blocks', *BUDGET_FIELDS)
+    }
 
-    ``want`` is the cell's :func:`cell_fingerprint`.
+
+def is_done(key: str, want: dict[str, Any], records: list[RunRecord]) -> bool:
+    """Whether cell ``key`` is recorded under its current sim, simulator and setup.
+
+    ``want`` is the cell's :func:`fingerprint_of`.
 
     Raises:
         ValueError: If its key is recorded only under another setup.
     """
-    recorded = [r for r in records if r.cell_key == cell.key]
+    recorded = [r for r in records if r.cell_key == key]
     if not recorded:
         return False
     comparable = ('sim_config_hash', 'simulator_version', 'run_fingerprint')
@@ -410,10 +433,57 @@ def _is_done(cell: Cell, want: dict[str, Any], records: list[RunRecord]) -> bool
         if getattr(have, k) != want[k]
     }
     raise ValueError(
-        f'{cell.key} is recorded under a different setup: differing blocks '
+        f'{key} is recorded under a different setup: differing blocks '
         f'{differing or "(record predates fingerprints)"}; readable fields '
         f'(recorded, grid) {diff}; write to another --out or remove those '
         'records rather than mixing them'
+    )
+
+
+@functools.cache
+def trained_cells() -> tuple[tuple[str, Cell, dict[str, Any]], ...]:
+    """``(grid name, cell, cell_fingerprint)`` of every trained cell, GRIDS order.
+
+    Cached: expanding and fingerprinting every grid is the cost of a
+    checkpoint lookup, and callers look up many cells. The grids are module
+    constants, so the index cannot go stale; checkpoint existence is not
+    cached.
+    """
+    return tuple(
+        (name, c, cell_fingerprint(c, grid, training_config(c, grid)))
+        for name, grid in GRIDS.items()
+        for c in expand_grid(grid)
+        if c.family_config is not None
+    )
+
+
+def trained_checkpoint(cell: Cell, grid_name: str, runs_dir: Path) -> Path:
+    """The checkpoint that trained ``cell`` of grid ``grid_name``.
+
+    Resume matches records by key and fingerprint regardless of which grid
+    wrote them, so a cell another grid already trained identically is skipped
+    and its checkpoint lives under that grid's directory, not this one's.
+
+    Raises:
+        FileNotFoundError: If no grid with an identically fingerprinted
+            ``cell.key`` has its checkpoint under ``runs_dir``.
+    """
+    own = runs_dir / grid_name / f'{cell.key}.ckpt'
+    if own.exists():
+        return own
+    grid = GRIDS[grid_name]
+    want = cell_fingerprint(cell, grid, training_config(cell, grid))
+    for name, other, fingerprint in trained_cells():
+        path = runs_dir / name / f'{cell.key}.ckpt'
+        if (
+            other.key == cell.key
+            and fingerprint['run_fingerprint'] == want['run_fingerprint']
+            and path.exists()
+        ):
+            return path
+    raise FileNotFoundError(
+        f'{cell.key} of {grid_name}: no identically trained checkpoint under '
+        f'{runs_dir}/<grid>/'
     )
 
 
@@ -464,10 +534,7 @@ def run_cell(
     dataset = load_or_create(cell.sim, test.seed, test.n_shots, frozen_root)
     start = time.perf_counter()
     est: Estimator
-    extra: dict[str, Any] = {
-        k: fingerprint[k]
-        for k in ('run_fingerprint', 'fingerprint_blocks', *BUDGET_FIELDS)
-    }
+    extra = record_fields(fingerprint)
     if config is None:
         est = InverseFitEstimator.for_dataset(dataset, test.n_shots)
         converged = True
@@ -477,7 +544,12 @@ def run_cell(
         extra.update(trained)
         est = CheckpointEstimator(ckpt, device)
     result = evaluate(
-        est, dataset, cell.wavelengths_um, test.n_shots, converged, cell.seed
+        est,
+        dataset,
+        cell.wavelengths_um,
+        n_shots=test.n_shots,
+        converged=converged,
+        train_seed=cell.seed,
     )
     record = dataclasses.replace(
         result.record,
@@ -527,7 +599,7 @@ def run_grid(
     with runner_lock(lock_path):
         # Read under the lock: the other runner may have just finished.
         records = read_results(out) if Path(out).exists() else []
-        todo = [c for c in cells if not _is_done(c, fingerprints[c.key], records)]
+        todo = [c for c in cells if not is_done(c.key, fingerprints[c.key], records)]
         logger.info(
             '%d cells selected, %d done, %d to run',
             len(cells),
@@ -623,9 +695,9 @@ def rescore_metrics(
                 est,
                 dataset,
                 tuple(record.wavelengths_um),
-                None,
-                record.converged,
-                record.train_seed,
+                n_shots=None,
+                converged=record.converged,
+                train_seed=record.train_seed,
             ).record
             if new.sim_config_hash != record.sim_config_hash:
                 raise ValueError(

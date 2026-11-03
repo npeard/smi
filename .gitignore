@@ -174,3 +174,6 @@ report/.snakemake/
 # Grid checkpoints (runs/grids/<grid>/<cell-key>.ckpt) and training runs
 # (runs/train/<run-name>/).
 runs/
+
+# Agent worktrees: separate checkouts, linted in their own tree.
+.claude/worktrees/

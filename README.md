@@ -32,7 +32,7 @@ The importable package is `smi/`:
   data (ignored), run outputs (ignored).
 - `packages/redpitaya/` - `stemlab`, the standalone Red Pitaya AWG and
   acquisition library (its own package; see its README).
-- `report/` - Typst reports, built from matplotlib figures through a
+- `report/` - the Typst report, built from matplotlib figures through a
   Snakemake DAG (`pixi run report`). See the `report/` section in `CLAUDE.md`.
 - `tests/`, `notebooks/` (marimo apps), `docs/`.
 
@@ -72,7 +72,7 @@ Python -- always go through `pixi`.
    pixi run test       # pytest
    pixi run precommit  # all pre-commit hooks
    pixi run all        # format, lint, ascii, typecheck, test in sequence
-   pixi run report     # build the Typst reports
+   pixi run report     # build the Typst report
    ```
 
 6. Commit, push, and open a Pull Request on GitHub.

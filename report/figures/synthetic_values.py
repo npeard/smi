@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Numbers that synthetic.typ quotes in prose and in its sign-evidence table.
+"""Numbers that report.typ quotes in its synthetic prose and tables.
 
 The document reads this JSON at compile time, so a change to
 smi.theory.bounds (or to the results artifacts) rebuilds the quoted values
@@ -20,6 +20,7 @@ Usage: python synthetic_values.py --output build/synthetic_values.json
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import itertools
 import json
 import math
@@ -31,12 +32,14 @@ from typing import Any
 
 import h5py
 import numpy as np
+from scipy.stats import spearmanr
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _figcommon import (
     CEILING_GRID,
     DISPLACEMENT_METRICS,
+    FIBER_ARMS,
     LEAVE_ONE_OUT,
     MISMATCH_SHOTS,
     NOISE_KNOBS,
@@ -56,11 +59,19 @@ from _figcommon import (
     Q2_STEMS,
     Q3_BUDGETS,
     Q3_FEEDBACK_C,
+    R1_COLORS_UM,
+    R1_SEEDS,
+    R4_FAMILIES,
+    R_FAMILIES,
+    R_FAMILY_LABELS,
     RESULTS_DIR,
     S1D_FAMILIES,
+    SHIFT_DEFAULT_TEST_SEED,
+    SHIFT_FAMILIES,
     STALL_TOLERANCE,
     SYNTHETIC_WAVELENGTHS_UM,
     LadderRow,
+    ShiftScore,
     c_sim,
     displacement_pending,
     matched_length_cells,
@@ -70,7 +81,11 @@ from _figcommon import (
     noise_seeds,
     oracle_cell,
     q2_record,
+    r4_cells,
+    r_cell,
     s1d_record,
+    shift_scores,
+    shot_se,
     synthetic_cell,
     synthetic_records,
     velocity_bounds,
@@ -83,7 +98,7 @@ from smi.data.frozen import DEFAULT_ROOT, load_or_create
 from smi.experiments.grids import GRIDS
 from smi.experiments.results_artifact import RunRecord
 from smi.experiments.runner import ORACLE_FAMILY, cell_key, expand_grid
-from smi.learning.configs import MODEL_CONFIGS
+from smi.learning.configs import MODEL_CONFIGS, R8_FIBER
 from smi.learning.models.factory import create_model
 from smi.learning.models.sliding_window import SlidingWindowModel
 from smi.learning.synthetic_lit_module import VAL_SEED
@@ -134,6 +149,116 @@ def real_tcn_rmse() -> float:
         if run['config']['config_name'] == REAL_TCN_CONFIG
     ]
     return sum(runs) / len(runs)
+
+
+# Key stems of the learned configurations the real-data prose quotes.
+REAL_CONFIGS = {
+    'barland-matched': 'barland',
+    'scnn-matched': 'scnn44',
+    'tcn-matched': 'tcn44',
+    'scnn-matched-small': 'scnn19',
+    'mlp-matched': 'mlp',
+    'tcn-matched-small': 'tcn19',
+    'tcn-repeated': 'tcn36',
+    'tcn-varying': 'tcn28',
+    'lightgbm': 'lgbm',
+    'ridge': 'ridge',
+}
+REAL_DATASETS = {'free-space': 'fs', 'mmfiber': 'mmf'}
+
+
+def real_values() -> dict[str, str]:
+    """Real-data values the prose and tables quote, from the committed records.
+
+    Every RMSE is the mean over a run's test shots, for the learned rows and
+    the decode alike, so the two compare under one statistic; a learned
+    configuration's value is then the mean over its seeds. NRMSE and the
+    decode's Pearson r are medians over shots, because a near-motionless
+    shot's NRMSE runs into the hundreds and drags any mean.
+    """
+    learned = json.loads((RESULTS_DIR / 'learned_results.json').read_text('utf-8'))
+    baseline = json.loads((RESULTS_DIR / 'baseline_results.json').read_text('utf-8'))
+    out: dict[str, str] = {}
+    vel: dict[tuple[str, str], float] = {}
+    for dataset, ds in REAL_DATASETS.items():
+        runs = learned['datasets'][dataset]
+        seeds: dict[str, list[dict[str, Any]]] = {}
+        for run in runs:
+            seeds.setdefault(REAL_CONFIGS[run['config']['config_name']], []).append(run)
+        for stem, group in seeds.items():
+            v = [r['metrics']['velocity_rmse_um_per_ms']['mean'] for r in group]
+            d = [r['metrics']['displacement_rmse_um']['mean'] for r in group]
+            vel[stem, ds] = sum(v) / len(v)
+            out[f'rl_{stem}_v_{ds}'] = f'{vel[stem, ds]:.4f}'
+            out[f'rl_{stem}_d_{ds}'] = f'{sum(d) / len(d):.4f}'
+            out[f'rl_{stem}_spread_{ds}'] = f'{max(v) - min(v):.4f}'
+            out[f'rl_{stem}_params'] = f'{group[0]["total_params"]:,}'
+        every = [r['metrics']['velocity_rmse_um_per_ms']['mean'] for r in runs]
+        out[f'rl_all_mean_{ds}'] = f'{sum(every) / len(every):.4f}'
+        out[f'rl_best_{ds}'] = f'{min(every):.4f}'
+        out[f'rl_runs_{ds}'] = str(len(every))
+
+        m2 = baseline['datasets'][dataset]['method2']
+        scale = baseline['datasets'][dataset]['signal_scale']
+        vel['decode', ds] = m2['velocity_rmse_um_per_ms']['mean']
+        out[f'rd_v_{ds}'] = f'{vel["decode", ds]:.4f}'
+        out[f'rd_d_{ds}'] = f'{m2["displacement_rmse_um"]["mean"]:.4f}'
+        out[f'rd_vnrmse_{ds}'] = sig(m2['velocity_nrmse']['median'], 3)
+        out[f'rd_dnrmse_{ds}'] = sig(m2['displacement_nrmse']['median'], 3)
+        out[f'rd_dnrmse_mean_{ds}'] = sig(m2['displacement_nrmse']['mean'], 3)
+        out[f'rd_dnrmse_max_{ds}'] = f'{m2["displacement_nrmse"]["max"]:.0f}'
+        out[f'rd_r_{ds}'] = f'{m2["displacement_correlation"]["median"]:.2f}'
+        zero = scale['true_velocity_rms_um_per_ms']['mean']
+        out[f'rs_vrms_{ds}'] = f'{zero:.3f}'
+        out[f'rs_drms_{ds}'] = f'{scale["true_displacement_rms_um"]["mean"]:.3f}'
+        out[f'rs_drms_min_{ds}'] = f'{scale["true_displacement_rms_um"]["min"]:.3f}'
+        out[f'rd_over_zero_{ds}'] = f'{vel["decode", ds] / zero:.2f}'
+        out[f'rd_over_zero_pct_{ds}'] = pct(vel['decode', ds] / zero - 1)
+
+    def ratio(stem: str) -> float:
+        return vel[stem, 'mmf'] / vel[stem, 'fs']
+
+    def lower_pct(a: str, b: str, ds: str) -> str:
+        return pct(1 - vel[a, ds] / vel[b, ds])
+
+    stems = [*REAL_CONFIGS.values(), 'decode']
+    out |= {f'rl_{stem}_ratio': f'{ratio(stem):.2f}' for stem in stems}
+    neural = sorted(
+        (s for s in REAL_CONFIGS.values() if s not in {'ridge', 'lgbm'}),
+        key=lambda s: vel[s, 'fs'],
+    )[:4]
+    out |= {
+        'real_ridge_params': out['rl_ridge_params'].replace(',', ''),
+        'real_ridge_ratio': out['rl_ridge_ratio'],
+        'real_decode_ratio': out['rl_decode_ratio'],
+        'real_decode_shots': str(baseline['config']['n_shots_method2']),
+        'real_decode_nrmse': out['rd_vnrmse_fs'],
+        'real_top4_ratio_lo': f'{min(ratio(s) for s in neural):.1f}',
+        'real_top4_ratio_hi': f'{max(ratio(s) for s in neural):.1f}',
+        'rd_over_ridge_fs': f'{vel["decode", "fs"] / vel["ridge", "fs"]:.2f}',
+        'rd_over_barland_fs': f'{vel["decode", "fs"] / vel["barland", "fs"]:.1f}',
+        'rl_scnn_over_tcn_pct_fs': lower_pct('scnn44', 'tcn44', 'fs'),
+        'rl_barland_over_scnn_pct_fs': lower_pct('barland', 'scnn44', 'fs'),
+        'rl_barland_over_tcn_pct_fs': lower_pct('barland', 'tcn44', 'fs'),
+        'rl_barland_over_tcn_pct_mmf': lower_pct('barland', 'tcn44', 'mmf'),
+        'rl_field_cut_pct': lower_pct('tcn19', 'tcn36', 'fs'),
+        'rl_field29_gain': f'{vel["tcn28", "fs"] - vel["tcn36", "fs"]:.4f}',
+        'rl_lgbm_over_mlp_fs': f'{vel["lgbm", "fs"] / vel["mlp", "fs"]:.2f}',
+        'rl_ratio_lo': f'{min(ratio(s) for s in REAL_CONFIGS.values()):.2f}',
+        'rl_ratio_hi': f'{max(ratio(s) for s in REAL_CONFIGS.values()):.2f}',
+    }
+    rho = spearmanr(
+        [vel[s, 'fs'] for s in REAL_CONFIGS.values()],
+        [ratio(s) for s in REAL_CONFIGS.values()],
+    ).statistic
+    out['rl_ratio_spearman'] = f'{rho:.2f}'
+    params = {
+        s: int(out[f'rl_{s}_params'].replace(',', ''))
+        for s in ('tcn19', 'tcn28', 'tcn36')
+    }
+    out['rl_field29_capacity_pct'] = pct(params['tcn36'] / params['tcn28'] - 1)
+    out['rl_tcn19_fewer_pct'] = pct(1 - params['tcn19'] / params['tcn36'])
+    return out
 
 
 def pct(x: float) -> str:
@@ -1274,6 +1399,775 @@ def prediction_values(records: dict[str, RunRecord], zero: float) -> dict[str, s
     }
 
 
+def _spread(xs: list[float]) -> float:
+    """Seed range over seed mean."""
+    return (max(xs) - min(xs)) / float(np.mean(xs))
+
+
+def r1_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
+    """Q1.1 R1 and Q1.2 R2: RMSE against channel count, pair and array."""
+    data = json.loads((RESULTS_DIR / 'channel_analytics.json').read_text())
+    seeds = [data['q1_count'][str(k)]['0.2'] for k in data['count_seeds']]
+    info = [float(np.mean([sd[i]['info'] for sd in seeds])) for i in range(6)]
+
+    def runs(family: str, n: int, sim: str) -> list[float]:
+        ws = R1_COLORS_UM[:n]
+        return [
+            mean_metric(records[k], 'velocity_rmse')
+            for seed in R1_SEEDS
+            if (k := cell_key(family, ws, sim, seed)) in records
+        ]
+
+    def rmse(family: str, n: int, sim: str) -> float:
+        return float(np.mean(runs(family, n, sim)))
+
+    tcan, unet = R_FAMILIES
+    out: dict[str, object] = {}
+    rows = []
+    for i in range(6):
+        n = i + 1
+        row = {'n': str(n), 'lam': f'{R1_COLORS_UM[i] * 1e3:.1f}'}
+        row['bound'] = f'{(info[i] / info[0]) ** -0.5:.2f}'
+        row['bstep'] = '' if i == 0 else pct((info[i] / info[i - 1]) ** -0.5 - 1)
+        for fam, tag in ((tcan, 'tcan'), (unet, 'unet')):
+            for sim, stag in (('s2-smi-a3', 'nf'), ('nominal', 'nom')):
+                row[f'{tag}_{stag}'] = f'{rmse(fam, n, sim):.3f}'
+                row[f'{tag}_{stag}_ratio'] = (
+                    f'{rmse(fam, n, sim) / rmse(fam, 1, sim):.2f}'
+                )
+                row[f'{tag}_{stag}_step'] = (
+                    '' if i == 0 else pct(rmse(fam, n, sim) / rmse(fam, n - 1, sim) - 1)
+                )
+        rows.append(row)
+    out['r1_table'] = rows
+    for fam, tag in ((tcan, 'tcan'), (unet, 'unet')):
+        for sim, stag in (('s2-smi-a3', 'nf'), ('nominal', 'nom')):
+            for n in (1, 3):
+                out[f'r1_{tag}_{stag}_spread{n}'] = pct(_spread(runs(fam, n, sim)))
+                out[f'r1_{tag}_{stag}_nseeds{n}'] = str(len(runs(fam, n, sim)))
+            out |= lo_hi(
+                f'r1_{tag}_{stag}_oz',
+                [rmse(fam, n, sim) / zero for n in range(1, 7)],
+                lambda x: f'{x:.2f}',
+            )
+    out['r1_zero'] = f'{zero:.3f}'
+    bound = [(info[i] / info[0]) ** -0.5 for i in range(6)]
+    tnf = [rmse(tcan, n, 's2-smi-a3') / rmse(tcan, 1, 's2-smi-a3') for n in range(1, 7)]
+    tnom = [rmse(tcan, n, 'nominal') / rmse(tcan, 1, 'nominal') for n in range(1, 7)]
+    out['r1_tcan_nf_n6'] = f'{tnf[5]:.2f}'
+    out['r1_tcan_nom_n6'] = f'{tnom[5]:.2f}'
+    out['r1_tcan_nom_gain_n3'] = f'{1 / tnom[2]:.2f}'
+    out['r1_tcan_nom_cut_36'] = pct(
+        1 - rmse(tcan, 6, 'nominal') / rmse(tcan, 3, 'nominal')
+    )
+    out['r1_bound_n6'] = f'{bound[5]:.2f}'
+    # Noise-free TCAN follows the bound's ratio to within 25% at every N >= 3.
+    out['r1_tcan_nf_tracks'] = all(0.75 < tnf[i] / bound[i] < 1.25 for i in range(2, 6))
+    # ... but beats it at N = 2, where the learned gain exceeds the Fisher one.
+    out['r1_tcan_nf_n2_beats'] = tnf[1] < 0.85 * bound[1]
+    out['r1_tcan_nf_n2'] = f'{tnf[1]:.2f}'
+    out['r1_bound_n2'] = f'{bound[1]:.2f}'
+    out['r1_tcan_nom_monotone'] = all(a > b for a, b in itertools.pairwise(tnom))
+    out['r1_unet_nf_spread_big'] = _spread(runs(unet, 3, 's2-smi-a3')) > 0.3
+    out['r1_unet_nom_flat'] = (
+        max(rmse(unet, n, 'nominal') for n in range(1, 7))
+        / min(rmse(unet, n, 'nominal') for n in range(1, 7))
+        < 1.25
+    )
+    return out
+
+
+def r1_pair_values(records: dict[str, RunRecord]) -> dict[str, object]:
+    """Q1.1 R1: the three two-color pairs."""
+    tcan, unet = R_FAMILIES
+    out: dict[str, object] = {}
+    # The three two-color pairs.
+    pairs = ((0.635, 0.6748), (0.635, 0.515), (0.6748, 0.515))
+    for fam, tag in ((tcan, 'tcan'), (unet, 'unet')):
+        for sim, stag in (('s2-smi-a3', 'nf'), ('nominal', 'nom')):
+            xs = [
+                mean_metric(r_cell(records, fam, p, sim), 'velocity_rmse')
+                for p in pairs
+            ]
+            out[f'r1_pairs_{tag}_{stag}'] = [f'{x:.3f}' for x in xs]
+            out[f'r1_pairs_{tag}_{stag}_spread'] = pct(_spread(xs))
+            se = max(shot_se(r_cell(records, fam, p, sim)) for p in pairs)
+            out[f'r1_pairs_{tag}_{stag}_se'] = f'{se:.3f}'
+    return out
+
+
+def r2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
+    """Q1.2 R2: 0.635 um x N with quadrature offsets against N colors."""
+    tcan, unet = R_FAMILIES
+    out: dict[str, object] = {}
+    r2 = []
+    within = []
+    for n in (2, 3):
+        for sim, stag in (('s2-smi-a3', 'noise-free'), ('nominal', 'nominal')):
+            row = {'n': str(n), 'sim': stag}
+            for fam, tag in ((tcan, 'tcan'), (unet, 'unet')):
+                arr = r_cell(records, fam, (0.635,) * n, f'{sim}-1color')
+                col = r_cell(records, fam, R1_COLORS_UM[:n], sim)
+                a, c = (mean_metric(r, 'velocity_rmse') for r in (arr, col))
+                row[f'{tag}_arr'] = f'{a:.4f}' if a < 0.01 else f'{a:.3f}'
+                row[f'{tag}_col'] = f'{c:.3f}'
+                row[f'{tag}_ratio'] = f'{c / a:.2g}' if c / a > 3 else f'{c / a:.2f}'
+                row[f'{tag}_se'] = f'{math.hypot(shot_se(arr), shot_se(col)):.3f}'
+                out[f'r2_{tag}_{stag[:3]}_ratio_n{n}'] = c / a
+                if stag == 'nominal':
+                    within.append(
+                        abs(c - a) < 2 * math.hypot(shot_se(arr), shot_se(col))
+                    )
+            r2.append(row)
+    out['r2_table'] = r2
+    nf_ratios = [
+        out[f'r2_{t}_noi_ratio_n{n}'] for t in ('tcan', 'unet') for n in (2, 3)
+    ]
+    nom_ratios = [
+        out[f'r2_{t}_nom_ratio_n{n}'] for t in ('tcan', 'unet') for n in (2, 3)
+    ]
+    out |= lo_hi('r2_nf_ratio', nf_ratios, lambda x: f'{x:.0f}')
+    out |= lo_hi('r2_nom_ratio', nom_ratios, lambda x: f'{x:.2f}')
+    out['r2_nf_array_wins'] = min(nf_ratios) > 5
+    out['r2_nom_parity'] = all(within)
+    # Each arm has its own frozen set; equal zero-predictor RMSE shows the
+    # motion draw is the same in all of them.
+    zs = [
+        zero_predictor_rmse(records, grid, cell_key(tcan, ws, f'{sim}-1color', 0))
+        for grid, ws in (
+            ('q1_r2_colors', (0.635,) * 2),
+            ('q1_r2_colors_n3', (0.635,) * 3),
+        )
+        for sim in ('s2-smi-a3', 'nominal')
+    ]
+    out['r2_zero_shared'] = max(abs(z - zero) for z in zs) < 1e-9
+    for k in [k for k in out if k.startswith('r2_') and k[-3:] in ('_n2', '_n3')]:
+        del out[k]
+    return out
+
+
+def r4_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
+    """Q2.2 R4: each knob alone at nominal, the stressed rungs, the nominal point."""
+    cells = r4_cells(records)
+    ladder = noise_ladder(records)
+
+    def rmse(family: str, field: str, stressed: bool = False) -> float:
+        return mean_metric(cells[family, field, stressed], 'velocity_rmse')
+
+    knobs = [f for f in NOISE_KNOBS if (R_FAMILIES[0], f, False) in cells]
+    out: dict[str, object] = {}
+    rows = []
+    for field in knobs:
+        tcn = next(r for r in ladder[field] if r.nominal).record
+        row = {
+            'knob': NOISE_KNOBS[field],
+            'tcn': f'{mean_metric(tcn, "velocity_rmse"):.3f}',
+        }
+        for fam in R4_FAMILIES:
+            row[fam] = f'{rmse(fam, field):.3f}'
+        rows.append(row)
+    for label, field, stressed in (
+        ('phase drift, 3.3x', 'phase_drift_rad_per_sqrt_s', True),
+        ('white noise, 20 dB', 'snr_db', True),
+        ('all nominal', 'nominal', False),
+    ):
+        row = {'knob': label, 'tcn': ''}
+        for fam in R4_FAMILIES:
+            row[fam] = f'{rmse(fam, field, stressed):.3f}'
+        rows.append(row)
+    out['r4_table'] = rows
+    rank = {
+        fam: sorted(knobs, key=lambda f, fam=fam: -rmse(fam, f)) for fam in R4_FAMILIES
+    }
+    neural = R4_FAMILIES[:3]
+    out['r4_phase_first'] = all(
+        rank[f][0] == 'phase_drift_rad_per_sqrt_s' for f in neural
+    )
+    # The predicted SNR-over-visibility order holds for UNetTransformer only.
+    out['r4_vis_over_snr'] = [
+        R_FAMILY_LABELS[f]
+        for f in R4_FAMILIES
+        if rmse(f, 'visibility_range') > rmse(f, 'snr_db')
+    ] == ['TCAN', 'PatchTransformer (offline)', 'LightGBM']
+    out['r4_lgbm_first'] = NOISE_KNOBS[rank['lightgbm-w91'][0]]
+    out |= lo_hi(
+        'r4_lgbm_oz',
+        [rmse('lightgbm-w91', f) / zero for f in knobs],
+        lambda x: f'{x:.2f}',
+    )
+    out['r4_lgbm_nominal_oz'] = f'{rmse("lightgbm-w91", "nominal") / zero:.2f}'
+    for fam, tag in zip(R4_FAMILIES, ('tcan', 'unet', 'patch', 'lgbm'), strict=True):
+        out[f'r4_{tag}_phase_stress_oz'] = (
+            f'{rmse(fam, "phase_drift_rad_per_sqrt_s", True) / zero:.2f}'
+        )
+        out[f'r4_{tag}_nominal'] = f'{rmse(fam, "nominal"):.3f}'
+        out[f'r4_{tag}_phase_cost'] = sig(
+            rmse(fam, 'phase_drift_rad_per_sqrt_s') / rmse(fam, 'adc_bits'), 2
+        )
+    knob_se = max(
+        shot_se(cells[f, k, False])
+        for f in R4_FAMILIES[:3]
+        for k in knobs
+        if k != 'phase_drift_rad_per_sqrt_s'
+    )
+    out['r4_knob_se_max'] = f'{knob_se:.3f}'
+    unet = R_FAMILIES[1]
+    third = [NOISE_KNOBS[f] for f in knobs if ran_third_cycle(cells[unet, f, False])]
+    out['r4_unet_third'] = ' and '.join(third)
+    out['r4_unet_third_named'] = set(third) == {'visibility', 'DC offset'}
+    return out
+
+
+def r7_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
+    """Q3.1 and Q3.2 R7: the fiber arms against free space and each other."""
+    out: dict[str, object] = {}
+    rows = []
+    zeros = {
+        arm: zero_predictor_rmse(
+            records, 'q3_fiber', cell_key(R_FAMILIES[0], ws, arm, 0)
+        )
+        for arm, ws in FIBER_ARMS.items()
+    }
+    # The arms share trajectories, so every arm has the same zero predictor.
+    out['r7_zero_shared'] = max(zeros.values()) - min(zeros.values()) < 1e-9
+    out['r7_zero'] = f'{zeros["fiber"]:.3f}'
+    for arm, ws in FIBER_ARMS.items():
+        row = {'arm': arm}
+        for fam, tag in zip(R_FAMILIES, ('tcan', 'unet'), strict=True):
+            r = r_cell(records, fam, ws, arm)
+            row[tag] = f'{mean_metric(r, "velocity_rmse"):.3f}'
+            row[f'{tag}_oz'] = f'{mean_metric(r, "velocity_rmse") / zeros[arm]:.2f}'
+            row[f'{tag}_se'] = f'{shot_se(r):.3f}'
+            row[f'{tag}_ep'] = str(epochs(r))
+            row[f'{tag}_conv'] = 'yes' if r.converged else 'no'
+        rows.append(row)
+    out['r7_table'] = rows
+
+    per_shot = json.loads((RESULTS_DIR / 'per_shot_rmse.json').read_text('utf-8'))
+
+    def diff(fam: str, a: str, b: str) -> tuple[float, float]:
+        # The arms share trajectories shot for shot, so the paired SE of the
+        # per-shot differences is the honest error of an arm difference.
+        ra, rb = (
+            np.asarray(per_shot[cell_key(fam, FIBER_ARMS[x], x, 0)]['velocity_rmse'])
+            for x in (a, b)
+        )
+        for x, shots in ((a, ra), (b, rb)):
+            record = mean_metric(
+                r_cell(records, fam, FIBER_ARMS[x], x), 'velocity_rmse'
+            )
+            assert math.isclose(shots.mean(), record, rel_tol=1e-5), x
+        d = ra - rb
+        return float(d.mean()), float(d.std(ddof=1) / math.sqrt(d.size))
+
+    tcan, unet = R_FAMILIES
+    for name, a, b in (
+        ('cost', 'fiber', 'nominal'),
+        ('monitor', 'fiber-monitor', 'fiber-4color'),
+        ('pbs', 'fiber-pbs', 'fiber'),
+        ('fourth', 'fiber-4color', 'fiber'),
+    ):
+        d, se = diff(tcan, a, b)
+        out[f'r7_tcan_{name}'] = f'{d:+.3f}'
+        out[f'r7_tcan_{name}_se'] = f'{se:.3f}'
+        out[f'r7_tcan_{name}_z'] = f'{d / se:+.1f}'
+    fiber_oz = [
+        mean_metric(r_cell(records, f, ws, arm), 'velocity_rmse') / zeros[arm]
+        for f in R_FAMILIES
+        for arm, ws in FIBER_ARMS.items()
+        if arm != 'nominal'
+    ]
+    out |= lo_hi('r7_fiber_oz', fiber_oz, lambda x: f'{x:.2f}')
+    out['r7_all_near_zero'] = min(fiber_oz) > 0.9
+    out['r7_unet_none_converged'] = not any(
+        r_cell(records, unet, ws, arm).converged
+        for arm, ws in FIBER_ARMS.items()
+        if arm != 'nominal'
+    )
+    out['r7_tcan_all_converged'] = all(
+        r_cell(records, tcan, ws, arm).converged for arm, ws in FIBER_ARMS.items()
+    )
+    return out
+
+
+def sagnac_values() -> dict[str, Any]:
+    """Q4 gains quoted in the prose, from scripts/sagnac_table.py's JSON."""
+    rows = json.loads((RESULTS_DIR / 'sagnac_results.json').read_text())['table']
+
+    def row(alpha: float, c0: float) -> dict[str, Any]:
+        return next(r for r in rows if r['alpha'] == alpha and r['c0'] == c0)
+
+    out = {}
+    for c0, tag in ((0.99, 'c099'), (1.3, 'c13')):
+        r = row(3.0, c0)
+        out |= {
+            f'sagnac_{tag}_ceff': f'{r["c_eff"]:.2f}',
+            f'sagnac_{tag}_avg': f'{r["avg"]:.2f}',
+            f'sagnac_{tag}_best': f'{r["best"]:.2f}',
+            f'sagnac_{tag}_smi': f'{r["smi_phase_gain"]:.2f}',
+        }
+    out['sagnac_c13_swing'] = f'{row(3.0, 1.3)["swing_rad"]:.2f}'
+    out['sagnac_c099_smi_c0'] = f'{row(3.0, 0.99)["smi_phase_gain_c0"]:.1f}'
+    # The table of the Q4 section: one row per C_0, cells "avg / best" per alpha.
+    alphas = sorted({r['alpha'] for r in rows})
+    out['sagnac_table_alpha'] = [f'{a:g}' for a in alphas]
+    out['sagnac_table'] = [
+        {
+            'c0': f'{r["c0"]:g} ({r["c_eff"]:.2f})',
+            # Rows above C_0 = 1 hold only within this swing of the bias.
+            'swing': '' if r['swing_rad'] is None else f'{r["swing_rad"]:.2f}',
+            'cells': [
+                f'{row(a, r["c0"])["avg"]:.2f} / {row(a, r["c0"])["best"]:.2f}'
+                for a in alphas
+            ],
+            'smi': f'{row(3.0, r["c0"])["smi_phase_gain"]:.2f}',
+        }
+        for r in rows
+        if r['alpha'] == alphas[0]
+    ]
+    return out
+
+
+def channel_values() -> dict[str, Any]:
+    """Q1.1 and Q1.2 analytic values, from scripts/channel_analytics.py's JSON."""
+    data = json.loads((RESULTS_DIR / 'channel_analytics.json').read_text())
+    count = data['q1_count']
+    rows = data['q1_colors']['rows']
+
+    def arm(c: float, n: int, name: str) -> dict[str, Any]:
+        return next(
+            r for r in rows if r['feedback_c'] == c and r['n'] == n and r['arm'] == name
+        )
+
+    seeds = [count[str(k)] for k in data['count_seeds']]
+    n_max = len(seeds[0]['0.2'])
+
+    def mean_info(c: str, i: int) -> float:
+        return float(np.mean([sd[c][i]['info'] for sd in seeds]))
+
+    dev = max(
+        abs(r['info'] / r['sum_singles'] - 1)
+        for sd in seeds
+        for rs in sd.values()
+        for r in rs
+    )
+    # Paired C = 0.2 over C = 0 ratios: same draws, so only C differs.
+    ratios = np.array(
+        [
+            [sd['0.2'][i]['info'] / sd['0'][i]['info'] for i in range(n_max)]
+            for sd in seeds
+        ]
+    )
+    pf = count['phase_factor']
+    info02 = [mean_info('0.2', i) for i in range(n_max)]
+    out = {
+        'ch_fisher_shots': str(data['fisher_shots']),
+        'ch_sign_shots': str(data['sign_shots']),
+        'ch_count_seeds': str(len(seeds)),
+        'ch_additive_exact': dev < 1e-9,
+        'ch_fb_pred_pct': f'{100 * (pf["0.2"] / pf["0"] - 1):.1f}',
+        'ch_fb_meas_pct': f'{100 * (ratios.mean() - 1):.1f}',
+        # Seed-to-seed spread of one table entry's ratio.
+        'ch_fb_spread_pct': f'{100 * ratios.std(ddof=1, axis=0).mean():.1f}',
+        'ch_fb_se_pct': f'{100 * ratios.mean(1).std(ddof=1) / len(seeds) ** 0.5:.1f}',
+        'ch_bound_ratio_n6': f'{(info02[-1] / info02[0]) ** -0.5:.2f}',
+        'ch_bound_ratio_n3': f'{(info02[2] / info02[0]) ** -0.5:.2f}',
+        'ch_info_jump_405_pct': f'{100 * (info02[5] / info02[4] - 1):.0f}',
+        'ch_info_jump_785_pct': f'{100 * (info02[3] / info02[2] - 1):.0f}',
+        'ch_count_table': [
+            {
+                'n': str(i + 1),
+                'lam': f'{seeds[0]["0.2"][i]["wavelengths_um"][-1] * 1e3:.1f}',
+                'info02': f'{info02[i] / 1e7:.2f}',
+                'info0': f'{mean_info("0", i) / 1e7:.2f}',
+                'bound02': f'{(info02[i] / info02[0]) ** -0.5:.2f}',
+            }
+            for i in range(n_max)
+        ],
+        'ch_colors_table': [
+            {
+                'c': f'{r["feedback_c"]:g}',
+                'n': str(r['n']),
+                'arm': r['arm'],
+                'info': f'{r["info"] / 1e7:.2f}',
+                'sign': (
+                    '0'
+                    if r['sign_nats_per_shot'] < 1
+                    else f'{r["sign_nats_per_shot"]:.2g}'
+                ),
+            }
+            for r in rows
+        ],
+    }
+    for n in (2, 3):
+        col = arm(0.2, n, 'colors')['info']
+        arrays = [arm(0.2, n, a)['info'] for a in ('array_quadrature', 'array_zero')]
+        out[f'ch_colors_vs_array_n{n}_pct'] = (
+            f'{100 * (col / max(arrays) - 1):+.0f} to '
+            f'{100 * (col / min(arrays) - 1):+.0f}'
+        )
+    quad = arm(0.0, 3, 'array_quadrature')['sign_nats_per_shot']
+    out['ch_sign_quad_n3_c0'] = sci(quad)
+    out['ch_sign_ratio_n3'] = (
+        f'{quad / arm(0.2, 3, "colors")["sign_nats_per_shot"]:.0f}'
+    )
+    return out
+
+
+SHIFT_FALSIFY_TEMP_PCT = 10
+SHIFT_FALSIFY_REALIGN_PCT = 20
+
+
+def shift_values(prior: bounds.StateSpace) -> dict[str, str]:
+    """Q2.3 values from shift_results.json; SEs as in ``ShiftScore``."""
+    scores = shift_scores()
+    v_rms = prior.empirical_velocity_var**0.5
+    out: dict[str, str] = {'shift_v_rms': sig(v_rms, 2)}
+    # Test (a): shared-phase local information at the scored configurations.
+    phase = json.loads((RESULTS_DIR / 'channel_analytics.json').read_text())['q2_phase']
+    info = {r['tag']: r['info'] / phase['nominal_independent'] for r in phase['rows']}
+    sign = {r['tag']: r['sign_nats_per_shot'] for r in phase['rows']}
+    out |= {
+        'shift_info_lo_pct': f'{100 * (min(info.values()) - 1):+.0f}',
+        'shift_info_hi_pct': f'{100 * (max(info.values()) - 1):+.0f}',
+        'shift_info_zero_pct': f'{100 * (info["phase_offset=0"] - 1):+.0f}',
+        'shift_sign_zero_ratio': (
+            f'{sign["phase_offset=0"] / phase["nominal_sign_nats_per_shot"]:.2f}'
+        ),
+        'shift_sign_max_ratio': (
+            f'{max(sign.values()) / phase["nominal_sign_nats_per_shot"]:.0f}'
+        ),
+        'shift_n_random': str(sum(t.startswith('phase_random') for t in info)),
+    }
+    rho_max = 0.0
+    tags = {'tcan-44k-T90': 'tcan', 'unettransformer-offline-44k-T90': 'unet'}
+    for family in SHIFT_FAMILIES:
+        t = tags[family]
+
+        def at(
+            knob: str,
+            value: float,
+            seed: int = SHIFT_DEFAULT_TEST_SEED,
+            family: str = family,
+        ) -> ShiftScore:
+            return scores[(family, knob, value, seed)]
+
+        nominal = at('feedback_c', 0.2)
+        c_sweep = {
+            k[2]: v for k, v in scores.items() if k[:2] == (family, 'feedback_c')
+        }
+        best_c = min(c_sweep, key=lambda c: c_sweep[c].rmse)
+        eps_max = 0.01
+        predicted = math.sqrt(
+            nominal.rmse**2 + (eps_max / (1 + eps_max)) ** 2 * v_rms**2
+        )
+        wave = [
+            (scores[k].rmse - nominal.rmse) / nominal.se
+            for k in scores
+            if k[0] == family
+            and k[1] in ('wavelength_scale', 'wavelength_independent')
+            and k[3] == SHIFT_DEFAULT_TEST_SEED
+        ]
+        second = at('wavelength_independent', 0.0, 2000)
+        zero = at('phase_offset', 0.0, 2000)
+        phase_dev = [
+            (scores[k].rmse - nominal.rmse) / nominal.se
+            for k in scores
+            if k[:2] == (family, 'phase_offset') and k[3] == SHIFT_DEFAULT_TEST_SEED
+        ]
+        rand_tags = sorted(
+            (k for k in info if k.startswith('phase_random')),
+            key=lambda k: int(k.partition('=')[2]),
+        )
+        rand = [at('phase_random', float(k.partition('=')[2])) for k in rand_tags]
+        err = np.array([r.rmse for r in rand])
+        mean_se = float(np.mean([r.se for r in rand]))
+        for feature in (info, sign):
+            rho = spearmanr([feature[k] for k in rand_tags], err).statistic
+            rho_max = max(rho_max, abs(float(rho)))
+        zero1 = at('phase_offset', 0.0)
+        out |= {
+            f'shift_{t}_rand_mean': sig(float(err.mean()), 3),
+            f'shift_{t}_rand_mean_se': sig(float(err.std(ddof=1)) / len(err) ** 0.5, 1),
+            f'shift_{t}_rand_spread_se': f'{err.std(ddof=1) / mean_se:.1f}',
+            f'shift_{t}_rand_min': sig(float(err.min()), 3),
+            f'shift_{t}_rand_max': sig(float(err.max()), 3),
+            f'shift_{t}_zero1': sig(zero1.rmse, 3),
+            f'shift_{t}_zero1_ratio': f'{zero1.rmse / nominal.rmse:.1f}',
+            f'shift_{t}_best_c_se': (
+                f'{abs(c_sweep[best_c].rmse - nominal.rmse) / nominal.se:.1f}'
+            ),
+            f'shift_{t}_eps_pred_se': (
+                f'{(predicted - nominal.rmse) / nominal.se:.1f}'
+            ),
+            f'shift_{t}_phase3_pct': (
+                f'{100 * (1 - at("phase_offset", 3.0).rmse / nominal.rmse):.0f}'
+            ),
+            f'shift_{t}_phase2_pct': (
+                f'{100 * (1 - at("phase_offset", 2.0).rmse / nominal.rmse):.0f}'
+            ),
+            f'shift_{t}_nominal': sig(nominal.rmse, 3),
+            f'shift_{t}_se': sig(nominal.se, 1),
+            f'shift_{t}_best_c': f'{best_c:g}',
+            f'shift_{t}_c005_ratio': f'{c_sweep[0.05].rmse / nominal.rmse:.1f}',
+            f'shift_{t}_c05_ratio': f'{c_sweep[0.5].rmse / nominal.rmse:.1f}',
+            f'shift_{t}_eps_cross': f'{nominal.rmse / v_rms:.2f}',
+            f'shift_{t}_eps_pred_pct': f'{100 * (predicted / nominal.rmse - 1):.1f}',
+            f'shift_{t}_wave_max_se': f'{max(abs(w) for w in wave):.1f}',
+            f'shift_{t}_nominal2': sig(second.rmse, 3),
+            f'shift_{t}_zero2': sig(zero.rmse, 3),
+            f'shift_{t}_zero2_ratio': f'{zero.rmse / second.rmse:.2f}',
+            f'shift_{t}_zero2_se': f'{(zero.rmse - second.rmse) / second.se:.0f}',
+            f'shift_{t}_phase_lo_se': f'{min(phase_dev):.0f}',
+            f'shift_{t}_phase_hi_se': f'{max(phase_dev):.0f}',
+        }
+    out['shift_rho_max'] = f'{rho_max:.1f}'
+    # Q2.3 real-data falsifier thresholds, in percent of the frozen model's
+    # real error: a temperature-only change above the first falsifies the
+    # scale prediction; a realignment that halves C below the second
+    # falsifies the feedback one (the synthetic factor at C = 0.1 is >2).
+    out['shift_falsify_temp_pct'] = str(SHIFT_FALSIFY_TEMP_PCT)
+    out['shift_falsify_realign_pct'] = str(SHIFT_FALSIFY_REALIGN_PCT)
+    return out
+
+
+def _bounds_at(
+    prior: bounds.StateSpace, cfg: SimConfig, **change: Any
+) -> tuple[float, float]:
+    """``velocity_bounds`` of ``cfg`` with ``change`` applied."""
+    return velocity_bounds(prior, dataclasses.replace(cfg, **change))
+
+
+def _equivalent_snr(
+    prior: bounds.StateSpace, cfg: SimConfig, rmse: float, which: int
+) -> float:
+    """The SNR (dB) at which bound ``which`` (0 causal, 1 offline) equals ``rmse``.
+
+    Bisection: both bounds fall monotonically with SNR, since J-bar scales as
+    1 / sigma^2 (eq-info-avg).
+    """
+    lo, hi = -80.0, 120.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if _bounds_at(prior, cfg, snr_db=mid)[which] > rmse:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def q2_analytic_values(
+    records: dict[str, RunRecord], prior: bounds.StateSpace
+) -> dict[str, str]:
+    """The Q2.1, Q2.1.1 and Q2.2 analytic tiers, from smi.theory.bounds."""
+    out: dict[str, str] = {}
+    sims = {'michelson': 0.0, 'smi-a3': NOMINAL_C}
+    for sim, c in sims.items():
+        cfg = SimConfig.nominal(
+            STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, c, NOMINAL_ALPHA
+        )
+        causal, offline = velocity_bounds(prior, cfg)
+        tag = 'mich' if c == 0 else 'c02'
+        for which, (name, families, bound) in enumerate(
+            (('causal', Q2_CAUSAL, causal), ('offline', Q2_OFFLINE, offline))
+        ):
+            best = min(
+                mean_metric(r, Q2_SIMS[sim])
+                for stem, _ in families
+                if (r := q2_record(records, stem, sim)) is not None and r.converged
+            )
+            out[f'an_{tag}_{name}_bound'] = sig(bound, 2)
+            out[f'an_{tag}_{name}_net'] = sig(best, 2)
+            out[f'an_{tag}_{name}_factor'] = f'{best / bound:.0f}'
+            out[f'an_{tag}_{name}_snr'] = (
+                f'{_equivalent_snr(prior, cfg, best, which):.0f}'
+            )
+
+    # Q2.1.1: the C sweep of q3_s0c_ceiling at alpha = 3, and alpha = 0.
+    def causal_at(c: float, alpha: float) -> float:
+        cfg = SimConfig.nominal(STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, c, alpha)
+        return velocity_bounds(prior, cfg)[0]
+
+    c_lo, c_hi = Q3_FEEDBACK_C[0], Q3_FEEDBACK_C[-1]
+    base = causal_at(0.0, NOMINAL_ALPHA)
+    out |= {
+        'an_info_c_lo': sig(2 * bounds.phase_factor(c_lo, NOMINAL_ALPHA), 3),
+        'an_info_c_hi': sig(2 * bounds.phase_factor(c_hi, NOMINAL_ALPHA), 3),
+        'an_info_c_hi_a0': sig(2 * bounds.phase_factor(c_hi, 0.0), 3),
+        'an_c_lo': f'{c_lo:g}',
+        'an_bound_gain_c02': sig(base / causal_at(NOMINAL_C, NOMINAL_ALPHA), 3),
+        'an_bound_gain_c_hi': sig(base / causal_at(c_hi, NOMINAL_ALPHA), 3),
+        'an_bound_gain_c_hi_a0': sig(base / causal_at(c_hi, 0.0), 3),
+    }
+
+    # Q2.2: what each representable knob does to the causal bound at C = 0.2.
+    cfg = SimConfig.nominal(
+        STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, NOMINAL_C, NOMINAL_ALPHA
+    )
+    at30 = _bounds_at(prior, cfg, snr_db=30.0)[0]
+    lo, hi = cfg.visibility_range
+    out |= {
+        'an_snr_10db_ratio': sig(_bounds_at(prior, cfg, snr_db=20.0)[0] / at30, 3),
+        'an_vis_info_pct': f'{100 * (1 - (lo * lo + lo * hi + hi * hi) / 3):.0f}',
+        'an_vis_ratio': sig(
+            at30 / _bounds_at(prior, cfg, visibility_range=(1.0, 1.0))[0], 3
+        ),
+        'an_snr_nominal': f'{cfg.snr_db:.0f}',
+    }
+    return out
+
+
+def fiber_values() -> dict[str, Any]:
+    """Q3.1 and Q3.2 analytic values, from scripts/fiber_analytics.py's JSON."""
+    data = json.loads((RESULTS_DIR / 'fiber_results.json').read_text('utf-8'))
+    rows = data['q3_1']['rows']
+
+    def arm(name: str, dispersion: float) -> dict[str, Any]:
+        return next(
+            r for r in rows if r['arm'] == name and r['dispersion_per_um'] == dispersion
+        )
+
+    none0 = arm('fiber_no_monitor', 0.0)
+    d_lo, d_hi = arm('fiber_no_monitor', 0.001), arm('fiber_no_monitor', 0.1)
+    mon1, mon3 = (
+        arm('fiber_dichroic_monitor', 0.0),
+        arm('fiber_dichroic_monitor_x3', 0.0),
+    )
+    pol = {r['n_modes']: r for r in data['q3_2']['rows']}
+    big = [r for n, r in pol.items() if n >= 8]
+    return {
+        'fb_cond_d0': sci(none0['cond']),
+        'fb_info_d0': sci(none0['info_rel_free_space']),
+        'fb_info_dlo': sci(d_lo['info_rel_free_space']),
+        'fb_info_dhi': sci(d_hi['info_rel_free_space']),
+        # info ~ D^2: the slope of log info against log D over two decades.
+        'fb_disp_slope': sig(math.log10(d_hi['info'] / d_lo['info']) / 2, 3),
+        'fb_mon1': sig(mon1['info_rel_free_space'], 2),
+        'fb_mon1_pred': sig(mon1['predicted_rel_free_space'], 2),
+        'fb_mon3': sig(mon3['info_rel_free_space'], 2),
+        'fb_mon3_pred': sig(mon3['predicted_rel_free_space'], 2),
+        'fb_mon_um': f'{1000 * data["q3_1"]["monitor_um"]:.0f}',
+        'fb_mon3_um': ', '.join(
+            f'{1000 * w:.0f}' for w in data['q3_1']['monitors_x3_um']
+        ),
+        'fb_shots': str(data['q3_1']['n_shots']),
+        'fb_corr_n1': sig(pol[1]['corr'], 3),
+        'fb_corr_sqrt_lo': sig(min(-r['corr_times_sqrt_n'] for r in big), 2),
+        'fb_corr_sqrt_hi': sig(max(-r['corr_times_sqrt_n'] for r in big), 2),
+        'fb_r2n_lo': sig(min(r['r2'] * r['n_modes'] for r in big), 2),
+        'fb_r2n_hi': sig(max(r['r2'] * r['n_modes'] for r in big), 2),
+        'fb_k2_n8': sig(pol[8]['mean_kappa2'], 2),
+        'fb_coe_n8': sig(pol[8]['coe_mean_kappa2'], 2),
+        'fb_k2_n1': sig(pol[1]['mean_kappa2'], 2),
+        'fb_draws': str(data['q3_2']['n_draws']),
+        'fb_corr_n8': sig(pol[8]['corr'], 2),
+        'fb_r2_n8': sig(pol[8]['r2'], 2),
+        **r8_values(data['drift']['shot_s']),
+    }
+
+
+def diagnosis_values() -> dict[str, Any]:
+    """Q3.1 and Q3.2: the reference RMSE and the training-failure checks."""
+    data = json.loads((RESULTS_DIR / 'fiber_diagnosis.json').read_text('utf-8'))
+    ref = data['reference_rmse']
+    full = 'fading=True_speckle=True_path=True'
+    no_path = 'fading=True_speckle=True_path=False'
+    probes = data['probes']
+    tcan = 'tcan-44k__ch635-675-515__fiber__seed0'
+    unet = 'unettransformer-offline-44k__ch635-675-515__fiber__seed0'
+    static = [p['static_fiber'] / p['zero_predictor'] for p in probes.values()]
+    rescaled = [
+        v['rescaled'] / probes[k]['zero_predictor']
+        for k, v in data['remedy_as_trained_rescaled'].items()
+    ]
+    inverse = data['check_a_inverse_fit_static']
+    check_b = data['check_b_static_rescaled']['fiber']
+    return {
+        'dg_ref_fs': sig(ref['nominal'][full]['rmse'], 2),
+        'dg_ref_fiber': sig(ref['fiber'][full]['rmse'], 2),
+        'dg_ratio_fiber': sig(ref['fiber'][full]['mse_ratio_to_free_space'], 2),
+        'dg_ratio_monitor': sig(
+            ref['fiber-monitor'][full]['mse_ratio_to_free_space'], 2
+        ),
+        'dg_ratio_pbs': sig(ref['fiber-pbs'][full]['mse_ratio_to_free_space'], 2),
+        'dg_ratio_nopath': sig(ref['fiber'][no_path]['mse_ratio_to_free_space'], 2),
+        'dg_shots': str(data['n_shots']),
+        'dg_zero': f'{probes[tcan]["zero_predictor"]:.4f}',
+        'dg_tcan_static': f'{probes[tcan]["static_fiber"]:.3f}',
+        'dg_unet_static': f'{probes[unet]["static_fiber"]:.3f}',
+        **lo_hi('dg_static_oz', static, lambda x: f'{x:.2f}'),
+        **lo_hi('dg_rescaled_oz', rescaled, lambda x: f'{x:.2f}'),
+        'dg_tcan_rescaled': f'{check_b[f"fiber-trained:{tcan}"]["rescaled"]:.3f}',
+        'dg_inverse_nominal': sig(inverse['nominal']['inverse_fit'], 3),
+        'dg_inverse_fiber': sig(inverse['fiber']['inverse_fit'], 3),
+    }
+
+
+def flow_values() -> dict[str, Any]:
+    """Q3.3 and Q3.4: the R8 flow-matching scores, from scripts/flow.py's JSON."""
+    data = json.loads((RESULTS_DIR / 'flow_results.json').read_text('utf-8'))
+    den = data['q3_3_denoise']
+    rmse = {k: v['mean'] for k, v in den['velocity_rmse'].items()}
+    check = den['sampling_check']
+    post = data['q3_4_posterior']
+    nom, fib = post['nominal'], post['fiber']
+    ens = nom['deep_ensemble']
+    return {
+        'fl_den_chain': f'{rmse["free_tcan_on_denoised_fiber"]:.3f}',
+        'fl_den_fiber': f'{rmse["fiber_tcan_on_fiber"]:.3f}',
+        'fl_den_free_raw': f'{rmse["free_tcan_on_fiber"]:.3f}',
+        'fl_den_free_fs': f'{rmse["free_tcan_on_free_space"]:.3f}',
+        'fl_den_draws': str(den['sampling']['n_samples']),
+        'fl_den_draws_half': str(den['sampling']['n_samples'] // 2),
+        'fl_den_draws_change': f'{100 * check["draws_rel_change"]:.1f}',
+        'fl_den_steps_change': sig(100 * check['steps_rel_change'], 1),
+        'fl_plateau_rtol': pct(check['plateau_rtol']),
+        'fl_den_draws_plateau': check['draws_plateau'],
+        'fl_den_steps_plateau': check['steps_plateau'],
+        'fl_shots': str(den['test_set']['n_shots']),
+        'fl_post_draws': str(nom['sampling']['n_samples']),
+        'fl_post_fs': f'{nom["posterior_mean_velocity_rmse"]["mean"]:.3f}',
+        'fl_post_fiber': f'{fib["posterior_mean_velocity_rmse"]["mean"]:.3f}',
+        'fl_tcan_fs': f'{nom["best_regressor"]["velocity_rmse"]["mean"]:.3f}',
+        'fl_tcan_fiber': f'{fib["best_regressor"]["velocity_rmse"]["mean"]:.3f}',
+        'fl_ens_fs': f'{ens["velocity_rmse"]["mean"]:.3f}',
+        'fl_ens_seeds': str(len(ens['members'])),
+        'fl_band': pct(nom['band_level']),
+        'fl_cov_fs': sig(nom['coverage'], 2),
+        'fl_cov_fiber': sig(fib['coverage'], 2),
+        'fl_cov_ens': sig(ens['coverage'], 2),
+        'fl_crps_fs': sig(nom['crps_um_per_ms']['mean'], 2),
+        'fl_crps_fiber': sig(fib['crps_um_per_ms']['mean'], 2),
+        'fl_crps_ens': sig(ens['crps_um_per_ms']['mean'], 2),
+        'fl_multi_fs': sig(nom['multimodal_fraction'], 2),
+        'fl_multi_fiber': sig(fib['multimodal_fraction'], 2),
+        'fl_sign_split_all': nom['sign_split_fraction'] == 1.0
+        and fib['sign_split_fraction'] == 1.0,
+        'fl_sign_split_min': pct(nom['sign_split_min']),
+    }
+
+
+def r8_values(shot_s: float) -> dict[str, str]:
+    """Q3.3 and Q3.4 analytic values: arithmetic on the R8 fiber operating point."""
+    fiber = R8_FIBER
+    rate = SimConfig.nominal(
+        STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, NOMINAL_C, NOMINAL_ALPHA
+    ).sample_rate
+    sigma_p = fiber.path_drift_um_per_sqrt_s
+    return {
+        'r8_modes': str(fiber.n_modes),
+        'r8_speckle_drift': f'{fiber.drift_rad_per_sqrt_s:g}',
+        'r8_path_drift': f'{sigma_p:g}',
+        'r8_shot_ms': sig(1000 * shot_s, 3),
+        'r8_path_shot_um': sig(sigma_p * math.sqrt(shot_s), 2),
+        # A white random-walk increment over one sample, read as a velocity.
+        'r8_path_velocity': sig(sigma_p * math.sqrt(rate) / 1000, 2),
+        'r8_half_lam_lo': sig(min(SYNTHETIC_WAVELENGTHS_UM) / 2, 2),
+        'r8_half_lam_hi': sig(max(SYNTHETIC_WAVELENGTHS_UM) / 2, 2),
+        'r8_coe': sig(2 / (2 * fiber.n_modes + 1), 2),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--output', type=Path, required=True)
@@ -1329,6 +2223,7 @@ def main() -> None:
         ),
         'real_tcn_rmse': sig(real, 4),
         'real_gap': f'{real / causal_k3:.0f}',
+        **real_values(),
         **exit_check_values(records),
         **q3_values(records, zero),
         **noise_values(records, prior),
@@ -1342,6 +2237,18 @@ def main() -> None:
         **methods_values(records, shot_length(records)),
         **displacement_values(records),
         **s1d_values(records),
+        **sagnac_values(),
+        **channel_values(),
+        **shift_values(prior),
+        **q2_analytic_values(records, prior),
+        **fiber_values(),
+        **r1_values(records, zero),
+        **r1_pair_values(records),
+        **r2_values(records, zero),
+        **r4_values(records, zero),
+        **r7_values(records, zero),
+        **diagnosis_values(),
+        **flow_values(),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(values, indent=1) + '\n', encoding='utf-8')

@@ -13,6 +13,7 @@ For everything else, see:
 
 - **`README.md`** -- project intro, quickstart, install.
 - **`docs/data-storage-evaluation.md`** -- why HDF5, and the alternatives measured.
+- **`QUESTIONS.md`** -- the research questions the report answers.
 - **`TASKS.md`** -- the live task list this project works from.
 
 ## Core development principles
@@ -38,9 +39,8 @@ always invoke Python and tools through `pixi run` (or from inside `pixi shell`)
 - `pixi run spell` - Run codespell for spell checking
 - `pixi run precommit` - Run all pre-commit hooks
 - `pixi run -e test pytest` - Run pytest in the minimal `test` environment (CI-equivalent)
-- `pixi run report` - Build the Typst documents (see `report/` below)
-- `pixi run report-dry` / `report-clean` / `report-only` (report.typ) /
-  `report-synthetic` (synthetic.typ)
+- `pixi run report` - Build the Typst report (see `report/` below)
+- `pixi run report-dry` / `report-clean` / `report-only` (report.typ)
 - `pixi run benchmark-loading` - Data-loading throughput benchmark (GPU; not in `all`)
 
 Workflow-spine tasks (see the master guidance's numbered spine):
@@ -222,16 +222,13 @@ spirit of the `dispersion-engineering` paper repo but with Typst in place of
 LaTeX. Typst is a conda package, so unlike a TeX engine the whole toolchain is
 lockfile-reproducible with no manual install.
 
-- Two documents:
-  - `report.typ` - the baseline report: the Michelson analytic baseline and
-    the learned models on the real acquisitions. Its figures read the real
-    HDF5 files, so it builds only where they are present (and the synthetic
-    program is blinded to them).
-  - `synthetic.typ` - the synthetic research report: identifiability,
-    Fisher information and Bayesian bounds (computed in its figure scripts
-    from `smi.theory.bounds`), then the Q3 and Q1 results from
-    `report/results/synthetic_results.json`. Build it alone with
-    `pixi run report-synthetic`.
+- One document, `report.typ`, organized by the questions of `QUESTIONS.md`:
+  introduction, analytic foundation (identifiability, Fisher information and
+  Bayesian bounds, computed in its figure scripts from `smi.theory.bounds`),
+  methods, then one section per question in three tiers -- analytic,
+  synthetic (`report/results/synthetic_results.json`), real data (the
+  committed `baseline_results.json` / `learned_results.json`). No figure
+  reads the raw acquisition HDF5, so it builds on a fresh clone.
 - `figures/plot_<name>.py` - one script per figure, each taking `--output
   <path>` and writing exactly that path. Shared style lives in
   `figures/_figcommon.py`; scripts import it rather than setting `rcParams`.

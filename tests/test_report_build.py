@@ -28,21 +28,13 @@ from pathlib import Path
 
 import pytest
 
-from smi.core.paths import DATA_DIR, DATASETS, REPO_ROOT
+from smi.core.paths import REPO_ROOT
 
 REPORT_DIR = REPO_ROOT / 'report'
 FIGURE_DIR = REPORT_DIR / 'figures'
 SNAKEFILE = REPORT_DIR / 'Snakefile'
 
 FIGURE_SCRIPTS = sorted(FIGURE_DIR.glob('plot_*.py'))
-
-# The figure scripts read the acquisition HDF5 files, which are gitignored, so
-# a fresh clone cannot run them.
-REQUIRED_DATA = (DATA_DIR / DATASETS['free-space'], DATA_DIR / DATASETS['mmfiber'])
-data_available = all(p.exists() for p in REQUIRED_DATA)
-requires_data = pytest.mark.skipif(
-    not data_available, reason='acquisition HDF5 files are not present'
-)
 
 
 def _snakefile_document_figures() -> dict[str, list[str]]:
@@ -85,7 +77,6 @@ def test_figure_scripts_exist():
 
 
 @pytest.mark.parametrize('script', FIGURE_SCRIPTS, ids=lambda p: p.stem)
-@requires_data
 def test_figure_script_writes_requested_output(script: Path, tmp_path: Path):
     """Each script writes a non-empty PDF at exactly the ``--output`` path.
 

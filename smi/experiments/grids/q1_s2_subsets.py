@@ -12,6 +12,7 @@ from smi.experiments.grid import (
     ALL_SUBSETS,
     FAMILY_BUDGET,
     MPS,
+    RIG_OPERATING_POINT,
     TEST_SET,
     Family,
     Grid,
@@ -28,7 +29,7 @@ GRID = Grid(
         Sim(
             's2-michelson', 'noise_free', feedback_c=0.0, alpha=0.0, sign_invariant=True
         ),
-        Sim('s2-smi-a3', 'noise_free', feedback_c=0.2, alpha=3.0),
+        Sim('s2-smi-a3', 'noise_free', **RIG_OPERATING_POINT),
     ),
     seeds=(0,),
     oracle=True,

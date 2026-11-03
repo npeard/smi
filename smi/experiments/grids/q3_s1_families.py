@@ -11,6 +11,7 @@ from smi.experiments.grid import (
     FAMILY_BUDGET,
     MICHELSON,
     MPS,
+    RIG_OPERATING_POINT,
     RIG_WAVELENGTHS_UM,
     STEMS_44K,
     TEST_SET,
@@ -27,7 +28,7 @@ GRID = Grid(
         if stem != 'mamba-44k'
     ),
     channel_subsets=(RIG_WAVELENGTHS_UM,),
-    sims=(MICHELSON, Sim('smi-a3', 'noise_free', feedback_c=0.2, alpha=3.0)),
+    sims=(MICHELSON, Sim('smi-a3', 'noise_free', **RIG_OPERATING_POINT)),
     seeds=(0,),
     oracle=True,
     sign_invariant=False,
