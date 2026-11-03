@@ -1,7 +1,7 @@
 """Q3 stage S3: the noise ladder.
 
 TCN-44k, all three channels, SMI C = 0.2, alpha = 3. Each detector/drift knob
-is swept ALONE from the noise-free base over its NOMINAL_SWEEPS range
+is swept ALONE from the noise-free base over its NOMINALSWEEPS range
 (smi/theory/forward.py), then every knob at its nominal value together (the
 nominal operating point). Which single knob moves RMSE most, at its nominal
 value, is the case for or against new electronics. shot_noise is omitted
@@ -30,7 +30,7 @@ PHASE_DRIFT_SWEEP = (
         116.0723093699996,
     ),
 )
-_SWEEPS = {
+SWEEPS = {
     'snr': ('snr_db', (10.0, 20.0, 30.0, 40.0, 50.0)),
     'visibility': (
         'visibility_range',
@@ -49,7 +49,7 @@ GRID = Grid(
     sims=(
         *(
             Sim(f'ladder-{knob}', 'noise_free', feedback_c=0.2, alpha=3.0, sweep=s)
-            for knob, s in _SWEEPS.items()
+            for knob, s in SWEEPS.items()
         ),
         Sim(
             'ladder-adc',

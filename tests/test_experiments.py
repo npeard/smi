@@ -650,3 +650,26 @@ def test_sim_naming_an_unknown_field_fails_when_built():
         replace(SMI, override={'snr': 30.0})
     with pytest.raises(ValueError, match='not a SimConfig field'):
         replace(SMI, sweep=('feedbak_c', (0.1,)))
+
+
+def test_r1_r2_r4_grids_expand_to_their_planned_cells():
+    # R1: N = 1..6 x 2 families x 2 sims at seed 0; seeds 1-2 at N = 1, 3 only.
+    count = expand_grid(GRIDS['q1_r1_count'])
+    assert len(count) == 6 * 2 * 2
+    assert sorted({len(c.wavelengths_um) for c in count}) == [1, 2, 3, 4, 5, 6]
+    seeds = expand_grid(GRIDS['q1_r1_seeds'])
+    assert len(seeds) == 2 * 2 * 2 * 2
+    assert {len(c.wavelengths_um) for c in seeds} == {1, 3}
+    # R2: one color repeated N times, offsets 2 pi k / N, one shared phase.
+    for name, n in (('q1_r2_colors', 2), ('q1_r2_colors_n3', 3)):
+        cells = expand_grid(GRIDS[name])
+        assert len(cells) == 2 * 2
+        for c in cells:
+            assert c.wavelengths_um == (0.635,) * n
+            assert c.sim.channel_phase_offsets_rad == pytest.approx(
+                tuple(2 * math.pi * k / n for k in range(n))
+            )
+    # R4: 3 families x (8 knobs at their nominal value + the nominal point).
+    noise = expand_grid(GRIDS['q2_r4_noise'])
+    assert len(noise) == 3 * 9
+    assert all(c.family_config in MODEL_CONFIGS for c in noise)
