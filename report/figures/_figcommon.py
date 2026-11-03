@@ -41,6 +41,7 @@ from smi.core.acquisition import STEMLAB_125_14
 from smi.core.paths import RESULTS_DIR
 from smi.data.frozen import RIG_WAVELENGTHS_UM
 from smi.data.schema import PD_WAVELENGTHS_UM
+from smi.experiments import shift_eval
 from smi.experiments.grids import GRIDS
 from smi.experiments.results_artifact import RunRecord, read_results
 from smi.experiments.runner import (
@@ -175,9 +176,9 @@ def synthetic_records() -> dict[str, RunRecord]:
 
 
 SHIFT_RESULTS_JSON = RESULTS_DIR / 'shift_results.json'
-# The two smi-a3 families shift_eval scores (scripts/shift_eval.py BEST_TWO).
-SHIFT_FAMILIES = ('tcan-44k-T90', 'unettransformer-offline-44k-T90')
-SHIFT_DEFAULT_TEST_SEED = 1000
+SHIFT_FAMILIES = shift_eval.FAMILIES
+# A record without an ``@test`` tag was scored on the grid's own test draw.
+SHIFT_DEFAULT_TEST_SEED = GRIDS[shift_eval.GRID].test_set.seed
 
 
 @dataclass(frozen=True)

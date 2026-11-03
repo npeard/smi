@@ -86,8 +86,11 @@ KNOBS: tuple[Knob, ...] = (
 #: Per-channel signs and sizes of the ``wavelength_independent`` shift.
 WAVELENGTH_PATTERN = (1.0, -1.0, 0.5)
 
-# The noise-free SMI sim of q3_s1_families; the shifts perturb it.
+# The grid whose checkpoints are scored, its noise-free SMI sim (the one
+# the shifts perturb), and its two best families there by velocity RMSE.
+GRID = 'q3_s1_families'
 NOMINAL_SIM = 'smi-a3'
+FAMILIES = ('tcan-44k-T90', 'unettransformer-offline-44k-T90')
 
 
 def random_offsets(index: int, n_ch: int) -> tuple[float, ...]:
