@@ -11,6 +11,7 @@ from smi.experiments.grid import (
     FAMILY_BUDGET,
     MICHELSON,
     MPS,
+    RIG_OPERATING_POINT,
     RIG_WAVELENGTHS_UM,
     TEST_SET,
     Grid,
@@ -21,10 +22,7 @@ from smi.experiments.grid import (
 GRID = Grid(
     families=tcn_44k('tcn-44k-T90'),
     channel_subsets=(RIG_WAVELENGTHS_UM,),
-    sims=(
-        MICHELSON,
-        Sim('smi-a3-feedback_c=0.2', 'noise_free', feedback_c=0.2, alpha=3.0),
-    ),
+    sims=(MICHELSON, Sim('smi-a3-feedback_c=0.2', 'noise_free', **RIG_OPERATING_POINT)),
     seeds=(0,),
     oracle=False,
     sign_invariant=False,

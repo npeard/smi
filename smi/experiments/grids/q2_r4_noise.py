@@ -21,12 +21,12 @@ Run: pixi run experiments q2_r4_noise
 import dataclasses
 
 from smi.core.acquisition import STEMLAB_125_14
-from smi.experiments.grid import Family, Sim
+from smi.experiments.grid import RIG_OPERATING_POINT, Family, Sim
 from smi.experiments.grids.q3_s3_noise_ladder import GRID as LADDER
 from smi.theory.forward import SimConfig
 
 _NOMINAL = SimConfig.nominal(
-    STEMLAB_125_14, LADDER.channel_subsets[0], feedback_c=0.2, alpha=3.0
+    STEMLAB_125_14, LADDER.channel_subsets[0], **RIG_OPERATING_POINT
 )
 
 

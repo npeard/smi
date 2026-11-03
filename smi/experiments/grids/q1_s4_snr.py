@@ -11,6 +11,7 @@ from smi.experiments.grid import (
     ALL_SUBSETS,
     FAMILY_BUDGET,
     MPS,
+    RIG_OPERATING_POINT,
     TEST_SET,
     Grid,
     Sim,
@@ -24,8 +25,7 @@ GRID = Grid(
         Sim(
             'q1-nominal',
             'nominal',
-            feedback_c=0.2,
-            alpha=3.0,
+            **RIG_OPERATING_POINT,
             sweep=('snr_db', (0.0, 10.0, 20.0, 30.0, 40.0)),
         ),
     ),

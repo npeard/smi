@@ -11,6 +11,7 @@ Run: pixi run experiments q1_r1_count
 from smi.experiments.grid import (
     FAMILY_BUDGET,
     MPS,
+    RIG_OPERATING_POINT,
     RIG_WAVELENGTHS_UM,
     TEST_SET,
     Family,
@@ -29,8 +30,8 @@ GRID = Grid(
     ),
     channel_subsets=COUNT_SUBSETS,
     sims=(
-        Sim('s2-smi-a3', 'noise_free', feedback_c=0.2, alpha=3.0),
-        Sim('nominal', 'nominal', feedback_c=0.2, alpha=3.0),
+        Sim('s2-smi-a3', 'noise_free', **RIG_OPERATING_POINT),
+        Sim('nominal', 'nominal', **RIG_OPERATING_POINT),
     ),
     seeds=(0,),
     oracle=False,

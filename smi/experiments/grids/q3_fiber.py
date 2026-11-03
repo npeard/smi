@@ -29,7 +29,7 @@ Run: pixi run experiments q3_fiber
 
 import dataclasses
 
-from smi.experiments.grid import RIG_WAVELENGTHS_UM, Sim
+from smi.experiments.grid import RIG_OPERATING_POINT, RIG_WAVELENGTHS_UM, Sim
 from smi.experiments.grids.q2_r4_noise import GRID as R4
 from smi.learning.configs import R8_FIBER
 from smi.theory.fiber import FiberConfig
@@ -44,11 +44,7 @@ _FOUR_COLORS = (*RIG_WAVELENGTHS_UM, MONITOR_UM)
 
 def _arm(name: str, fiber: FiberConfig | None, **override: object) -> Sim:
     return Sim(
-        name,
-        'nominal',
-        feedback_c=0.2,
-        alpha=3.0,
-        override={'fiber': fiber, **override},
+        name, 'nominal', **RIG_OPERATING_POINT, override={'fiber': fiber, **override}
     )
 
 
@@ -56,7 +52,7 @@ GRID = dataclasses.replace(
     R4,
     families=R4.families[:2],
     sims=(
-        Sim('nominal', 'nominal', feedback_c=0.2, alpha=3.0),
+        Sim('nominal', 'nominal', **RIG_OPERATING_POINT),
         _arm('fiber', FIBER),
         _arm('fiber-4color', FIBER, wavelengths_um=_FOUR_COLORS),
         _arm(

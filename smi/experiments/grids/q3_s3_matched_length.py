@@ -12,6 +12,7 @@ Run: pixi run experiments q3_s3_matched_length
 from smi.experiments.grid import (
     FAMILY_BUDGET,
     MPS,
+    RIG_OPERATING_POINT,
     RIG_WAVELENGTHS_UM,
     TEST_SET,
     Grid,
@@ -24,22 +25,20 @@ GRID = Grid(
     families=tcn_44k('tcn-44k-E60'),
     channel_subsets=(RIG_WAVELENGTHS_UM,),
     sims=(
-        Sim('nominal', 'nominal', feedback_c=0.2, alpha=3.0),
+        Sim('nominal', 'nominal', **RIG_OPERATING_POINT),
         Sim(
             'nominal-no-phasedrift',
             'nominal',
-            feedback_c=0.2,
-            alpha=3.0,
+            **RIG_OPERATING_POINT,
             override={'phase_drift_rad_per_sqrt_s': 0.0},
         ),
-        Sim('ladder-base', 'noise_free', feedback_c=0.2, alpha=3.0),
+        Sim('ladder-base', 'noise_free', **RIG_OPERATING_POINT),
         # The ladder's phase-drift rows trained 36-67 epochs; at equal length
         # the curve says what a partial drift cut buys.
         Sim(
             'ladder-phasedrift',
             'noise_free',
-            feedback_c=0.2,
-            alpha=3.0,
+            **RIG_OPERATING_POINT,
             sweep=PHASE_DRIFT_SWEEP,
         ),
     ),

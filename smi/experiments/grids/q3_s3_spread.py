@@ -10,6 +10,7 @@ Run: pixi run experiments q3_s3_spread
 from smi.experiments.grid import (
     FAMILY_BUDGET,
     MPS,
+    RIG_OPERATING_POINT,
     RIG_WAVELENGTHS_UM,
     TEST_SET,
     Grid,
@@ -21,8 +22,8 @@ GRID = Grid(
     families=tcn_44k('tcn-44k'),
     channel_subsets=(RIG_WAVELENGTHS_UM,),
     sims=(
-        Sim('ladder-base', 'noise_free', feedback_c=0.2, alpha=3.0),
-        Sim('nominal', 'nominal', feedback_c=0.2, alpha=3.0),
+        Sim('ladder-base', 'noise_free', **RIG_OPERATING_POINT),
+        Sim('nominal', 'nominal', **RIG_OPERATING_POINT),
     ),
     seeds=(0, 1, 2),
     oracle=False,
