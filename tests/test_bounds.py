@@ -355,3 +355,50 @@ def test_ekf_mse_above_bound(prior):
     # Measured 1.16x: a near-efficient EKF; a bound far below every estimator
     # would pass the line above while being useless.
     assert mse < 2 * bound[skip:].mean()
+
+
+def _velocity_marginal(j):
+    """Velocity information with the nuisance phases profiled out (Schur)."""
+    return j[0, 0] - j[0, 1:] @ np.linalg.solve(j[1:, 1:], j[1:, 0])
+
+
+def test_fisher_matrix_additive_independent_channels():
+    """Each channel has its own nuisance phase, so velocity information adds."""
+    cfg = dataclasses.replace(
+        _cfg((0.635, 0.635, 0.635), 0.2, 3.0),
+        channel_phase_offsets_rad=(0.0, 2 * math.pi / 3, 4 * math.pi / 3),
+    )
+    j = bounds.fisher_matrix(cfg, n_shots=4, seed=0)
+    assert j.shape == (4, 4)
+    phases = j[1:, 1:]
+    np.testing.assert_array_equal(phases - np.diag(np.diag(phases)), 0.0)
+    # Arrowhead: J_vv - sum_k J_vk^2 / J_kk, one profiled term per channel.
+    per_channel = j[0, 0] - sum(j[0, k] ** 2 / j[k, k] for k in (1, 2, 3))
+    assert _velocity_marginal(j) == pytest.approx(per_channel, rel=1e-6)
+
+
+def test_fisher_matrix_matches_finite_difference():
+    """One channel: J equals the Gaussian-likelihood Fisher of the mean signal,
+    whose derivatives are taken by central differences of ``fringe``.
+    """
+    cfg = _cfg((0.635,), 0.2, 3.0)
+    sigma = noise_std(cfg.snr_db)
+    j = bounds.fisher_matrix(cfg, n_shots=2, seed=3)
+
+    shots = bounds.ideal_shots(cfg, 2, 3)
+    length = shots.theta.shape[-1]
+    t_ms = (torch.arange(length, dtype=torch.float64) - (length - 1) / 2) * (
+        1e3 / cfg.sample_rate
+    )
+    k = 4 * math.pi / 0.635
+    eps = 1e-6
+
+    def mean(dv, dphi):
+        theta = shots.theta[:, 0] + k * dv * t_ms + dphi
+        return shots.visibility[:, :1] * fringe(theta, cfg.feedback_c, cfg.alpha)
+
+    g_v = (mean(eps, 0) - mean(-eps, 0)) / (2 * eps)
+    g_p = (mean(0, eps) - mean(0, -eps)) / (2 * eps)
+    grads = torch.stack([g_v, g_p], -1).reshape(-1, 2).numpy()
+    fd = grads.T @ grads / (grads.shape[0] * sigma**2)
+    np.testing.assert_allclose(j, fd, rtol=1e-2)

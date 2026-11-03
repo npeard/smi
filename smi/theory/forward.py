@@ -211,6 +211,11 @@ class SimConfig:
         adc_bits: Quantizer bits; None is unquantized.
         adc_full_scale: Quantizer range [-full_scale, +full_scale) in signal
             units; out-of-range samples clip to the end codes.
+        channel_phase_offsets_rad: Static per-channel phase (rad) added to
+            phi_0 on top of the random per-shot phase, one per channel. It
+            lets an array of one repeated color carry known relative phases
+            (R2: colors vs a phase-diverse one-color array). None adds nothing
+            and is left out of ``hash()`` so existing hashes do not move.
     """
 
     acquisition: AcquisitionConfig
@@ -231,6 +236,7 @@ class SimConfig:
     pd_bandwidth_hz: float | None
     adc_bits: int | None
     adc_full_scale: float
+    channel_phase_offsets_rad: tuple[float, ...] | None = None
 
     def _coerce(self) -> None:
         # YAML gives lists and ints; the frozen config's hash must not depend on
@@ -251,6 +257,12 @@ class SimConfig:
             'adc_full_scale',
         ):
             object.__setattr__(self, name, float(getattr(self, name)))
+        if self.channel_phase_offsets_rad is not None:
+            object.__setattr__(
+                self,
+                'channel_phase_offsets_rad',
+                tuple(float(x) for x in self.channel_phase_offsets_rad),
+            )
         for name in ('snr_db', 'pd_bandwidth_hz'):
             if getattr(self, name) is not None:
                 object.__setattr__(self, name, float(getattr(self, name)))
@@ -262,6 +274,12 @@ class SimConfig:
         if not 0.0 <= lo <= hi <= 1.0:
             raise ValueError(
                 f'visibility_range must satisfy 0 <= lo <= hi <= 1: {lo, hi}'
+            )
+        offsets = self.channel_phase_offsets_rad
+        if offsets is not None and len(offsets) != len(self.wavelengths_um):
+            raise ValueError(
+                f'need one offset per channel: {len(offsets)} offsets for '
+                f'{len(self.wavelengths_um)} wavelengths'
             )
         dc_lo, dc_hi = self.dc_offset_range
         if dc_lo > dc_hi:
@@ -302,7 +320,12 @@ class SimConfig:
                 f'STEMLAB_125_14; include it in identity_fields and regenerate the '
                 f'recorded hashes before using {self.acquisition}'
             )
-        return {k: v for k, v in asdict(self).items() if k != 'acquisition'}
+        out = asdict(self)
+        del out['acquisition']
+        # Added after hashes were recorded; dropping the unset value keeps them.
+        if out['channel_phase_offsets_rad'] is None:
+            del out['channel_phase_offsets_rad']
+        return out
 
     def hash(self) -> str:
         """Stable sha1 of ``identity_fields`` (keys frozen test sets)."""
@@ -606,6 +629,16 @@ def drive(
     )
 
 
+def add_static_offsets(
+    phase: torch.Tensor, offsets: tuple[float, ...] | None
+) -> torch.Tensor:
+    """``phase`` [B, C, L] plus one static offset per channel; None adds nothing."""
+    if offsets is None:
+        return phase
+    shift = torch.tensor(offsets, device=phase.device, dtype=phase.dtype)
+    return phase + shift.view(1, -1, 1)
+
+
 def simulate_batch(
     cfg: SimConfig,
     batch_size: int,
@@ -658,6 +691,7 @@ def simulate_batch(
     u = torch.rand(batch_size, n_ch, 1, device=sim_device, generator=generator)
     visibility = lo + (hi - lo) * u
     phase = 4 * math.pi * displacement[:, None] / lam + 2 * math.pi * phi_k
+    phase = add_static_offsets(phase, cfg.channel_phase_offsets_rad)
     if cfg.phase_drift_rad_per_sqrt_s > 0:
         sigma = cfg.phase_drift_rad_per_sqrt_s / math.sqrt(cfg.sample_rate)
         phase = phase + sigma * _walk(full, sim_device, generator)

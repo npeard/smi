@@ -396,3 +396,30 @@ def test_simconfig_accepts_a_board_name_and_hash_guards_other_boards():
         other.hash()
     with pytest.raises(ValueError, match='STEMlab'):
         SimConfig.nominal(other.acquisition, WAVELENGTHS_UM, 0.2, 3.0)
+
+
+def test_phase_offsets_none_is_identity():
+    """None and all-zero offsets give bitwise-identical shots: None adds nothing."""
+    cfg = _noise_free(0.2, 3.0)
+    zero = dataclasses.replace(
+        cfg, channel_phase_offsets_rad=(0.0,) * len(cfg.wavelengths_um)
+    )
+    a, b = _simulate(cfg), _simulate(zero)
+    assert torch.equal(a.signals, b.signals)
+    assert torch.equal(a.optical_phase, b.optical_phase)
+    assert cfg.hash() != zero.hash()
+
+
+def test_phase_offsets_shift_phase():
+    """Each channel's optical phase moves by exactly its offset; draws unchanged."""
+    cfg = _noise_free(0.2, 3.0)
+    offsets = tuple(2 * math.pi * k / 3 for k in range(len(cfg.wavelengths_um)))
+    shifted = dataclasses.replace(cfg, channel_phase_offsets_rad=offsets)
+    a, b = _simulate(cfg), _simulate(shifted)
+    expected = torch.tensor(offsets).view(1, -1, 1).expand_as(a.optical_phase)
+    torch.testing.assert_close(b.optical_phase - a.optical_phase, expected)
+
+
+def test_phase_offsets_length_checked():
+    with pytest.raises(ValueError, match='one offset per channel'):
+        dataclasses.replace(_noise_free(), channel_phase_offsets_rad=(0.0,))
