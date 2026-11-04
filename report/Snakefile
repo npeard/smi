@@ -44,6 +44,7 @@ DOCUMENT_FIGURES = {
         "leave_one_out",
         "q3_fiber",
         "q3_fiber_sweep",
+        "q3_flow",
         "baseline_summary",
         "model_comparison",
         "baseline_amplitude_trend",
