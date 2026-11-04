@@ -79,6 +79,21 @@ class FlowMatching(nn.Module):
             return cond
         return torch.cat([cond, self.encoder(cond)], dim=1)
 
+    def guess(self, cond: Tensor) -> Tensor:
+        """The encoder's x_1 regression head on (normalized) ``cond``.
+
+        ``[B, x_channels, L]``: the deterministic regressor the auxiliary loss
+        trains. Raises if there is no encoder.
+        """
+        if self.encoder is None:
+            raise ValueError('this flow has no conditioning encoder')
+        return self._guess_of(self.context(cond), cond.shape[1])
+
+    def _guess_of(self, context: Tensor, cond_channels: int) -> Tensor:
+        # The guess is the encoder's first x_channels features; the loss
+        # slices it from the context it already computed.
+        return context[:, cond_channels : cond_channels + self.x_channels]
+
     def field(self, x_t: Tensor, t: Tensor, context: Tensor) -> Tensor:
         """Velocity at ``x_t``; ``t`` is ``[B]``, ``context`` from :meth:`context`."""
         angle = t[:, None] * self.frequencies  # [B, F]
@@ -115,7 +130,7 @@ class FlowMatching(nn.Module):
         flow = functional.mse_loss(self.field(x_t, t, context), x1 - x0)
         if self.encoder is None:
             return flow, torch.zeros_like(flow)
-        guess = context[:, cond.shape[1] : cond.shape[1] + self.x_channels]
+        guess = self._guess_of(context, cond.shape[1])
         return flow, self.aux_weight * functional.mse_loss(guess, x1)
 
     @torch.no_grad()

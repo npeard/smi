@@ -206,10 +206,7 @@ class FlowLitModule(lightning.LightningModule):
         ``[B, C_x, L]``: the deterministic regressor the auxiliary loss
         trains, without the flow. Raises if the module has no encoder.
         """
-        if self.flow.encoder is None:
-            raise ValueError('this flow has no conditioning encoder')
-        cond = (cond - self.cond_mean) / self.cond_std
-        guess = self.flow.encoder(cond)[:, : self.flow.x_channels]
+        guess = self.flow.guess((cond - self.cond_mean) / self.cond_std)
         return guess * self.x1_std + self.x1_mean
 
     @override

@@ -863,7 +863,7 @@ def score_audit(
         'train_crop_length': flow.train_crop_length,
     }
     grid = grids.grid(grid_name)
-    regressors = {}
+    regressors, estimators = {}, {}
     for c in expand_grid(grid):
         if c.sim_name == sim_name:
             est = CheckpointEstimator(
@@ -871,7 +871,8 @@ def score_audit(
             )
             crop = est.module.hparams.get('train_crop_length')
             regressors[c.key] = _module_facts(est, crop)
-    tcan = CheckpointEstimator(trained_checkpoint(cell, grid_name, runs_dir), device)
+            estimators[c.key] = est
+    tcan = estimators[cell.key]
 
     signals, truth = _read(dataset, wl, AUDIT_SHOTS)
     generator = torch.Generator(flow.device).manual_seed(sampling.seed)
