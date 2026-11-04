@@ -35,6 +35,7 @@ import numpy as np
 import torch
 
 from smi.core.paths import FROZEN_DIR, GRID_RUNS_DIR, RESULTS_DIR
+from smi.data.schema import PD_KEYS
 from smi.experiments.diagnostics import (
     channel_stats,
     colour_fading_verdict,
@@ -42,17 +43,16 @@ from smi.experiments.diagnostics import (
     matched_retention,
     per_shot_excess,
     rescale_probe,
+    shot_speed,
 )
 from smi.experiments.grids import GRIDS
-from smi.experiments.runner import expand_grid
+from smi.experiments.runner import cell_key, expand_grid
 from smi.theory.bounds import sign_information
 
-CH3 = 'ch635-675-515'
+W3 = (0.635, 0.6748, 0.515)
 MODES = ('modes-1', 'modes-2', 'modes-4', 'modes-8')
 SNR_RUNGS = (0.0, 10.0, 20.0, 30.0, 40.0)
 C_RUNGS = (0.05, 0.1, 0.2, 0.4, 0.7, 0.9)
-# Photodiode keys of the three colors (RP1_CH1 is not a fringe channel).
-FRINGE_KEYS = ('RP1_CH2', 'RP2_CH1', 'RP2_CH2')
 SIGN_SHOTS = 8  # matches channel_analytics.py: the mirror fit is the slow call
 
 
@@ -68,10 +68,10 @@ def _mean(rec: dict, metric: str) -> float:
 
 def _frozen(dataset: str) -> tuple[np.ndarray, np.ndarray]:
     """(per-shot velocity RMS, per-shot per-color fringe std) of a frozen set."""
-    with h5py.File(FROZEN_DIR / f'{dataset}.h5', 'r') as f:
-        speed = np.sqrt((f['velocity'][:] ** 2).mean(-1))
-        amp = np.stack([f[k][:].std(-1) for k in FRINGE_KEYS], -1)
-    return speed, amp
+    path = FROZEN_DIR / f'{dataset}.h5'
+    with h5py.File(path, 'r') as f:
+        amp = np.stack([f[k][:].std(-1) for k in PD_KEYS], -1)
+    return shot_speed(path), amp
 
 
 def analyse(device: str) -> dict:
@@ -80,11 +80,15 @@ def analyse(device: str) -> dict:
     per_shot = json.loads((RESULTS_DIR / 'per_shot_rmse.json').read_text())
     analytic = json.loads((RESULTS_DIR / 'fiber_sweep_analytics.json').read_text())
     points = analytic['points']
-    cells = {c.sim_name: c for c in expand_grid(GRIDS['q3_fiber_sweep'])}
+    cells = {
+        c.sim_name: c
+        for c in expand_grid(GRIDS['q3_fiber_sweep'])
+        if c.family == 'tcan-44k' and c.seed == 0
+    }
     nominal = cells['nominal'].sim
 
     def sweep_key(name: str) -> str:
-        return f'tcan-44k__{CH3}__{name}__seed0'
+        return cell_key('tcan-44k', W3, name, 0)
 
     speed, amp_free = _frozen(per_shot[sweep_key('nominal')]['dataset'])
     zero = float(speed.mean())
@@ -100,7 +104,8 @@ def analyse(device: str) -> dict:
     c_curve = {
         c: explained_fraction(
             _mean(
-                recs[f'tcn-44k__{CH3}__smi-a3-feedback_c={c:g}__seed0'], 'velocity_rmse'
+                recs[cell_key('tcn-44k', W3, f'smi-a3-feedback_c={c:g}', 0)],
+                'velocity_rmse',
             ),
             zero,
         )
@@ -109,7 +114,8 @@ def analyse(device: str) -> dict:
     snr_curve = {
         s: explained_fraction(
             _mean(
-                recs[f'tcn-44k__{CH3}__q1-nominal-snr_db={s:g}__seed0'], 'velocity_rmse'
+                recs[cell_key('tcn-44k', W3, f'q1-nominal-snr_db={s:g}', 0)],
+                'velocity_rmse',
             ),
             zero,
         )
@@ -204,7 +210,10 @@ def analyse(device: str) -> dict:
         for name, key in (
             ('modes-8-corr', sweep_key('modes-8-corr')),
             *(
-                (f'modes-{n}-1color', f'tcan-44k__ch635__modes-{n}-1color__seed0')
+                (
+                    f'modes-{n}-1color',
+                    cell_key('tcan-44k', W3[:1], f'modes-{n}-1color', 0),
+                )
                 for n in (1, 4, 8)
             ),
         )

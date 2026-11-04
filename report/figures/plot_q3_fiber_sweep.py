@@ -22,11 +22,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _figcommon import COLORS, parse_args, save
 
 from smi.core.paths import RESULTS_DIR
+from smi.experiments.grids import GRIDS
 from smi.experiments.grids.q3_fiber_sweep import (
     MODES,
     PATH_UM_PER_SQRT_S,
     SPECKLE_RAD_PER_SQRT_S,
 )
+from smi.experiments.runner import expand_grid
 
 PANELS = (
     ('mode count $M$', [f'modes-{n}' for n in MODES], MODES),
@@ -49,10 +51,10 @@ def main() -> None:
     per_shot = json.loads((RESULTS_DIR / 'per_shot_rmse.json').read_text())
     sweep, zero = mech['sweep'], mech['zero_predictor']
 
+    keys = {c.sim_name: c.key for c in expand_grid(GRIDS['q3_fiber_sweep'])}
+
     def se(name: str) -> float:
-        x = np.array(
-            per_shot[f'tcan-44k__ch635-675-515__{name}__seed0']['velocity_rmse']
-        )
+        x = np.array(per_shot[keys[name]]['velocity_rmse'])
         return float(x.std(ddof=1) / np.sqrt(x.size))
 
     fig, axes = plt.subplots(1, 3, figsize=(7.0, 2.4), sharey=True)

@@ -35,11 +35,13 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
+import h5py
 import numpy as np
 import torch
 
 from smi.core.metrics import per_shot_rmse
 from smi.data.frozen import load_or_create
+from smi.data.schema import VELOCITY_KEY
 from smi.experiments.evaluate import (
     DISPLACEMENT_LIMIT_MARGIN,
     CheckpointEstimator,
@@ -371,6 +373,12 @@ def coupling_stats(cfg: SimConfig, n_shots: int, seed: int) -> dict[str, float]:
         'path_rms_um': fib.path_drift_um_per_sqrt_s
         * math.sqrt(length / cfg.sample_rate / 6),
     }
+
+
+def shot_speed(path: Path) -> np.ndarray:
+    """Per-shot velocity RMS of a frozen set; its mean is the zero predictor's RMSE."""
+    with h5py.File(path, 'r') as f:
+        return np.sqrt((f[VELOCITY_KEY][:] ** 2).mean(-1))
 
 
 def explained_fraction(rmse: float, zero_rmse: float) -> float:
