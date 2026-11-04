@@ -22,7 +22,7 @@
       "snr_loss_db": 8.993316530961417,
       "in_shot_fade_rel": 0.31273592662287847,
       "speckle_phase_rms_um": 0.025544706940655564,
-      "path_rms_um": 0.29612314267322415,
+      "path_rms_um": 0.2093906822505083,
       "mse_ratio_to_free_space": 0.16821957093527942
     },
     "modes-1": {
@@ -130,7 +130,7 @@
       "snr_loss_db": 1.1085473383230695,
       "in_shot_fade_rel": 1.3037839426850624e-08,
       "speckle_phase_rms_um": 3.2462984132145986e-10,
-      "path_rms_um": 0.010575826524043722,
+      "path_rms_um": 0.0074782386518038695,
       "mse_ratio_to_free_space": 0.9911980034327776
     },
     "path-0.3": {
@@ -142,7 +142,7 @@
       "snr_loss_db": 1.1085473383230695,
       "in_shot_fade_rel": 1.3037839426850624e-08,
       "speckle_phase_rms_um": 3.2462984132145986e-10,
-      "path_rms_um": 0.03172747957213116,
+      "path_rms_um": 0.022434715955411605,
       "mse_ratio_to_free_space": 0.9272793469927098
     },
     "path-1": {
@@ -154,7 +154,7 @@
       "snr_loss_db": 1.1085473383230695,
       "in_shot_fade_rel": 1.3037839426850624e-08,
       "speckle_phase_rms_um": 3.2462984132145986e-10,
-      "path_rms_um": 0.1057582652404372,
+      "path_rms_um": 0.07478238651803869,
       "mse_ratio_to_free_space": 0.5533815044603057
     },
     "path-2.8": {
@@ -166,7 +166,7 @@
       "snr_loss_db": 1.1085473383230695,
       "in_shot_fade_rel": 1.3037839426850624e-08,
       "speckle_phase_rms_um": 3.2462984132145986e-10,
-      "path_rms_um": 0.29612314267322415,
+      "path_rms_um": 0.2093906822505083,
       "mse_ratio_to_free_space": 0.16947106961242644
     }
   }

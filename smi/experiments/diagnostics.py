@@ -337,6 +337,10 @@ def coupling_stats(cfg: SimConfig, n_shots: int, seed: int) -> dict[str, float]:
     ``speckle_phase_rms_um`` the within-shot std of the speckle phase
     arg(kappa) (path drift excluded) as target-displacement equivalent at the
     first color, the nuisance the velocity read must reject.
+    ``path_rms_um`` is on the same footing: the expected within-shot std of
+    the Brownian path walk about its shot mean, drift * sqrt(T / 6) (its RMS
+    from the shot start would be sqrt(T / 2)), since a constant path offset is
+    a phase a per-shot read absorbs.
     """
     fib = cfg.fiber
     assert fib is not None
@@ -365,7 +369,7 @@ def coupling_stats(cfg: SimConfig, n_shots: int, seed: int) -> dict[str, float]:
             psi.std(-1).mean() * cfg.wavelengths_um[0] / (4 * math.pi)
         ),
         'path_rms_um': fib.path_drift_um_per_sqrt_s
-        * math.sqrt(length / cfg.sample_rate / 3),
+        * math.sqrt(length / cfg.sample_rate / 6),
     }
 
 

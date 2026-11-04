@@ -6,12 +6,15 @@ import torch
 
 from smi.experiments.diagnostics import (
     colour_fading_verdict,
+    coupling_stats,
     explained_fraction,
     matched_retention,
     per_shot_excess,
     rescale_to,
     wiener_rmse,
 )
+from smi.experiments.grids import GRIDS
+from smi.experiments.runner import expand_grid
 
 
 def test_single_channel_matches_scalar_wiener():
@@ -83,3 +86,19 @@ def test_colour_fading_verdict_reads_recovery_and_one_colour_retention():
         three_m1=0.6, three_m8=0.1, three_m8_corr=0.5, one_m1=0.4, one_m8=0.05
     )
     assert mixed['verdict'] == 'mixed'
+
+
+def test_path_rms_is_brownian_within_shot_std():
+    """path_rms_um matches the mean within-shot std of a simulated walk."""
+    sim = next(
+        c.sim
+        for c in expand_grid(GRIDS['q3_fiber_sweep'])
+        if c.sim.fiber is not None and c.sim.fiber.path_drift_um_per_sqrt_s > 0
+    )
+    n = 512
+    t_s = sim.acquisition.buffer_size / sim.sample_rate
+    rng = np.random.default_rng(0)
+    steps = rng.standard_normal((4000, n)) * np.sqrt(t_s / n)
+    walk = sim.fiber.path_drift_um_per_sqrt_s * np.cumsum(steps, axis=-1)
+    got = coupling_stats(sim, 2, 0)['path_rms_um']
+    assert got == pytest.approx(np.sqrt((walk.var(-1)).mean()), rel=0.03)
