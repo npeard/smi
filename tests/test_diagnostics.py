@@ -3,7 +3,13 @@
 import numpy as np
 import torch
 
-from smi.experiments.diagnostics import rescale_to, wiener_rmse
+from smi.experiments.diagnostics import (
+    explained_fraction,
+    matched_retention,
+    per_shot_excess,
+    rescale_to,
+    wiener_rmse,
+)
 
 
 def test_single_channel_matches_scalar_wiener():
@@ -36,3 +42,24 @@ def test_rescale_to_maps_each_shot_onto_target_stats():
     out = rescale_to(sig, mean, std)
     torch.testing.assert_close(out.mean(-1), mean.expand(4, 2), atol=1e-5, rtol=0)
     torch.testing.assert_close(out.std(-1), std.expand(4, 2))
+
+
+def test_explained_fraction_spans_perfect_to_zero_predictor():
+    assert explained_fraction(0.0, 2.0) == 1.0
+    assert explained_fraction(2.0, 2.0) == 0.0
+
+
+def test_matched_retention_interpolates_between_rungs():
+    curve = {0.0: 0.0, 0.2: 0.8, 0.4: 1.0}
+    assert matched_retention(curve, 0.2, 0.1) == 0.5
+    assert matched_retention(curve, 0.2, 0.3) == 0.9 / 0.8
+
+
+def test_per_shot_excess_separates_speed_from_amplitude():
+    speed = np.array([0.1, 0.2, 0.4, 0.8])
+    amplitude = np.array([0.5, 0.9, 0.1, 0.5])
+    base = np.full(4, 0.1)
+    faded = np.sqrt(base**2 + speed**2)  # excess MSE grows with speed only
+    out = per_shot_excess(base, faded, speed, amplitude)
+    assert out['corr_excess_mse_vs_speed'] > 0.9
+    assert abs(out['corr_excess_mse_vs_amplitude']) < 0.5

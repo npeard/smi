@@ -367,3 +367,47 @@ def coupling_stats(cfg: SimConfig, n_shots: int, seed: int) -> dict[str, float]:
         'path_rms_um': fib.path_drift_um_per_sqrt_s
         * math.sqrt(length / cfg.sample_rate / 3),
     }
+
+
+def explained_fraction(rmse: float, zero_rmse: float) -> float:
+    """Share of the zero predictor's MSE an estimator removes: 1 - (rmse / zero)^2.
+
+    Puts runs with different error floors (noise-free C sweep, nominal SNR
+    ladder, fiber sweep) on one scale, so a knob's cost is compared as the
+    share of learned signal it destroys rather than as a raw RMSE step.
+    """
+    return 1.0 - (rmse / zero_rmse) ** 2
+
+
+def matched_retention(curve: dict[float, float], ref: float, at: float) -> float:
+    """``curve`` (knob -> explained fraction) at ``at`` over its value at ``ref``.
+
+    Linear in the knob between measured rungs; the prediction a hypothesis makes
+    for a fiber point whose only change is that knob moving from ``ref`` to
+    ``at``.
+    """
+    xs = sorted(curve)
+    ys = [curve[x] for x in xs]
+    return float(np.interp(at, xs, ys) / np.interp(ref, xs, ys))
+
+
+def per_shot_excess(
+    base: np.ndarray, faded: np.ndarray, speed: np.ndarray, amplitude: np.ndarray
+) -> dict[str, float]:
+    """Where a knob's extra error lands across paired shots.
+
+    ``base``/``faded`` are per-shot RMSEs on shots sharing their motion,
+    ``speed`` each shot's velocity RMS, ``amplitude`` each shot's fringe
+    amplitude relative to free space. A shot-SNR (or shot-C_eff) mechanism puts
+    the excess MSE on the faded shots (correlation with amplitude < 0); a
+    collapse of fast-motion estimation puts it on the fast shots.
+    """
+    excess = faded**2 - base**2
+    return {
+        'corr_excess_mse_vs_speed': float(np.corrcoef(excess, speed)[0, 1]),
+        'corr_excess_mse_vs_amplitude': float(np.corrcoef(excess, amplitude)[0, 1]),
+        'median_rmse_base': float(np.median(base)),
+        'median_rmse_faded': float(np.median(faded)),
+        'mean_rmse_base': float(base.mean()),
+        'mean_rmse_faded': float(faded.mean()),
+    }
