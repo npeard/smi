@@ -672,12 +672,18 @@ def _flow(
         }
     # Flow loss is noisy and has no zero-predictor plateau: a fixed budget,
     # best checkpoint by val/flow_loss (smi.experiments.flow_runner).
-    config.training_config['max_epochs'] = FLOW_EPOCHS[task]
+    epochs = FLOW_EPOCHS_ENC if encoder_channels else FLOW_EPOCHS
+    config.training_config['max_epochs'] = epochs[task]
     return config
 
 
 #: Epochs per task, sized to the ~8 h R8 budget (flow_runner docstring).
 FLOW_EPOCHS = {'denoise': 60, 'posterior': 40}
+# The encoder doubles the step cost (CPU, 4 threads, two jobs running: 1.52 s
+# per full-shot posterior step, 1.04 s per denoise step), so the original
+# epochs would take ~3.7 h per flow; these fit the three in parallel plus
+# scoring inside the ~6 h retry budget (~2.2 h training each).
+FLOW_EPOCHS_ENC = {'denoise': 35, 'posterior': 25}
 # Unit weight: both losses are MSEs in the same unit-variance x_1 coordinates,
 # and the flow loss's floor (the x_0 variance it cannot predict) is ~1, so the
 # regression term is of the same order without dominating.
