@@ -26,7 +26,12 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
 
 from smi.core.paths import GRID_RUNS_DIR, RUNS_DIR
-from smi.experiments.flow_eval import Sampling, score_denoise, score_posterior
+from smi.experiments.flow_eval import (
+    Sampling,
+    score_denoise,
+    score_posterior,
+    score_posterior_sign,
+)
 from smi.learning.configs import model_config
 from smi.learning.flow_lit_module import FlowLitModule
 from smi.learning.synthetic_lit_module import SyntheticIndexDataset
@@ -140,6 +145,34 @@ def score(device: str, frozen_root: Path, out: Path) -> None:
             }
             for arm, name in POSTERIORS.items()
         },
+    }
+    out.write_text(json.dumps(results, indent=2) + '\n')
+    logger.info(f'wrote {out}')
+
+
+def score_sign(device: str, frozen_root: Path, out: Path) -> None:
+    """Add the posteriors' sign-blind and sign-fixed scores to ``out``.
+
+    Merged under a new key so the original scores stay as recorded.
+    """
+    results = json.loads(out.read_text())
+    results['q3_4_posterior_sign'] = {
+        arm: {
+            'config': name,
+            'device': device,
+            **score_posterior_sign(
+                FlowLitModule.load_from_checkpoint(
+                    checkpoint(name), map_location=device, fit_norm_stats=False
+                ).eval(),
+                GRID,
+                arm,
+                GRID_RUNS_DIR,
+                frozen_root,
+                POSTERIOR_SAMPLING,
+                device,
+            ),
+        }
+        for arm, name in POSTERIORS.items()
     }
     out.write_text(json.dumps(results, indent=2) + '\n')
     logger.info(f'wrote {out}')

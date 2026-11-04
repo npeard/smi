@@ -5,6 +5,7 @@ rationale.
 
     pixi run python scripts/flow.py train flow/denoise-unettransformer-offline-44k
     pixi run python scripts/flow.py score
+    pixi run python scripts/flow.py sign --device mps
 """
 
 import argparse
@@ -15,7 +16,7 @@ import torch
 from smi.core.cli import add_verbosity, setup_logging
 from smi.core.paths import RESULTS_DIR
 from smi.data.frozen import DEFAULT_ROOT
-from smi.experiments.flow_runner import DENOISE, POSTERIORS, score, train
+from smi.experiments.flow_runner import DENOISE, POSTERIORS, score, score_sign, train
 
 
 def main() -> None:
@@ -30,11 +31,17 @@ def main() -> None:
     s.add_argument('--device', default='cpu')
     s.add_argument('--frozen-root', type=Path, default=DEFAULT_ROOT)
     s.add_argument('--out', type=Path, default=RESULTS_DIR / 'flow_results.json')
+    g = sub.add_parser('sign', help="add the posteriors' sign scores to --out")
+    g.add_argument('--device', default='cpu')
+    g.add_argument('--frozen-root', type=Path, default=DEFAULT_ROOT)
+    g.add_argument('--out', type=Path, default=RESULTS_DIR / 'flow_results.json')
     args = parser.parse_args()
     setup_logging(args.verbosity)
     torch.set_float32_matmul_precision('high')
     if args.command == 'train':
         train(args.config, args.accelerator, args.seed)
+    elif args.command == 'sign':
+        score_sign(args.device, args.frozen_root, args.out)
     else:
         score(args.device, args.frozen_root, args.out)
 

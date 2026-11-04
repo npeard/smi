@@ -36,6 +36,7 @@ from smi.core.metrics import (
     crps_gaussian,
     crps_samples,
     per_shot_rmse,
+    sign_invariant_rmse,
     summarize_per_shot,
 )
 from smi.data.datasets import select_pd_keys
@@ -523,3 +524,242 @@ def score_posterior(
         'members': [{'grid': m.grid, 'cell': m.cell, 'seed': m.seed} for m in members],
     }
     return out
+
+
+def magnitude_scores(draws: Tensor, truth: Tensor) -> dict[str, Any]:
+    """Sign-blind scores of ``[S, B, L]`` velocity draws against ``[B, L]`` truth.
+
+    Every draw is folded to ``|v|`` and scored against ``|truth|``: the point
+    estimate is the posterior mean of ``|v|``, the band and CRPS are those of
+    the folded draws. This asks whether the flow knows the speed even where it
+    does not know the direction.
+    """
+    folded, target = draws.abs(), truth.abs()
+    return {
+        'speed_rmse': summarize_per_shot(
+            per_shot_rmse(folded.mean(dim=0), target).numpy()
+        ),
+        'coverage': band_coverage(folded, target, BAND_LEVEL),
+        'crps_um_per_ms': summarize_per_shot(
+            crps_samples(folded, target).mean(dim=-1).numpy()
+        ),
+    }
+
+
+def _segment_signs(v: Tensor, reference: Tensor, segment: int) -> Tensor:
+    """``sign(v . reference)`` per ``segment``-sample block: ``[..., L // segment]``.
+
+    A trailing partial block is dropped. Ties go to +1, as in ``best_sign``.
+    """
+    n = v.shape[-1] // segment
+    dot = (v[..., : n * segment] * reference[..., : n * segment]).unflatten(
+        -1, (n, segment)
+    )
+    return torch.where(dot.sum(dim=-1) >= 0, 1.0, -1.0)
+
+
+def sign_structure(draws: Tensor, truth: Tensor, segment: int) -> dict[str, Any]:
+    """Where the flow's sign ambiguity lives, for ``[S, B, L]`` draws.
+
+    * ``draw_sign_agreement``: share of draws whose global sign (one per draw,
+      by ``best_sign`` against truth) is right; 0.5 is a coin flip.
+    * ``shot_majority_agreement``: share of shots whose majority draw sign is
+      right, the per-shot sign a vote over draws would report.
+    * ``segment_flip_fraction``: share of ``segment``-sample blocks whose sign
+      against truth differs from their own draw's global sign. Near zero means
+      each draw commits to one sign for the whole shot (a global ambiguity,
+      fixable by one sign per draw); large means the sign wanders within a
+      draw and needs a per-segment fix.
+    * ``sample_mass_right_sign``: per sample with ``|truth|`` above its shot's
+      median ``|truth|`` (where the sign is not lost in a zero crossing), the
+      share of draws with the true sign; with ``sample_mass_bimodal`` the
+      share of those samples whose draws put at least ``SIGN_SPLIT_MIN`` of
+      their mass on each sign, i.e. a +|v| / -|v| split explained by sign.
+    """
+    glob = torch.stack([best_sign(d, truth)[:, 0] for d in draws])  # [S, B]
+    seg = _segment_signs(draws, truth, segment)  # [S, B, n]
+    flips = (seg != glob[..., None]).double().mean()
+    moving = truth.abs() > truth.abs().median(dim=-1, keepdim=True).values
+    right = (torch.sign(draws) == torch.sign(truth)).double().mean(dim=0)  # [B, L]
+    right = right[moving]
+    return {
+        'draw_sign_agreement': float((glob > 0).double().mean()),
+        'shot_majority_agreement': float((glob.mean(dim=0) > 0).double().mean()),
+        'segment': segment,
+        'segment_flip_fraction': float(flips),
+        'sample_mass_right_sign': float(right.mean()),
+        'sample_mass_bimodal': float(
+            ((right >= SIGN_SPLIT_MIN) & (right <= 1 - SIGN_SPLIT_MIN)).double().mean()
+        ),
+    }
+
+
+def align_signs(draws: Tensor, reference: Tensor, segment: int | None) -> Tensor:
+    """Flip each draw to agree in sign with ``reference`` ``[B, L]``.
+
+    ``segment`` None flips each draw's whole shot by one sign; an integer
+    flips each ``segment``-sample block on its own (a trailing partial block
+    takes its preceding block's sign). The result is a hybrid estimator:
+    the flow's draws with the direction taken from ``reference``, typically a
+    regressor's point estimate, not a property of the flow.
+    """
+    if segment is None:
+        return torch.stack([best_sign(d, reference) * d for d in draws])
+    signs = _segment_signs(draws, reference, segment).repeat_interleave(segment, -1)
+    pad = draws.shape[-1] - signs.shape[-1]
+    signs = torch.cat([signs, signs[..., -1:].expand(*signs.shape[:-1], pad)], -1)
+    return signs * draws
+
+
+def signed_scores(draws: Tensor, truth: Tensor) -> dict[str, Any]:
+    """Posterior-mean velocity RMSE, coverage and CRPS of signed draws."""
+    return {
+        'posterior_mean_velocity_rmse': summarize_per_shot(
+            per_shot_rmse(draws.mean(dim=0), truth).numpy()
+        ),
+        'coverage': band_coverage(draws, truth, BAND_LEVEL),
+        'crps_um_per_ms': summarize_per_shot(
+            crps_samples(draws, truth).mean(dim=-1).numpy()
+        ),
+    }
+
+
+# Sign-structure blocks: 1024 samples is the coarsest that still resolves a
+# flip within a shot (16 per 16384-sample shot); 256 and 4096 bracket it.
+SIGN_SEGMENTS = (256, 1024, 4096)
+# The hybrid's per-segment sign block, scored beside the per-shot sign: the
+# middle of SIGN_SEGMENTS, at which the oracle (true-sign) hybrid is lowest.
+ALIGN_SEGMENT = 1024
+
+
+# Shots used by conditioning_sensitivity: the ratio is a mean over many
+# samples per shot, so a few shots settle it.
+SENSITIVITY_SHOTS = 4
+
+
+def conditioning_sensitivity(
+    flow: FlowLitModule, signals: Tensor, n_steps: int, seed: int
+) -> float:
+    """RMS change of draws when ``signals`` is zeroed, over the draws' RMS.
+
+    The same initial noise is integrated under the real and the zeroed
+    conditioning, so the ratio is what the field takes from the signals: near
+    zero means the flow samples its prior and ignores the measurement.
+    """
+    out = []
+    for cond in (signals, torch.zeros_like(signals)):
+        generator = torch.Generator(flow.device).manual_seed(seed)
+        with torch.no_grad():
+            out.append(flow.sample(cond.to(flow.device), 2, n_steps, generator).cpu())
+    real, zeroed = out
+    return float((real - zeroed).pow(2).mean().sqrt() / real.pow(2).mean().sqrt())
+
+
+def _predict(est: Any, signals: Tensor, wavelengths_um: tuple[float, ...]) -> Tensor:
+    return torch.cat(
+        [est.predict_velocity(s, wavelengths_um) for s in signals.split(16)]
+    )
+
+
+def score_posterior_sign(
+    flow: FlowLitModule,
+    grid_name: str,
+    sim_name: str,
+    runs_dir: Path,
+    frozen_root: Path,
+    sampling: Sampling,
+    device: str,
+) -> dict[str, Any]:
+    """Sign-blind scores, sign structure and the regressor-signed hybrid.
+
+    The posterior flows put half their mass on each sign (``score_posterior``'s
+    ``sign_split_fraction``), so their mean is near zero. This separates how
+    well they know the speed from how well they know the direction, and
+    scores the simplest fix: each draw's sign taken from the arm's TCAN
+    regressor, per shot and per ``ALIGN_SEGMENT`` block. The regressors'
+    own speed RMSE is the yardstick for the first.
+    """
+    test, cell, dataset = _arm_setup(
+        flow, grid_name, sim_name, frozen_root, 'posterior'
+    )
+    wl = cell.wavelengths_um
+    signals, truth = _read(dataset, wl, test.n_shots)
+    s = sampling
+    generator = torch.Generator(flow.device).manual_seed(s.seed)
+    with torch.no_grad():
+        draws = torch.cat(
+            [
+                _draws(flow, b, s.n_samples, s.n_steps, s.per_call, generator)[:, :, 0]
+                for b in signals.split(16)
+            ],
+            dim=1,
+        )
+    tcan = _predict(
+        CheckpointEstimator(trained_checkpoint(cell, grid_name, runs_dir), device),
+        signals,
+        wl,
+    )
+
+    def speed(pred: Tensor) -> dict[str, float]:
+        return summarize_per_shot(per_shot_rmse(pred.abs(), truth.abs()).numpy())
+
+    regressors: dict[str, Any] = {
+        'tcan': {
+            'cell': cell.key,
+            'speed_rmse': speed(tcan),
+            'velocity_rmse_sign_invariant': summarize_per_shot(
+                sign_invariant_rmse(tcan, truth).numpy()
+            ),
+            'shot_sign_agreement': float((best_sign(tcan, truth) > 0).double().mean()),
+        }
+    }
+    members = tcan_cells(cell, grids.grid(grid_name), runs_dir)
+    if len(members) >= ENSEMBLE_MIN:
+        mean = torch.stack(
+            [
+                _predict(CheckpointEstimator(m.checkpoint, device), signals, wl)
+                for m in members
+            ]
+        ).mean(dim=0)
+        regressors['deep_ensemble_mean'] = {
+            'n_members': len(members),
+            'speed_rmse': speed(mean),
+            'velocity_rmse_sign_invariant': summarize_per_shot(
+                sign_invariant_rmse(mean, truth).numpy()
+            ),
+        }
+    speed_mean = draws.abs().mean(dim=0).double().numpy()
+    return {
+        'test_set': {**dataclasses.asdict(test), 'dataset': dataset.stem},
+        'sampling': dataclasses.asdict(sampling),
+        'conditioning_sensitivity': conditioning_sensitivity(
+            flow, signals[:SENSITIVITY_SHOTS], s.n_steps, s.seed
+        ),
+        # Mean over shots of corr(posterior mean |v|, |truth|) along time.
+        'speed_correlation': float(
+            np.mean(
+                [
+                    np.corrcoef(m, a)[0, 1]
+                    for m, a in zip(
+                        speed_mean, truth.abs().double().numpy(), strict=True
+                    )
+                ]
+            )
+        ),
+        'magnitude': magnitude_scores(draws, truth),
+        'sign_structure': [sign_structure(draws, truth, n) for n in SIGN_SEGMENTS],
+        'regressors': regressors,
+        # Oracle: signs from the truth, the ceiling of any sign fix.
+        'oracle_signed': {
+            'per_shot': signed_scores(align_signs(draws, truth, None), truth),
+            f'per_{ALIGN_SEGMENT}': signed_scores(
+                align_signs(draws, truth, ALIGN_SEGMENT), truth
+            ),
+        },
+        'tcan_signed_hybrid': {
+            'per_shot': signed_scores(align_signs(draws, tcan, None), truth),
+            f'per_{ALIGN_SEGMENT}': signed_scores(
+                align_signs(draws, tcan, ALIGN_SEGMENT), truth
+            ),
+        },
+    }
