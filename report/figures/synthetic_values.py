@@ -1583,15 +1583,13 @@ def diagnosis_values() -> dict[str, Any]:
 def flow_values(records: dict[str, RunRecord]) -> dict[str, Any]:
     """Q3.3 and Q3.4: the R8 flow-matching scores, from scripts/flow.py's JSON.
 
-    The encoder flows (``_enc`` keys) are the scored method; the encoder-free
-    flows enter only as the conditioning-sensitivity contrast of Methods.
+    The encoder flows (``_enc`` keys) are the scored method.
     """
     data = json.loads((RESULTS_DIR / 'flow_results.json').read_text('utf-8'))
     den = data['q3_3_denoise_enc']
     rmse = {k: v['mean'] for k, v in den['velocity_rmse'].items()}
     check = den['sampling_check']
     sign = data['q3_4_posterior_sign_enc']
-    old = data['q3_4_posterior_sign']
     rows = flow_rows(records)
     out: dict[str, Any] = {
         'fl_den_chain': f'{rmse["free_tcan_on_denoised_fiber"]:.3f}',
@@ -1600,7 +1598,6 @@ def flow_values(records: dict[str, RunRecord]) -> dict[str, Any]:
         'fl_den_beats_fiber': rmse['free_tcan_on_denoised_fiber']
         < rmse['fiber_tcan_on_fiber'],
         'fl_shots': str(den['test_set']['n_shots']),
-        'fl_sens_old': sig(max(old[a]['conditioning_sensitivity'] for a in ARMS2), 1),
         'fl_sign_fs': pct(
             sign['nominal']['sign_structure'][0]['shot_majority_agreement']
         ),

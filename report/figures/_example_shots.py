@@ -121,7 +121,7 @@ def _legend(fig: plt.Figure, axes: np.ndarray) -> None:
             if lab not in labels:
                 handles.append(h)
                 labels.append(lab)
-    fig.legend(handles, labels, loc='outside lower center', ncol=3, fontsize=8)
+    fig.legend(handles, labels, loc='outside lower center', ncol=3, fontsize=10)
 
 
 def plot_synthetic(kind: str, output: Path) -> None:

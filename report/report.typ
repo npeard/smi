@@ -98,27 +98,26 @@ place. The answers so far:
   + *Q1.2, colors against a one-color array: quadrature wins only without
     noise*; at the nominal point the two are level.
   + *Q2.1, accuracy floor: only with feedback does the architecture matter.*
-    TCAN is best, #val("q2_tcan_gain") times below the TCN, while the LSTMs and
-    the offline neural operator do not train (@fig-families). Context length
+    TCAN is best, while the LSTMs and the offline neural operator do not
+    train (@fig-families). Context length
     limits these regressors more than family does (@sec-q2-context).
   + *Q2.1.1, self-mixing nonlinearity: weak optical feedback makes the
     direction of motion observable.* Without it a network trained on signed
     velocity predicts zero; with it the error falls steadily with feedback
     strength (@fig-exit-check, @fig-feedback).
   + *Q2.2, noise robustness: per-laser phase drift dominates at the nominal
-    operating point.* Removing it cuts the error #val("loo_e60_cut")%, more
-    than any electronics knob (@fig-loo).
-  + *Q2, real data: every learned model clears the analytic baseline*, whose // math-ok: question label
-    median velocity NRMSE is #val("real_decode_nrmse"), worse than predicting
-    zero; the port of the Barland network @barland2021cnn is best on both
+    operating point.* Removing it cuts the error more than any electronics
+    knob (@fig-loo).
+  + *Q2, real data: every learned model clears the analytic baseline*, which // math-ok: question label
+    does worse than predicting zero; the port of the Barland network @barland2021cnn is best on both
     acquisitions (@fig-models).
   + *Q3, fiber degradation: static coupling loss costs the most*, against an // math-ok: question label
     analytic reference that ranks it free; path drift costs little and speckle
     drift nothing (@sec-q3-degradation).
-  + *Q3.3 and Q3.4, flow matching: whole-shot context drives the gain.* A
-    regressor with a field longer than the shot halves TCAN's error at
-    matched size; the flow adds calibrated bands and a modest further gain,
-    while denoising fiber traces does not help (@sec-q3-posterior).
+  + *Q3.3 and Q3.4, flow matching: the encoder head's whole-shot context
+    drives the gain.* Alone it halves TCAN's error at matched size; sampling
+    the flow adds calibrated bands and a small further gain, while
+    denoising fiber traces does not help (@sec-q3-posterior).
   + *Q3, multimode fiber, real data: every neural model degrades behind // math-ok: question label
     fiber*, while the analytic decode holds (@sec-learned-gap).
 ]
@@ -374,30 +373,29 @@ global sign and the fringe order.
 
 == Notation <sec-notation>
 
-One symbol per quantity, throughout. Where the code names a quantity
-differently, the code name is given.
+One symbol per quantity, throughout.
 
 #align(center, table(
-  columns: 3,
-  align: (left, center, left),
+  columns: 2,
+  align: (left, center),
   stroke: 0.5pt + rgb("#d0d0d0"),
-  table.header([quantity], [symbol], [code or record name]),
-  [optical round-trip phase], [$theta$], [--],
-  [fit parameters], [$theta.alt$], [--],
-  [channel (color) count], [$K$], [keys `r1_*_n<K>`, `ch_*_n<K>`],
-  [samples per shot], [$L$], [`n_samples_per_shot`],
-  [shots in a set], [$N$], [`n_shots`, `n_shots_method2`],
-  [fiber modes per polarization], [$M$], [`n_modes`; keys `fb_*_n<M>`],
-  [fiber feedback coupling], [$kappa$], [`kappa`; keys `fb_k2_*`],
-  [fiber dispersion], [$D$], [`dispersion_per_um`],
-  [per-laser phase drift], [$sigma_phi$], [`phase_drift_rad_per_sqrt_s`],
-  [fiber path drift], [$sigma_p$], [`path_drift_um_per_sqrt_s`],
-  [process noise covariance], [$Q$], [--],
-  [Sagnac coupler power split], [$rho_c$], [--],
-  [Sagnac loop amplitude reflectivity], [$rho_r$], [`c` in `sagnac.py`],
-  [Sagnac element phase per displacement], [$eta$], [`kappa` in `sagnac.py`],
-  [Sagnac modulation depth], [$a_0$], [`amp`],
-  [proof-mass quality factor], [$Q_m$], [--],
+  table.header([quantity], [symbol]),
+  [optical round-trip phase], [$theta$],
+  [fit parameters], [$theta.alt$],
+  [channel (color) count], [$K$],
+  [samples per shot], [$L$],
+  [shots in a set], [$N$],
+  [fiber modes per polarization], [$M$],
+  [fiber feedback coupling], [$kappa$],
+  [fiber dispersion], [$D$],
+  [per-laser phase drift], [$sigma_phi$],
+  [fiber path drift], [$sigma_p$],
+  [process noise covariance], [$Q$],
+  [Sagnac coupler power split], [$rho_c$],
+  [Sagnac loop amplitude reflectivity], [$rho_r$],
+  [Sagnac element phase per displacement], [$eta$],
+  [Sagnac modulation depth], [$a_0$],
+  [proof-mass quality factor], [$Q_m$],
 ))
 
 == Data, training and evaluation <sec-methods-synthetic>
@@ -628,18 +626,18 @@ a Gaussian width in wavelength, so colors far apart see independent speckle.
 Q3.3 and Q3.4 use conditional flow matching: a velocity field integrates
 Gaussian noise $x_0$ to a draw $x_1$ of the target (velocity for the
 posterior, free-space signals for the denoiser) given the fiber signals. The
-field is a global-context UNetTransformer. Fed the raw signals beside $x_t$,
-it ignored them: zeroing the conditioning moved its draws by
-#val("fl_sens_old") of their RMS, because the low-dimensional chirp prior
-lets $x_t$ alone pin the trajectory. A conditioning encoder fixes this. It
-maps the signals to features the field reads, and its first channels are
-fit to $x_1$ by an auxiliary regression loss, so the features must carry
-the target; a toy test (`tests/test_flow.py`) checks that an encoder flow
-reads a conditioning the encoder-free one ignores. The encoder is itself a
+field is a global-context UNetTransformer. A flow without an encoder
+ignores its input, so every flow here conditions on an encoder. It maps the
+signals to features the field reads, and its first channels are fit to
+$x_1$ by an auxiliary regression loss, so the features must carry the
+target; a toy test (`tests/test_flow.py`) checks that an encoder flow reads
+a conditioning the encoder-free one ignores. The encoder is itself a
 whole-shot UNetTransformer, so its regression head is also scored alone as a
 deterministic regressor. Flows train on full shots, not crops; scores use
 the same frozen test sets and evaluation path as the regressors, and an
 audit rescores the encoder head and posterior mean on a fresh test seed.
+The encoder flows keep the checkpoint with the lowest validation flow loss,
+not flow plus regression loss, so the head scored is not its own best.
 
 == Predictions for the real data <sec-real-predictions>
 
@@ -2195,8 +2193,7 @@ tolerated; the network's other error dominates its floor instead.
     Static fading costs the most, path drift little and speckle drift
     nothing. TCAN test velocity RMSE as each fiber knob turns on alone from the
     one-mode static fiber; bars: shot SE; hollow: sign-invariant RMSE; dashed:
-    free space (#val("fs_nominal") $mu$m/ms); solid: the zero predictor
-    (#val("fs_zero")).
+    free space; solid: the zero predictor.
   ],
 ) <fig-q3-sweep>
 
@@ -2371,7 +2368,10 @@ and mode coupling of @sec-fiber-model.
 
 At the combined point, eight modes with both drifts at their top rungs, the
 impairments compound to the zero predictor in every arm, so no arm can show
-the monitor's benefit (@fig-q3-fiber, @tab-q3-fiber). The static eight-mode
+the monitor's benefit (@fig-q3-fiber, @tab-q3-fiber). Paired against its
+four-color control, the monitor moves TCAN's error by
+#val("r7_tcan_monitor") $plus.minus$ #val("r7_tcan_monitor_se") $mu$m/ms,
+against a fiber cost of #val("r7_tcan_cost"). The static eight-mode
 fading alone brings TCAN most of the way there (@sec-q3-degradation). The
 monitor arm should be rerun at a mode count where the network still learns.
 
@@ -2399,11 +2399,7 @@ monitor arm should be rerun at a mode count where the network still learns.
   caption: [
     Every fiber arm scores at the zero predictor. Test velocity RMSE ($mu$m/ms),
     its ratio to the zero predictor, TCAN's epochs, and whether
-    UNetTransformer converged (TCAN converged in every arm). Paired
-    differences, TCAN: monitor minus four-color control
-    #val("r7_tcan_monitor") $plus.minus$ #val("r7_tcan_monitor_se"), control
-    minus fiber #val("r7_tcan_fourth") $plus.minus$ #val("r7_tcan_fourth_se"),
-    $P_perp$ minus fiber #val("r7_tcan_pbs") $plus.minus$ #val("r7_tcan_pbs_se").
+    UNetTransformer converged (TCAN converged in every arm).
   ],
 ) <tab-q3-fiber>
 
@@ -2500,8 +2496,8 @@ $
   "MSE"(g(hat(y)_0 (y_f))) >= "MSE"(E[v | y_f]) ,
 $ <eq-bayes-bound>
 and the same bound holds for a regressor trained on $y_f$ directly. It does
-not order the two pipelines, since both can fall short of $E[v | y_f]$. Which
-is better is empirical. The chain has two handicaps. The posterior mean of
+not order the two pipelines, since both can fall short of $E[v | y_f]$. The
+bound is derived; the order of the two pipelines is empirical. The chain has two handicaps. The posterior mean of
 $y_0$ averages over the confounded $delta(t)$, which blurs the fringes, so the
 free-space regressor sees off-distribution input. A single posterior sample
 keeps sharp fringes but carries an arbitrary $delta(t)$.
@@ -2519,8 +2515,8 @@ spread over $y_0$.
 #assert(val("fl_den_steps_plateau"), message: "the denoise step count no longer plateaus")
 
 The prediction holds: denoise-then-regress does not beat the fiber-trained
-TCAN. On the fiber test set the chain scores #val("fl_den_chain") $mu$m/ms
-against #val("fl_den_fiber"), even with the
+TCAN. On the fiber test set the chain's error, #val("fl_den_chain") $mu$m/ms,
+is above the fiber-trained TCAN's (@tab-q3-flow), even with the
 conditioning encoder that makes the posterior flows read their signals
 (@sec-flow-methods). The test is weak, because that regressor sits at the
 zero predictor (@sec-q3-monitor), so both pipelines are near the floor. The
@@ -2569,19 +2565,18 @@ analysis does not predict.
 
 Whole-shot context, not the flow, drives the gain. The encoder head alone,
 a deterministic regressor with TCAN's parameter count but a field longer
-than the shot, halves TCAN's free-space error (@tab-q3-flow). Sampling the
-flow on top cuts it by a further #val("fl_flow_gain_pct")%, and the
-posterior is calibrated where TCAN's seed ensemble is not
-(@fig-q3-flow). Neither estimator memorized its test set: both score the
-same on a fresh seed.
+than the shot, cuts TCAN's free-space error #val("fl_head_gain")-fold
+(@tab-q3-flow). Sampling the flow on top cuts it by a further
+#val("fl_flow_gain_pct")%, and the posterior is calibrated where TCAN's seed
+ensemble is not (@fig-q3-flow). In free space neither estimator memorized
+its test set: both score the same on a fresh seed.
 
-The sign is resolved. The posterior mean takes the right direction on
-#val("fl_sign_fs")% of free-space shots, and per time sample the marginals
-are unimodal, as predicted for a likelihood whose only discrete symmetry the
-feedback breaks. Through fiber the flow and the head clear TCAN, which sits
-at the zero predictor, but both lose part of that margin on the fresh set,
-so the fiber gain is smaller than the test set shows. The bands stay
-calibrated there. The fair comparison this leaves open is a regressor
+The sign is resolved: on #val("fl_sign_fs")% of free-space shots most
+posterior draws take the right direction, consistent with a likelihood
+whose only discrete symmetry the feedback breaks. Through fiber the flow
+and the head clear TCAN, which sits at the zero predictor, but both score
+worse on the fresh set than on the test set, so the fiber margin is smaller
+than the test set shows. The bands stay calibrated there. The fair comparison this leaves open is a regressor
 trained with a whole-shot field, not the cropped 85-sample one.
 
 #figure(
@@ -2619,8 +2614,8 @@ trained with a whole-shot field, not the cropped 85-sample one.
     arm. RMSE and CRPS in $mu$m/ms; field in samples; fresh: the same
     estimator on an unseen seed-2000 test set; cov.: fraction of the truth
     inside the 90% band. The regressors train on 4096-sample crops, the
-    encoder and flow on full shots. The flow's encoder-free predecessor
-    ignored its signals (@sec-flow-methods) and is not listed.
+    encoder and flow on full shots. The flow's RMSE and fresh columns come
+    from one 16-draw audit; its coverage and CRPS from 64 draws.
   ],
 ) <tab-q3-flow>
 
@@ -2765,6 +2760,10 @@ there is small.
   ],
 ) <fig-sagnac>
 
+=== Synthetic
+
+_Status: not run; Q4 is analytic only by design, a PI decision_. // math-ok: question label
+
 === Real data
 
 _Status: not built; needs a bench fiber Sagnac loop read by self-mixing_. The
@@ -2852,7 +2851,7 @@ answer; or rerun their arms at a low-fading point where the model learns.
 *Feature engineering for the fiber gap*, aimed at the models that degrade
 most (@sec-learned-gap).
 
-*Unblind (P6).* Calibrate the simulator on the real files, score the // math-ok: stage label
+*Unblind the real data.* Calibrate the simulator on the real files, score the
 pre-registered predictions of @tab-real-predictions, and resolve the coil
 driver's drive-scale discrepancy against the published value.
 
@@ -2875,7 +2874,8 @@ both explain why the physical model underperforms.
 Each figure shows one synthetic test shot (seed 1000, nominal rig point:
 $C = 0.2$, $alpha = 3$, three colors) chosen by displacement peak-to-peak at
 the 10th, 50th and 90th percentile of the free-space test set, beside the
-same motion through the R7 multimode fiber arm. Rows share time: inputs,
+same motion through the combined-point multimode fiber arm
+(@sec-q3-monitor). Rows share time: inputs,
 velocity, displacement; the shaded strip is the full-rate zoom below it.
 Traces above the zoom are subsampled by #decimate. The flow
 curve is the encoder flow's posterior mean with its 90% band; the encoder
@@ -2902,10 +2902,9 @@ Predicted displacement is integrated predicted velocity.
 #fig(
   "example_shots_high",
   caption: [
-    High excursion. In free space the zoom shows resolved fringes and the
-    networks following velocity through them; in fiber the fringes wash out
-    and TCAN collapses toward zero, while the whole-shot encoder head and
-    flow still follow the motion inside a wider band.
+    High excursion. Compare the zoomed fringes in free space and in fiber,
+    and how closely each model's velocity follows the target through them
+    in each column.
   ],
 ) <fig-shots-high>
 
@@ -2913,7 +2912,7 @@ Predicted displacement is integrated predicted velocity.
   the same layout on three real free-space shots, scored by the
   free-space-trained checkpoints.
 ] else [
-  blinded; the panels build when #raw(real-dataset) is present.
+  blinded; the panels build once the free-space acquisition is unblinded.
 ]
 
 #fig(

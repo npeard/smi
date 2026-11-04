@@ -132,8 +132,12 @@ Follow-ups the Q3 runs raised:
   inverse fit scores 1.25 there against the zero predictor's 0.4575.
 - [x] **The flow posteriors are sign-symmetric.** Fixed by the conditioning
   encoder with an auxiliary regression loss (the encoder-free field ignored
-  its signals); the posterior mean takes the right sign on 95% of free-space
-  shots (`q3_4_posterior_sign_enc`).
+  its signals); most posterior draws take the right sign on 95% of
+  free-space shots (`shot_majority_agreement` in `q3_4_posterior_sign_enc`;
+  the posterior mean's own sign agreement is not scored).
+- [ ] **Select encoder-flow checkpoints by flow plus aux loss.** They keep
+  the lowest val/flow_loss, so the scored encoder head is not its own best
+  checkpoint; fixing it needs a retrain of the three `_enc` flows.
 - [ ] **A whole-shot-context regressor as the fair comparator.** Train
   UNetTransformer and TCAN with a full-shot field and no crop. The encoder
   head alone (66,867-sample field, 44k params) scores 0.098 against TCAN's
