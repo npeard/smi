@@ -88,6 +88,8 @@ class FlowLitModule(lightning.LightningModule):
         n_time_features: int,
         train_crop_length: int | None,
         fit_norm_stats: bool,
+        encoder_channels: int = 0,
+        aux_weight: float = 0.0,
     ):
         """Build the velocity network from ``model_hparams`` for ``task``.
 
@@ -104,6 +106,10 @@ class FlowLitModule(lightning.LightningModule):
             fit_norm_stats: True to fit the affine stats on NORM_STATS_SHOTS
                 seeded shots; False when restoring a checkpoint, whose state
                 dict carries them, so one shot only sizes the buffers.
+            encoder_channels: E, the conditioning encoder's output channels
+                (same backbone family, cond in), or 0 for no encoder. Defaulted
+                only because the pre-encoder checkpoints' hparams lack it.
+            aux_weight: The encoder's regression-loss weight (0 without one).
         """
         super().__init__()
         self.save_hyperparameters()
@@ -124,10 +130,24 @@ class FlowLitModule(lightning.LightningModule):
             self.register_buffer(f'{name}_std', t.std(dim=(0, 2))[None, :, None])
         hparams = {
             **model_hparams,
-            'in_channels': x1.shape[1] + cond.shape[1] + 2 * n_time_features,
+            'in_channels': x1.shape[1]
+            + cond.shape[1]
+            + encoder_channels
+            + 2 * n_time_features,
             'out_channels': x1.shape[1],
         }
-        self.flow = FlowMatching(create_model(hparams), x1.shape[1], n_time_features)
+        encoder = None
+        if encoder_channels:
+            encoder = create_model(
+                {
+                    **model_hparams,
+                    'in_channels': cond.shape[1],
+                    'out_channels': encoder_channels,
+                }
+            )
+        self.flow = FlowMatching(
+            create_model(hparams), x1.shape[1], n_time_features, encoder, aux_weight
+        )
         self._held_out_replay = HeldOutReplay()
 
     def _normalized(self, x1: Tensor, cond: Tensor) -> tuple[Tensor, Tensor]:
@@ -147,9 +167,10 @@ class FlowLitModule(lightning.LightningModule):
         # generator it can rewind; the global stream stays seeded per run.
         seed = int(torch.randint(2**62, (1,)).item())
         generator = torch.Generator(self.device).manual_seed(seed)
-        loss = self.flow.loss(*self._batch(len(batch), generator), None)
-        self.log('train/flow_loss', loss, on_epoch=True)
-        return loss
+        flow, aux = self.flow.loss(*self._batch(len(batch), generator), None)
+        self.log('train/flow_loss', flow, on_epoch=True)
+        self.log('train/aux_loss', aux, on_epoch=True)
+        return flow + aux
 
     @override
     def validation_step(self, batch: Tensor, batch_idx: int) -> None:
@@ -159,7 +180,9 @@ class FlowLitModule(lightning.LightningModule):
             (len(batch), self.train_crop_length, self.device),
             lambda: self._batch(len(batch), generator),
         )
-        self.log('val/flow_loss', self.flow.loss(x1, cond, generator), on_epoch=True)
+        flow, aux = self.flow.loss(x1, cond, generator)
+        self.log('val/flow_loss', flow, on_epoch=True)
+        self.log('val/aux_loss', aux, on_epoch=True)
 
     @override
     def on_validation_epoch_start(self) -> None:

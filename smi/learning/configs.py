@@ -642,7 +642,11 @@ R8_FIBER = FiberConfig(
 
 
 def _flow(
-    task: str, model: dict[str, Any], fiber: FiberConfig | None, crop: int | None
+    task: str,
+    model: dict[str, Any],
+    fiber: FiberConfig | None,
+    crop: int | None,
+    encoder_channels: int,
 ) -> TrainingConfig:
     """Flow-matching entry (``FlowLitModule``) on an offline UNetTransformer.
 
@@ -650,7 +654,9 @@ def _flow(
     The sim is the q3_fiber grid's nominal rig (its ``nominal`` or ``fiber``
     arm, pinned in tests/test_flow.py), so the flows are scored on that grid's
     frozen sets against its TCANs. ``in_channels`` / ``out_channels`` are
-    placeholders the module sets from the task.
+    placeholders the module sets from the task. ``encoder_channels`` > 0
+    adds the conditioning encoder (smi.learning.flow), a second copy of the
+    backbone, at ``FLOW_AUX_WEIGHT``.
     """
     config = _matched({**model, 'out_channels': 1}, crop)
     assert config.synthetic_config is not None
@@ -659,6 +665,11 @@ def _flow(
         dataclasses.replace(sim, fiber=fiber)
     )
     config.synthetic_config['flow'] = {'task': task, 'n_time_features': 8}
+    if encoder_channels:
+        config.synthetic_config['flow'] |= {
+            'encoder_channels': encoder_channels,
+            'aux_weight': FLOW_AUX_WEIGHT,
+        }
     # Flow loss is noisy and has no zero-predictor plateau: a fixed budget,
     # best checkpoint by val/flow_loss (smi.experiments.flow_runner).
     config.training_config['max_epochs'] = FLOW_EPOCHS[task]
@@ -667,6 +678,12 @@ def _flow(
 
 #: Epochs per task, sized to the ~8 h R8 budget (flow_runner docstring).
 FLOW_EPOCHS = {'denoise': 60, 'posterior': 40}
+# Unit weight: both losses are MSEs in the same unit-variance x_1 coordinates,
+# and the flow loss's floor (the x_0 variance it cannot predict) is ~1, so the
+# regression term is of the same order without dominating.
+FLOW_AUX_WEIGHT = 1.0
+# E: the x_1 guess (channel 0) plus spare features for the field.
+FLOW_ENCODER_CHANNELS = 8
 _LOCAL = _unet_transformer([16, 28, 40], 80, 3, causal=False)
 # Global context for Q3.4: the shot-global quantities (path drift, the +/-v
 # sign pair) need joint samples coherent over the whole shot, which the 85-sample
@@ -679,14 +696,26 @@ _GLOBAL = {**_unet_transformer([16, 28, 40], 80, 64, causal=False), 'pool': 16}
 _FLOW: dict[str, TrainingConfig] = {
     # Q3.3: fiber signals -> the paired free-space signals.
     'flow/denoise-unettransformer-offline-44k': _flow(
-        'denoise', _LOCAL, R8_FIBER, MATCHED_CROP
+        'denoise', _LOCAL, R8_FIBER, MATCHED_CROP, 0
     ),
     # Q3.4: signals -> velocity trajectory, free space and fiber.
     'flow/posterior-free-unettransformer-global-44k': _flow(
-        'posterior', _GLOBAL, None, None
+        'posterior', _GLOBAL, None, None, 0
     ),
     'flow/posterior-fiber-unettransformer-global-44k': _flow(
-        'posterior', _GLOBAL, R8_FIBER, None
+        'posterior', _GLOBAL, R8_FIBER, None, 0
+    ),
+    # The same flows with the conditioning encoder: the ones above learned
+    # to ignore their conditioning (smi.learning.flow). Twice the parameters,
+    # since the encoder is a second backbone.
+    'flow/denoise-unettransformer-offline-enc': _flow(
+        'denoise', _LOCAL, R8_FIBER, MATCHED_CROP, FLOW_ENCODER_CHANNELS
+    ),
+    'flow/posterior-free-unettransformer-global-enc': _flow(
+        'posterior', _GLOBAL, None, None, FLOW_ENCODER_CHANNELS
+    ),
+    'flow/posterior-fiber-unettransformer-global-enc': _flow(
+        'posterior', _GLOBAL, R8_FIBER, None, FLOW_ENCODER_CHANNELS
     ),
 }
 
