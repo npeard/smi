@@ -1,9 +1,11 @@
 """The per-frequency Wiener bound behind the q3_fiber diagnosis."""
 
 import numpy as np
+import pytest
 import torch
 
 from smi.experiments.diagnostics import (
+    colour_fading_verdict,
     explained_fraction,
     matched_retention,
     per_shot_excess,
@@ -63,3 +65,21 @@ def test_per_shot_excess_separates_speed_from_amplitude():
     out = per_shot_excess(base, faded, speed, amplitude)
     assert out['corr_excess_mse_vs_speed'] > 0.9
     assert abs(out['corr_excess_mse_vs_amplitude']) < 0.5
+
+
+def test_colour_fading_verdict_reads_recovery_and_one_colour_retention():
+    supported = colour_fading_verdict(
+        three_m1=0.6, three_m8=0.1, three_m8_corr=0.5, one_m1=0.4, one_m8=0.3
+    )
+    assert supported['corr_recovery'] == pytest.approx(0.8)
+    assert supported['one_colour_retention'] == pytest.approx(0.75)
+    assert supported['three_colour_retention'] == pytest.approx(0.1 / 0.6)
+    assert supported['verdict'] == 'supported'
+    rejected = colour_fading_verdict(
+        three_m1=0.6, three_m8=0.1, three_m8_corr=0.12, one_m1=0.4, one_m8=0.05
+    )
+    assert rejected['verdict'] == 'rejected'
+    mixed = colour_fading_verdict(
+        three_m1=0.6, three_m8=0.1, three_m8_corr=0.5, one_m1=0.4, one_m8=0.05
+    )
+    assert mixed['verdict'] == 'mixed'

@@ -11,7 +11,9 @@ mechanisms of the fading cost:
   SNR ladder;
 - H2, fringe-SNR loss: the nominal SNR ladder (q1_s4_snr, TCN-44k, 3 colors)
   read at 30 dB minus the sweep's SNR loss;
-- H3, in-shot fading: the speckle-drift ladder, which adds in-shot fades.
+- H3, in-shot fading: the speckle-drift ladder, which adds in-shot fades;
+- H4, colours fading apart: q3_fiber_fading's colour-correlated N = 8 arm and
+  its one-colour N = 1 / 4 / 8 arms (``colour_fading_verdict``).
 
 Each prediction is the share of learned signal (``explained_fraction``)
 retained relative to the M = 1 point. Then per-shot: where the extra error
@@ -35,6 +37,7 @@ import torch
 from smi.core.paths import FROZEN_DIR, GRID_RUNS_DIR, RESULTS_DIR
 from smi.experiments.diagnostics import (
     channel_stats,
+    colour_fading_verdict,
     explained_fraction,
     matched_retention,
     per_shot_excess,
@@ -196,6 +199,26 @@ def analyse(device: str) -> dict:
         }
         for name in ('path-0.1', 'path-0.3', 'path-1', 'path-2.8')
     }
+    fading = {
+        name: explained_fraction(_mean(recs[key], 'velocity_rmse'), zero)
+        for name, key in (
+            ('modes-8-corr', sweep_key('modes-8-corr')),
+            *(
+                (f'modes-{n}-1color', f'tcan-44k__ch635__modes-{n}-1color__seed0')
+                for n in (1, 4, 8)
+            ),
+        )
+    }
+    h4 = {
+        'explained': fading,
+        **colour_fading_verdict(
+            three_m1=sweep['modes-1']['explained'],
+            three_m8=sweep['modes-8']['explained'],
+            three_m8_corr=fading['modes-8-corr'],
+            one_m1=fading['modes-1-1color'],
+            one_m8=fading['modes-8-1color'],
+        ),
+    }
     return {
         'zero_predictor': zero,
         'sweep': sweep,
@@ -206,6 +229,7 @@ def analyse(device: str) -> dict:
         'per_shot': shots,
         'rescale_probe': probe,
         'path_drift_excess_mse': path,
+        'h4_colour_decorrelation': h4,
         'notes': [
             'C sweep is noise-free (q3_s0c_ceiling, TCN-44k 30-epoch); SNR ladder is'
             ' the nominal point (q1_s4_snr, TCN-44k); the fiber sweep is TCAN-44k at'
@@ -215,6 +239,8 @@ def analyse(device: str) -> dict:
             ' at the shot-mean C_eff and SNR loss, 8 shots, seed 0.',
             'rescale_probe draws fresh shots (seed 1000 through simulate_batch), not'
             ' the frozen set, so its raw scores differ slightly from the records.',
+            'H4 arms (q3_fiber_fading) share the sweep frozen-set seed and motion;'
+            ' the one-colour arms are scored against the same zero predictor.',
         ],
     }
 

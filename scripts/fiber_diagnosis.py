@@ -143,7 +143,7 @@ def main() -> None:
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--frozen-root', type=Path, default=DEFAULT_ROOT)
     parser.add_argument('--skip-per-shot', action='store_true')
-    # The q3_fiber_sweep cells finish hours after the diagnosis is settled.
+    # The q3_fiber_sweep / q3_fiber_fading cells finish hours after the diagnosis is settled.
     parser.add_argument('--per-shot-only', action='store_true')
     args = parser.parse_args()
     if not args.per_shot_only:
@@ -156,6 +156,7 @@ def main() -> None:
             'q1_r1_count': _R1_KEYS,
             'q2_r4_noise': [],
             'q3_fiber_sweep': [],
+            'q3_fiber_fading': [],
         }
         table = per_shot_table(cells, GRID_RUNS_DIR, args.frozen_root, args.device)
         (RESULTS_DIR / 'per_shot_rmse.json').write_text(

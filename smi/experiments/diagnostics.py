@@ -411,3 +411,27 @@ def per_shot_excess(
         'mean_rmse_base': float(base.mean()),
         'mean_rmse_faded': float(faded.mean()),
     }
+
+
+def colour_fading_verdict(
+    three_m1: float, three_m8: float, three_m8_corr: float, one_m1: float, one_m8: float
+) -> dict[str, float | str]:
+    """H4 of the fiber sweep: is the fading cost one of colours fading apart?
+
+    Arguments are explained fractions (``explained_fraction``): three colours at
+    M = 1, at M = 8 fading independently and at M = 8 sharing one speckle
+    draw, and 0.635 um alone at M = 1 and 8. H4 predicts the correlated arm
+    recovers most of the M = 1 -> 8 loss and a lone colour keeps far more of
+    its own signal than three independent ones. The thresholds (half the loss
+    recovered; twice the three-colour retention) were fixed before the run.
+    """
+    recovery = (three_m8_corr - three_m8) / (three_m1 - three_m8)
+    three, one = three_m8 / three_m1, one_m8 / one_m1
+    votes = (recovery > 0.5) + (one > 2 * three)
+    return {
+        'corr_recovery': recovery,
+        'three_colour_retention': three,
+        'three_colour_corr_retention': three_m8_corr / three_m1,
+        'one_colour_retention': one,
+        'verdict': ('rejected', 'mixed', 'supported')[votes],
+    }
