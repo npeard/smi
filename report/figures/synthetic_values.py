@@ -2126,7 +2126,9 @@ def fiber_sweep_values() -> dict[str, Any]:
         'fs_nominal': f'{sweep["nominal"]["rmse"]:.3f}',
         'fs_probe_raw': f'{probe[sel]["raw"]:.3f}',
         'fs_probe_rescaled': f'{probe[sel]["rescaled"]:.3f}',
-        'fs_color_corr': f'{shots["modes-8"]["max_abs_corr_between_color_amplitudes"]:.2f}',
+        'fs_color_corr': sig(
+            shots['modes-8']['max_abs_corr_between_color_amplitudes'], 1
+        ),
         # Guards for the prose: the fading cost exceeds every hypothesis'.
         'fs_fading_unexplained': all(
             h['observed_retention']
