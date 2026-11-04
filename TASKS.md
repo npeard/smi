@@ -118,7 +118,9 @@ Phases:
 - [x] **P5: flow matching.** Q3.3: fiber -> free-space trace. Q3.4: signal
   -> trajectory posterior, settled by coverage, CRPS and posterior-mean RMSE
   against a deep ensemble.
-  Run on `research-questions`; neither question is answered (below).
+  Answered on `report-tightening` with a conditioning encoder: whole-shot
+  context drives the gain, the flow adds calibrated bands; denoising does not
+  beat the fiber regressor.
 
 Follow-ups the Q3 runs raised:
 - [ ] **Retrain the fiber arms.** Every q3_fiber net sits at the zero
@@ -128,9 +130,27 @@ Follow-ups the Q3 runs raised:
 - [ ] **A working classical decode at the nominal point** (C = 0.2,
   alpha = 3), to calibrate whether a static fiber keeps the information. The
   inverse fit scores 1.25 there against the zero predictor's 0.4575.
-- [ ] **The flow posteriors are sign-symmetric.** Try sign-aware
-  conditioning or a sign-breaking prior; raise the denoise draws past 32
-  (2.9% change from 16).
+- [x] **The flow posteriors are sign-symmetric.** Fixed by the conditioning
+  encoder with an auxiliary regression loss (the encoder-free field ignored
+  its signals); the posterior mean takes the right sign on 95% of free-space
+  shots (`q3_4_posterior_sign_enc`).
+- [ ] **A whole-shot-context regressor as the fair comparator.** Train
+  UNetTransformer and TCAN with a full-shot field and no crop. The encoder
+  head alone (66,867-sample field, 44k params) scores 0.098 against TCAN's
+  0.200 at the nominal point, so context, not family, may set every Q2
+  ranking; the flow's gain over a matched whole-shot regressor is the open
+  number.
+- [ ] **Fading mechanism after H1-H4 rejected.** Candidates: per-shot gain
+  normalization in training, amplitude-dependent fringe-shape learning
+  (single-color fading already tested).
+- [ ] **Rerun the Q3.1/Q3.2 monitor and P_perp arms at a low-fading point**
+  (e.g. modes-1 or modes-2 of q3_fiber_sweep) where TCAN learns, since at the
+  combined point every arm sits at the zero predictor.
+- [ ] **Denoiser state.** The encoder denoise chain scores 0.376 against the
+  fiber TCAN's 0.358 (both near zero); draws not plateaued at 32 (2.7%).
+  Retry only against a fiber regressor that learns.
+- [ ] **Slow figure tests.** The report-build and example-shot tests rebuild
+  figures; split a fast structural subset from the full build.
 - [ ] **Per-shot std in `RunRecord`**, so paired SEs need no side file
   (`report/results/per_shot_rmse.json` today).
 
