@@ -3285,4 +3285,57 @@ a learned model already clears the inverse; both are on the path to
 understanding why the physical model underperforms.
 
 
+= Appendix: example shots <sec-appendix-shots>
+
+#let shots = json("/results/example_shots.json")
+
+Each figure shows one synthetic test shot (seed 1000, nominal rig point:
+$C = 0.2$, $alpha = 3$, three colors) chosen by displacement peak-to-peak at
+the 10th, 50th and 90th percentile of the free-space test set, beside the
+same motion through the R7 multimode fiber arm. Rows share time: inputs,
+velocity, displacement; the shaded strip is the full-rate zoom below it.
+Traces above the zoom are subsampled by #shots.at("decimate"). The flow band
+takes each draw's global sign from UNetTransformer, so it is a hybrid, not
+the flow alone. Predicted displacement is integrated predicted velocity.
+
+#fig(
+  "example_shots_low",
+  caption: [
+    Low excursion. Look at whether any model tracks the sub-fringe motion at
+    all, and how wide the flow band is against the target.
+  ],
+) <fig-shots-low>
+
+#fig(
+  "example_shots_mid",
+  caption: [
+    Mid excursion. Compare the drift of integrated displacement between the
+    causal and offline models, and the fiber column against free space.
+  ],
+) <fig-shots-mid>
+
+#fig(
+  "example_shots_high",
+  caption: [
+    High excursion. In free space the zoom shows resolved fringes and the
+    networks following velocity through them; in fiber the fringes wash out
+    and the predictions collapse toward zero.
+  ],
+) <fig-shots-high>
+
+*Real data:* #if shots.at("real").at("status") == "present" [
+  the same layout on three real free-space shots, scored by the
+  free-space-trained checkpoints.
+] else [
+  blinded; the panels build when #raw(shots.at("real").at("dataset")) is present.
+]
+
+#fig(
+  "example_shots_real",
+  caption: [Real free-space shots, low to high excursion, same rows as above.],
+) <fig-shots-real>
+
+// The appendix figures float; flush them so none lands in the bibliography.
+#place.flush()
+
 #bibliography("refs.bib")

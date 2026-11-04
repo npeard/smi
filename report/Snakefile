@@ -48,6 +48,10 @@ DOCUMENT_FIGURES = {
         "baseline_amplitude_trend",
         "shift_generalization",
         "sagnac_fisher",
+        "example_shots_low",
+        "example_shots_mid",
+        "example_shots_high",
+        "example_shots_real",
     ],
 }
 
@@ -91,6 +95,9 @@ RESULTS = [
     str(RESULTS_DIR / "per_shot_rmse.json"),
     # Section Q3.3 and Q3.4: scripts/flow.py's R8 flow-matching scores.
     str(RESULTS_DIR / "flow_results.json"),
+    # The appendix example shots: scripts/example_shots.py's arrays and index.
+    str(RESULTS_DIR / "example_shots.npz"),
+    str(RESULTS_DIR / "example_shots.json"),
 ]
 
 # The library modules the figures compute from or read records through, so a

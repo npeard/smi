@@ -1,0 +1,123 @@
+{
+  "grid": "q3_fiber",
+  "families": [
+    "tcan-44k",
+    "unettransformer-offline-44k"
+  ],
+  "shot_quantiles": {
+    "low": 0.1,
+    "mid": 0.5,
+    "high": 0.9
+  },
+  "decimate": 16,
+  "zoom_samples": 400,
+  "band": [
+    0.05,
+    0.95
+  ],
+  "synthetic": {
+    "sample_rate_hz": 488281.25,
+    "arms": {
+      "nominal": {
+        "dataset": "cff4feacfeb37e58bc15e94b2e3b8f1a18b40baf_seed1000_n64.h5",
+        "wavelengths_um": [
+          0.635,
+          0.6748,
+          0.515
+        ],
+        "channels": [
+          "RP1_CH2",
+          "RP2_CH1",
+          "RP2_CH2"
+        ],
+        "shots": {
+          "low": {
+            "shot": 26,
+            "displacement_p2p_um": 0.19225506484508514,
+            "zoom_start": 14828,
+            "models": [
+              "flow",
+              "tcan-44k",
+              "unettransformer-offline-44k"
+            ],
+            "band": true
+          },
+          "mid": {
+            "shot": 51,
+            "displacement_p2p_um": 0.9916656613349915,
+            "zoom_start": 1590,
+            "models": [
+              "flow",
+              "tcan-44k",
+              "unettransformer-offline-44k"
+            ],
+            "band": true
+          },
+          "high": {
+            "shot": 4,
+            "displacement_p2p_um": 2.385019540786743,
+            "zoom_start": 4621,
+            "models": [
+              "flow",
+              "tcan-44k",
+              "unettransformer-offline-44k"
+            ],
+            "band": true
+          }
+        }
+      },
+      "fiber": {
+        "dataset": "41831d8deffbacbec6a01d56e631cd5838d3758c_seed1000_n64.h5",
+        "wavelengths_um": [
+          0.635,
+          0.6748,
+          0.515
+        ],
+        "channels": [
+          "RP1_CH2",
+          "RP2_CH1",
+          "RP2_CH2"
+        ],
+        "shots": {
+          "low": {
+            "shot": 26,
+            "displacement_p2p_um": 0.19225506484508514,
+            "zoom_start": 14828,
+            "models": [
+              "flow",
+              "tcan-44k",
+              "unettransformer-offline-44k"
+            ],
+            "band": true
+          },
+          "mid": {
+            "shot": 51,
+            "displacement_p2p_um": 0.9916656613349915,
+            "zoom_start": 1590,
+            "models": [
+              "flow",
+              "tcan-44k",
+              "unettransformer-offline-44k"
+            ],
+            "band": true
+          },
+          "high": {
+            "shot": 4,
+            "displacement_p2p_um": 2.385019540786743,
+            "zoom_start": 4621,
+            "models": [
+              "flow",
+              "tcan-44k",
+              "unettransformer-offline-44k"
+            ],
+            "band": true
+          }
+        }
+      }
+    }
+  },
+  "real": {
+    "status": "blinded",
+    "dataset": "free-space-synchro_10k.h5"
+  }
+}
