@@ -2066,6 +2066,89 @@ def fiber_values() -> dict[str, Any]:
     }
 
 
+def fiber_sweep_values() -> dict[str, Any]:
+    """Q3 degradation: per-knob reference vs TCAN, and the fading hypotheses."""
+    mech = json.loads((RESULTS_DIR / 'fiber_sweep_mechanism.json').read_text('utf-8'))
+    ref = json.loads((RESULTS_DIR / 'fiber_sweep_analytics.json').read_text('utf-8'))
+    pts, sweep = ref['points'], mech['sweep']
+    base = 'modes-1'
+    knobs = [
+        ('M', [1, 2, 4, 8], 'modes'),
+        ('speckle', [0.1, 0.3, 1, 3], 'speckle'),
+        ('path', [0.1, 0.3, 1, 2.8], 'path'),
+    ]
+    rows = []
+    for knob, values, stem in knobs:
+        for v in values:
+            name = f'{stem}-{v:g}'
+            net = sweep[name]['rmse'] ** 2 - sweep[base]['rmse'] ** 2
+            refx = pts[name]['rmse'] ** 2 - pts[base]['rmse'] ** 2
+            rows.append(
+                {
+                    'knob': knob,
+                    'value': f'{v:g}',
+                    'ref_ratio': f'{pts[name]["mse_ratio_to_free_space"]:.2f}',
+                    'ref_excess': f'{refx * 1e3:.1f}',
+                    'tcan': f'{sweep[name]["rmse"]:.3f}',
+                    'tcan_si': f'{sweep[name]["rmse_sign_invariant"]:.3f}',
+                    'tcan_excess': f'{net * 1e3:.1f}',
+                }
+            )
+    hyp = mech['fading_hypotheses']
+    shots = mech['per_shot']
+    hrows = [
+        {
+            'm': name.split('-')[1],
+            'c_eff': f'{h["feedback_c_eff"]:.3f}',
+            'snr_loss': f'{h["snr_loss_db"]:.1f}',
+            'observed': f'{h["observed_retention"]:.2f}',
+            'h1': f'{h["h1_c_sweep_retention"]:.2f}',
+            'h2': f'{h["h2_snr_retention"]:.2f}',
+            'h1s': f'{h["h1_sign_evidence_retention"]:.2f}',
+            'r_speed': f'{shots[name]["corr_excess_mse_vs_speed"]:.2f}'
+            if name in shots
+            else '',
+            'r_amp': f'{shots[name]["corr_excess_mse_vs_amplitude"]:+.2f}'
+            if name in shots
+            else '',
+            'median': f'{shots[name]["median_rmse_faded"]:.3f}'
+            if name in shots
+            else f'{shots["modes-8"]["median_rmse_base"]:.3f}',
+        }
+        for name, h in hyp.items()
+    ]
+    probe = mech['rescale_probe']
+    sel = 'modes-1_model_on_modes-8'
+    return {
+        'fs_table': rows,
+        'fs_hyp_table': hrows,
+        'fs_zero': f'{mech["zero_predictor"]:.3f}',
+        'fs_nominal': f'{sweep["nominal"]["rmse"]:.3f}',
+        'fs_probe_raw': f'{probe[sel]["raw"]:.3f}',
+        'fs_probe_rescaled': f'{probe[sel]["rescaled"]:.3f}',
+        'fs_color_corr': f'{shots["modes-8"]["max_abs_corr_between_color_amplitudes"]:.2f}',
+        # Guards for the prose: the fading cost exceeds every hypothesis'.
+        'fs_fading_unexplained': all(
+            h['observed_retention']
+            < min(
+                h['h1_c_sweep_retention'],
+                h['h2_snr_retention'],
+                h['h1_sign_evidence_retention'],
+            )
+            for n, h in hyp.items()
+            if n != base
+        ),
+        'fs_no_sign_flips': all(
+            abs(p['rmse'] - p['rmse_sign_invariant']) < 0.005 for p in sweep.values()
+        ),
+        'fs_speckle_free': max(
+            sweep[f'speckle-{r:g}']['rmse'] for r in (0.1, 0.3, 1, 3)
+        )
+        - sweep[base]['rmse']
+        < 0.005,
+    }
+
+
 def diagnosis_values() -> dict[str, Any]:
     """Q3.1 and Q3.2: the reference RMSE and the training-failure checks."""
     data = json.loads((RESULTS_DIR / 'fiber_diagnosis.json').read_text('utf-8'))
@@ -2248,6 +2331,7 @@ def main() -> None:
         **r4_values(records, zero),
         **r7_values(records, zero),
         **diagnosis_values(),
+        **fiber_sweep_values(),
         **flow_values(),
     }
     output.parent.mkdir(parents=True, exist_ok=True)

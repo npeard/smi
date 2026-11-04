@@ -43,6 +43,7 @@ DOCUMENT_FIGURES = {
         "noise_ladder",
         "leave_one_out",
         "q3_fiber",
+        "q3_fiber_sweep",
         "baseline_summary",
         "model_comparison",
         "baseline_amplitude_trend",
@@ -93,6 +94,10 @@ RESULTS = [
     # training checks, and the per-shot RMSE behind the paired arm SEs.
     str(RESULTS_DIR / "fiber_diagnosis.json"),
     str(RESULTS_DIR / "per_shot_rmse.json"),
+    # Section Q3 degradation: scripts/fiber_sweep_analytics.py's reference and
+    # scripts/fiber_sweep_mechanism.py's hypothesis tests.
+    str(RESULTS_DIR / "fiber_sweep_analytics.json"),
+    str(RESULTS_DIR / "fiber_sweep_mechanism.json"),
     # Section Q3.3 and Q3.4: scripts/flow.py's R8 flow-matching scores.
     str(RESULTS_DIR / "flow_results.json"),
     # The appendix example shots: scripts/example_shots.py's arrays and index.
