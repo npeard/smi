@@ -143,16 +143,26 @@ def _flow(arm: str, device: str) -> FlowLitModule | None:
         module = FlowLitModule.load_from_checkpoint(
             path, map_location=device, fit_norm_stats=False
         ).eval()
-    except (FileNotFoundError, RuntimeError, KeyError, TypeError) as err:
+    except FileNotFoundError as err:
         logger.warning(f'{arm}: flow {path} did not load ({err}); no band')
         return None
     return module
 
 
+def _rows(dset: h5py.Dataset, idx: list[int]) -> np.ndarray:
+    """``dset[idx]`` in ``idx`` order, reading only those rows.
+
+    h5py fancy indexing needs strictly increasing indices, so read the unique
+    sorted rows and scatter them back.
+    """
+    rows, inverse = np.unique(idx, return_inverse=True)
+    return dset[rows][inverse]
+
+
 def _read(path: Path, keys: list[str], idx: list[int]) -> tuple[Tensor, Tensor]:
     with h5py.File(path, 'r') as f:
-        signals = np.stack([np.asarray(f[k])[idx] for k in keys], axis=1)
-        velocity = np.asarray(f[VELOCITY_KEY])[idx]
+        signals = np.stack([_rows(f[k], idx) for k in keys], axis=1)
+        velocity = _rows(f[VELOCITY_KEY], idx)
     return torch.from_numpy(signals.astype(np.float32)), torch.from_numpy(velocity)
 
 
@@ -277,7 +287,7 @@ def real(device: str, out: dict[str, np.ndarray]) -> dict[str, object]:
         picks = select_shots(np.ptp(disp.numpy(), axis=1), SHOT_QUANTILES)
         idx = list(picks.values())
         signals = torch.from_numpy(
-            np.stack([np.asarray(f[k])[idx] for k in keys], axis=1).astype(np.float32)
+            np.stack([_rows(f[k], idx) for k in keys], axis=1).astype(np.float32)
         )
     cells = {(c.sim_name, c.family): c for c in expand_grid(GRIDS[GRID])}
     preds = {}
