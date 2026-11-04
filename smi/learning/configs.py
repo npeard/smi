@@ -664,12 +664,12 @@ def _flow(
     config.synthetic_config['sim'] = dataclasses.asdict(
         dataclasses.replace(sim, fiber=fiber)
     )
-    config.synthetic_config['flow'] = {'task': task, 'n_time_features': 8}
-    if encoder_channels:
-        config.synthetic_config['flow'] |= {
-            'encoder_channels': encoder_channels,
-            'aux_weight': FLOW_AUX_WEIGHT,
-        }
+    config.synthetic_config['flow'] = {
+        'task': task,
+        'n_time_features': 8,
+        'encoder_channels': encoder_channels,
+        'aux_weight': FLOW_AUX_WEIGHT if encoder_channels else 0.0,
+    }
     # Flow loss is noisy and has no zero-predictor plateau: a fixed budget,
     # best checkpoint by val/flow_loss (smi.experiments.flow_runner).
     epochs = FLOW_EPOCHS_ENC if encoder_channels else FLOW_EPOCHS
