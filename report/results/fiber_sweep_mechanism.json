@@ -199,9 +199,23 @@
       "reference_excess_mse": 0.005850448202026201
     }
   },
+  "h4_colour_decorrelation": {
+    "explained": {
+      "modes-8-corr": 0.10828391960047568,
+      "modes-1-1color": 0.2782835975206196,
+      "modes-4-1color": 0.04121293337253484,
+      "modes-8-1color": 0.034951138089303946
+    },
+    "corr_recovery": 0.07501564229478008,
+    "three_colour_retention": 0.11683143999480274,
+    "three_colour_corr_retention": 0.18308289677814862,
+    "one_colour_retention": 0.12559539405377357,
+    "verdict": "rejected"
+  },
   "notes": [
     "C sweep is noise-free (q3_s0c_ceiling, TCN-44k 30-epoch); SNR ladder is the nominal point (q1_s4_snr, TCN-44k); the fiber sweep is TCAN-44k at the nominal point. Retentions are relative to each curve, so the family and floor differences cancel to first order only.",
     "Sign evidence is the fixed-trajectory upper bound (sign_information) at the shot-mean C_eff and SNR loss, 8 shots, seed 0.",
-    "rescale_probe draws fresh shots (seed 1000 through simulate_batch), not the frozen set, so its raw scores differ slightly from the records."
+    "rescale_probe draws fresh shots (seed 1000 through simulate_batch), not the frozen set, so its raw scores differ slightly from the records.",
+    "H4 arms (q3_fiber_fading) share the sweep frozen-set seed and motion; the one-colour arms are scored against the same zero predictor."
   ]
 }
