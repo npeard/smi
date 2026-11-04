@@ -29,6 +29,7 @@ from smi.experiments.evaluate import load_lit_module
 from smi.experiments.grid import EvalSet, Family, Grid, Sim, Synthetic
 from smi.experiments.grids import GRIDS
 from smi.experiments.grids.q2_r4_noise import STRESSED
+from smi.experiments.grids.q3_fiber_sweep import STATIC_SINGLE_MODE
 from smi.experiments.results_artifact import read_results
 from smi.experiments.runner import (
     RunnerLockedError,
@@ -856,3 +857,32 @@ def test_a_same_key_checkpoint_trained_differently_is_not_used(tmp_path):
     _touch(tmp_path, 'q1_channels')
     with pytest.raises(FileNotFoundError, match='no identically trained checkpoint'):
         experiments.trained_checkpoint(_shared_cell(), 'q3_fiber', tmp_path)
+
+
+def test_q3_fiber_sweep_turns_on_one_knob_at_a_time():
+    sims = {c.sim_name: c.sim for c in expand_grid(GRIDS['q3_fiber_sweep'])}
+    knobs = ('n_modes', 'drift_rad_per_sqrt_s', 'path_drift_um_per_sqrt_s')
+    for name, sim in sims.items():
+        if name in ('nominal', 'fiber'):
+            continue
+        changed = [
+            k for k in knobs if getattr(sim.fiber, k) != getattr(STATIC_SINGLE_MODE, k)
+        ]
+        assert len(changed) <= 1, name
+    # The combined point is q3_fiber's own cell, so resume reuses it.
+    assert sims['fiber'] == _q3_fiber_arm('fiber')
+
+
+def test_q3_fiber_sweep_points_share_their_test_trajectories(tmp_path):
+    grid = GRIDS['q3_fiber_sweep']
+    motion = {}
+    for cell in expand_grid(grid):
+        path = write_frozen_set(
+            cell.sim, grid.test_set.seed, 2, tmp_path / f'{cell.sim_name}.h5'
+        )
+        with h5py.File(path, 'r') as f:
+            motion[cell.sim_name] = (f[VELOCITY_KEY][:], f[DISPLACEMENT_KEY][:])
+    v0, x0 = motion['nominal']
+    for arm, (v, x) in motion.items():
+        np.testing.assert_array_equal(v, v0, err_msg=arm)
+        np.testing.assert_array_equal(x, x0, err_msg=arm)

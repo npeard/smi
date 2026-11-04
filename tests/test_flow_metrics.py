@@ -7,7 +7,14 @@ import pytest
 import torch
 
 from smi.core.metrics import band_coverage, crps_gaussian, crps_samples
-from smi.experiments.flow_eval import multimodal_fraction
+from smi.experiments.flow_eval import (
+    align_signs,
+    conditioning_sensitivity,
+    magnitude_scores,
+    multimodal_fraction,
+    sign_structure,
+    signed_scores,
+)
 
 
 def test_band_coverage_of_calibrated_draws():
@@ -119,3 +126,67 @@ def test_multimodal_fraction(kind: str, low: float, high: float):
     """Only a well-separated two-mode mixture counts as multimodal."""
     frac = multimodal_fraction(_columns(np.random.default_rng(3), kind))
     assert low <= frac <= high
+
+
+def _sign_flipped_draws(seed: int, flip_within: bool) -> tuple[torch.Tensor, ...]:
+    """Draws equal to truth up to a per-draw sign (or per-half sign)."""
+    g = torch.Generator().manual_seed(seed)
+    truth = torch.randn(4, 64, generator=g) + 3.0
+    sign = torch.where(torch.rand(32, 4, 1, generator=g) < 0.5, -1.0, 1.0)
+    draws = sign * truth
+    if flip_within:
+        draws[..., 32:] *= -1
+    return draws, truth
+
+
+def test_magnitude_scores_ignore_sign():
+    """Sign-flipped exact draws: zero speed RMSE however the signs fall."""
+    draws, truth = _sign_flipped_draws(0, flip_within=False)
+    out = magnitude_scores(draws, truth)
+    assert out['speed_rmse']['max'] < 1e-6
+    assert out['crps_um_per_ms']['max'] < 1e-6
+
+
+def test_sign_structure_global_vs_within_shot():
+    """Whole-draw flips read zero segment flips; half-shot flips read half."""
+    draws, truth = _sign_flipped_draws(1, flip_within=False)
+    glob = sign_structure(draws, truth, segment=16)
+    assert glob['segment_flip_fraction'] == 0.0
+    assert 0.3 < glob['draw_sign_agreement'] < 0.7
+    assert glob['sample_mass_bimodal'] == 1.0
+    within = sign_structure(*_sign_flipped_draws(1, flip_within=True), segment=16)
+    assert within['segment_flip_fraction'] == 0.5
+
+
+def test_align_signs_recovers_truth_given_a_right_reference():
+    """A reference with the right sign undoes global and per-segment flips."""
+    draws, truth = _sign_flipped_draws(2, flip_within=False)
+    assert torch.equal(align_signs(draws, truth, None), truth.expand_as(draws))
+    draws, truth = _sign_flipped_draws(2, flip_within=True)
+    assert torch.equal(align_signs(draws, truth, 16), truth.expand_as(draws))
+    # A partial trailing block takes the last full block's sign.
+    assert torch.equal(
+        align_signs(draws[..., :60], truth[..., :60], 16),
+        truth[..., :60].expand_as(draws[..., :60]),
+    )
+
+
+def test_signed_scores_of_exact_draws():
+    """Draws equal to truth: zero RMSE and CRPS."""
+    _, truth = _sign_flipped_draws(3, flip_within=False)
+    out = signed_scores(truth.expand(8, -1, -1), truth)
+    assert out['posterior_mean_velocity_rmse']['max'] < 1e-6
+    assert out['crps_um_per_ms']['max'] < 1e-6
+
+
+class _Prior:
+    """A sampler that ignores its conditioning entirely."""
+
+    device = torch.device('cpu')
+
+    def sample(self, cond, n, _n_steps, generator):
+        return torch.randn(n, *cond.shape, generator=generator)
+
+
+def test_conditioning_sensitivity_of_a_prior_sampler_is_zero():
+    assert conditioning_sensitivity(_Prior(), torch.ones(2, 3, 32), 4, 0) == 0.0

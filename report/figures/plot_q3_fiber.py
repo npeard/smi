@@ -11,9 +11,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import h5py
 import matplotlib.pyplot as plt
-import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -31,6 +29,7 @@ from _figcommon import (
 )
 
 from smi.data.frozen import DEFAULT_ROOT, load_or_create
+from smi.experiments.diagnostics import shot_speed
 from smi.experiments.grids import GRIDS
 from smi.experiments.runner import expand_grid
 
@@ -53,9 +52,7 @@ def zero_rmse(records: dict, arm: str) -> float:
     (cell,) = [c for c in expand_grid(GRIDS['q3_fiber']) if c.key == record.cell_key]
     n = int(record.dataset.rsplit('_n', 1)[1])
     path = load_or_create(cell.sim, record.test_seed, n, DEFAULT_ROOT)
-    with h5py.File(path, 'r') as f:
-        v = f['velocity'][:]
-    return float(np.sqrt((v**2).mean(axis=1)).mean())
+    return float(shot_speed(path).mean())
 
 
 def main() -> None:

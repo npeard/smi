@@ -26,7 +26,13 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
 
 from smi.core.paths import GRID_RUNS_DIR, RUNS_DIR
-from smi.experiments.flow_eval import Sampling, score_denoise, score_posterior
+from smi.experiments.flow_eval import (
+    Sampling,
+    score_audit,
+    score_denoise,
+    score_posterior,
+    score_posterior_sign,
+)
 from smi.learning.configs import model_config
 from smi.learning.flow_lit_module import FlowLitModule
 from smi.learning.synthetic_lit_module import SyntheticIndexDataset
@@ -40,9 +46,21 @@ POSTERIORS = {
     'nominal': 'flow/posterior-free-unettransformer-global-44k',
     'fiber': 'flow/posterior-fiber-unettransformer-global-44k',
 }
+# The conditioning-encoder flows (smi.learning.flow), scored under the same
+# result keys with this suffix so the encoder-free scores stay as recorded.
+ENCODER_SUFFIX = '_enc'
+DENOISE_ENC = 'flow/denoise-unettransformer-offline-enc'
+POSTERIORS_ENC = {
+    'nominal': 'flow/posterior-free-unettransformer-global-enc',
+    'fiber': 'flow/posterior-fiber-unettransformer-global-enc',
+}
+VARIANTS = {'': (DENOISE, POSTERIORS), ENCODER_SUFFIX: (DENOISE_ENC, POSTERIORS_ENC)}
 # The denoiser's 32 draws are the top of score_denoise's draw-count check
 # (8/16/32 are prefixes of them); the band and modality scores need enough
 # draws per marginal for a 2-component BIC to mean something.
+# The audit scores the posterior mean on two full sets per arm; 16 draws keep
+# that under ~10 min per set, and both sets share it so their gap is fair.
+AUDIT_SAMPLING = Sampling(n_samples=16, n_steps=16, per_call=8, seed=0)
 DENOISE_SAMPLING = Sampling(n_samples=32, n_steps=16, per_call=4, seed=0)
 POSTERIOR_SAMPLING = Sampling(n_samples=64, n_steps=16, per_call=8, seed=0)
 
@@ -64,8 +82,7 @@ def train(name: str, accelerator: str, seed: int) -> Path:
         hp,
         syn['steps_per_epoch'],
         sim=syn['sim'],
-        task=syn['flow']['task'],
-        n_time_features=syn['flow']['n_time_features'],
+        **syn['flow'],
         train_crop_length=syn['train_crop_length'],
         fit_norm_stats=True,
     )
@@ -101,23 +118,33 @@ def train(name: str, accelerator: str, seed: int) -> Path:
     return out
 
 
-def score(device: str, frozen_root: Path, out: Path) -> None:
-    """Score every trained flow on the q3_fiber frozen sets into ``out``."""
+def _load(name: str, device: str) -> FlowLitModule:
+    module = FlowLitModule.load_from_checkpoint(
+        checkpoint(name), map_location=device, fit_norm_stats=False
+    )
+    return module.eval()
 
-    def load(name: str) -> FlowLitModule:
-        module = FlowLitModule.load_from_checkpoint(
-            checkpoint(name), map_location=device, fit_norm_stats=False
-        )
-        return module.eval()
 
-    results = {
-        'grid': GRID,
-        'device': device,
-        'torch_threads': torch.get_num_threads(),
-        'q3_3_denoise': {
-            'config': DENOISE,
+def score(device: str, frozen_root: Path, out: Path, variant: str) -> None:
+    """Score one ``VARIANTS`` entry's flows on the q3_fiber frozen sets.
+
+    Written under that variant's suffixed keys, merged into ``out`` if it
+    exists, so scoring one variant leaves the other's scores as recorded.
+    """
+    denoise, posteriors = VARIANTS[variant]
+    results = json.loads(out.read_text()) if out.exists() else {}
+    if not variant:
+        results |= {
+            'grid': GRID,
+            'device': device,
+            'torch_threads': torch.get_num_threads(),
+        }
+    results |= {
+        f'q3_3_denoise{variant}': {
+            'config': denoise,
+            'device': device,
             **score_denoise(
-                load(DENOISE),
+                _load(denoise, device),
                 GRID,
                 GRID_RUNS_DIR,
                 frozen_root,
@@ -125,11 +152,12 @@ def score(device: str, frozen_root: Path, out: Path) -> None:
                 device,
             ),
         },
-        'q3_4_posterior': {
+        f'q3_4_posterior{variant}': {
             arm: {
                 'config': name,
+                'device': device,
                 **score_posterior(
-                    load(name),
+                    _load(name, device),
                     GRID,
                     arm,
                     GRID_RUNS_DIR,
@@ -138,8 +166,57 @@ def score(device: str, frozen_root: Path, out: Path) -> None:
                     device,
                 ),
             }
-            for arm, name in POSTERIORS.items()
+            for arm, name in posteriors.items()
         },
+    }
+    out.write_text(json.dumps(results, indent=2) + '\n')
+    logger.info(f'wrote {out}')
+
+
+def score_sign(device: str, frozen_root: Path, out: Path, variant: str) -> None:
+    """Add one variant's sign-blind and sign-fixed posterior scores to ``out``.
+
+    Merged under a new key so the original scores stay as recorded.
+    """
+    results = json.loads(out.read_text())
+    results[f'q3_4_posterior_sign{variant}'] = {
+        arm: {
+            'config': name,
+            'device': device,
+            **score_posterior_sign(
+                _load(name, device),
+                GRID,
+                arm,
+                GRID_RUNS_DIR,
+                frozen_root,
+                POSTERIOR_SAMPLING,
+                device,
+            ),
+        }
+        for arm, name in VARIANTS[variant][1].items()
+    }
+    out.write_text(json.dumps(results, indent=2) + '\n')
+    logger.info(f'wrote {out}')
+
+
+def audit(device: str, frozen_root: Path, out: Path) -> None:
+    """Add the encoder posteriors' audit (``flow_eval.score_audit``) to ``out``."""
+    results = json.loads(out.read_text())
+    results['q3_4_audit'] = {
+        arm: {
+            'config': name,
+            'device': device,
+            **score_audit(
+                _load(name, device),
+                GRID,
+                arm,
+                GRID_RUNS_DIR,
+                frozen_root,
+                AUDIT_SAMPLING,
+                device,
+            ),
+        }
+        for arm, name in POSTERIORS_ENC.items()
     }
     out.write_text(json.dumps(results, indent=2) + '\n')
     logger.info(f'wrote {out}')

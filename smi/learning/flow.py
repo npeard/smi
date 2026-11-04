@@ -16,6 +16,15 @@ The velocity network is any registered sequence architecture built with
 a Fourier embedding of t are concatenated as channels, so the backbone needs no
 time-conditioning layer of its own.
 
+An optional conditioning encoder (any network ``[B, cond, L] -> [B, E, L]``,
+E >= x_channels) adds its E feature channels to that concatenation, and its
+first ``x_channels`` are fit to x_1 by an auxiliary regression loss. Why: on a
+target whose prior is low-dimensional (a smooth velocity trajectory), x_t
+alone pins x_1 down for most t, so the flow loss is nearly minimized by a
+field that never reads cond -- and the trained posterior flows did exactly
+that (field loss unchanged with shuffled or zeroed cond). The regression loss
+forces the cond-to-x_1 map to be learned; the field then gets it as an input.
+
 Not TorchScript-packaged: the sampler is an ODE loop over the network, used
 for analysis, not deployment.
 """
@@ -33,16 +42,27 @@ class FlowMatching(nn.Module):
     Tensors are ``[B, C, L]``; ``x1`` has ``x_channels`` channels.
     """
 
-    def __init__(self, velocity: nn.Module, x_channels: int, n_time_features: int):
+    def __init__(
+        self,
+        velocity: nn.Module,
+        x_channels: int,
+        n_time_features: int,
+        encoder: nn.Module | None,
+        aux_weight: float,
+    ):
         """Wrap ``velocity``, which maps the concatenated channels to ``x_channels``.
 
         Args:
-            velocity: Network ``[B, x + cond + 2 F, L] -> [B, x, L]``.
+            velocity: Network ``[B, x + cond + E + 2 F, L] -> [B, x, L]``.
             x_channels: Channels of the sampled quantity.
             n_time_features: F, the sin/cos frequency pairs embedding t.
+            encoder: Network ``[B, cond, L] -> [B, E, L]``, or None for E = 0.
+            aux_weight: Weight of the encoder's regression loss.
         """
         super().__init__()
         self.velocity = velocity
+        self.encoder = encoder
+        self.aux_weight = aux_weight
         self.x_channels = x_channels
         # Frequencies pi * 2^k: the lowest is half a period over t in [0, 1],
         # so the embedding is one-to-one; higher ones resolve nearby times.
@@ -50,17 +70,45 @@ class FlowMatching(nn.Module):
             'frequencies', math.pi * 2.0 ** torch.arange(n_time_features).float()
         )
 
-    def field(self, x_t: Tensor, t: Tensor, cond: Tensor) -> Tensor:
-        """Velocity at ``x_t``; ``t`` is ``[B]``."""
+    def context(self, cond: Tensor) -> Tensor:
+        """``cond`` plus the encoder features: the field's x_t-independent input.
+
+        Computed once per batch, since the sampler calls the field per step.
+        """
+        if self.encoder is None:
+            return cond
+        return torch.cat([cond, self.encoder(cond)], dim=1)
+
+    def guess(self, cond: Tensor) -> Tensor:
+        """The encoder's x_1 regression head on (normalized) ``cond``.
+
+        ``[B, x_channels, L]``: the deterministic regressor the auxiliary loss
+        trains. Raises if there is no encoder.
+        """
+        if self.encoder is None:
+            raise ValueError('this flow has no conditioning encoder')
+        return self._guess_of(self.context(cond), cond.shape[1])
+
+    def _guess_of(self, context: Tensor, cond_channels: int) -> Tensor:
+        # The guess is the encoder's first x_channels features; the loss
+        # slices it from the context it already computed.
+        return context[:, cond_channels : cond_channels + self.x_channels]
+
+    def field(self, x_t: Tensor, t: Tensor, context: Tensor) -> Tensor:
+        """Velocity at ``x_t``; ``t`` is ``[B]``, ``context`` from :meth:`context`."""
         angle = t[:, None] * self.frequencies  # [B, F]
         emb = torch.cat([angle.sin(), angle.cos()], dim=1)
         emb = emb[:, :, None].expand(-1, -1, x_t.shape[-1])
-        return self.velocity(torch.cat([x_t, cond, emb], dim=1))
+        return self.velocity(torch.cat([x_t, context, emb], dim=1))
 
     def loss(
         self, x1: Tensor, cond: Tensor, generator: torch.Generator | None
-    ) -> Tensor:
-        """Mean squared error of the field against x_1 - x_0 at t ~ U(0, 1).
+    ) -> tuple[Tensor, Tensor]:
+        """Flow and weighted encoder-regression losses; train on their sum.
+
+        The flow loss is the mean squared error of the field against
+        x_1 - x_0 at t ~ U(0, 1); the regression loss is zero without an
+        encoder.
 
         Args:
             x1: ``[B, x_channels, L]`` targets.
@@ -78,7 +126,12 @@ class FlowMatching(nn.Module):
         )
         tb = t[:, None, None]
         x_t = (1 - tb) * x0 + tb * x1
-        return functional.mse_loss(self.field(x_t, t, cond), x1 - x0)
+        context = self.context(cond)
+        flow = functional.mse_loss(self.field(x_t, t, context), x1 - x0)
+        if self.encoder is None:
+            return flow, torch.zeros_like(flow)
+        guess = self._guess_of(context, cond.shape[1])
+        return flow, self.aux_weight * functional.mse_loss(guess, x1)
 
     @torch.no_grad()
     def sample(
@@ -107,10 +160,10 @@ class FlowMatching(nn.Module):
             device=cond.device,
             dtype=cond.dtype,
         )
-        cond = cond.repeat(n_samples, 1, 1)
+        context = self.context(cond).repeat(n_samples, 1, 1)
         dt = 1.0 / n_steps
         for i in range(n_steps):
             t = torch.full((x.shape[0],), i * dt, device=x.device, dtype=x.dtype)
-            half = x + 0.5 * dt * self.field(x, t, cond)
-            x = x + dt * self.field(half, t + 0.5 * dt, cond)
+            half = x + 0.5 * dt * self.field(x, t, context)
+            x = x + dt * self.field(half, t + 0.5 * dt, context)
         return x.reshape(n_samples, batch, self.x_channels, length)

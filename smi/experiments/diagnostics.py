@@ -35,11 +35,13 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
+import h5py
 import numpy as np
 import torch
 
 from smi.core.metrics import per_shot_rmse
 from smi.data.frozen import load_or_create
+from smi.data.schema import VELOCITY_KEY
 from smi.experiments.evaluate import (
     DISPLACEMENT_LIMIT_MARGIN,
     CheckpointEstimator,
@@ -325,3 +327,123 @@ def per_shot_table(
                 'velocity_rmse': [float(x) for x in rmse],
             }
     return table
+
+
+def coupling_stats(cfg: SimConfig, n_shots: int, seed: int) -> dict[str, float]:
+    """How ``cfg``'s fiber coupling kappa scales the fringes, from simulated draws.
+
+    Fringe modulation and C both scale with |kappa|, so the fringe SNR drops by
+    E|kappa|^2 (in power) and C_eff = C |kappa|. ``in_shot_fade_rel`` is the
+    mean within-shot std of |kappa| over its mean (0 for a static fiber: a
+    fixed scale a network or a per-shot normalization absorbs);
+    ``speckle_phase_rms_um`` the within-shot std of the speckle phase
+    arg(kappa) (path drift excluded) as target-displacement equivalent at the
+    first color, the nuisance the velocity read must reject.
+    ``path_rms_um`` is on the same footing: the expected within-shot std of
+    the Brownian path walk about its shot mean, drift * sqrt(T / 6) (its RMS
+    from the shot start would be sqrt(T / 2)), since a constant path offset is
+    a phase a per-shot read absorbs.
+    """
+    fib = cfg.fiber
+    assert fib is not None
+    gen = torch.Generator().manual_seed(seed)
+    length = cfg.acquisition.buffer_size
+    draw = simulate_fiber(
+        dataclasses.replace(fib, path_drift_um_per_sqrt_s=0.0),
+        cfg.wavelengths_um,
+        n_shots,
+        length,
+        cfg.sample_rate,
+        _CPU,
+        gen,
+    )
+    kappa = draw.kappa.numpy().astype(np.complex128)
+    mag = np.abs(kappa)
+    psi = np.unwrap(np.angle(kappa[:, 0]), axis=-1)
+    mean_k2 = float((mag**2).mean())
+    return {
+        'mean_kappa2': mean_k2,
+        'mean_kappa': float(mag.mean()),
+        'feedback_c_eff': float(cfg.feedback_c * mag.mean()),
+        'snr_loss_db': float(-10 * np.log10(mean_k2)),
+        'in_shot_fade_rel': float((mag.std(-1) / mag.mean(-1)).mean()),
+        'speckle_phase_rms_um': float(
+            psi.std(-1).mean() * cfg.wavelengths_um[0] / (4 * math.pi)
+        ),
+        'path_rms_um': fib.path_drift_um_per_sqrt_s
+        * math.sqrt(length / cfg.sample_rate / 6),
+    }
+
+
+def shot_speed(path: Path) -> np.ndarray:
+    """Per-shot velocity RMS of a frozen set; its mean is the zero predictor's RMSE."""
+    with h5py.File(path, 'r') as f:
+        return np.sqrt((f[VELOCITY_KEY][:] ** 2).mean(-1))
+
+
+def explained_fraction(rmse: float, zero_rmse: float) -> float:
+    """Share of the zero predictor's MSE an estimator removes: 1 - (rmse / zero)^2.
+
+    Puts runs with different error floors (noise-free C sweep, nominal SNR
+    ladder, fiber sweep) on one scale, so a knob's cost is compared as the
+    share of learned signal it destroys rather than as a raw RMSE step.
+    """
+    return 1.0 - (rmse / zero_rmse) ** 2
+
+
+def matched_retention(curve: dict[float, float], ref: float, at: float) -> float:
+    """``curve`` (knob -> explained fraction) at ``at`` over its value at ``ref``.
+
+    Linear in the knob between measured rungs; the prediction a hypothesis makes
+    for a fiber point whose only change is that knob moving from ``ref`` to
+    ``at``.
+    """
+    xs = sorted(curve)
+    ys = [curve[x] for x in xs]
+    return float(np.interp(at, xs, ys) / np.interp(ref, xs, ys))
+
+
+def per_shot_excess(
+    base: np.ndarray, faded: np.ndarray, speed: np.ndarray, amplitude: np.ndarray
+) -> dict[str, float]:
+    """Where a knob's extra error lands across paired shots.
+
+    ``base``/``faded`` are per-shot RMSEs on shots sharing their motion,
+    ``speed`` each shot's velocity RMS, ``amplitude`` each shot's fringe
+    amplitude relative to free space. A shot-SNR (or shot-C_eff) mechanism puts
+    the excess MSE on the faded shots (correlation with amplitude < 0); a
+    collapse of fast-motion estimation puts it on the fast shots.
+    """
+    excess = faded**2 - base**2
+    return {
+        'corr_excess_mse_vs_speed': float(np.corrcoef(excess, speed)[0, 1]),
+        'corr_excess_mse_vs_amplitude': float(np.corrcoef(excess, amplitude)[0, 1]),
+        'median_rmse_base': float(np.median(base)),
+        'median_rmse_faded': float(np.median(faded)),
+        'mean_rmse_base': float(base.mean()),
+        'mean_rmse_faded': float(faded.mean()),
+    }
+
+
+def colour_fading_verdict(
+    three_m1: float, three_m8: float, three_m8_corr: float, one_m1: float, one_m8: float
+) -> dict[str, float | str]:
+    """H4 of the fiber sweep: whether its fading cost is colours fading apart.
+
+    Arguments are explained fractions (``explained_fraction``): three colours at
+    M = 1, at M = 8 fading independently and at M = 8 sharing one speckle
+    draw, and 0.635 um alone at M = 1 and 8. H4 predicts the correlated arm
+    recovers most of the M = 1 -> 8 loss and a lone colour keeps far more of
+    its own signal than three independent ones. The thresholds (half the loss
+    recovered; twice the three-colour retention) were fixed before the run.
+    """
+    recovery = (three_m8_corr - three_m8) / (three_m1 - three_m8)
+    three, one = three_m8 / three_m1, one_m8 / one_m1
+    votes = (recovery > 0.5) + (one > 2 * three)
+    return {
+        'corr_recovery': recovery,
+        'three_colour_retention': three,
+        'three_colour_corr_retention': three_m8_corr / three_m1,
+        'one_colour_retention': one,
+        'verdict': ('rejected', 'mixed', 'supported')[votes],
+    }

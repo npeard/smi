@@ -1,9 +1,20 @@
 """The per-frequency Wiener bound behind the q3_fiber diagnosis."""
 
 import numpy as np
+import pytest
 import torch
 
-from smi.experiments.diagnostics import rescale_to, wiener_rmse
+from smi.experiments.diagnostics import (
+    colour_fading_verdict,
+    coupling_stats,
+    explained_fraction,
+    matched_retention,
+    per_shot_excess,
+    rescale_to,
+    wiener_rmse,
+)
+from smi.experiments.grids import GRIDS
+from smi.experiments.runner import expand_grid
 
 
 def test_single_channel_matches_scalar_wiener():
@@ -36,3 +47,58 @@ def test_rescale_to_maps_each_shot_onto_target_stats():
     out = rescale_to(sig, mean, std)
     torch.testing.assert_close(out.mean(-1), mean.expand(4, 2), atol=1e-5, rtol=0)
     torch.testing.assert_close(out.std(-1), std.expand(4, 2))
+
+
+def test_explained_fraction_spans_perfect_to_zero_predictor():
+    assert explained_fraction(0.0, 2.0) == 1.0
+    assert explained_fraction(2.0, 2.0) == 0.0
+
+
+def test_matched_retention_interpolates_between_rungs():
+    curve = {0.0: 0.0, 0.2: 0.8, 0.4: 1.0}
+    assert matched_retention(curve, 0.2, 0.1) == 0.5
+    assert matched_retention(curve, 0.2, 0.3) == 0.9 / 0.8
+
+
+def test_per_shot_excess_separates_speed_from_amplitude():
+    speed = np.array([0.1, 0.2, 0.4, 0.8])
+    amplitude = np.array([0.5, 0.9, 0.1, 0.5])
+    base = np.full(4, 0.1)
+    faded = np.sqrt(base**2 + speed**2)  # excess MSE grows with speed only
+    out = per_shot_excess(base, faded, speed, amplitude)
+    assert out['corr_excess_mse_vs_speed'] > 0.9
+    assert abs(out['corr_excess_mse_vs_amplitude']) < 0.5
+
+
+def test_colour_fading_verdict_reads_recovery_and_one_colour_retention():
+    supported = colour_fading_verdict(
+        three_m1=0.6, three_m8=0.1, three_m8_corr=0.5, one_m1=0.4, one_m8=0.3
+    )
+    assert supported['corr_recovery'] == pytest.approx(0.8)
+    assert supported['one_colour_retention'] == pytest.approx(0.75)
+    assert supported['three_colour_retention'] == pytest.approx(0.1 / 0.6)
+    assert supported['verdict'] == 'supported'
+    rejected = colour_fading_verdict(
+        three_m1=0.6, three_m8=0.1, three_m8_corr=0.12, one_m1=0.4, one_m8=0.05
+    )
+    assert rejected['verdict'] == 'rejected'
+    mixed = colour_fading_verdict(
+        three_m1=0.6, three_m8=0.1, three_m8_corr=0.5, one_m1=0.4, one_m8=0.05
+    )
+    assert mixed['verdict'] == 'mixed'
+
+
+def test_path_rms_is_brownian_within_shot_std():
+    """path_rms_um matches the mean within-shot std of a simulated walk."""
+    sim = next(
+        c.sim
+        for c in expand_grid(GRIDS['q3_fiber_sweep'])
+        if c.sim.fiber is not None and c.sim.fiber.path_drift_um_per_sqrt_s > 0
+    )
+    n = 512
+    t_s = sim.acquisition.buffer_size / sim.sample_rate
+    rng = np.random.default_rng(0)
+    steps = rng.standard_normal((4000, n)) * np.sqrt(t_s / n)
+    walk = sim.fiber.path_drift_um_per_sqrt_s * np.cumsum(steps, axis=-1)
+    got = coupling_stats(sim, 2, 0)['path_rms_um']
+    assert got == pytest.approx(np.sqrt((walk.var(-1)).mean()), rel=0.03)

@@ -31,16 +31,16 @@ highest fidelity?
 
 ## Q3. Multimode fiber
 
-Coupling through multimode fiber scrambles phase, coupling and polarization
-through its path length and modal dispersion. How can trajectories measured
-through fiber be retrieved most faithfully?
+How fast does trajectory accuracy degrade as each multimode-fiber impairment
+(static coupling loss, speckle drift, path drift) turns on, and why? In
+simulation static coupling loss dominates, so the channel questions are posed
+against it.
 
-- **Q3.1** A dichroic at the distal face can return one color that sees only
-  the fiber. Does that fiber-only channel improve retrieval by decorrelating
-  the fiber phase from the other channels?
-- **Q3.2** A polarizing beamsplitter can send the returned light scrambled
-  into the orthogonal polarization to its own photodiode. Does that intensity
-  carry information that aids trajectory estimation?
+- **Q3.1** Where the fringes survive the coupling loss, does a dichroic
+  monitor color that sees only the fiber improve retrieval by decorrelating
+  the path drift from the other channels?
+- **Q3.2** Does the orthogonal-polarization intensity, a fade indicator,
+  recover the accuracy lost to static coupling loss?
 - **Q3.3** Given paired free-space and fiber measurements of the same
   trajectories, can a flow-matching model denoise the fiber signals?
 - **Q3.4** Using conditional flow matching for the trajectory posterior, does

@@ -106,13 +106,13 @@ def test_gaussian_posterior_moments():
     torch.manual_seed(0)
     noise_var = 0.25
     n_time = 4
-    flow = FlowMatching(_pointwise(2 + 2 * n_time), 1, n_time)
+    flow = FlowMatching(_pointwise(2 + 2 * n_time), 1, n_time, None, 0.0)
     opt = torch.optim.Adam(flow.parameters(), lr=3e-3)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, 3000, 1e-5)
     for _ in range(3000):
         x = torch.randn(512, 1, 1)
         y = x + noise_var**0.5 * torch.randn_like(x)
-        loss = flow.loss(x, y, None)
+        loss = sum(flow.loss(x, y, None))
         opt.zero_grad()
         loss.backward()
         opt.step()
@@ -180,7 +180,11 @@ def test_validation_loss_is_identical_across_passes(monkeypatch: pytest.MonkeyPa
         fit_norm_stats=True,
     ).eval()
     logged: list[float] = []
-    monkeypatch.setattr(module, 'log', lambda _k, v, **_: logged.append(v.item()))
+    monkeypatch.setattr(
+        module,
+        'log',
+        lambda k, v, **_: logged.append(v.item()) if k == 'val/flow_loss' else None,
+    )
     with torch.no_grad():
         for _ in range(2):
             module.on_validation_epoch_start()
@@ -266,3 +270,115 @@ def test_denoised_estimator_nests_draw_counts(monkeypatch: pytest.MonkeyPatch):
     ]
     assert means == [0.5, 1.5]
     assert len(calls) == 1
+
+
+class _ConvNet(nn.Module):
+    """Two conv layers plus a broadcast global mean: sees the whole sequence."""
+
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.local = nn.Sequential(
+            nn.Conv1d(in_channels, 32, 9, padding=4),
+            nn.SiLU(),
+            nn.Conv1d(32, 32, 9, padding=16, dilation=4),
+            nn.SiLU(),
+        )
+        self.head = nn.Conv1d(64, out_channels, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.local(x)
+        return self.head(torch.cat([h, h.mean(-1, keepdim=True).expand_as(h)], 1))
+
+
+def _shortcut_toy(n: int, length: int, generator: torch.Generator | None):
+    """x1 = a * ramp (one parameter); cond carries a only as a noisy frequency.
+
+    x_t reveals a for most t, so the flow loss is nearly minimized without
+    reading cond -- the shortcut the trained posterior flows took.
+    """
+    pos = torch.linspace(-1, 1, length)
+    a = torch.rand(n, 1, 1, generator=generator) * 2 - 1
+    phase = torch.rand(n, 1, 1, generator=generator) * 2 * torch.pi
+    cond = torch.sin(torch.pi * (24 + 8 * a) * (pos + 1) + phase)
+    return a * pos, cond + 0.5 * torch.randn(n, 1, length, generator=generator)
+
+
+def _fit_toy(encoder_channels: int, length: int) -> tuple[float, float]:
+    """(zeroed-cond sensitivity, draw RMSE / truth RMS) after a short fit."""
+    torch.manual_seed(0)
+    n_time = 4
+    encoder = _ConvNet(1, encoder_channels) if encoder_channels else None
+    flow = FlowMatching(
+        _ConvNet(2 + encoder_channels + 2 * n_time, 1), 1, n_time, encoder, 1.0
+    )
+    opt = torch.optim.Adam(flow.parameters(), lr=3e-3)
+    for _ in range(600):
+        loss = sum(flow.loss(*_shortcut_toy(64, length, None), None))
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+    x1, cond = _shortcut_toy(32, length, torch.Generator().manual_seed(5))
+    real, zeroed = (
+        flow.sample(c, 4, 16, torch.Generator().manual_seed(1))
+        for c in (cond, torch.zeros_like(cond))
+    )
+    rms = real.pow(2).mean().sqrt()
+    sensitivity = float((real - zeroed).pow(2).mean().sqrt() / rms)
+    return sensitivity, float(
+        (real - x1).pow(2).mean().sqrt() / x1.pow(2).mean().sqrt()
+    )
+
+
+def test_encoder_makes_the_flow_read_a_shortcut_conditioning():
+    """Without the encoder the field ignores cond and samples the prior."""
+    length = 256
+    plain = _fit_toy(0, length)
+    encoded = _fit_toy(4, length)
+    assert plain[0] < 0.05
+    assert encoded[0] > 0.3
+    assert encoded[1] < plain[1]
+
+
+def _posterior_module(encoder_channels: int) -> FlowLitModule:
+    cfg = model_config(DENOISE)
+    syn = cfg.synthetic_config
+    assert syn is not None
+    return FlowLitModule(
+        cfg.model_config,
+        cfg.training_config,
+        steps_per_epoch=1,
+        sim=syn['sim'],
+        task='posterior',
+        n_time_features=syn['flow']['n_time_features'],
+        train_crop_length=128,
+        fit_norm_stats=False,
+        encoder_channels=encoder_channels,
+        aux_weight=1.0,
+    )
+
+
+def test_encoder_estimator_is_the_aux_head_in_raw_units():
+    """The audit's regressor is exactly the encoder channel the aux loss fits."""
+    module = _posterior_module(2).eval()
+    wl = tuple(module.sim_config.wavelengths_um)
+    signals = torch.randn(2, len(wl), 128)
+    est = flow_eval.EncoderEstimator(module, 'enc')
+    pred = est.predict_velocity(signals, wl)
+    cond = (signals - module.cond_mean) / module.cond_std
+    encoder = module.flow.encoder
+    assert encoder is not None
+    with torch.no_grad():
+        raw = encoder(cond)[:, 0] * module.x1_std[:, 0] + module.x1_mean[:, 0]
+    assert pred.shape == (2, 128)
+    torch.testing.assert_close(pred, raw)
+    with pytest.raises(ValueError, match='no conditioning encoder'):
+        flow_eval.EncoderEstimator(_posterior_module(0), 'none')
+
+
+def test_high_frequency_fraction_separates_smooth_from_noise():
+    """Below 1% for the truth itself; most of white noise's power is above."""
+    t = torch.linspace(0, 1, 4096)
+    smooth = torch.sin(2 * torch.pi * 3 * t)
+    assert flow_eval.high_frequency_fraction(smooth, smooth) <= 0.01
+    noise = torch.randn(4096, generator=torch.Generator().manual_seed(0))
+    assert flow_eval.high_frequency_fraction(noise, smooth) > 0.9

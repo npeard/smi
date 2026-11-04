@@ -1,0 +1,221 @@
+{
+  "zero_predictor": 0.3607804477214813,
+  "sweep": {
+    "nominal": {
+      "rmse": 0.20005618035793304,
+      "rmse_sign_invariant": 0.20005618035793304,
+      "explained": 0.6925192307566219
+    },
+    "fiber": {
+      "rmse": 0.3576691746711731,
+      "rmse_sign_invariant": 0.357398122549057,
+      "explained": 0.017173090620734577
+    },
+    "modes-1": {
+      "rmse": 0.23060405254364014,
+      "rmse_sign_invariant": 0.23057657480239868,
+      "explained": 0.5914474891212209
+    },
+    "modes-2": {
+      "rmse": 0.2734450101852417,
+      "rmse_sign_invariant": 0.273434579372406,
+      "explained": 0.42554763834422427
+    },
+    "modes-4": {
+      "rmse": 0.3187597393989563,
+      "rmse_sign_invariant": 0.318678617477417,
+      "explained": 0.21937772473033967
+    },
+    "modes-8": {
+      "rmse": 0.3480924367904663,
+      "rmse_sign_invariant": 0.3480687737464905,
+      "explained": 0.06909966183534266
+    },
+    "speckle-0.1": {
+      "rmse": 0.23196211457252502,
+      "rmse_sign_invariant": 0.23193833231925964,
+      "explained": 0.5866212650122542
+    },
+    "speckle-0.3": {
+      "rmse": 0.23231391608715057,
+      "rmse_sign_invariant": 0.23228351771831512,
+      "explained": 0.5853664260892499
+    },
+    "speckle-1": {
+      "rmse": 0.23075279593467712,
+      "rmse_sign_invariant": 0.23072375357151031,
+      "explained": 0.5909202730218407
+    },
+    "speckle-3": {
+      "rmse": 0.23121494054794312,
+      "rmse_sign_invariant": 0.23120911419391632,
+      "explained": 0.5892800475396955
+    },
+    "path-0.1": {
+      "rmse": 0.22887550294399261,
+      "rmse_sign_invariant": 0.22881285846233368,
+      "explained": 0.5975493464897522
+    },
+    "path-0.3": {
+      "rmse": 0.22875528037548065,
+      "rmse_sign_invariant": 0.22871744632720947,
+      "explained": 0.5979720299423901
+    },
+    "path-1": {
+      "rmse": 0.2366119921207428,
+      "rmse_sign_invariant": 0.2366088628768921,
+      "explained": 0.5698820990327542
+    },
+    "path-2.8": {
+      "rmse": 0.2670188844203949,
+      "rmse_sign_invariant": 0.2669920325279236,
+      "explained": 0.45223034740948553
+    }
+  },
+  "c_sweep_explained": {
+    "0.05": 0.7650470129559135,
+    "0.1": 0.9111636060861222,
+    "0.2": 0.9510433012887337,
+    "0.4": 0.9884648823610601,
+    "0.7": 0.98445771223511,
+    "0.9": 0.9877025771005263
+  },
+  "snr_ladder_explained": {
+    "0": 0.03617820358682211,
+    "10": 0.367604361730241,
+    "20": 0.4902748988995409,
+    "30": 0.5305939522292484,
+    "40": 0.548850951795977
+  },
+  "snr_ladder_sign_nats_per_shot": {
+    "0": 474.47934038316595,
+    "10": 4744.793403831662,
+    "20": 47447.93403831659,
+    "30": 474479.34038316587,
+    "40": 4744793.403831659
+  },
+  "fading_hypotheses": {
+    "modes-1": {
+      "feedback_c_eff": 0.17218951397761686,
+      "snr_loss_db": 1.1085473383230695,
+      "sign_nats_per_shot": 274484.7187297428,
+      "observed_retention": 1.0,
+      "h1_c_sweep_retention": 1.0,
+      "h2_snr_retention": 1.0,
+      "h1_sign_evidence_retention": 1.0
+    },
+    "modes-2": {
+      "feedback_c_eff": 0.13218174331671992,
+      "snr_loss_db": 3.1839440847034703,
+      "sign_nats_per_shot": 101165.97373179793,
+      "observed_retention": 0.7195019780648787,
+      "h1_c_sweep_retention": 0.9830257636351907,
+      "h2_snr_retention": 0.9840953901770119,
+      "h1_sign_evidence_retention": 0.96645429519908
+    },
+    "modes-4": {
+      "feedback_c_eff": 0.09419419755258035,
+      "snr_loss_db": 5.787039412910701,
+      "sign_nats_per_shot": 28378.161649309102,
+      "observed_retention": 0.37091665577326816,
+      "h1_c_sweep_retention": 0.9513215439120074,
+      "h2_snr_retention": 0.9641468113814706,
+      "h1_sign_evidence_retention": 0.8884486848513347
+    },
+    "modes-8": {
+      "feedback_c_eff": 0.06130532325926277,
+      "snr_loss_db": 9.328227484829672,
+      "sign_nats_per_shot": 5336.246284510044,
+      "observed_retention": 0.11683143999480274,
+      "h1_c_sweep_retention": 0.8490693570142374,
+      "h2_snr_retention": 0.9370092461463329,
+      "h1_sign_evidence_retention": 0.7175730396786119
+    }
+  },
+  "per_shot": {
+    "modes-2": {
+      "corr_excess_mse_vs_speed": 0.7180270664768502,
+      "corr_excess_mse_vs_amplitude": -0.20444566812568699,
+      "median_rmse_base": 0.22224929928779602,
+      "median_rmse_faded": 0.23187940567731857,
+      "mean_rmse_base": 0.23060404794523492,
+      "mean_rmse_faded": 0.27344499400351197
+    },
+    "modes-4": {
+      "corr_excess_mse_vs_speed": 0.925498373225352,
+      "corr_excess_mse_vs_amplitude": -0.1890922059131132,
+      "median_rmse_base": 0.22224929928779602,
+      "median_rmse_faded": 0.23899564146995544,
+      "mean_rmse_base": 0.23060404794523492,
+      "mean_rmse_faded": 0.31875972443958744
+    },
+    "modes-8": {
+      "corr_excess_mse_vs_speed": 0.9119342864545725,
+      "corr_excess_mse_vs_amplitude": -0.042173328332259494,
+      "median_rmse_base": 0.22224929928779602,
+      "median_rmse_faded": 0.23801255226135254,
+      "mean_rmse_base": 0.23060404794523492,
+      "mean_rmse_faded": 0.34809243751806207,
+      "max_abs_corr_between_color_amplitudes": 0.07507237930474304
+    },
+    "path-2.8": {
+      "corr_excess_mse_vs_speed": 0.6247714243408268,
+      "corr_excess_mse_vs_amplitude": 0.17135121820581425,
+      "median_rmse_base": 0.22224929928779602,
+      "median_rmse_faded": 0.23000860214233398,
+      "mean_rmse_base": 0.23060404794523492,
+      "mean_rmse_faded": 0.2670188865158707
+    }
+  },
+  "rescale_probe": {
+    "modes-1_model_on_modes-1": {
+      "raw": 0.2564169764518738,
+      "rescaled": 0.2655816376209259
+    },
+    "modes-1_model_on_modes-8": {
+      "raw": 0.37682944536209106,
+      "rescaled": 0.493377149105072
+    },
+    "modes-8_model_on_modes-8": {
+      "raw": 0.375519335269928,
+      "rescaled": 0.39298269152641296
+    }
+  },
+  "path_drift_excess_mse": {
+    "path-0.1": {
+      "network_excess_mse": -0.000794233201684369,
+      "reference_excess_mse": 1.0478437835888818e-05
+    },
+    "path-0.3": {
+      "network_excess_mse": -0.0008492507498851776,
+      "reference_excess_mse": 9.350091695210674e-05
+    },
+    "path-1": {
+      "network_excess_mse": 0.002807005765796511,
+      "reference_excess_mse": 0.0009633758138861126
+    },
+    "path-2.8": {
+      "network_excess_mse": 0.018120855587562268,
+      "reference_excess_mse": 0.005850448202026201
+    }
+  },
+  "h4_colour_decorrelation": {
+    "explained": {
+      "modes-8-corr": 0.10828391960047568,
+      "modes-1-1color": 0.2782835975206196,
+      "modes-4-1color": 0.04121293337253484,
+      "modes-8-1color": 0.034951138089303946
+    },
+    "corr_recovery": 0.07501564229478008,
+    "three_colour_retention": 0.11683143999480274,
+    "three_colour_corr_retention": 0.18308289677814862,
+    "one_colour_retention": 0.12559539405377357,
+    "verdict": "rejected"
+  },
+  "notes": [
+    "C sweep is noise-free (q3_s0c_ceiling, TCN-44k 30-epoch); SNR ladder is the nominal point (q1_s4_snr, TCN-44k); the fiber sweep is TCAN-44k at the nominal point. Retentions are relative to each curve, so the family and floor differences cancel to first order only.",
+    "Sign evidence is the fixed-trajectory upper bound (sign_information) at the shot-mean C_eff and SNR loss, 8 shots, seed 0.",
+    "rescale_probe draws fresh shots (seed 1000 through simulate_batch), not the frozen set, so its raw scores differ slightly from the records.",
+    "H4 arms (q3_fiber_fading) share the sweep frozen-set seed and motion; the one-colour arms are scored against the same zero predictor."
+  ]
+}

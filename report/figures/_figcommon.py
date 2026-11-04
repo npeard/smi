@@ -21,6 +21,7 @@ default, which would make otherwise-identical runs differ byte-for-byte.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
@@ -644,6 +645,96 @@ def r_cell(
 ) -> RunRecord:
     """One R-grid record; a missing cell raises, naming its key."""
     return records[cell_key(family, wavelengths_um, sim, seed)]
+
+
+@dataclass(frozen=True)
+class FlowRow:
+    """One estimator of the Q3.4 encoder-flow comparison (tab-q3-flow, plot_q3_flow).
+
+    RMSEs in um/ms on the arm's test set (seed 1000) and, for the flow's own
+    estimators, on the fresh seed-2000 audit set; None where not scored. The
+    flow's two RMSEs both come from the 16-draw audit; its coverage and CRPS
+    from the 64-draw posterior run.
+    """
+
+    label: str
+    field: int
+    params: int
+    fs: float
+    fiber: float | None
+    fs_fresh: float | None = None
+    fiber_fresh: float | None = None
+    coverage_fs: float | None = None
+    coverage_fiber: float | None = None
+    crps_fs: float | None = None
+    crps_fiber: float | None = None
+
+
+def flow_rows(records: dict[str, RunRecord]) -> dict[str, FlowRow]:
+    """The regressors, the encoder head alone and the encoder flow, both arms.
+
+    Regressor field and size come from the audit's record of the very cells
+    scored, so the context comparison is the one the audit made.
+    """
+    data = json.loads((RESULTS_DIR / 'flow_results.json').read_text('utf-8'))
+    post = data['q3_4_posterior_enc']
+    nom, fib = post['nominal'], post['fiber']
+    audit = data['q3_4_audit']
+    ens = nom['deep_ensemble']
+    facts = audit['nominal']['regressors']
+
+    def regressor(fam: str, label: str) -> FlowRow:
+        fact = next(v for k, v in facts.items() if k.startswith(fam + '__'))
+        return FlowRow(
+            label,
+            fact['receptive_field'],
+            fact['total_params'],
+            *(
+                mean_metric(r_cell(records, fam, FIBER_ARMS[arm], arm), 'velocity_rmse')
+                for arm in ('nominal', 'fiber')
+            ),
+        )
+
+    flow = audit['nominal']['flow']
+    head = {a: audit[a]['encoder_head_velocity_rmse'] for a in ('nominal', 'fiber')}
+    mean = {a: audit[a]['posterior_mean_velocity_rmse'] for a in ('nominal', 'fiber')}
+    return {
+        'tcan': regressor('tcan-44k', 'TCAN (causal)'),
+        'unet': regressor('unettransformer-offline-44k', 'UNetTransformer (offline)'),
+        'ensemble': FlowRow(
+            f'TCAN {len(ens["members"])}-seed ensemble',
+            facts[ens['members'][0]['cell']]['receptive_field'],
+            len(ens['members']) * facts[ens['members'][0]['cell']]['total_params'],
+            ens['velocity_rmse']['mean'],
+            None,
+            coverage_fs=ens['coverage'],
+            crps_fs=ens['crps_um_per_ms']['mean'],
+        ),
+        'head': FlowRow(
+            'encoder head alone',
+            flow['receptive_field'],
+            flow['encoder_params'],
+            head['nominal']['test']['mean'],
+            head['fiber']['test']['mean'],
+            head['nominal']['fresh']['mean'],
+            head['fiber']['fresh']['mean'],
+        ),
+        'flow': FlowRow(
+            'flow posterior mean',
+            flow['receptive_field'],
+            flow['total_params'],
+            # The audit's 16-draw test score, not the 64-draw one, so the
+            # test/fresh pair differs only in seed.
+            mean['nominal']['test']['mean'],
+            mean['fiber']['test']['mean'],
+            mean['nominal']['fresh']['mean'],
+            mean['fiber']['fresh']['mean'],
+            nom['coverage'],
+            fib['coverage'],
+            nom['crps_um_per_ms']['mean'],
+            fib['crps_um_per_ms']['mean'],
+        ),
+    }
 
 
 Q1_S2_SIMS = {

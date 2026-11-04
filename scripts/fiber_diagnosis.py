@@ -143,11 +143,22 @@ def main() -> None:
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--frozen-root', type=Path, default=DEFAULT_ROOT)
     parser.add_argument('--skip-per-shot', action='store_true')
+    # The q3_fiber_sweep / q3_fiber_fading cells finish hours after the
+    # diagnosis is settled.
+    parser.add_argument('--per-shot-only', action='store_true')
     args = parser.parse_args()
-    out = diagnose(args.shots, args.seed, args.device)
-    (RESULTS_DIR / 'fiber_diagnosis.json').write_text(json.dumps(out, indent=2) + '\n')
+    if not args.per_shot_only:
+        out = diagnose(args.shots, args.seed, args.device)
+        diag = RESULTS_DIR / 'fiber_diagnosis.json'
+        diag.write_text(json.dumps(out, indent=2) + '\n')
     if not args.skip_per_shot:
-        cells = {'q3_fiber': [], 'q1_r1_count': _R1_KEYS, 'q2_r4_noise': []}
+        cells = {
+            'q3_fiber': [],
+            'q1_r1_count': _R1_KEYS,
+            'q2_r4_noise': [],
+            'q3_fiber_sweep': [],
+            'q3_fiber_fading': [],
+        }
         table = per_shot_table(cells, GRID_RUNS_DIR, args.frozen_root, args.device)
         (RESULTS_DIR / 'per_shot_rmse.json').write_text(
             json.dumps(table, indent=1) + '\n'

@@ -40,13 +40,11 @@ from _figcommon import (
     CEILING_GRID,
     DISPLACEMENT_METRICS,
     FIBER_ARMS,
-    LEAVE_ONE_OUT,
     MISMATCH_SHOTS,
     NOISE_KNOBS,
     Q1_BINNED_JSON,
     Q1_FAMILIES,
     Q1_MULTI,
-    Q1_PAIRS,
     Q1_S2_GRID,
     Q1_S2_SIMS,
     Q1_SINGLES,
@@ -67,13 +65,12 @@ from _figcommon import (
     RESULTS_DIR,
     S1D_FAMILIES,
     SHIFT_DEFAULT_TEST_SEED,
-    SHIFT_FAMILIES,
     STALL_TOLERANCE,
     SYNTHETIC_WAVELENGTHS_UM,
     LadderRow,
-    ShiftScore,
     c_sim,
     displacement_pending,
+    flow_rows,
     matched_length_cells,
     mean_metric,
     mismatch_spectra,
@@ -105,14 +102,10 @@ from smi.learning.synthetic_lit_module import VAL_SEED
 from smi.theory import bounds
 from smi.theory.forward import (
     NOMINAL_ALPHA,
-    NOMINAL_PHASE_DRIFT_FRINGES,
     NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S,
     SimConfig,
-    rad_per_sqrt_s_to_fringes,
 )
 
-# Matches plot_velocity_bounds.py.
-N_STEPS = 2000
 NOMINAL_C = 0.2
 # The real-data causal TCN of report.typ's results table: the matched 44k
 # configuration on the free-space held-out test split, mean over model seeds.
@@ -223,18 +216,8 @@ def real_values() -> dict[str, str]:
 
     stems = [*REAL_CONFIGS.values(), 'decode']
     out |= {f'rl_{stem}_ratio': f'{ratio(stem):.2f}' for stem in stems}
-    neural = sorted(
-        (s for s in REAL_CONFIGS.values() if s not in {'ridge', 'lgbm'}),
-        key=lambda s: vel[s, 'fs'],
-    )[:4]
     out |= {
-        'real_ridge_params': out['rl_ridge_params'].replace(',', ''),
-        'real_ridge_ratio': out['rl_ridge_ratio'],
-        'real_decode_ratio': out['rl_decode_ratio'],
-        'real_decode_shots': str(baseline['config']['n_shots_method2']),
         'real_decode_nrmse': out['rd_vnrmse_fs'],
-        'real_top4_ratio_lo': f'{min(ratio(s) for s in neural):.1f}',
-        'real_top4_ratio_hi': f'{max(ratio(s) for s in neural):.1f}',
         'rd_over_ridge_fs': f'{vel["decode", "fs"] / vel["ridge", "fs"]:.2f}',
         'rd_over_barland_fs': f'{vel["decode", "fs"] / vel["barland", "fs"]:.1f}',
         'rl_scnn_over_tcn_pct_fs': lower_pct('scnn44', 'tcn44', 'fs'),
@@ -275,11 +258,6 @@ def lo_hi(prefix: str, xs: Iterable[Any], fmt: Callable[[Any], str]) -> dict[str
 def epochs(record: RunRecord) -> int:
     """Epochs ``record`` trained; 0 for the untrained oracle."""
     return record.epochs_run or 0
-
-
-def ran_third_cycle(record: RunRecord) -> bool:
-    """Whether ``record`` trained past its second warm restart."""
-    return epochs(record) > 2 * (record.T_0 or 0)
 
 
 def test_shots(record: RunRecord) -> int:
@@ -325,22 +303,11 @@ def shot_length(records: dict[str, RunRecord]) -> int:
         return int(f['velocity'].shape[1])
 
 
-def alpha_factor(alpha: float) -> float:
-    """The alpha dependence of the leading-order sign information."""
-    return alpha**2 / (1 + alpha**2)
-
-
 def exit_check_values(records: dict[str, RunRecord]) -> dict[str, str]:
-    """Training budget and test set of section 1.1's three exit-check runs."""
+    """Training budget of section 1.1's three exit-check runs."""
     family = 'tcn-44k-E20'
     signed = synthetic_cell(records, family, 'michelson-signed')
-    return {
-        'exit_max_epochs': str(signed.max_epochs),
-        'exit_steps': str(signed.steps_per_epoch),
-        'exit_signed_epochs': str(signed.epochs_run),
-        'test_seed': str(signed.test_seed),
-        'test_shots': str(test_shots(signed)),
-    }
+    return {'exit_max_epochs': str(signed.max_epochs)}
 
 
 def q3_values(records: dict[str, RunRecord], zero: float) -> dict[str, str | bool]:
@@ -360,35 +327,12 @@ def q3_values(records: dict[str, RunRecord], zero: float) -> dict[str, str | boo
     t90, t30 = (budget.family for budget in Q3_BUDGETS)
     curve = sweep(t90)
     t30_curve = sweep(t30)
-    curve_si = sweep(t90, 'velocity_rmse_sign_invariant')
     michelson = rmse(t90, 'michelson', 'velocity_rmse_sign_invariant')
-    michelson_n = rmse(t90, 'michelson', 'velocity_nrmse_sign_invariant')
-    top = c_sim(Q3_FEEDBACK_C[-1])
-    c02 = c_sim(0.2)
-    a5_gap = max(
-        abs(rmse(f, 'smi-a5') - rmse(f, c02)) / rmse(f, c02) for f in (t90, t30)
-    )
     a0 = [synthetic_cell(records, f, 'smi-a0') for f in (t90, t30)]
     t30_epochs = {
         c: synthetic_cell(records, t30, c_sim(c)).epochs_run for c in Q3_FEEDBACK_C
     }
-    others = [n for c, n in t30_epochs.items() if c != 0.4 and n is not None]
-    long = synthetic_cell(records, 'tcn-44k-T270', c02)
 
-    # Per shot (NRMSE) the low-C cells do not beat Michelson; the text names
-    # the largest such C per budget, which only reads as a range if the worse
-    # cells are the lowest ones.
-    def nrmse_worse(family: str) -> str:
-        ref = rmse(family, 'michelson', 'velocity_nrmse_sign_invariant')
-        worse = [n > ref for n in sweep(family, 'velocity_nrmse')]
-        n_worse = worse.index(False)
-        assert n_worse > 0, (family, worse)
-        assert not any(worse[n_worse:]), (family, worse)
-        return f'{Q3_FEEDBACK_C[n_worse - 1]:g}'
-
-    curve_n = sweep(t90, 'velocity_nrmse')
-    curve_n_si = sweep(t90, 'velocity_nrmse_sign_invariant')
-    n_gaps = [s / i - 1 for s, i in zip(curve_n, curve_n_si, strict=True)]
     worst = [
         synthetic_cell(records, t90, c_sim(c)).metrics['velocity_nrmse']['max']
         for c in Q3_FEEDBACK_C
@@ -399,18 +343,12 @@ def q3_values(records: dict[str, RunRecord], zero: float) -> dict[str, str | boo
     n_flip = flipped.index(True)
     assert all(flipped[n_flip:]), worst
 
-    def median_metric(sim: str, metric: str) -> float:
-        return synthetic_cell(records, t90, sim).metrics[metric]['median']
-
     def slowest(family: str) -> list[float]:
         """Slowest-|v|-decile sign-invariant RMSE of Michelson and each C."""
         sims = ('michelson', *(c_sim(c) for c in Q3_FEEDBACK_C))
         bins = [synthetic_cell(records, family, sim).binned for sim in sims]
         return [b['abs_velocity'][0]['rmse_sign_invariant'] for b in bins if b]
 
-    slow = slowest(t90)
-    t90_epochs = [epochs(synthetic_cell(records, t90, c_sim(c))) for c in Q3_FEEDBACK_C]
-    zero_gap = abs(mean_metric(a0[0], 'velocity_rmse') / zero - 1)
     return {
         # The text claims the 90-epoch curve falls monotonically in RMSE; the
         # document asserts this, so a regenerated artifact that breaks it
@@ -418,28 +356,7 @@ def q3_values(records: dict[str, RunRecord], zero: float) -> dict[str, str | boo
         'q3_monotone': all(b < a for a, b in itertools.pairwise(curve)),
         'q3_c_top': f'{Q3_FEEDBACK_C[-1]:g}',
         'q3_gain_top': sig(michelson / curve[-1], 2),
-        'q3_gain_top_nrmse': sig(michelson_n / rmse(t90, top, 'velocity_nrmse'), 2),
-        'q3_gain_top_nrmse_median': sig(
-            median_metric('michelson', 'velocity_nrmse_sign_invariant')
-            / median_metric(top, 'velocity_nrmse'),
-            2,
-        ),
-        'q3_sign_gap_pct': pct(
-            max((s - i) / i for s, i in zip(curve, curve_si, strict=True))
-        ),
-        'q3_nrmse_worse_t90': nrmse_worse(t90),
-        'q3_nrmse_worse_t30': nrmse_worse(t30),
-        'q3_n_sign_gap_max_pct': pct(max(n_gaps)),
-        'q3_n_sign_gap_max_c': f'{Q3_FEEDBACK_C[n_gaps.index(max(n_gaps))]:g}',
-        **lo_hi('q3_n_worst', worst, lambda x: sig(x, 3)),
-        'q3_flip_c': f'{Q3_FEEDBACK_C[n_flip]:g}',
-        **lo_hi('q3_slow', slow, lambda x: sig(x, 2)),
-        **lo_hi('q3_t90_epochs', t90_epochs, str),
-        'q3_zero_gap_pct': sig(100 * zero_gap, 1),
-        'q3_a5_gap_pct': pct(a5_gap),
         'q3_a0_epochs': str(max(epochs(r) for r in a0)),
-        # eq-sign-info depends on alpha only through alpha^2 / (1 + alpha^2).
-        'sign_info_a5_a3': sig(alpha_factor(5.0) / alpha_factor(3.0), 3),
         # The 30-epoch curve's one inversion, which the text attributes to the
         # C = 0.4 cell's longer run; asserted by the document like q3_monotone.
         'q3_t30_c04_below': all(
@@ -447,10 +364,6 @@ def q3_values(records: dict[str, RunRecord], zero: float) -> dict[str, str | boo
             for c in (0.7, 0.9)
         ),
         'q3_t30_c04_epochs': str(t30_epochs[0.4]),
-        **lo_hi('q3_t30_other_epochs', others, str),
-        'q3_c02_t270': sig(rmse('tcn-44k-T270', c02), 2),
-        'q3_t270_epochs': str(long.epochs_run),
-        'q3_t270_cycle': str(long.T_0),
     }
 
 
@@ -481,129 +394,24 @@ def noise_values(
     phase, snr = 'phase_drift_rad_per_sqrt_s', 'snr_db'
     minor = [f for f in ladder if f not in (phase, snr)]
     minor_shares = [share(f) for f in minor]
-    (c09,) = noise_seeds(records, 'nominal-c0.9')
-    (nominal0,) = [r for r in nominal_runs if r.seed == 0]
-    # The causal bound at the 30 dB row's own config (unit visibility, no
-    # drift), so it is the floor for exactly what that row adds to the base.
-    snr_row = at_nominal(snr)
-    snr_bound = float(bounds.pcrb_filter(prior, snr_row.sim, N_STEPS)[-1]) ** 0.5
-    snr_cost = rmse(snr_row.record) - base_mean
-    (snr20_cost,) = [
-        rmse(row.record) - base_mean for row in ladder[snr] if row.value == 20
-    ]
-    # The DC-offset rows that score below every base seed; the text names them
-    # as the +/-0.3 and +/-1 rows and reports how long they trained.
-    dc_low = [row for row in ladder['dc_offset_range'] if rmse(row.record) < min(base)]
-    rows = [row for rows in ladder.values() for row in rows]
-    # Rows that trained into a third cosine cycle, unlike every base seed.
-    long_rows = [row for row in rows if ran_third_cycle(row.record)]
-    assert not any(ran_third_cycle(r) for r in base_runs)
-    short_rows = [row for row in rows if row not in long_rows]
 
-    def above_base(field: str) -> list[object]:
-        return [row.value for row in ladder[field] if rmse(row.record) > max(base)]
-
-    # Leave-one-out: the nominal point with one knob returned to noise-free,
-    # read as the drop below the nominal seeds' mean.
-    nominal_mean = sum(nominal) / len(nominal)
     width = max(nominal) - min(nominal)
-    loo: dict[str, RunRecord] = {}
-    for field, stem in LEAVE_ONE_OUT:
-        (loo[field],) = noise_seeds(records, f'nominal-no-{stem}')
-
-    def cut(field: str) -> float:
-        return 1 - rmse(loo[field]) / nominal_mean
-
-    pdbw = 'pd_bandwidth_hz'
     # The equal-length grid: every cell trained the same length, its cap.
-    e60_cells, e60_sweep = matched_length_cells(records)
-    (e60_epochs,) = {r.epochs_run for r in e60_cells.values()}
+    e60_cells, _ = matched_length_cells(records)
     e60 = {name: rmse(r) for name, r in e60_cells.items()}
     e60_nominal = e60['nominal']
     e60_nodrift = e60['nominal-no-phasedrift']
-    e60_base = e60['ladder-base']
-    # The ladder's drift sweep rerun at 60 epochs on the same knob values,
-    # in sweep order.
-    phase_rows = [row.record for row in ladder[phase]]
-    e60_drift_rmse = [rmse(e60_sweep[phase, row.value]) for row in ladder[phase]]
-    e60_drift_nominal = rmse(e60_sweep[phase, at_nominal(phase).value])
-    e60_half_kept = (e60_drift_rmse[0] - e60_base) / (e60_drift_nominal - e60_base)
-    # Fractional gain from 35 to 60 epochs, against the ladder's seeds.
-    nominal_gain = 1 - e60_nominal / nominal_mean
-    base_gain = 1 - e60_base / base_mean
-    loo_rows = sorted(loo.items(), key=lambda item: rmse(item[1]))
     return {
-        'loo_rows': [
-            {
-                'label': NOISE_KNOBS[f],
-                'rmse': f'{rmse(r):.3f}',
-                'epochs': str(r.epochs_run),
-            }
-            for f, r in loo_rows
-        ],
-        **lo_hi('loo_nominal', nominal, lambda x: f'{x:.3f}'),
-        **lo_hi('loo_nominal_epochs', map(epochs, nominal_runs), str),
-        'loo_phase_cut': pct(cut(phase)),
-        'loo_vis_cut': pct(cut('visibility_range')),
-        'loo_pdbw_cut': pct(cut(pdbw)),
-        'loo_e60_epochs': str(e60_epochs),
         'loo_e60_cut': pct(1 - e60_nodrift / e60_nominal),
-        'loo_e60_base_gain': pct(base_gain),
-        'loo_e60_nominal_gain': pct(nominal_gain),
         # The text: at equal length the cut exceeds the nominal seed spread,
         # and the ranking base < no-phase-drift < nominal is unchanged.
         'loo_e60_outside': e60_nodrift < e60_nominal - width,
-        'loo_e60_same_ranking': e60_base < e60_nodrift < e60_nominal,
-        'loo_snr_saving': sig(nominal_mean - rmse(loo[snr]), 1),
-        # The text: only 8 bits and a 3 kHz bandwidth leave the base spread.
-        'noise_electronics_flat': above_base('adc_bits') == [8]
-        and above_base('pd_bandwidth_hz') == [3e3],
-        # The text: removing any one electronic knob moves the error at most
-        # as much as removing the bandwidth limit.
-        'loo_electronics_max_pdbw': max(cut(f) for f in (snr, 'adc_bits', pdbw))
-        == cut(pdbw),
-        'noise_n_seeds': str(len(base)),
-        'noise_phase_fringes': sig(NOMINAL_PHASE_DRIFT_FRINGES, 3),
         'noise_phase_rad': sig(NOMINAL_PHASE_DRIFT_RAD_PER_SQRT_S, 3),
-        'noise_phase_share': pct(share(phase)),
-        'noise_snr_share': pct(share(snr)),
-        'noise_minor_share_hi': pct(max(minor_shares)),
-        'noise_spread_share': pct((max(base) - min(base)) / excess),
         # The ranking the text states: phase drift, then SNR, then the rest.
         'noise_ranking': share(phase) > share(snr) > max(minor_shares),
-        **lo_hi('noise_phase_epochs', map(epochs, phase_rows), str),
-        # The text: at equal length the drift curve rises monotonically, and
-        # cutting drift to its lowest swept level keeps most of its cost.
-        'noise_e60_phase_monotone': e60_base < e60_drift_rmse[0]
-        and all(a < b for a, b in itertools.pairwise(e60_drift_rmse)),
-        'noise_e60_low_fringes': sig(
-            rad_per_sqrt_s_to_fringes(ladder[phase][0].sim.phase_drift_rad_per_sqrt_s),
-            1,
-        ),
-        'noise_e60_half_kept': pct(e60_half_kept),
-        'noise_c09_ratio': sig(rmse(nominal0) / rmse(c09), 2),
-        'noise_snr_cost': sig(snr_cost, 2),
-        'noise_snr_bound': sig(snr_bound, 2),
-        # The text: the base alone sits this far above the bound, so the
-        # prediction's floor cannot bind at this budget.
-        'noise_base_over_bound': f'{base_mean / snr_bound:.0f}',
-        'noise_bound_no_power': base_mean > 5 * snr_bound,
-        # The text: at 20 dB the white-noise cost about doubles.
-        'noise_snr20_cost': sig(snr20_cost, 2),
-        'noise_dc_low_named': {row.value[1] for row in dc_low} == {0.3, 1.0},
-        'noise_dc_low_epochs': '/'.join(
-            sorted({str(row.record.epochs_run) for row in dc_low})
-        ),
-        **lo_hi('noise_base_epochs', map(epochs, base_runs), str),
-        'noise_n_long': str(len(long_rows)),
-        'noise_n_rows': str(len(rows)),
-        **lo_hi('noise_long_epochs', (epochs(r.record) for r in long_rows), str),
-        **lo_hi('noise_short_epochs', (epochs(r.record) for r in short_rows), str),
     }
 
 
-# A converged cell stopped well before its first restart; the rest end at it.
-EARLY_STOP_FRACTION = 0.95
 # The text says no family comes near the Michelson oracle; a ratio this large
 # is well clear of the seed range, which a bare `oracle < best` would not be.
 ORACLE_MARGIN = 1.5
@@ -657,10 +465,6 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
             )
         return out
 
-    oracle = [
-        mean_metric(oracle_cell(records, sim), metric)
-        for sim, metric in Q2_SIMS.items()
-    ]
     stalled = sorted(
         (stem, sim)
         for stem in Q2_STEMS
@@ -673,10 +477,6 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
         for stem in Q2_NAMED
         if isinstance(models[stem], SlidingWindowModel)
     }
-    # The text quotes the one-window field the MLP and Barland records store,
-    # written before the models declared the averaged span; only the record
-    # still carries it, so this one value is read from there.
-    mlp = synthetic_cell(records, 'mlp-44k-T90', 'smi-a3')
     # The families whose context is a fixed window, which the text says are
     # matched; the sliding-window families' wider spans are named apart.
     matched = {
@@ -685,10 +485,6 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
         if stem not in sliding and field is not None
     }
     return {
-        'q2_causal_rows': rows(Q2_CAUSAL, True),
-        'q2_offline_rows': rows(Q2_OFFLINE, False),
-        'q2_oracle_cells': [f'{v:.3f}' for v in oracle],
-        'q2_mamba_pending': q2_record(records, 'mamba-44k', 'smi-a3') is None,
         'q2_stalled_named': set(stalled)
         == {
             ('lstm-44k', 'michelson'),
@@ -698,19 +494,8 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
             ('neuraloperator-offline-44k', 'smi-a3'),
         },
         'q2_stall_tol_pct': pct(STALL_TOLERANCE),
-        'q2_stall_epochs': '/'.join(
-            sorted(
-                {
-                    str(synthetic_cell(records, f'{s}-T90', m).epochs_run)
-                    for s, m in stalled
-                }
-            )
-        ),
         'q2_sliding_named': set(sliding) == {'barland-44k', 'mlp-44k'},
-        'q2_mlp_span': str(sliding['mlp-44k']),
         'q2_tcn_field': str(fields['tcn-44k']),
-        'q2_barland_span': str(sliding['barland-44k']),
-        'q2_window_field': str(mlp.receptive_field),
         'q2_matched_named': set(matched)
         == {
             'tcn-44k',
@@ -722,7 +507,6 @@ def q2_table(records: dict[str, RunRecord]) -> dict[str, object]:
             'patchtransformer-offline-44k',
             'unettransformer-offline-44k',
         },
-        **lo_hi('q2_matched', matched.values(), str),
     }
 
 
@@ -775,7 +559,7 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
         return separated(a, b, resolution)
 
     mich, smi = trained('michelson', Q2_STEMS), trained('smi-a3', Q2_STEMS)
-    mich_named, smi_named = trained('michelson', Q2_NAMED), trained('smi-a3', Q2_NAMED)
+    mich_named = trained('michelson', Q2_NAMED)
     oracle_mich, oracle_smi = (oracle_cell(records, sim) for sim in Q2_SIMS)
     oracle = mean_metric(oracle_mich, 'velocity_rmse_sign_invariant')
     oracle_si = mean_metric(oracle_smi, 'velocity_rmse_sign_invariant')
@@ -785,19 +569,6 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
     rest = [v for s, v in mich_named.items() if s != weakest]
     best = min(smi, key=smi.__getitem__)
     runner_up = min(v for s, v in smi.items() if s != best)
-    # The offline families the text calls unsettled: all trained but the MLP.
-    offline_top = sorted(
-        v for s, v in smi_named.items() if s in dict(Q2_OFFLINE) and s != 'mlp-44k'
-    )
-    runs = [
-        (epochs(r), r.T_0 or 0)
-        for s in Q2_NAMED
-        for sim in Q2_SIMS
-        if (r := q2_record(records, s, sim)) is not None and r.converged
-    ]
-    early = [n for n, t in runs if n < EARLY_STOP_FRACTION * t]
-    late = [n for n, t in runs if n >= EARLY_STOP_FRACTION * t]
-    second = [n for n, t in runs if n > t]
     # The zero predictor scored the alpha = 0 control's frozen set, which
     # shares the oracle's test seed, so it scores the same velocities.
     a0 = synthetic_cell(records, 'tcn-44k-T90', 'smi-a0')
@@ -810,37 +581,16 @@ def q2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
         'q2_mich_tied': weakest == 'neuraloperator-offline-44k'
         and not apart(min(rest), max(rest))
         and apart(max(rest), mich_named[weakest]),
-        **lo_hi('q2_mich', rest, lambda x: sig(x, 2)),
-        'q2_mich_span_pct': pct(max(rest) / min(rest) - 1),
-        'q2_no_offline_mich': sig(mich_named[weakest], 2),
-        'q2_oracle_mich': sig(oracle, 2),
-        'q2_oracle_gap': sig(min(mich.values()) / oracle, 2),
         'q2_oracle_beats_all': ORACLE_MARGIN * oracle <= min(mich.values()),
         'q2_tcan_gain': sig(tcn_smi / smi['tcan-44k'], 3),
-        'q2_patch_gain': sig(tcn_smi / smi['patchtransformer-causal-44k'], 3),
         'q2_tcan_best': best == 'tcan-44k' and apart(smi[best], runner_up),
-        'q2_tcan_margin_pct': pct(runner_up / smi[best] - 1),
-        'q2_offline_span_pct': pct(offline_top[-1] / offline_top[0] - 1),
-        'q2_scnn_gain_pct': pct(tcn_smi / smi['scnn-44k'] - 1),
         # Barland's 498-sample span ties SCNN's 85: the wider context shows no gain.
         'q2_barland_ties_scnn': not apart(
             min(smi['barland-44k'], smi['scnn-44k']),
             max(smi['barland-44k'], smi['scnn-44k']),
         ),
-        'q2_barland_smi': sig(smi['barland-44k'], 3),
-        'q2_scnn_smi': sig(smi['scnn-44k'], 3),
-        'q2_oracle_smi_si': sig(oracle_si, 2),
-        'q2_oracle_smi_signed': sig(oracle_signed, 2),
-        'q2_zero_smi': sig(zero, 2),
         'q2_oracle_worse_than_zero': oracle_signed > zero,
         'q2_learned_beat_oracle_smi': max(smi.values()) < oracle_si,
-        'q2_oracle_smi_gap': sig(oracle_si / max(smi_named.values()), 2),
-        'q2_early_n': str(len(early)),
-        **lo_hi('q2_early', early, str),
-        **lo_hi('q2_late', late, str),
-        'q2_restart': str(max(t for _, t in runs)),
-        'q2_second_n': str(len(second)),
-        'q2_second_lo': str(min(second)),
     }
 
 
@@ -906,67 +656,28 @@ def q1_s2_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
         best = smi[family][lowest(smi[family], Q1_SINGLES)]
         return best / min(smi[family][w] for w in Q1_MULTI)
 
-    lattice_nm = max(math.gcd(round(1e4 * a), round(1e4 * b)) for a, b in Q1_PAIRS) / 10
-    tcan_pair = min(smi['tcan-44k'][w] for w in Q1_PAIRS)
-    tcan_triple = smi['tcan-44k'][triple]
-    table_columns = (
-        mich['tcn-44k'],
-        mich['tcan-44k'],
-        oracle,
-        smi['tcn-44k'],
-        smi['tcan-44k'],
-    )
     return {
-        'q1_s2_rows': [
-            {'label': name, 'cells': [f'{col[w]:.3f}' for col in table_columns]}
-            for w, name in Q1_SUBSETS
-        ],
         'q1_zero': sig(zero, 2),
         # Michelson: one channel scores at the zero predictor, sign-invariant,
         # in both families; every pair and the triple sit far below it.
         'q1_mich_single_at_zero': all(
             abs(x / zero - 1) < AT_ZERO_TOL for x in mich_single
         ),
-        'q1_mich_single_gap_pct': sig(
-            100 * max(abs(x / zero - 1) for x in mich_single), 1
-        ),
         'q1_mich_multi_far': max(mich_multi) < FAR_FROM_ZERO * zero,
         'q1_oracle_single_above_zero': min(oracle[w] for w in Q1_SINGLES) > zero,
         # The stall test passes the single channels, so the text calls them
         # trained to the zero predictor, not stalled.
         'q1_mich_single_converged': all(r.converged for r in single_records),
-        **lo_hi('q1_mich_single_monitor', monitor_gap, lambda x: f'{100 * x:.1f}'),
-        'q1_mich_single_epochs': '/'.join(
-            sorted({str(epochs(r)) for r in single_records})
-        ),
         'q1_stall_tol_pct': pct(STALL_TOLERANCE),
         # The text: 515 nm is the best single channel in both families.
         'q1_515_best': all(ranked_singles(f)[0] == (0.515,) for f in Q1_FAMILIES),
-        # Spacing of the lattice 2 pi (lambda_1 Z + lambda_2 Z) that wraps the
-        # two-channel phase combination: the coarsest gcd over the pairs.
-        'q1_lattice_nm': f'{lattice_nm:g}',
-        'q1_runner_up_tcn_pct': pct(runner_up('tcn-44k')),
         'q1_runner_up_tcn_at_edge': at_edge(runner_up('tcn-44k'), resolution),
-        'q1_runner_up_tcan_pct': pct(runner_up('tcan-44k')),
-        'q1_gain_tcn': sig(gain('tcn-44k'), 3),
-        'q1_gain_tcan': sig(gain('tcan-44k'), 3),
         # Every multi-channel set beats the best single channel by more than
         # the seed range, in both families.
         'q1_multi_beats_single': all(
             separated(smi[f][w], smi[f][lowest(smi[f], Q1_SINGLES)], resolution)
             for f in Q1_FAMILIES
             for w in Q1_MULTI
-        ),
-        'q1_tcan_triple_pct': pct(1 - tcan_triple / tcan_pair),
-        **lo_hi(
-            'q1_epochs',
-            (
-                epochs(records[cell_key(f, w, sim, 0)])
-                for f in Q1_FAMILIES
-                for w, _ in Q1_SUBSETS
-                for sim in Q1_S2_SIMS
-            ),
-            str,
         ),
     }
 
@@ -989,7 +700,7 @@ def q1_binned_values(
         (c['condition'], tuple(c['wavelengths_um'])): c
         for c in binned['cells'].values()
     }
-    one, pair, three = (0.515,), (0.635, 0.515), SYNTHETIC_WAVELENGTHS_UM
+    one, _pair, three = (0.515,), (0.635, 0.515), SYNTHETIC_WAVELENGTHS_UM
 
     def by_distance(condition: str, w: tuple, channel: str) -> list[float]:
         return cells[condition, w]['fringe_distance'][channel]['rmse']
@@ -1008,11 +719,6 @@ def q1_binned_values(
     nf_three = by_distance('noise_free', three, '515')
     gain_near, gain_far = nf_one[0] / nf_three[0], nf_one[-1] / nf_three[-1]
 
-    def all_share(w: tuple) -> str:
-        """Share of samples in the nearest bin of every channel's extremum."""
-        n = cells['noise_free', w]['fringe_distance']['all']['n']
-        return sig(100 * n[0] / sum(n), 1)
-
     v_gain = [
         a / b
         for a, b in zip(
@@ -1021,54 +727,25 @@ def q1_binned_values(
             strict=True,
         )
     ]
-    v_edges = binned['abs_velocity_edges_um_per_ms']
     slow_one, slow_three, slow_zero = (
         cells['noise_free', w]['abs_velocity'][key][0]
         for w, key in ((one, 'rmse'), (three, 'rmse'), (one, 'zero'))
     )
-    peak = v_gain.index(max(v_gain))
-    bound_gap = min(
-        min(cells['nominal_30db', w]['abs_velocity']['rmse'])
-        / nominal_bounds(prior, w)[0]
-        for w in (one, pair, three)
-    )
     return {
         'q1_bin_width': f'{binned["fringe_distance_edges_fringes"][1]:.3g}',
-        'q1_bin_nf_near': sig(nf_one[0], 3),
-        'q1_bin_nf_far': sig(nf_one[-1], 3),
         # The text: noise-free, neither curve rises toward the extremum.
         'q1_bin_nf_flat': flat('noise_free', one)
         and flat('noise_free', three)
         and rise('noise_free', one) <= 0,
-        'q1_bin_nom_rise_one_pct': pct(rise('nominal_30db', one)),
-        'q1_bin_nom_rise_three_pct': pct(rise('nominal_30db', three)),
         # The text: at 30 dB both curves rise toward the extremum only a
         # little, within FLAT_TOL.
         'q1_bin_nom_small_rise': flat('nominal_30db', one)
         and flat('nominal_30db', three),
-        'q1_bin_gain_near': sig(gain_near, 2),
-        'q1_bin_gain_far': sig(gain_far, 2),
         'q1_bin_gain_not_near': gain_near < gain_far,
-        **lo_hi(
-            'q1_bin_all_rise',
-            (rise('noise_free', w, 'all') for w in (pair, three)),
-            pct,
-        ),
-        'q1_bin_all_share_pair': all_share(pair),
-        'q1_bin_all_share_three': all_share(three),
-        'q1_bin_v_gain_max': sig(max(v_gain), 2),
-        'q1_bin_v_peak_lo': sig(v_edges[peak], 2),
-        'q1_bin_v_peak_hi': sig(v_edges[peak + 1], 2),
-        'q1_bin_v_slow_hi': sig(v_edges[1], 1),
-        'q1_bin_v_slow_gain': sig(v_gain[0], 2),
-        'q1_bin_v_slow_one': sig(slow_one, 2),
-        'q1_bin_v_slow_three': sig(slow_three, 2),
-        'q1_bin_v_slow_zero': sig(slow_zero, 2),
         # The text: in the slowest bin both models score above zero.
         'q1_bin_v_slow_above_zero': min(slow_one, slow_three) > slow_zero,
         # The text: no gain in the slowest bin, the largest above 1.5x.
         'q1_bin_v_shape': v_gain[0] < 1 and max(v_gain) > 1.5,
-        'q1_bound_gap': f'{bound_gap:.0f}',
     }
 
 
@@ -1099,41 +776,12 @@ def q1_s4_values(records: dict[str, RunRecord], resolution: float) -> dict[str, 
     )
     at30 = rmse[30.0]
     nominal = [mean_metric(r, 'velocity_rmse') for r in noise_seeds(records, 'nominal')]
-    # The one cell the text names as trained longer.
-    long_single = s4((0.515,), 40.0)
-    label = dict(Q1_SUBSETS)
     return {
-        # The text quotes each subset's RMSE against zero at the ends of the
-        # sweep.
-        **lo_hi('q1_s4_0db', rmse[0.0].values(), lambda x: f'{x:.3f}'),
-        **lo_hi(
-            'q1_s4_high',
-            (x for snr in (30.0, 40.0) for x in rmse[snr].values()),
-            lambda x: f'{x:.3f}',
-        ),
-        'q1_s4_gain_max_pct': pct(max(gain.values())),
-        'q1_s4_30_pair_no515': f'{at30[0.635, 0.6748]:.3f}',
-        'q1_s4_30_gain_pct': pct(gain[30.0]),
         # The text: at 30 dB the gain is several times the nominal seed range,
         # and the pair without 515 nm does no better than 515 nm alone.
         'q1_s4_30_outside': gain[30.0]
         > 3 * (max(nominal) - min(nominal)) / min(nominal)
         and not separated(at30[0.515,], at30[0.635, 0.6748], resolution),
-        **lo_hi('q1_nominal', nominal, lambda x: f'{x:.3f}'),
-        'q1_s4_rows': [
-            {
-                'snr': f'{snr:g}',
-                'single': f'{min(row[w] for w in Q1_SINGLES):.3f}',
-                'single_label': label[lowest(row, Q1_SINGLES)],
-                'pair': f'{min(row[w] for w in Q1_PAIRS):.3f}',
-                'pair_label': label[lowest(row, Q1_PAIRS)],
-                'three': f'{row[triple]:.3f}',
-                'gain': pct(gain[snr]),
-            }
-            for snr, row in rmse.items()
-        ],
-        'q1_s4_40_epochs': str(epochs(long_single)),
-        **lo_hi('q1_s4_oracle', oracle, lambda x: sig(x, 2)),
         'q1_s4_oracle_worse': min(oracle) > zero,
     }
 
@@ -1144,31 +792,19 @@ def spectral_values() -> dict[str, str]:
     The PSDs share one bin grid, so sums over bins are power shares.
     """
     spectra = mismatch_spectra(False)
-    low = spectra.freq_hz < 100
-
-    def low_share(psd: np.ndarray) -> str:
-        return pct(psd[low].sum() / psd.sum())
 
     return {
         'spec_shots': str(MISMATCH_SHOTS),
         'spec_bin_hz': f'{spectra.freq_hz[0]:.0f}',
-        'spec_v_low_pct': low_share(spectra.velocity),
-        'spec_x_low_pct': low_share(spectra.displacement),
     }
 
 
-def budget_range(
-    cells: list[RunRecord], per_epoch: int, shot_length: int
-) -> dict[str, str]:
-    """Epochs, shots and samples the ``cells`` trained on, as printed ranges."""
+def budget_range(cells: list[RunRecord], per_epoch: int) -> dict[str, str]:
+    """Epochs and shots the ``cells`` trained on, as printed ranges."""
     n = [epochs(r) for r in cells]
-    samples = [
-        epochs(r) * per_epoch * (r.train_crop_length or shot_length) for r in cells
-    ]
     return {
         **lo_hi('epochs', n, str),
         **lo_hi('kshots', (x * per_epoch / 1e3 for x in n), lambda x: f'{x:.0f}'),
-        **lo_hi('gsamples', samples, lambda x: f'{x / 1e9:.2f}'),
         'cells': str(len(cells)),
     }
 
@@ -1218,7 +854,7 @@ def methods_values(
             f'm_t{cycle}_{k}': v
             for cycle in (30, 90)
             for k, v in budget_range(
-                [r for r in trained if cycle == r.T_0], per_epoch, shot_length
+                [r for r in trained if cycle == r.T_0], per_epoch
             ).items()
         },
         'm_val_batches': str(val_steps),
@@ -1227,14 +863,12 @@ def methods_values(
         'm_test_shots': str(test_set.n_shots),
         'm_test_seed': str(test_set.seed),
         'm_test_sets': str(len({r.dataset for r in records.values()})),
-        'm_trained_cells': str(len(trained)),
         'm_patience': str(convergence['patience_epochs']),
         'm_min_rel_delta_pct': pct(convergence['min_rel_delta']),
         'm_grace': str(convergence['min_epochs']),
         'm_lr': f'{one(r.lr for r in trained):g}',
         'm_device': one(r.device.split(':')[0] for r in trained).upper(),
         'm_precision': one(r.precision for r in trained).removesuffix('-true'),
-        **lo_hi('m_epochs', map(epochs, trained), str),
     }
 
 
@@ -1273,9 +907,7 @@ def displacement_values(records: dict[str, RunRecord]) -> dict[str, object]:
             stacklevel=1,
         )
         return {'disp_pending': True}
-    si = DISPLACEMENT_METRICS['velocity_rmse_sign_invariant']
     signed = DISPLACEMENT_METRICS['velocity_rmse']
-    top = max(Q3_FEEDBACK_C)
     base = [mean_metric(r, signed) for r in noise_seeds(records, 'ladder-base')]
     resolution = (max(base) - min(base)) / (sum(base) / len(base))
 
@@ -1286,30 +918,17 @@ def displacement_values(records: dict[str, RunRecord]) -> dict[str, object]:
             if (r := q2_record(records, s, sim)) is not None and r.converged
         }
 
-    smi, mich = trained('smi-a3'), trained('michelson')
+    smi = trained('smi-a3')
     tcn = smi['tcn-44k']
     ranked = sorted(smi, key=smi.__getitem__)
     lowest = [smi[s] for s in ranked[: len(DISPLACEMENT_LOWEST)]]
-    # Michelson: the families the velocity text calls tied (all but the
-    # offline neural operator) and their spread on displacement.
-    tied = [v for s, v in mich.items() if s != 'neuraloperator-offline-44k']
     return {
-        'disp_pending': False,
-        'disp_c_top': f'{top:g}',
-        'disp_gain_top': sig(
-            mean_metric(michelson, si) / mean_metric(curve[top], signed), 2
-        ),
-        'disp_seed_range_pct': pct(resolution),
-        **lo_hi('disp_lowest', lowest, lambda x: sig(x, 2)),
-        'disp_tcn': sig(tcn, 2),
-        'disp_mamba': sig(smi['mamba-44k'], 2),
         # The three lowest are the named ones, unordered by the seed range,
         # and each sits below the TCN by more than it.
         'disp_lowest_named': set(ranked[: len(DISPLACEMENT_LOWEST)])
         == DISPLACEMENT_LOWEST
         and not separated(lowest[0], lowest[-1], resolution)
-        and separated(lowest[-1], tcn, resolution),
-        'disp_mich_span': sig(max(tied) / min(tied), 2),
+        and separated(lowest[-1], tcn, resolution)
     }
 
 
@@ -1340,9 +959,6 @@ def s1d_values(records: dict[str, RunRecord]) -> dict[str, object]:
         return sig(x, 3)
 
     return {
-        **lo_hi('s1d_smi_ratio', map(ratio, smi), three),
-        **lo_hi('s1d_mich_ratio', map(ratio, mich.values()), lambda x: sig(x, 2)),
-        **lo_hi('s1d_epochs', map(epochs, [*smi, *mich.values()]), str),
         # The text: at C = 0.2 every retargeted cell, the TCN control
         # included, stalls; on Michelson every one trains.
         's1d_smi_stalled': all(
@@ -1351,19 +967,12 @@ def s1d_values(records: dict[str, RunRecord]) -> dict[str, object]:
         's1d_mich_trained': all(
             r.converged and ratio(r) < 1 - STALL_TOLERANCE for r in mich.values()
         ),
-        **lo_hi('s1d_lstm_disp', (disp[s] for s in lstms), three),
-        **lo_hi('s1d_lstm_vel', (vel[s] for s in lstms), three),
-        's1d_no_disp': three(disp['neuraloperator-offline-44k']),
-        's1d_no_vel': three(vel['neuraloperator-offline-44k']),
-        's1d_tcn_disp': three(disp['tcn-44k']),
-        's1d_tcn_vel': three(vel['tcn-44k']),
         # The text: retargeting helps the LSTMs and costs the neural operator
         # and the TCN, and every retargeted cell stays behind the
         # velocity-trained TCN.
         's1d_shape': all(disp[s] < vel[s] for s in lstms)
         and all(disp[s] > vel[s] for s in ('neuraloperator-offline-44k', 'tcn-44k'))
         and min(disp.values()) > vel['tcn-44k'],
-        's1d_mamba_velocity': sig(mean_metric(mamba, 'velocity_rmse'), 2),
         's1d_mamba_trained': mamba.converged,
     }
 
@@ -1393,9 +1002,7 @@ def prediction_values(records: dict[str, RunRecord], zero: float) -> dict[str, s
         'pred_triple_free': triple_ratio('s2-smi-a3', Q1_S2_SIMS['s2-smi-a3']),
         'pred_triple_30': triple_ratio('q1-nominal-snr_db=30', 'velocity_rmse'),
         'pred_base_ratio': ratio('ladder-base'),
-        'pred_nominal_ratio': ratio('nominal'),
         'pred_c09_ratio': ratio('nominal-c0.9'),
-        'pred_no_drift_ratio': ratio('nominal-no-phasedrift'),
     }
 
 
@@ -1440,33 +1047,13 @@ def r1_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
                 )
         rows.append(row)
     out['r1_table'] = rows
-    for fam, tag in ((tcan, 'tcan'), (unet, 'unet')):
-        for sim, stag in (('s2-smi-a3', 'nf'), ('nominal', 'nom')):
-            for n in (1, 3):
-                out[f'r1_{tag}_{stag}_spread{n}'] = pct(_spread(runs(fam, n, sim)))
-                out[f'r1_{tag}_{stag}_nseeds{n}'] = str(len(runs(fam, n, sim)))
-            out |= lo_hi(
-                f'r1_{tag}_{stag}_oz',
-                [rmse(fam, n, sim) / zero for n in range(1, 7)],
-                lambda x: f'{x:.2f}',
-            )
-    out['r1_zero'] = f'{zero:.3f}'
     bound = [(info[i] / info[0]) ** -0.5 for i in range(6)]
     tnf = [rmse(tcan, n, 's2-smi-a3') / rmse(tcan, 1, 's2-smi-a3') for n in range(1, 7)]
     tnom = [rmse(tcan, n, 'nominal') / rmse(tcan, 1, 'nominal') for n in range(1, 7)]
-    out['r1_tcan_nf_n6'] = f'{tnf[5]:.2f}'
-    out['r1_tcan_nom_n6'] = f'{tnom[5]:.2f}'
-    out['r1_tcan_nom_gain_n3'] = f'{1 / tnom[2]:.2f}'
-    out['r1_tcan_nom_cut_36'] = pct(
-        1 - rmse(tcan, 6, 'nominal') / rmse(tcan, 3, 'nominal')
-    )
-    out['r1_bound_n6'] = f'{bound[5]:.2f}'
     # Noise-free TCAN follows the bound's ratio to within 25% at every N >= 3.
     out['r1_tcan_nf_tracks'] = all(0.75 < tnf[i] / bound[i] < 1.25 for i in range(2, 6))
     # ... but beats it at N = 2, where the learned gain exceeds the Fisher one.
     out['r1_tcan_nf_n2_beats'] = tnf[1] < 0.85 * bound[1]
-    out['r1_tcan_nf_n2'] = f'{tnf[1]:.2f}'
-    out['r1_bound_n2'] = f'{bound[1]:.2f}'
     out['r1_tcan_nom_monotone'] = all(a > b for a, b in itertools.pairwise(tnom))
     out['r1_unet_nf_spread_big'] = _spread(runs(unet, 3, 's2-smi-a3')) > 0.3
     out['r1_unet_nom_flat'] = (
@@ -1474,25 +1061,6 @@ def r1_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
         / min(rmse(unet, n, 'nominal') for n in range(1, 7))
         < 1.25
     )
-    return out
-
-
-def r1_pair_values(records: dict[str, RunRecord]) -> dict[str, object]:
-    """Q1.1 R1: the three two-color pairs."""
-    tcan, unet = R_FAMILIES
-    out: dict[str, object] = {}
-    # The three two-color pairs.
-    pairs = ((0.635, 0.6748), (0.635, 0.515), (0.6748, 0.515))
-    for fam, tag in ((tcan, 'tcan'), (unet, 'unet')):
-        for sim, stag in (('s2-smi-a3', 'nf'), ('nominal', 'nom')):
-            xs = [
-                mean_metric(r_cell(records, fam, p, sim), 'velocity_rmse')
-                for p in pairs
-            ]
-            out[f'r1_pairs_{tag}_{stag}'] = [f'{x:.3f}' for x in xs]
-            out[f'r1_pairs_{tag}_{stag}_spread'] = pct(_spread(xs))
-            se = max(shot_se(r_cell(records, fam, p, sim)) for p in pairs)
-            out[f'r1_pairs_{tag}_{stag}_se'] = f'{se:.3f}'
     return out
 
 
@@ -1523,11 +1091,6 @@ def r2_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
     nf_ratios = [
         out[f'r2_{t}_noi_ratio_n{n}'] for t in ('tcan', 'unet') for n in (2, 3)
     ]
-    nom_ratios = [
-        out[f'r2_{t}_nom_ratio_n{n}'] for t in ('tcan', 'unet') for n in (2, 3)
-    ]
-    out |= lo_hi('r2_nf_ratio', nf_ratios, lambda x: f'{x:.0f}')
-    out |= lo_hi('r2_nom_ratio', nom_ratios, lambda x: f'{x:.2f}')
     out['r2_nf_array_wins'] = min(nf_ratios) > 5
     out['r2_nom_parity'] = all(within)
     # Each arm has its own frozen set; equal zero-predictor RMSE shows the
@@ -1589,32 +1152,6 @@ def r4_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
         for f in R4_FAMILIES
         if rmse(f, 'visibility_range') > rmse(f, 'snr_db')
     ] == ['TCAN', 'PatchTransformer (offline)', 'LightGBM']
-    out['r4_lgbm_first'] = NOISE_KNOBS[rank['lightgbm-w91'][0]]
-    out |= lo_hi(
-        'r4_lgbm_oz',
-        [rmse('lightgbm-w91', f) / zero for f in knobs],
-        lambda x: f'{x:.2f}',
-    )
-    out['r4_lgbm_nominal_oz'] = f'{rmse("lightgbm-w91", "nominal") / zero:.2f}'
-    for fam, tag in zip(R4_FAMILIES, ('tcan', 'unet', 'patch', 'lgbm'), strict=True):
-        out[f'r4_{tag}_phase_stress_oz'] = (
-            f'{rmse(fam, "phase_drift_rad_per_sqrt_s", True) / zero:.2f}'
-        )
-        out[f'r4_{tag}_nominal'] = f'{rmse(fam, "nominal"):.3f}'
-        out[f'r4_{tag}_phase_cost'] = sig(
-            rmse(fam, 'phase_drift_rad_per_sqrt_s') / rmse(fam, 'adc_bits'), 2
-        )
-    knob_se = max(
-        shot_se(cells[f, k, False])
-        for f in R4_FAMILIES[:3]
-        for k in knobs
-        if k != 'phase_drift_rad_per_sqrt_s'
-    )
-    out['r4_knob_se_max'] = f'{knob_se:.3f}'
-    unet = R_FAMILIES[1]
-    third = [NOISE_KNOBS[f] for f in knobs if ran_third_cycle(cells[unet, f, False])]
-    out['r4_unet_third'] = ' and '.join(third)
-    out['r4_unet_third_named'] = set(third) == {'visibility', 'DC offset'}
     return out
 
 
@@ -1630,7 +1167,6 @@ def r7_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
     }
     # The arms share trajectories, so every arm has the same zero predictor.
     out['r7_zero_shared'] = max(zeros.values()) - min(zeros.values()) < 1e-9
-    out['r7_zero'] = f'{zeros["fiber"]:.3f}'
     for arm, ws in FIBER_ARMS.items():
         row = {'arm': arm}
         for fam, tag in zip(R_FAMILIES, ('tcan', 'unet'), strict=True):
@@ -1660,7 +1196,7 @@ def r7_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
         d = ra - rb
         return float(d.mean()), float(d.std(ddof=1) / math.sqrt(d.size))
 
-    tcan, unet = R_FAMILIES
+    tcan = R_FAMILIES[0]
     for name, a, b in (
         ('cost', 'fiber', 'nominal'),
         ('monitor', 'fiber-monitor', 'fiber-4color'),
@@ -1670,20 +1206,13 @@ def r7_values(records: dict[str, RunRecord], zero: float) -> dict[str, object]:
         d, se = diff(tcan, a, b)
         out[f'r7_tcan_{name}'] = f'{d:+.3f}'
         out[f'r7_tcan_{name}_se'] = f'{se:.3f}'
-        out[f'r7_tcan_{name}_z'] = f'{d / se:+.1f}'
     fiber_oz = [
         mean_metric(r_cell(records, f, ws, arm), 'velocity_rmse') / zeros[arm]
         for f in R_FAMILIES
         for arm, ws in FIBER_ARMS.items()
         if arm != 'nominal'
     ]
-    out |= lo_hi('r7_fiber_oz', fiber_oz, lambda x: f'{x:.2f}')
     out['r7_all_near_zero'] = min(fiber_oz) > 0.9
-    out['r7_unet_none_converged'] = not any(
-        r_cell(records, unet, ws, arm).converged
-        for arm, ws in FIBER_ARMS.items()
-        if arm != 'nominal'
-    )
     out['r7_tcan_all_converged'] = all(
         r_cell(records, tcan, ws, arm).converged for arm, ws in FIBER_ARMS.items()
     )
@@ -1698,16 +1227,6 @@ def sagnac_values() -> dict[str, Any]:
         return next(r for r in rows if r['alpha'] == alpha and r['c0'] == c0)
 
     out = {}
-    for c0, tag in ((0.99, 'c099'), (1.3, 'c13')):
-        r = row(3.0, c0)
-        out |= {
-            f'sagnac_{tag}_ceff': f'{r["c_eff"]:.2f}',
-            f'sagnac_{tag}_avg': f'{r["avg"]:.2f}',
-            f'sagnac_{tag}_best': f'{r["best"]:.2f}',
-            f'sagnac_{tag}_smi': f'{r["smi_phase_gain"]:.2f}',
-        }
-    out['sagnac_c13_swing'] = f'{row(3.0, 1.3)["swing_rad"]:.2f}'
-    out['sagnac_c099_smi_c0'] = f'{row(3.0, 0.99)["smi_phase_gain_c0"]:.1f}'
     # The table of the Q4 section: one row per C_0, cells "avg / best" per alpha.
     alphas = sorted({r['alpha'] for r in rows})
     out['sagnac_table_alpha'] = [f'{a:g}' for a in alphas]
@@ -1762,7 +1281,6 @@ def channel_values() -> dict[str, Any]:
     info02 = [mean_info('0.2', i) for i in range(n_max)]
     out = {
         'ch_fisher_shots': str(data['fisher_shots']),
-        'ch_sign_shots': str(data['sign_shots']),
         'ch_count_seeds': str(len(seeds)),
         'ch_additive_exact': dev < 1e-9,
         'ch_fb_pred_pct': f'{100 * (pf["0.2"] / pf["0"] - 1):.1f}',
@@ -1770,8 +1288,6 @@ def channel_values() -> dict[str, Any]:
         # Seed-to-seed spread of one table entry's ratio.
         'ch_fb_spread_pct': f'{100 * ratios.std(ddof=1, axis=0).mean():.1f}',
         'ch_fb_se_pct': f'{100 * ratios.mean(1).std(ddof=1) / len(seeds) ** 0.5:.1f}',
-        'ch_bound_ratio_n6': f'{(info02[-1] / info02[0]) ** -0.5:.2f}',
-        'ch_bound_ratio_n3': f'{(info02[2] / info02[0]) ** -0.5:.2f}',
         'ch_info_jump_405_pct': f'{100 * (info02[5] / info02[4] - 1):.0f}',
         'ch_info_jump_785_pct': f'{100 * (info02[3] / info02[2] - 1):.0f}',
         'ch_count_table': [
@@ -1819,109 +1335,12 @@ SHIFT_FALSIFY_REALIGN_PCT = 20
 
 
 def shift_values(prior: bounds.StateSpace) -> dict[str, str]:
-    """Q2.3 values from shift_results.json; SEs as in ``ShiftScore``."""
-    scores = shift_scores()
+    """Q2.3 values from shift_results.json and the falsifier thresholds."""
+    nominal = shift_scores()[
+        ('tcan-44k-T90', 'feedback_c', 0.2, SHIFT_DEFAULT_TEST_SEED)
+    ]
     v_rms = prior.empirical_velocity_var**0.5
-    out: dict[str, str] = {'shift_v_rms': sig(v_rms, 2)}
-    # Test (a): shared-phase local information at the scored configurations.
-    phase = json.loads((RESULTS_DIR / 'channel_analytics.json').read_text())['q2_phase']
-    info = {r['tag']: r['info'] / phase['nominal_independent'] for r in phase['rows']}
-    sign = {r['tag']: r['sign_nats_per_shot'] for r in phase['rows']}
-    out |= {
-        'shift_info_lo_pct': f'{100 * (min(info.values()) - 1):+.0f}',
-        'shift_info_hi_pct': f'{100 * (max(info.values()) - 1):+.0f}',
-        'shift_info_zero_pct': f'{100 * (info["phase_offset=0"] - 1):+.0f}',
-        'shift_sign_zero_ratio': (
-            f'{sign["phase_offset=0"] / phase["nominal_sign_nats_per_shot"]:.2f}'
-        ),
-        'shift_sign_max_ratio': (
-            f'{max(sign.values()) / phase["nominal_sign_nats_per_shot"]:.0f}'
-        ),
-        'shift_n_random': str(sum(t.startswith('phase_random') for t in info)),
-    }
-    rho_max = 0.0
-    tags = {'tcan-44k-T90': 'tcan', 'unettransformer-offline-44k-T90': 'unet'}
-    for family in SHIFT_FAMILIES:
-        t = tags[family]
-
-        def at(
-            knob: str,
-            value: float,
-            seed: int = SHIFT_DEFAULT_TEST_SEED,
-            family: str = family,
-        ) -> ShiftScore:
-            return scores[(family, knob, value, seed)]
-
-        nominal = at('feedback_c', 0.2)
-        c_sweep = {
-            k[2]: v for k, v in scores.items() if k[:2] == (family, 'feedback_c')
-        }
-        best_c = min(c_sweep, key=lambda c: c_sweep[c].rmse)
-        eps_max = 0.01
-        predicted = math.sqrt(
-            nominal.rmse**2 + (eps_max / (1 + eps_max)) ** 2 * v_rms**2
-        )
-        wave = [
-            (scores[k].rmse - nominal.rmse) / nominal.se
-            for k in scores
-            if k[0] == family
-            and k[1] in ('wavelength_scale', 'wavelength_independent')
-            and k[3] == SHIFT_DEFAULT_TEST_SEED
-        ]
-        second = at('wavelength_independent', 0.0, 2000)
-        zero = at('phase_offset', 0.0, 2000)
-        phase_dev = [
-            (scores[k].rmse - nominal.rmse) / nominal.se
-            for k in scores
-            if k[:2] == (family, 'phase_offset') and k[3] == SHIFT_DEFAULT_TEST_SEED
-        ]
-        rand_tags = sorted(
-            (k for k in info if k.startswith('phase_random')),
-            key=lambda k: int(k.partition('=')[2]),
-        )
-        rand = [at('phase_random', float(k.partition('=')[2])) for k in rand_tags]
-        err = np.array([r.rmse for r in rand])
-        mean_se = float(np.mean([r.se for r in rand]))
-        for feature in (info, sign):
-            rho = spearmanr([feature[k] for k in rand_tags], err).statistic
-            rho_max = max(rho_max, abs(float(rho)))
-        zero1 = at('phase_offset', 0.0)
-        out |= {
-            f'shift_{t}_rand_mean': sig(float(err.mean()), 3),
-            f'shift_{t}_rand_mean_se': sig(float(err.std(ddof=1)) / len(err) ** 0.5, 1),
-            f'shift_{t}_rand_spread_se': f'{err.std(ddof=1) / mean_se:.1f}',
-            f'shift_{t}_rand_min': sig(float(err.min()), 3),
-            f'shift_{t}_rand_max': sig(float(err.max()), 3),
-            f'shift_{t}_zero1': sig(zero1.rmse, 3),
-            f'shift_{t}_zero1_ratio': f'{zero1.rmse / nominal.rmse:.1f}',
-            f'shift_{t}_best_c_se': (
-                f'{abs(c_sweep[best_c].rmse - nominal.rmse) / nominal.se:.1f}'
-            ),
-            f'shift_{t}_eps_pred_se': (
-                f'{(predicted - nominal.rmse) / nominal.se:.1f}'
-            ),
-            f'shift_{t}_phase3_pct': (
-                f'{100 * (1 - at("phase_offset", 3.0).rmse / nominal.rmse):.0f}'
-            ),
-            f'shift_{t}_phase2_pct': (
-                f'{100 * (1 - at("phase_offset", 2.0).rmse / nominal.rmse):.0f}'
-            ),
-            f'shift_{t}_nominal': sig(nominal.rmse, 3),
-            f'shift_{t}_se': sig(nominal.se, 1),
-            f'shift_{t}_best_c': f'{best_c:g}',
-            f'shift_{t}_c005_ratio': f'{c_sweep[0.05].rmse / nominal.rmse:.1f}',
-            f'shift_{t}_c05_ratio': f'{c_sweep[0.5].rmse / nominal.rmse:.1f}',
-            f'shift_{t}_eps_cross': f'{nominal.rmse / v_rms:.2f}',
-            f'shift_{t}_eps_pred_pct': f'{100 * (predicted / nominal.rmse - 1):.1f}',
-            f'shift_{t}_wave_max_se': f'{max(abs(w) for w in wave):.1f}',
-            f'shift_{t}_nominal2': sig(second.rmse, 3),
-            f'shift_{t}_zero2': sig(zero.rmse, 3),
-            f'shift_{t}_zero2_ratio': f'{zero.rmse / second.rmse:.2f}',
-            f'shift_{t}_zero2_se': f'{(zero.rmse - second.rmse) / second.se:.0f}',
-            f'shift_{t}_phase_lo_se': f'{min(phase_dev):.0f}',
-            f'shift_{t}_phase_hi_se': f'{max(phase_dev):.0f}',
-        }
-    out['shift_rho_max'] = f'{rho_max:.1f}'
+    out = {'shift_tcan_eps_cross': f'{nominal.rmse / v_rms:.2f}'}
     # Q2.3 real-data falsifier thresholds, in percent of the frozen model's
     # real error: a temperature-only change above the first falsifies the
     # scale prediction; a realignment that halves C below the second
@@ -2004,16 +1423,7 @@ def q2_analytic_values(
     cfg = SimConfig.nominal(
         STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, NOMINAL_C, NOMINAL_ALPHA
     )
-    at30 = _bounds_at(prior, cfg, snr_db=30.0)[0]
-    lo, hi = cfg.visibility_range
-    out |= {
-        'an_snr_10db_ratio': sig(_bounds_at(prior, cfg, snr_db=20.0)[0] / at30, 3),
-        'an_vis_info_pct': f'{100 * (1 - (lo * lo + lo * hi + hi * hi) / 3):.0f}',
-        'an_vis_ratio': sig(
-            at30 / _bounds_at(prior, cfg, visibility_range=(1.0, 1.0))[0], 3
-        ),
-        'an_snr_nominal': f'{cfg.snr_db:.0f}',
-    }
+    out |= {'an_snr_nominal': f'{cfg.snr_db:.0f}'}
     return out
 
 
@@ -2066,22 +1476,97 @@ def fiber_values() -> dict[str, Any]:
     }
 
 
+def fiber_sweep_values() -> dict[str, Any]:
+    """Q3 degradation: per-knob reference vs TCAN, and the fading hypotheses."""
+    mech = json.loads((RESULTS_DIR / 'fiber_sweep_mechanism.json').read_text('utf-8'))
+    ref = json.loads((RESULTS_DIR / 'fiber_sweep_analytics.json').read_text('utf-8'))
+    pts, sweep = ref['points'], mech['sweep']
+    base = 'modes-1'
+    knobs = [
+        ('M', [1, 2, 4, 8], 'modes'),
+        ('speckle', [0.1, 0.3, 1, 3], 'speckle'),
+        ('path', [0.1, 0.3, 1, 2.8], 'path'),
+    ]
+    rows = []
+    for knob, values, stem in knobs:
+        for v in values:
+            name = f'{stem}-{v:g}'
+            net = sweep[name]['rmse'] ** 2 - sweep[base]['rmse'] ** 2
+            refx = pts[name]['rmse'] ** 2 - pts[base]['rmse'] ** 2
+            rows.append(
+                {
+                    'knob': knob,
+                    'value': f'{v:g}',
+                    'ref_ratio': f'{pts[name]["mse_ratio_to_free_space"]:.2f}',
+                    'ref_excess': f'{refx * 1e3:.1f}',
+                    'tcan': f'{sweep[name]["rmse"]:.3f}',
+                    'tcan_si': f'{sweep[name]["rmse_sign_invariant"]:.3f}',
+                    'tcan_excess': f'{net * 1e3:.1f}',
+                }
+            )
+    hyp = mech['fading_hypotheses']
+    shots = mech['per_shot']
+    hrows = [
+        {
+            'm': name.split('-')[1],
+            'c_eff': f'{h["feedback_c_eff"]:.3f}',
+            'snr_loss': f'{h["snr_loss_db"]:.1f}',
+            'observed': f'{h["observed_retention"]:.2f}',
+            'h1': f'{h["h1_c_sweep_retention"]:.2f}',
+            'h2': f'{h["h2_snr_retention"]:.2f}',
+            'h1s': f'{h["h1_sign_evidence_retention"]:.2f}',
+            'r_speed': f'{shots[name]["corr_excess_mse_vs_speed"]:.2f}'
+            if name in shots
+            else '',
+            'r_amp': f'{shots[name]["corr_excess_mse_vs_amplitude"]:+.2f}'
+            if name in shots
+            else '',
+            'median': f'{shots[name]["median_rmse_faded"]:.3f}'
+            if name in shots
+            else f'{shots["modes-8"]["median_rmse_base"]:.3f}',
+        }
+        for name, h in hyp.items()
+    ]
+    probe = mech['rescale_probe']
+    sel = 'modes-1_model_on_modes-8'
+    return {
+        'fs_table': rows,
+        'fs_hyp_table': hrows,
+        'fs_zero': f'{mech["zero_predictor"]:.3f}',
+        'fs_nominal': f'{sweep["nominal"]["rmse"]:.3f}',
+        'fs_probe_raw': f'{probe[sel]["raw"]:.3f}',
+        'fs_probe_rescaled': f'{probe[sel]["rescaled"]:.3f}',
+        'fs_color_corr': sig(
+            shots['modes-8']['max_abs_corr_between_color_amplitudes'], 1
+        ),
+        # Guards for the prose: the fading cost exceeds every hypothesis'.
+        'fs_fading_unexplained': all(
+            h['observed_retention']
+            < min(
+                h['h1_c_sweep_retention'],
+                h['h2_snr_retention'],
+                h['h1_sign_evidence_retention'],
+            )
+            for n, h in hyp.items()
+            if n != base
+        ),
+        'fs_no_sign_flips': all(
+            abs(p['rmse'] - p['rmse_sign_invariant']) < 0.005 for p in sweep.values()
+        ),
+        'fs_speckle_free': max(
+            sweep[f'speckle-{r:g}']['rmse'] for r in (0.1, 0.3, 1, 3)
+        )
+        - sweep[base]['rmse']
+        < 0.005,
+    }
+
+
 def diagnosis_values() -> dict[str, Any]:
     """Q3.1 and Q3.2: the reference RMSE and the training-failure checks."""
     data = json.loads((RESULTS_DIR / 'fiber_diagnosis.json').read_text('utf-8'))
     ref = data['reference_rmse']
     full = 'fading=True_speckle=True_path=True'
     no_path = 'fading=True_speckle=True_path=False'
-    probes = data['probes']
-    tcan = 'tcan-44k__ch635-675-515__fiber__seed0'
-    unet = 'unettransformer-offline-44k__ch635-675-515__fiber__seed0'
-    static = [p['static_fiber'] / p['zero_predictor'] for p in probes.values()]
-    rescaled = [
-        v['rescaled'] / probes[k]['zero_predictor']
-        for k, v in data['remedy_as_trained_rescaled'].items()
-    ]
-    inverse = data['check_a_inverse_fit_static']
-    check_b = data['check_b_static_rescaled']['fiber']
     return {
         'dg_ref_fs': sig(ref['nominal'][full]['rmse'], 2),
         'dg_ref_fiber': sig(ref['fiber'][full]['rmse'], 2),
@@ -2092,78 +1577,58 @@ def diagnosis_values() -> dict[str, Any]:
         'dg_ratio_pbs': sig(ref['fiber-pbs'][full]['mse_ratio_to_free_space'], 2),
         'dg_ratio_nopath': sig(ref['fiber'][no_path]['mse_ratio_to_free_space'], 2),
         'dg_shots': str(data['n_shots']),
-        'dg_zero': f'{probes[tcan]["zero_predictor"]:.4f}',
-        'dg_tcan_static': f'{probes[tcan]["static_fiber"]:.3f}',
-        'dg_unet_static': f'{probes[unet]["static_fiber"]:.3f}',
-        **lo_hi('dg_static_oz', static, lambda x: f'{x:.2f}'),
-        **lo_hi('dg_rescaled_oz', rescaled, lambda x: f'{x:.2f}'),
-        'dg_tcan_rescaled': f'{check_b[f"fiber-trained:{tcan}"]["rescaled"]:.3f}',
-        'dg_inverse_nominal': sig(inverse['nominal']['inverse_fit'], 3),
-        'dg_inverse_fiber': sig(inverse['fiber']['inverse_fit'], 3),
     }
 
 
-def flow_values() -> dict[str, Any]:
-    """Q3.3 and Q3.4: the R8 flow-matching scores, from scripts/flow.py's JSON."""
+def flow_values(records: dict[str, RunRecord]) -> dict[str, Any]:
+    """Q3.3 and Q3.4: the R8 flow-matching scores, from scripts/flow.py's JSON.
+
+    The encoder flows (``_enc`` keys) are the scored method.
+    """
     data = json.loads((RESULTS_DIR / 'flow_results.json').read_text('utf-8'))
-    den = data['q3_3_denoise']
+    den = data['q3_3_denoise_enc']
     rmse = {k: v['mean'] for k, v in den['velocity_rmse'].items()}
     check = den['sampling_check']
-    post = data['q3_4_posterior']
-    nom, fib = post['nominal'], post['fiber']
-    ens = nom['deep_ensemble']
-    return {
+    sign = data['q3_4_posterior_sign_enc']
+    rows = flow_rows(records)
+    out: dict[str, Any] = {
         'fl_den_chain': f'{rmse["free_tcan_on_denoised_fiber"]:.3f}',
         'fl_den_fiber': f'{rmse["fiber_tcan_on_fiber"]:.3f}',
-        'fl_den_free_raw': f'{rmse["free_tcan_on_fiber"]:.3f}',
-        'fl_den_free_fs': f'{rmse["free_tcan_on_free_space"]:.3f}',
-        'fl_den_draws': str(den['sampling']['n_samples']),
-        'fl_den_draws_half': str(den['sampling']['n_samples'] // 2),
-        'fl_den_draws_change': f'{100 * check["draws_rel_change"]:.1f}',
-        'fl_den_steps_change': sig(100 * check['steps_rel_change'], 1),
-        'fl_plateau_rtol': pct(check['plateau_rtol']),
-        'fl_den_draws_plateau': check['draws_plateau'],
         'fl_den_steps_plateau': check['steps_plateau'],
+        'fl_den_beats_fiber': rmse['free_tcan_on_denoised_fiber']
+        < rmse['fiber_tcan_on_fiber'],
         'fl_shots': str(den['test_set']['n_shots']),
-        'fl_post_draws': str(nom['sampling']['n_samples']),
-        'fl_post_fs': f'{nom["posterior_mean_velocity_rmse"]["mean"]:.3f}',
-        'fl_post_fiber': f'{fib["posterior_mean_velocity_rmse"]["mean"]:.3f}',
-        'fl_tcan_fs': f'{nom["best_regressor"]["velocity_rmse"]["mean"]:.3f}',
-        'fl_tcan_fiber': f'{fib["best_regressor"]["velocity_rmse"]["mean"]:.3f}',
-        'fl_ens_fs': f'{ens["velocity_rmse"]["mean"]:.3f}',
-        'fl_ens_seeds': str(len(ens['members'])),
-        'fl_band': pct(nom['band_level']),
-        'fl_cov_fs': sig(nom['coverage'], 2),
-        'fl_cov_fiber': sig(fib['coverage'], 2),
-        'fl_cov_ens': sig(ens['coverage'], 2),
-        'fl_crps_fs': sig(nom['crps_um_per_ms']['mean'], 2),
-        'fl_crps_fiber': sig(fib['crps_um_per_ms']['mean'], 2),
-        'fl_crps_ens': sig(ens['crps_um_per_ms']['mean'], 2),
-        'fl_multi_fs': sig(nom['multimodal_fraction'], 2),
-        'fl_multi_fiber': sig(fib['multimodal_fraction'], 2),
-        'fl_sign_split_all': nom['sign_split_fraction'] == 1.0
-        and fib['sign_split_fraction'] == 1.0,
-        'fl_sign_split_min': pct(nom['sign_split_min']),
+        'fl_sign_fs': pct(
+            sign['nominal']['sign_structure'][0]['shot_majority_agreement']
+        ),
+        'fl_head_gain': sig(rows['tcan'].fs / rows['head'].fs, 2),
+        'fl_flow_gain_pct': pct(1 - rows['flow'].fs / rows['head'].fs),
     }
+    for name, row in rows.items():
+        out[f'fl_{name}_label'] = row.label
+        out[f'fl_{name}_field'] = f'{row.field:,}'
+        out[f'fl_{name}_params'] = f'{row.params:,}'
+        for field in dataclasses.fields(row)[3:]:
+            x = getattr(row, field.name)
+            out[f'fl_{name}_{field.name}'] = '--' if x is None else f'{x:.3f}'
+        for field in ('coverage_fs', 'coverage_fiber'):
+            x = getattr(row, field)
+            out[f'fl_{name}_{field}'] = '--' if x is None else sig(x, 2)
+    return out
 
 
-def r8_values(shot_s: float) -> dict[str, str]:
+ARMS2 = ('nominal', 'fiber')
+
+
+def r8_values(shot_s: float) -> dict[str, str | bool]:
     """Q3.3 and Q3.4 analytic values: arithmetic on the R8 fiber operating point."""
     fiber = R8_FIBER
-    rate = SimConfig.nominal(
-        STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, NOMINAL_C, NOMINAL_ALPHA
-    ).sample_rate
-    sigma_p = fiber.path_drift_um_per_sqrt_s
+    path_shot = fiber.path_drift_um_per_sqrt_s * math.sqrt(shot_s)
     return {
         'r8_modes': str(fiber.n_modes),
-        'r8_speckle_drift': f'{fiber.drift_rad_per_sqrt_s:g}',
-        'r8_path_drift': f'{sigma_p:g}',
-        'r8_shot_ms': sig(1000 * shot_s, 3),
-        'r8_path_shot_um': sig(sigma_p * math.sqrt(shot_s), 2),
-        # A white random-walk increment over one sample, read as a velocity.
-        'r8_path_velocity': sig(sigma_p * math.sqrt(rate) / 1000, 2),
-        'r8_half_lam_lo': sig(min(SYNTHETIC_WAVELENGTHS_UM) / 2, 2),
-        'r8_half_lam_hi': sig(max(SYNTHETIC_WAVELENGTHS_UM) / 2, 2),
+        'r8_path_shot_um': sig(path_shot, 2),
+        # The text: the drift over one shot exceeds a fringe at every color.
+        'r8_path_over_fringe': path_shot > max(SYNTHETIC_WAVELENGTHS_UM) / 2,
         'r8_coe': sig(2 / (2 * fiber.n_modes + 1), 2),
     }
 
@@ -2176,16 +1641,7 @@ def main() -> None:
     prior = bounds.motion_prior(
         SimConfig.nominal(STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA)
     )
-    causal_k1, _ = nominal_bounds(prior, SYNTHETIC_WAVELENGTHS_UM[:1])
-    causal_k3, offline_k3 = nominal_bounds(prior, SYNTHETIC_WAVELENGTHS_UM)
-    info = [
-        bounds.expected_information(
-            SimConfig.nominal(
-                STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM[:k], NOMINAL_C, NOMINAL_ALPHA
-            )
-        )
-        for k in (1, 3)
-    ]
+    causal_k3, _ = nominal_bounds(prior, SYNTHETIC_WAVELENGTHS_UM)
     real = real_tcn_rmse()
     records = synthetic_records()
     # The alpha = 0 control's test set, whose signed-MSE optimum is zero.
@@ -2197,31 +1653,8 @@ def main() -> None:
 
     values = {
         'prior_psd_rms_db': sig(prior.psd_rms_db, 2),
-        'prior_velocity_std': sig(prior.velocity_var() ** 0.5, 3),
         'phase_factor_c02': sig(bounds.phase_factor(0.2, NOMINAL_ALPHA), 3),
         'phase_factor_c07': sig(bounds.phase_factor(0.7, NOMINAL_ALPHA), 3),
-        'causal_k3': sig(causal_k3, 2),
-        'offline_k3': sig(offline_k3, 2),
-        'info_ratio_k3_k1': sig(info[1] / info[0], 2),
-        'causal_ratio_k3_k1': sig(causal_k3 / causal_k1, 2),
-        # The bounds caption: what feedback over its whole range does to the
-        # three-channel causal bound, beside what the extra channels do.
-        'causal_ratio_c09_c0': sig(
-            velocity_bounds(
-                prior,
-                SimConfig.nominal(
-                    STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.9, NOMINAL_ALPHA
-                ),
-            )[0]
-            / velocity_bounds(
-                prior,
-                SimConfig.nominal(
-                    STEMLAB_125_14, SYNTHETIC_WAVELENGTHS_UM, 0.0, NOMINAL_ALPHA
-                ),
-            )[0],
-            2,
-        ),
-        'real_tcn_rmse': sig(real, 4),
         'real_gap': f'{real / causal_k3:.0f}',
         **real_values(),
         **exit_check_values(records),
@@ -2243,12 +1676,12 @@ def main() -> None:
         **q2_analytic_values(records, prior),
         **fiber_values(),
         **r1_values(records, zero),
-        **r1_pair_values(records),
         **r2_values(records, zero),
         **r4_values(records, zero),
         **r7_values(records, zero),
         **diagnosis_values(),
-        **flow_values(),
+        **fiber_sweep_values(),
+        **flow_values(records),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(values, indent=1) + '\n', encoding='utf-8')
