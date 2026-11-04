@@ -41,14 +41,14 @@ def test_committed_index_matches_arrays():
     arrays = np.load(example_shots.NPZ)
     syn = index['synthetic']
     assert list(syn['arms']) == list(example_shots.ARMS)
+    assert list(syn['sweep_arms']) == list(example_shots.SWEEP_ARMS)
+    every = {**syn['arms'], **syn['sweep_arms']}
     # Paired arms: the same shots, ordered by excursion.
-    shots = [
-        {k: s['shot'] for k, s in arm['shots'].items()} for arm in syn['arms'].values()
-    ]
-    assert shots[0] == shots[1]
+    shots = [{k: s['shot'] for k, s in arm['shots'].items()} for arm in every.values()]
+    assert all(s == shots[0] for s in shots)
     p2p = [s['displacement_p2p_um'] for s in syn['arms']['nominal']['shots'].values()]
     assert p2p == sorted(p2p)
-    for arm, info in syn['arms'].items():
+    for arm, info in every.items():
         for kind, entry in info['shots'].items():
             tag = f'{arm}/{kind}'
             assert arrays[f'{tag}/signals'].shape[0] == len(info['wavelengths_um'])

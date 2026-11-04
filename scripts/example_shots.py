@@ -5,8 +5,12 @@ the nominal arm's frozen test set, and the same shots in the q3_fiber fiber
 arm, whose motion is drawn identically (paired). For each it stores the
 photodiode inputs, the target velocity and displacement, and the predictions
 of TCAN-44k, UNetTransformer-offline-44k and, where its checkpoint loads, the
-R8 posterior flow (mean and 90% band). The figures read only these arrays:
-running models is not work a document build should repeat.
+R8 conditioning-encoder posterior flow (mean and 90% band) and that flow's
+encoder head alone as a deterministic regressor. The same shots also run
+through two q3_fiber_sweep arms, a low-impairment and a high-fading static
+fiber, scored by their TCAN-44k, so fiber degradation shows by eye. The
+figures read only these arrays: running models is not work a document build
+should repeat.
 
 Traces are stored decimated by ``DECIMATE`` (plain subsampling: these are for
 the eye, and the fringes are what the zoom window keeps at full rate).
@@ -45,10 +49,10 @@ from smi.data.schema import (
     read_sample_rate,
 )
 from smi.experiments.evaluate import CheckpointEstimator
-from smi.experiments.flow_eval import PosteriorEstimator, align_signs
-from smi.experiments.flow_runner import POSTERIOR_SAMPLING, POSTERIORS, checkpoint
+from smi.experiments.flow_eval import EncoderEstimator, PosteriorEstimator
+from smi.experiments.flow_runner import POSTERIOR_SAMPLING, POSTERIORS_ENC, checkpoint
 from smi.experiments.grids import GRIDS
-from smi.experiments.runner import expand_grid, trained_checkpoint
+from smi.experiments.runner import Cell, expand_grid, trained_checkpoint
 from smi.learning.flow_lit_module import FlowLitModule
 from smi.theory.coil_driver import CoilDriver
 
@@ -57,6 +61,9 @@ logger = logging.getLogger(__name__)
 GRID = 'q3_fiber'
 ARMS = ('nominal', 'fiber')
 FAMILIES = ('tcan-44k', 'unettransformer-offline-44k')
+#: q3_fiber_sweep arms at the two ends of coupling fading, TCAN-44k only.
+SWEEP_GRID = 'q3_fiber_sweep'
+SWEEP_ARMS = ('modes-1', 'modes-8')
 #: Shot types, by quantile of displacement peak-to-peak over the test set.
 SHOT_QUANTILES = {'low': 0.1, 'mid': 0.5, 'high': 0.9}
 DECIMATE = 16
@@ -130,8 +137,8 @@ def _shot_entry(
     }
 
 
-def _flow(arm: str, device: str) -> PosteriorEstimator | None:
-    path = checkpoint(POSTERIORS[arm])
+def _flow(arm: str, device: str) -> FlowLitModule | None:
+    path = checkpoint(POSTERIORS_ENC[arm])
     try:
         module = FlowLitModule.load_from_checkpoint(
             path, map_location=device, fit_norm_stats=False
@@ -139,7 +146,7 @@ def _flow(arm: str, device: str) -> PosteriorEstimator | None:
     except (FileNotFoundError, RuntimeError, KeyError, TypeError) as err:
         logger.warning(f'{arm}: flow {path} did not load ({err}); no band')
         return None
-    return PosteriorEstimator(module, POSTERIOR_SAMPLING, f'flow:{arm}')
+    return module
 
 
 def _read(path: Path, keys: list[str], idx: list[int]) -> tuple[Tensor, Tensor]:
@@ -149,65 +156,109 @@ def _read(path: Path, keys: list[str], idx: list[int]) -> tuple[Tensor, Tensor]:
     return torch.from_numpy(signals.astype(np.float32)), torch.from_numpy(velocity)
 
 
+def _arm(
+    out: dict[str, np.ndarray],
+    arm: str,
+    cells: dict[str, Cell],
+    grid: str,
+    picks: dict[str, int],
+    p2p: np.ndarray,
+    sample_rate: float,
+    device: str,
+    with_flow: bool,
+) -> dict[str, object]:
+    """Run ``cells`` (family -> cell) of one arm on the picked shots; store them."""
+    sim = next(iter(cells.values())).sim
+    test = GRIDS[grid].test_set
+    keys = pd_keys(sim.wavelengths_um)
+    if sim.n_signal_channels > len(keys):
+        keys += [k + PERP_SUFFIX for k in keys]
+    dataset = load_or_create(sim, test.seed, test.n_shots, FROZEN_DIR)
+    signals, velocity = _read(dataset, keys, list(picks.values()))
+    preds = {}
+    for family, cell in cells.items():
+        ckpt = trained_checkpoint(cell, grid, GRID_RUNS_DIR)
+        est = CheckpointEstimator(ckpt, device)
+        preds[family] = est.predict_velocity(signals, sim.wavelengths_um)
+    band = None
+    module = _flow(arm, device) if with_flow else None
+    if module is not None:
+        flow = PosteriorEstimator(module, POSTERIOR_SAMPLING, f'flow:{arm}')
+        flow.predict_velocity(signals, sim.wavelengths_um)
+        draws = flow.draws[0]
+        preds['flow'] = draws.mean(0)
+        preds['head'] = EncoderEstimator(module, f'head:{arm}').predict_velocity(
+            signals, sim.wavelengths_um
+        )
+        band = (
+            torch.quantile(draws, BAND[0], dim=0),
+            torch.quantile(draws, BAND[1], dim=0),
+        )
+    shots = {
+        kind: {
+            'shot': shot,
+            'displacement_p2p_um': float(p2p[shot]),
+            **_shot_entry(
+                out,
+                f'{arm}/{kind}',
+                signals[i],
+                velocity[i],
+                sample_rate,
+                {k: v[i] for k, v in preds.items()},
+                None if band is None else (band[0][i], band[1][i]),
+            ),
+        }
+        for i, (kind, shot) in enumerate(picks.items())
+    }
+    return {
+        'dataset': dataset.name,
+        'wavelengths_um': list(sim.wavelengths_um),
+        'channels': keys,
+        'shots': shots,
+    }
+
+
 def synthetic(device: str, out: dict[str, np.ndarray]) -> dict[str, object]:
     cells = {(c.sim_name, c.family): c for c in expand_grid(GRIDS[GRID])}
     nominal = cells['nominal', FAMILIES[0]].sim
     test = GRIDS[GRID].test_set
     path = load_or_create(nominal, test.seed, test.n_shots, FROZEN_DIR)
     with h5py.File(path, 'r') as f:
-        disp = np.asarray(f[DISPLACEMENT_KEY])
+        p2p = np.ptp(np.asarray(f[DISPLACEMENT_KEY]), axis=1)
         sample_rate = read_sample_rate(f.attrs)
-    picks = select_shots(np.ptp(disp, axis=1), SHOT_QUANTILES)
-    idx = list(picks.values())
-    arms: dict[str, object] = {}
-    for arm in ARMS:
-        sim = cells[arm, FAMILIES[0]].sim
-        keys = pd_keys(sim.wavelengths_um)
-        if sim.n_signal_channels > len(keys):
-            keys += [k + PERP_SUFFIX for k in keys]
-        dataset = load_or_create(sim, test.seed, test.n_shots, FROZEN_DIR)
-        signals, velocity = _read(dataset, keys, idx)
-        preds = {}
-        for family in FAMILIES:
-            cell = cells[arm, family]
-            ckpt = trained_checkpoint(cell, GRID, GRID_RUNS_DIR)
-            est = CheckpointEstimator(ckpt, device)
-            preds[family] = est.predict_velocity(signals, cell.wavelengths_um)
-        band = None
-        flow = _flow(arm, device)
-        if flow is not None:
-            flow.predict_velocity(signals, sim.wavelengths_um)
-            # The flow is not sign-aware (its draws split between the two
-            # directions), so each draw takes UNetTransformer's global sign
-            # before the band: a hybrid, labelled as such in the figure.
-            draws = align_signs(flow.draws[0], preds[FAMILIES[1]], None)
-            preds['flow'] = draws.mean(0)
-            band = (
-                torch.quantile(draws, BAND[0], dim=0),
-                torch.quantile(draws, BAND[1], dim=0),
-            )
-        shots = {}
-        for i, (kind, shot) in enumerate(picks.items()):
-            shots[kind] = {
-                'shot': shot,
-                'displacement_p2p_um': float(np.ptp(disp[shot])),
-                **_shot_entry(
-                    out,
-                    f'{arm}/{kind}',
-                    signals[i],
-                    velocity[i],
-                    sample_rate,
-                    {k: v[i] for k, v in preds.items()},
-                    None if band is None else (band[0][i], band[1][i]),
-                ),
-            }
-        arms[arm] = {
-            'dataset': dataset.name,
-            'wavelengths_um': list(sim.wavelengths_um),
-            'channels': keys,
-            'shots': shots,
-        }
-    return {'sample_rate_hz': sample_rate, 'arms': arms}
+    picks = select_shots(p2p, SHOT_QUANTILES)
+    arms = {
+        arm: _arm(
+            out,
+            arm,
+            {fam: cells[arm, fam] for fam in FAMILIES},
+            GRID,
+            picks,
+            p2p,
+            sample_rate,
+            device,
+            with_flow=True,
+        )
+        for arm in ARMS
+    }
+    # The sweep's frozen sets draw the same motion as q3_fiber's (paired), so
+    # the picked shot indices are the same shots.
+    sweep = {(c.sim_name, c.family): c for c in expand_grid(GRIDS[SWEEP_GRID])}
+    sweep_arms = {
+        arm: _arm(
+            out,
+            arm,
+            {FAMILIES[0]: sweep[arm, FAMILIES[0]]},
+            SWEEP_GRID,
+            picks,
+            p2p,
+            sample_rate,
+            device,
+            with_flow=False,
+        )
+        for arm in SWEEP_ARMS
+    }
+    return {'sample_rate_hz': sample_rate, 'arms': arms, 'sweep_arms': sweep_arms}
 
 
 def real(device: str, out: dict[str, np.ndarray]) -> dict[str, object]:

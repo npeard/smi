@@ -3,7 +3,9 @@
 Reads ``report/results/example_shots.{npz,json}`` (``scripts/example_shots.py``);
 never runs a model. One column per arm, rows sharing time: the photodiode
 inputs, velocity, displacement, then a full-rate zoom of the inputs and of the
-velocity where the fringes are densest.
+velocity where the fringes are densest. The fiber-sweep figure instead puts
+every shot type in one figure, a zoom of the inputs over the whole-shot
+velocity for each, one column per sweep arm.
 """
 
 from __future__ import annotations
@@ -22,12 +24,16 @@ INDEX = RESULTS_DIR / 'example_shots.json'
 MODEL_STYLE = {
     'tcan-44k': ('TCAN (causal)', 'C0'),
     'unettransformer-offline-44k': ('UNetTransformer (offline)', 'C4'),
-    'flow': ('flow posterior mean, 90% band (sign from UNetT)', 'C8'),
+    'head': ('encoder head (whole-shot regressor)', 'C5'),
+    'flow': ('flow posterior mean, 90% band', 'C8'),
 }
+SHOT_KINDS = ('low', 'mid', 'high')
 ARM_TITLE = {
     'nominal': 'free space',
     'fiber': 'multimode fiber',
     'real': 'real free space',
+    'modes-1': 'fiber, 1 mode, static',
+    'modes-8': 'fiber, 8 modes, static',
 }
 
 
@@ -171,5 +177,55 @@ def plot_real(output: Path) -> None:
             idx['decimate'],
         )
         axes[0, col].set_title(f'{kind} excursion, shot {entry["shot"]}')
+    _legend(fig, axes)
+    save(fig, output)
+
+
+def plot_sweep(output: Path) -> None:
+    """Each shot type at the low- and high-fading fiber-sweep arms."""
+    idx = index()
+    syn = idx['synthetic']
+    arrays = np.load(NPZ)
+    arms = list(syn['sweep_arms'])
+    kinds = list(SHOT_KINDS)
+    ms = 1e3 / syn['sample_rate_hz']
+    fig, axes = plt.subplots(
+        2 * len(kinds), len(arms), figsize=(7.0, 8.4), layout='constrained'
+    )
+    for col, arm in enumerate(arms):
+        info = syn['sweep_arms'][arm]
+        for row, kind in enumerate(kinds):
+            entry = info['shots'][kind]
+            tag = f'{arm}/{kind}'
+            ax_in, ax_v = axes[2 * row, col], axes[2 * row + 1, col]
+            zsig = arrays[f'{tag}/signals_zoom']
+            tz = (entry['zoom_start'] + np.arange(zsig.shape[-1])) * ms
+            for i, w in enumerate(info['wavelengths_um']):
+                ax_in.plot(
+                    tz,
+                    zsig[i],
+                    color=CHANNEL_COLORS[i % len(CHANNEL_COLORS)],
+                    lw=0.7,
+                    label=f'{w * 1e3:.0f} nm',
+                )
+            v = arrays[f'{tag}/velocity']
+            t = np.arange(v.size) * idx['decimate'] * ms
+            ax_v.plot(t, v, color='k', lw=1.1, label='target', zorder=3)
+            label, color = MODEL_STYLE['tcan-44k']
+            ax_v.plot(
+                t, arrays[f'{tag}/tcan-44k/velocity'], color=color, lw=0.7, label=label
+            )
+            ax_v.axvspan(tz[0], tz[-1], color='0.85', zorder=0)
+            ax_in.set_title(f'{kind} excursion, {ARM_TITLE[arm]}', fontsize=8)
+            if col == 0:
+                ax_in.set_ylabel('photodiode (V)')
+                ax_v.set_ylabel(r'velocity ($\mu$m/ms)')
+            else:
+                ax_v.sharey(axes[2 * row + 1, 0])
+                ax_in.sharey(axes[2 * row, 0])
+            for ax in (ax_in, ax_v):
+                ax.margins(x=0)
+    axes[-1, 0].set_xlabel('time (ms)')
+    axes[-1, 1].set_xlabel('time (ms)')
     _legend(fig, axes)
     save(fig, output)

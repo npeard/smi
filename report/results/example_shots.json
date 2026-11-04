@@ -37,6 +37,7 @@
             "zoom_start": 14828,
             "models": [
               "flow",
+              "head",
               "tcan-44k",
               "unettransformer-offline-44k"
             ],
@@ -48,6 +49,7 @@
             "zoom_start": 1590,
             "models": [
               "flow",
+              "head",
               "tcan-44k",
               "unettransformer-offline-44k"
             ],
@@ -59,6 +61,7 @@
             "zoom_start": 4621,
             "models": [
               "flow",
+              "head",
               "tcan-44k",
               "unettransformer-offline-44k"
             ],
@@ -85,6 +88,7 @@
             "zoom_start": 14828,
             "models": [
               "flow",
+              "head",
               "tcan-44k",
               "unettransformer-offline-44k"
             ],
@@ -96,6 +100,7 @@
             "zoom_start": 1590,
             "models": [
               "flow",
+              "head",
               "tcan-44k",
               "unettransformer-offline-44k"
             ],
@@ -107,10 +112,97 @@
             "zoom_start": 4621,
             "models": [
               "flow",
+              "head",
               "tcan-44k",
               "unettransformer-offline-44k"
             ],
             "band": true
+          }
+        }
+      }
+    },
+    "sweep_arms": {
+      "modes-1": {
+        "dataset": "465408bfd61308bbf5b639f1761d658a81e4bd6a_seed1000_n64.h5",
+        "wavelengths_um": [
+          0.635,
+          0.6748,
+          0.515
+        ],
+        "channels": [
+          "RP1_CH2",
+          "RP2_CH1",
+          "RP2_CH2"
+        ],
+        "shots": {
+          "low": {
+            "shot": 26,
+            "displacement_p2p_um": 0.19225506484508514,
+            "zoom_start": 14828,
+            "models": [
+              "tcan-44k"
+            ],
+            "band": false
+          },
+          "mid": {
+            "shot": 51,
+            "displacement_p2p_um": 0.9916656613349915,
+            "zoom_start": 1590,
+            "models": [
+              "tcan-44k"
+            ],
+            "band": false
+          },
+          "high": {
+            "shot": 4,
+            "displacement_p2p_um": 2.385019540786743,
+            "zoom_start": 4621,
+            "models": [
+              "tcan-44k"
+            ],
+            "band": false
+          }
+        }
+      },
+      "modes-8": {
+        "dataset": "8ea4658c08533caae1c6deac1326d890e3368a8f_seed1000_n64.h5",
+        "wavelengths_um": [
+          0.635,
+          0.6748,
+          0.515
+        ],
+        "channels": [
+          "RP1_CH2",
+          "RP2_CH1",
+          "RP2_CH2"
+        ],
+        "shots": {
+          "low": {
+            "shot": 26,
+            "displacement_p2p_um": 0.19225506484508514,
+            "zoom_start": 14828,
+            "models": [
+              "tcan-44k"
+            ],
+            "band": false
+          },
+          "mid": {
+            "shot": 51,
+            "displacement_p2p_um": 0.9916656613349915,
+            "zoom_start": 1590,
+            "models": [
+              "tcan-44k"
+            ],
+            "band": false
+          },
+          "high": {
+            "shot": 4,
+            "displacement_p2p_um": 2.385019540786743,
+            "zoom_start": 4621,
+            "models": [
+              "tcan-44k"
+            ],
+            "band": false
           }
         }
       }

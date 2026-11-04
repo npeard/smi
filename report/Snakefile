@@ -52,6 +52,7 @@ DOCUMENT_FIGURES = {
         "example_shots_low",
         "example_shots_mid",
         "example_shots_high",
+        "example_shots_sweep",
         "example_shots_real",
     ],
 }
