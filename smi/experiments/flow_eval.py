@@ -763,3 +763,161 @@ def score_posterior_sign(
             ),
         },
     }
+
+
+class EncoderEstimator:
+    """The posterior flow's encoder regression head alone, as a regressor.
+
+    Same backbone, inputs and full-shot training as the flow, but one
+    deterministic pass and no sampling: scoring it separates what the
+    whole-shot backbone gives from what the flow's draws add.
+    """
+
+    causal = False
+
+    def __init__(self, flow: FlowLitModule, name: str):
+        if flow.flow.encoder is None:
+            raise ValueError('this flow has no conditioning encoder')
+        self.flow = flow
+        self.name = name
+        self.model_type = 'flow-encoder-head'
+        self.receptive_field = getattr(flow.flow.encoder, 'receptive_field', None)
+        self.total_params = sum(p.numel() for p in flow.flow.encoder.parameters())
+        self.device = str(flow.device)
+        self.config: dict[str, Any] = {}
+
+    def predict_velocity(
+        self, signals: Tensor, wavelengths_um: tuple[float, ...]
+    ) -> Tensor:
+        """``[B, L]`` velocity from the encoder's first channel."""
+        _check_wavelengths(self.flow, wavelengths_um)
+        with torch.no_grad():
+            guess = self.flow.encoder_guess(signals.to(self.flow.device))
+        return guess[:, 0].cpu()
+
+
+# Spectral share used by high_frequency_fraction: the band holding 99% of the
+# truth's power is where it has structure at all.
+TRUTH_POWER_QUANTILE = 0.99
+
+
+def high_frequency_fraction(x: Tensor, truth: Tensor) -> float:
+    """Power share of ``x`` ``[L]`` above the bin holding 99% of ``truth``'s.
+
+    A posterior mean that tracked detail the signals cannot carry would put
+    more power above that cutoff than the truth does, not less.
+    """
+    power = torch.fft.rfft(truth.double()).abs().pow(2)
+    cut = int(torch.searchsorted(power.cumsum(0) / power.sum(), TRUTH_POWER_QUANTILE))
+    px = torch.fft.rfft(x.double()).abs().pow(2)
+    return float(px[cut + 1 :].sum() / px.sum())
+
+
+# Fresh frozen set for the memorization check: any seed the training stream
+# (2^62 per-step seeds from the run seed) and the norm stats (seed 0) do not
+# single out; the grid's own test set is seed 1000.
+FRESH_TEST_SEED = 2000
+AUDIT_SHOTS = 3
+
+
+def _module_facts(est: Any, crop: int | None) -> dict[str, Any]:
+    return {
+        'total_params': est.total_params,
+        'receptive_field': est.receptive_field,
+        'causal': est.causal,
+        'train_crop_length': crop,
+    }
+
+
+def score_audit(
+    flow: FlowLitModule,
+    grid_name: str,
+    sim_name: str,
+    runs_dir: Path,
+    frozen_root: Path,
+    sampling: Sampling,
+    device: str,
+) -> dict[str, Any]:
+    """Leakage, comparator and sanity checks of one encoder posterior flow.
+
+    * The encoder head alone (:class:`EncoderEstimator`) through ``evaluate``
+      on the arm's test set and on a fresh seed, and the flow's posterior
+      mean on both at ``sampling`` (a memorized test set would score worse
+      on the fresh one).
+    * Size, receptive field and training crop of the flow and the arm's
+      regressors (TCAN and UNetTransformer-offline cells of the grid).
+    * The first ``AUDIT_SHOTS`` test shots: posterior mean, encoder head and
+      TCAN RMSE, posterior std, and the high-frequency power share of the
+      truth, the mean and draw 0.
+    """
+    test, cell, dataset = _arm_setup(flow, grid_name, sim_name, frozen_root, 'audit')
+    wl = cell.wavelengths_um
+    fresh = load_or_create(cell.sim, FRESH_TEST_SEED, test.n_shots, frozen_root)
+    head = EncoderEstimator(flow, f'flow-encoder:{sim_name}')
+    flow_facts = {
+        'total_params': sum(p.numel() for p in flow.flow.parameters()),
+        'encoder_params': head.total_params,
+        'field_params': sum(p.numel() for p in flow.flow.velocity.parameters()),
+        'receptive_field': head.receptive_field,
+        'causal': False,
+        'train_crop_length': flow.train_crop_length,
+    }
+    grid = grids.grid(grid_name)
+    regressors = {}
+    for c in expand_grid(grid):
+        if c.sim_name == sim_name:
+            est = CheckpointEstimator(
+                trained_checkpoint(c, grid_name, runs_dir), device
+            )
+            crop = est.module.hparams.get('train_crop_length')
+            regressors[c.key] = _module_facts(est, crop)
+    tcan = CheckpointEstimator(trained_checkpoint(cell, grid_name, runs_dir), device)
+
+    signals, truth = _read(dataset, wl, AUDIT_SHOTS)
+    generator = torch.Generator(flow.device).manual_seed(sampling.seed)
+    s = sampling
+    draws = _draws(flow, signals, s.n_samples, s.n_steps, s.per_call, generator)
+    draws = draws[:, :, 0]
+    mean, std = draws.mean(dim=0), draws.std(dim=0)
+    guess = head.predict_velocity(signals, wl)
+    tcan_pred = tcan.predict_velocity(signals, wl)
+    shots = [
+        {
+            'truth_std': float(truth[i].std()),
+            'posterior_mean_rmse': float(
+                per_shot_rmse(mean[i : i + 1], truth[i : i + 1])
+            ),
+            'encoder_head_rmse': float(
+                per_shot_rmse(guess[i : i + 1], truth[i : i + 1])
+            ),
+            'tcan_rmse': float(per_shot_rmse(tcan_pred[i : i + 1], truth[i : i + 1])),
+            'posterior_std_mean': float(std[i].mean()),
+            'hf_fraction_truth': high_frequency_fraction(truth[i], truth[i]),
+            'hf_fraction_posterior_mean': high_frequency_fraction(mean[i], truth[i]),
+            'hf_fraction_draw0': high_frequency_fraction(draws[0, i], truth[i]),
+        }
+        for i in range(AUDIT_SHOTS)
+    ]
+    return {
+        'test_set': {**dataclasses.asdict(test), 'dataset': dataset.stem},
+        'fresh_set': {'seed': FRESH_TEST_SEED, 'dataset': fresh.stem},
+        'sampling': dataclasses.asdict(sampling),
+        'encoder_head_velocity_rmse': {
+            'test': _velocity_rmse(head, dataset, wl, test.n_shots),
+            'fresh': _velocity_rmse(head, fresh, wl, test.n_shots),
+        },
+        # Both sets at this sampling, so their gap is the set and not the
+        # draw count.
+        'posterior_mean_velocity_rmse': {
+            name: _velocity_rmse(
+                PosteriorEstimator(flow, sampling, f'flow-posterior:{sim_name}'),
+                path,
+                wl,
+                test.n_shots,
+            )
+            for name, path in (('test', dataset), ('fresh', fresh))
+        },
+        'flow': flow_facts,
+        'regressors': regressors,
+        'example_shots': shots,
+    }

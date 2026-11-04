@@ -7,6 +7,7 @@ rationale.
     pixi run python scripts/flow.py score
     pixi run python scripts/flow.py sign --device mps
     pixi run python scripts/flow.py score --variant _enc
+    pixi run python scripts/flow.py audit
 """
 
 import argparse
@@ -17,7 +18,7 @@ import torch
 from smi.core.cli import add_verbosity, setup_logging
 from smi.core.paths import RESULTS_DIR
 from smi.data.frozen import DEFAULT_ROOT
-from smi.experiments.flow_runner import VARIANTS, score, score_sign, train
+from smi.experiments.flow_runner import VARIANTS, audit, score, score_sign, train
 
 
 def main() -> None:
@@ -38,6 +39,10 @@ def main() -> None:
     g.add_argument('--device', default='cpu')
     g.add_argument('--frozen-root', type=Path, default=DEFAULT_ROOT)
     g.add_argument('--out', type=Path, default=RESULTS_DIR / 'flow_results.json')
+    a = sub.add_parser('audit', help="add the encoder posteriors' audit to --out")
+    a.add_argument('--device', default='cpu')
+    a.add_argument('--frozen-root', type=Path, default=DEFAULT_ROOT)
+    a.add_argument('--out', type=Path, default=RESULTS_DIR / 'flow_results.json')
     for p in (s, g):
         p.add_argument(
             '--variant',
@@ -50,6 +55,8 @@ def main() -> None:
     torch.set_float32_matmul_precision('high')
     if args.command == 'train':
         train(args.config, args.accelerator, args.seed)
+    elif args.command == 'audit':
+        audit(args.device, args.frozen_root, args.out)
     elif args.command == 'sign':
         score_sign(args.device, args.frozen_root, args.out, args.variant)
     else:

@@ -28,6 +28,7 @@ from torch.utils.data import DataLoader
 from smi.core.paths import GRID_RUNS_DIR, RUNS_DIR
 from smi.experiments.flow_eval import (
     Sampling,
+    score_audit,
     score_denoise,
     score_posterior,
     score_posterior_sign,
@@ -57,6 +58,9 @@ VARIANTS = {'': (DENOISE, POSTERIORS), ENCODER_SUFFIX: (DENOISE_ENC, POSTERIORS_
 # The denoiser's 32 draws are the top of score_denoise's draw-count check
 # (8/16/32 are prefixes of them); the band and modality scores need enough
 # draws per marginal for a 2-component BIC to mean something.
+# The audit scores the posterior mean on two full sets per arm; 16 draws keep
+# that under ~10 min per set, and both sets share it so their gap is fair.
+AUDIT_SAMPLING = Sampling(n_samples=16, n_steps=16, per_call=8, seed=0)
 DENOISE_SAMPLING = Sampling(n_samples=32, n_steps=16, per_call=4, seed=0)
 POSTERIOR_SAMPLING = Sampling(n_samples=64, n_steps=16, per_call=8, seed=0)
 
@@ -190,6 +194,29 @@ def score_sign(device: str, frozen_root: Path, out: Path, variant: str) -> None:
             ),
         }
         for arm, name in VARIANTS[variant][1].items()
+    }
+    out.write_text(json.dumps(results, indent=2) + '\n')
+    logger.info(f'wrote {out}')
+
+
+def audit(device: str, frozen_root: Path, out: Path) -> None:
+    """Add the encoder posteriors' audit (``flow_eval.score_audit``) to ``out``."""
+    results = json.loads(out.read_text())
+    results['q3_4_audit'] = {
+        arm: {
+            'config': name,
+            'device': device,
+            **score_audit(
+                _load(name, device),
+                GRID,
+                arm,
+                GRID_RUNS_DIR,
+                frozen_root,
+                AUDIT_SAMPLING,
+                device,
+            ),
+        }
+        for arm, name in POSTERIORS_ENC.items()
     }
     out.write_text(json.dumps(results, indent=2) + '\n')
     logger.info(f'wrote {out}')

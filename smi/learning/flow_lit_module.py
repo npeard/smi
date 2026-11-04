@@ -200,6 +200,18 @@ class FlowLitModule(lightning.LightningModule):
         draws = self.flow.sample(cond, n_samples, n_steps, generator)
         return draws * self.x1_std + self.x1_mean
 
+    def encoder_guess(self, cond: Tensor) -> Tensor:
+        """The encoder's x1 regression head on raw ``cond``, in raw x1 units.
+
+        ``[B, C_x, L]``: the deterministic regressor the auxiliary loss
+        trains, without the flow. Raises if the module has no encoder.
+        """
+        if self.flow.encoder is None:
+            raise ValueError('this flow has no conditioning encoder')
+        cond = (cond - self.cond_mean) / self.cond_std
+        guess = self.flow.encoder(cond)[:, : self.flow.x_channels]
+        return guess * self.x1_std + self.x1_mean
+
     @override
     def configure_optimizers(self) -> dict[str, Any]:
         hp = self.training_hparams

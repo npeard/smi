@@ -337,3 +337,48 @@ def test_encoder_makes_the_flow_read_a_shortcut_conditioning():
     assert plain[0] < 0.05
     assert encoded[0] > 0.3
     assert encoded[1] < plain[1]
+
+
+def _posterior_module(encoder_channels: int) -> FlowLitModule:
+    cfg = model_config(DENOISE)
+    syn = cfg.synthetic_config
+    assert syn is not None
+    return FlowLitModule(
+        cfg.model_config,
+        cfg.training_config,
+        steps_per_epoch=1,
+        sim=syn['sim'],
+        task='posterior',
+        n_time_features=syn['flow']['n_time_features'],
+        train_crop_length=128,
+        fit_norm_stats=False,
+        encoder_channels=encoder_channels,
+        aux_weight=1.0,
+    )
+
+
+def test_encoder_estimator_is_the_aux_head_in_raw_units():
+    """The audit's regressor is exactly the encoder channel the aux loss fits."""
+    module = _posterior_module(2).eval()
+    wl = tuple(module.sim_config.wavelengths_um)
+    signals = torch.randn(2, len(wl), 128)
+    est = flow_eval.EncoderEstimator(module, 'enc')
+    pred = est.predict_velocity(signals, wl)
+    cond = (signals - module.cond_mean) / module.cond_std
+    encoder = module.flow.encoder
+    assert encoder is not None
+    with torch.no_grad():
+        raw = encoder(cond)[:, 0] * module.x1_std[:, 0] + module.x1_mean[:, 0]
+    assert pred.shape == (2, 128)
+    torch.testing.assert_close(pred, raw)
+    with pytest.raises(ValueError, match='no conditioning encoder'):
+        flow_eval.EncoderEstimator(_posterior_module(0), 'none')
+
+
+def test_high_frequency_fraction_separates_smooth_from_noise():
+    """Below 1% for the truth itself; most of white noise's power is above."""
+    t = torch.linspace(0, 1, 4096)
+    smooth = torch.sin(2 * torch.pi * 3 * t)
+    assert flow_eval.high_frequency_fraction(smooth, smooth) <= 0.01
+    noise = torch.randn(4096, generator=torch.Generator().manual_seed(0))
+    assert flow_eval.high_frequency_fraction(noise, smooth) > 0.9
