@@ -652,7 +652,9 @@ class FlowRow:
     """One estimator of the Q3.4 encoder-flow comparison (tab-q3-flow, plot_q3_flow).
 
     RMSEs in um/ms on the arm's test set (seed 1000) and, for the flow's own
-    estimators, on the fresh seed-2000 audit set; None where not scored.
+    estimators, on the fresh seed-2000 audit set; None where not scored. The
+    flow's two RMSEs both come from the 16-draw audit; its coverage and CRPS
+    from the 64-draw posterior run.
     """
 
     label: str
@@ -721,8 +723,10 @@ def flow_rows(records: dict[str, RunRecord]) -> dict[str, FlowRow]:
             'flow posterior mean',
             flow['receptive_field'],
             flow['total_params'],
-            nom['posterior_mean_velocity_rmse']['mean'],
-            fib['posterior_mean_velocity_rmse']['mean'],
+            # The audit's 16-draw test score, not the 64-draw one, so the
+            # test/fresh pair differs only in seed.
+            mean['nominal']['test']['mean'],
+            mean['fiber']['test']['mean'],
             mean['nominal']['fresh']['mean'],
             mean['fiber']['fresh']['mean'],
             nom['coverage'],
