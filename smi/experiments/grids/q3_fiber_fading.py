@@ -1,4 +1,4 @@
-"""Q3 H4: does static fading cost TCAN-44k by decorrelating the colours?
+"""Q3 H4: whether static fading costs TCAN-44k by decorrelating colours.
 
 In q3_fiber_sweep TCAN-44k keeps 0.12 of its signal at N = 8 static modes,
 far less than the C_eff, SNR or sign losses predict (fiber_sweep_mechanism.json).

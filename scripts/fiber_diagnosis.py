@@ -143,7 +143,8 @@ def main() -> None:
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--frozen-root', type=Path, default=DEFAULT_ROOT)
     parser.add_argument('--skip-per-shot', action='store_true')
-    # The q3_fiber_sweep / q3_fiber_fading cells finish hours after the diagnosis is settled.
+    # The q3_fiber_sweep / q3_fiber_fading cells finish hours after the
+    # diagnosis is settled.
     parser.add_argument('--per-shot-only', action='store_true')
     args = parser.parse_args()
     if not args.per_shot_only:

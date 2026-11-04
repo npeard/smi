@@ -416,7 +416,7 @@ def per_shot_excess(
 def colour_fading_verdict(
     three_m1: float, three_m8: float, three_m8_corr: float, one_m1: float, one_m8: float
 ) -> dict[str, float | str]:
-    """H4 of the fiber sweep: is the fading cost one of colours fading apart?
+    """H4 of the fiber sweep: whether its fading cost is colours fading apart.
 
     Arguments are explained fractions (``explained_fraction``): three colours at
     M = 1, at M = 8 fading independently and at M = 8 sharing one speckle
