@@ -1,0 +1,173 @@
+{
+  "n_shots": 32,
+  "seed": 1000,
+  "reference_name": "linear-Gaussian perfectly-demodulated reference RMSE",
+  "caveats": [
+    "Reference RMSE is not a bound in either direction: perfect demodulation (fringe order known) is optimistic; linear-stationary-Gaussian estimation is pessimistic for non-Gaussian speckle and the chirp drive.",
+    "Fading enters the reference only via the shot-mean |kappa|^2, so it is blind to in-shot fades and cycle slips; in_shot_fade_rel reports those.",
+    "A static |kappa| is a fixed per-shot gain: it costs fringe SNR (snr_loss_db) and C, not information about the phase law."
+  ],
+  "points": {
+    "nominal": {
+      "rmse": 0.03455170895414363,
+      "zero_predictor": 0.45748725119801215,
+      "mse_ratio_to_free_space": 1.0
+    },
+    "fiber": {
+      "rmse": 0.08424250499075928,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.1260864295877782,
+      "mean_kappa": 0.31787502351194513,
+      "feedback_c_eff": 0.06357500470238903,
+      "snr_loss_db": 8.993316530961417,
+      "in_shot_fade_rel": 0.31273592662287847,
+      "speckle_phase_rms_um": 0.025544706940655564,
+      "path_rms_um": 0.29612314267322415,
+      "mse_ratio_to_free_space": 0.16821957093527942
+    },
+    "modes-1": {
+      "rmse": 0.03455348710804584,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.7747208890864977,
+      "mean_kappa": 0.8609475698880843,
+      "feedback_c_eff": 0.17218951397761686,
+      "snr_loss_db": 1.1085473383230695,
+      "in_shot_fade_rel": 1.3037839426850624e-08,
+      "speckle_phase_rms_um": 3.2462984132145986e-10,
+      "path_rms_um": 0.0,
+      "mse_ratio_to_free_space": 0.9998970808275335
+    },
+    "modes-2": {
+      "rmse": 0.03455361152366719,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.48040286806373583,
+      "mean_kappa": 0.6609087165835996,
+      "feedback_c_eff": 0.13218174331671992,
+      "snr_loss_db": 3.1839440847034703,
+      "in_shot_fade_rel": 8.03930610111301e-09,
+      "speckle_phase_rms_um": 2.609592012629522e-10,
+      "path_rms_um": 0.0,
+      "mse_ratio_to_free_space": 0.9998898802723875
+    },
+    "modes-4": {
+      "rmse": 0.03455458032557424,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.2638129186617209,
+      "mean_kappa": 0.47097098776290175,
+      "feedback_c_eff": 0.09419419755258035,
+      "snr_loss_db": 5.787039412910701,
+      "in_shot_fade_rel": 1.0165372434087292e-08,
+      "speckle_phase_rms_um": 2.1973977897143142e-10,
+      "path_rms_um": 0.0,
+      "mse_ratio_to_free_space": 0.9998338135145721
+    },
+    "modes-8": {
+      "rmse": 0.03455735528176486,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.1167285932082776,
+      "mean_kappa": 0.30652661629631384,
+      "feedback_c_eff": 0.06130532325926277,
+      "snr_loss_db": 9.328227484829672,
+      "in_shot_fade_rel": 1.01139019124922e-08,
+      "speckle_phase_rms_um": 3.037266829543148e-10,
+      "path_rms_um": 0.0,
+      "mse_ratio_to_free_space": 0.9996732466186519
+    },
+    "speckle-0.1": {
+      "rmse": 0.03455476333629801,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.7747997976319988,
+      "mean_kappa": 0.8608751324956071,
+      "feedback_c_eff": 0.17217502649912142,
+      "snr_loss_db": 1.1081050138519024,
+      "in_shot_fade_rel": 0.0033524847825701603,
+      "speckle_phase_rms_um": 0.0006030067252924381,
+      "path_rms_um": 0.0,
+      "mse_ratio_to_free_space": 0.9998232227995657
+    },
+    "speckle-0.3": {
+      "rmse": 0.0345732879225794,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.7748313754128273,
+      "mean_kappa": 0.8605853354476992,
+      "feedback_c_eff": 0.17211706708953986,
+      "snr_loss_db": 1.1079280161739384,
+      "in_shot_fade_rel": 0.01028925155835513,
+      "speckle_phase_rms_um": 0.0018164306701316576,
+      "path_rms_um": 0.0,
+      "mse_ratio_to_free_space": 0.998752086627592
+    },
+    "speckle-1": {
+      "rmse": 0.034694706344782326,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.773104515925254,
+      "mean_kappa": 0.8580830877832778,
+      "feedback_c_eff": 0.17161661755665558,
+      "snr_loss_db": 1.11761789883371,
+      "in_shot_fade_rel": 0.0363593778450412,
+      "speckle_phase_rms_um": 0.0069095546517882215,
+      "path_rms_um": 0.0,
+      "mse_ratio_to_free_space": 0.9917738054423106
+    },
+    "speckle-3": {
+      "rmse": 0.035217202419043206,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.7519077053817517,
+      "mean_kappa": 0.8436011784240381,
+      "feedback_c_eff": 0.16872023568480765,
+      "snr_loss_db": 1.238354645989908,
+      "in_shot_fade_rel": 0.09794960580129582,
+      "speckle_phase_rms_um": 0.024753968542712862,
+      "path_rms_um": 0.0,
+      "mse_ratio_to_free_space": 0.9625634314259129
+    },
+    "path-0.1": {
+      "rmse": 0.03470478222322939,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.7747208890864977,
+      "mean_kappa": 0.8609475698880843,
+      "feedback_c_eff": 0.17218951397761686,
+      "snr_loss_db": 1.1085473383230695,
+      "in_shot_fade_rel": 1.3037839426850624e-08,
+      "speckle_phase_rms_um": 3.2462984132145986e-10,
+      "path_rms_um": 0.010575826524043722,
+      "mse_ratio_to_free_space": 0.9911980034327776
+    },
+    "path-0.3": {
+      "rmse": 0.0358809752971961,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.7747208890864977,
+      "mean_kappa": 0.8609475698880843,
+      "feedback_c_eff": 0.17218951397761686,
+      "snr_loss_db": 1.1085473383230695,
+      "in_shot_fade_rel": 1.3037839426850624e-08,
+      "speckle_phase_rms_um": 3.2462984132145986e-10,
+      "path_rms_um": 0.03172747957213116,
+      "mse_ratio_to_free_space": 0.9272793469927098
+    },
+    "path-1": {
+      "rmse": 0.04644695130158709,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.7747208890864977,
+      "mean_kappa": 0.8609475698880843,
+      "feedback_c_eff": 0.17218951397761686,
+      "snr_loss_db": 1.1085473383230695,
+      "in_shot_fade_rel": 1.3037839426850624e-08,
+      "speckle_phase_rms_um": 3.2462984132145986e-10,
+      "path_rms_um": 0.1057582652404372,
+      "mse_ratio_to_free_space": 0.5533815044603057
+    },
+    "path-2.8": {
+      "rmse": 0.08393087437500035,
+      "zero_predictor": 0.45748725119801215,
+      "mean_kappa2": 0.7747208890864977,
+      "mean_kappa": 0.8609475698880843,
+      "feedback_c_eff": 0.17218951397761686,
+      "snr_loss_db": 1.1085473383230695,
+      "in_shot_fade_rel": 1.3037839426850624e-08,
+      "speckle_phase_rms_um": 3.2462984132145986e-10,
+      "path_rms_um": 0.29612314267322415,
+      "mse_ratio_to_free_space": 0.16947106961242644
+    }
+  }
+}

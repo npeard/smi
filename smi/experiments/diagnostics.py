@@ -325,3 +325,45 @@ def per_shot_table(
                 'velocity_rmse': [float(x) for x in rmse],
             }
     return table
+
+
+def coupling_stats(cfg: SimConfig, n_shots: int, seed: int) -> dict[str, float]:
+    """How ``cfg``'s fiber coupling kappa scales the fringes, from simulated draws.
+
+    Fringe modulation and C both scale with |kappa|, so the fringe SNR drops by
+    E|kappa|^2 (in power) and C_eff = C |kappa|. ``in_shot_fade_rel`` is the
+    mean within-shot std of |kappa| over its mean (0 for a static fiber: a
+    fixed scale a network or a per-shot normalization absorbs);
+    ``speckle_phase_rms_um`` the within-shot std of the speckle phase
+    arg(kappa) (path drift excluded) as target-displacement equivalent at the
+    first color, the nuisance the velocity read must reject.
+    """
+    fib = cfg.fiber
+    assert fib is not None
+    gen = torch.Generator().manual_seed(seed)
+    length = cfg.acquisition.buffer_size
+    draw = simulate_fiber(
+        dataclasses.replace(fib, path_drift_um_per_sqrt_s=0.0),
+        cfg.wavelengths_um,
+        n_shots,
+        length,
+        cfg.sample_rate,
+        _CPU,
+        gen,
+    )
+    kappa = draw.kappa.numpy().astype(np.complex128)
+    mag = np.abs(kappa)
+    psi = np.unwrap(np.angle(kappa[:, 0]), axis=-1)
+    mean_k2 = float((mag**2).mean())
+    return {
+        'mean_kappa2': mean_k2,
+        'mean_kappa': float(mag.mean()),
+        'feedback_c_eff': float(cfg.feedback_c * mag.mean()),
+        'snr_loss_db': float(-10 * np.log10(mean_k2)),
+        'in_shot_fade_rel': float((mag.std(-1) / mag.mean(-1)).mean()),
+        'speckle_phase_rms_um': float(
+            psi.std(-1).mean() * cfg.wavelengths_um[0] / (4 * math.pi)
+        ),
+        'path_rms_um': fib.path_drift_um_per_sqrt_s
+        * math.sqrt(length / cfg.sample_rate / 3),
+    }
